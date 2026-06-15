@@ -4,8 +4,8 @@ use super::BufferItem;
 
 /// 整局 self-play 中的单步（MCTS 监督目标，非 SAC 五元组）。
 ///
-/// # v0.23 TODO
-/// - 扩展 `reward: Option<f32>` 和 `root_value: Option<f32>`（MuZero 需要）
+/// AlphaZero 填 `reward=0.0, root_value=None`；
+/// MuZero 填实际 reward 和 MCTS 根节点 value。
 #[derive(Debug, Clone)]
 pub struct SelfPlayStep {
     pub obs: Vec<f32>,
@@ -14,6 +14,10 @@ pub struct SelfPlayStep {
     /// MCTS 输出的 π（visit count 归一化后的概率分布）
     pub policy_target: Vec<f32>,
     pub player: u8,
+    /// 环境返回的即时 reward（AlphaZero 填 0.0）
+    pub reward: f32,
+    /// MCTS 搜索根节点的 value 估计（MuZero 需要，AlphaZero 可省略）
+    pub root_value: Option<f32>,
 }
 
 /// 终局结果

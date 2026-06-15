@@ -2,6 +2,7 @@
 
 use rand::RngCore;
 
+use super::min_max::MinMaxStats;
 use super::types::{
     ActionPayload, ChildStat, MctsConfig, RecurrentOut, RootOut,
 };
@@ -14,9 +15,10 @@ use super::types::{
 ///
 /// v0.22 实现：AlphaZero（State = PyObject 棋盘快照）
 ///
-/// # v0.23 TODO
-/// - `Dynamics` 作为 `MctsModel` 的另一实现（State = learned latent `Vec<f32>`）
-/// - MuZero: `root` = representation network; `recurrent` = dynamics + prediction
+/// v0.22 实现：AlphaZero（State = PyObject 棋盘快照）
+/// v0.23 实现：MuZero（State = Vec<f32> learned latent，通过 `Dynamics` + `DynamicsModel` 适配）
+///
+/// # 后续 TODO
 /// - 并行时条件加 `State: Send + Sync`
 /// - Stochastic MuZero 的 chance node 会改变 recurrent 语义（核心扩展级）
 pub trait MctsModel {
@@ -44,7 +46,7 @@ pub trait SearchPolicy {
     fn prepare_root(&self, children: &mut [ChildStat], cfg: &MctsConfig, rng: &mut dyn RngCore);
 
     /// 选择要展开的子节点索引（从父节点视角计算 Q 值）
-    fn select_child(&self, parent_visit: u32, parent_to_play: u8, children: &[ChildStat], cfg: &MctsConfig) -> usize;
+    fn select_child(&self, parent_visit: u32, parent_to_play: u8, children: &[ChildStat], stats: &MinMaxStats, cfg: &MctsConfig) -> usize;
 
     /// 搜索结束后推荐最终动作索引（训练时随机采样，评测时可贪心）
     fn recommend(&self, children: &[ChildStat], cfg: &MctsConfig, rng: &mut dyn RngCore) -> usize;

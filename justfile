@@ -304,8 +304,28 @@ example-lunarlander-sac:
 
 # ---------- RL 聚合 ----------
 
+# PPO CartPole（需 Python + gymnasium）
+example-cartpole-ppo:
+    @echo "=== Running CartPole PPO [{{_blas_name}}] (requires Python + gymnasium) ==="
+    cargo run --example ppo_cartpole --release
+
+# PPO CartPole smoke（管线验证，不验收敛）
+smoke-cartpole-ppo:
+    @echo "=== Running CartPole PPO Smoke ==="
+    SMOKE=1 cargo run --example ppo_cartpole
+
+# MuZero CartPole（需 Python + gymnasium）
+example-cartpole-muzero:
+    @echo "=== Running CartPole MuZero [{{_blas_name}}] (requires Python + gymnasium) ==="
+    cargo run --example muzero_cartpole --release
+
+# MuZero CartPole smoke（管线验证，不验收敛）
+smoke-cartpole-muzero:
+    @echo "=== Running CartPole MuZero Smoke ==="
+    SMOKE=1 cargo run --example muzero_cartpole
+
 # 运行所有 RL examples（需 Python + gymnasium + extras）
-examples-rl: example-cartpole-sac example-pendulum-sac example-platform-sac example-lunarlander-sac
+examples-rl: example-cartpole-sac example-pendulum-sac example-platform-sac example-lunarlander-sac example-cartpole-ppo example-cartpole-muzero
 
 # 验证 Platform-v0 Python 环境可用
 py-gym-platform:

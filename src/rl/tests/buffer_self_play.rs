@@ -13,6 +13,8 @@ fn make_step(id: usize, player: u8) -> SelfPlayStep {
         action: vec![(id % action_dim) as f32],
         policy_target: policy,
         player,
+        reward: 0.0,
+        root_value: None,
     }
 }
 

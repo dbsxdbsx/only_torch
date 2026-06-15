@@ -1,6 +1,6 @@
 [package]
     name         ="only_torch"
-    version      ="0.22.0"
+    version      ="0.23.0"
     edition      ="2024"
     description  ="仿造pytorch的个人玩具（仍在构思，请勿使用）AI框架"
     repository   ="https://github.com/dbsxdbsx/only_torch"
@@ -269,6 +269,14 @@
 [[example]]
     name="lunarlander_sac"
     path="examples/sac/lunarlander/main.rs"
+
+[[example]]
+    name="muzero_cartpole"
+    path="examples/muzero/cartpole/main.rs"
+
+[[example]]
+    name="ppo_cartpole"
+    path="examples/ppo/cartpole/main.rs"
 
 [[example]]
     name="evolution_xor"

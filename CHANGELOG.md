@@ -1,5 +1,60 @@
 # 更新日志
 
+## [0.23.0] - 2026-06-15
+
+> MuZero + PPO + SAC 三算法统一验收。MCTS 算法底座收口（Dynamics + MinMaxStats），on-policy buffer 入库。「发版」= bump 版本号 + 更新 CHANGELOG，不 `cargo publish`。
+
+### Added
+
+- **feat(rl): `src/rl/algo/ppo/` PPO 函数式 helper 入库**
+  - `compute_gae`：GAE 优势估计（terminated/truncated 分离，只 mask terminated）
+  - `clipped_policy_loss` / `value_loss` / `entropy_bonus`：PPO 三损失构件
+  - `PpoBatch` + `rollout_to_batch` + `normalize_advantages`
+  - 5 个单元测试（GAE 手算 + terminated/truncated 双路径 + 优势标准化）
+
+- **feat(rl): `RolloutStep` + `RolloutBuffer` 入库**（`src/rl/buffer/rollout*.rs`）
+  - On-policy 采集缓冲区，用完即弃，不 impl BufferItem
+  - 7 个单元测试
+
+- **feat(rl): `Dynamics` trait + `DynamicsModel` adapter**（`src/rl/mcts/dynamics.rs`）
+  - MuZero learned dynamics 接口（representation + dynamics + prediction 三段式）
+  - `DynamicsModel<D>` 适配器桥接到 `MctsModel`（State = Vec<f32> latent）
+  - 3 个单元测试
+
+- **feat(rl): `MinMaxStats` Q 值归一化**（`src/rl/mcts/min_max.rs`）
+  - PUCT 中 Q 值 min-max 归一化，解决 value 无界环境的探索失效问题
+  - 穿线至 `mcts_search` → `select` → `PuctPolicy::select_child`
+
+- **feat(rl): PPO CartPole-v0 示例**（`examples/ppo/cartpole/`）
+  - actor-critic 独立 MLP（128 隐藏层），离散 Categorical
+  - GAE + clipped surrogate + value loss + entropy bonus
+  - SMOKE 模式支持
+
+- **feat(rl): MuZero CartPole-v0 示例**（`examples/muzero/cartpole/`）
+  - representation / dynamics / prediction 三网络
+  - MCTS-on-latent（复用 mcts_search + DynamicsModel）
+  - K=5 步 unroll + n-step value target
+  - ReplayBuffer<SelfPlayGame> 整局存储
+
+### Changed
+
+- **refactor(rl): `SelfPlayStep` 扩展 MuZero 字段**
+  - 新增 `reward: f32`（必填，AlphaZero 填 0.0）
+  - 新增 `root_value: Option<f32>`（可选，AlphaZero 无需）
+
+- **refactor(rl): `SearchPolicy::select_child` 签名增加 `&MinMaxStats`**
+  - v0.22 已预告的唯一搜索签名变更
+  - AlphaZero（value ∈ [-1,1]）下 min-max 近似恒等，无害
+
+- **refactor(rl): SAC CartPole 示例增强**
+  - 网络宽度 64→128
+  - 收敛判据：100 局均值 >= 195（原为单局）
+  - 新增 20 局 deterministic eval 函数
+
+### Docs
+
+- justfile：新增 `example-cartpole-ppo` / `smoke-cartpole-ppo` / `example-cartpole-muzero` / `smoke-cartpole-muzero`
+
 ## [0.22.0] - 2026-06-15
 
 > AlphaZero 基础设施：库内 MCTS + Python 五子棋环境 + 规划桥接 + Agent trait。「发版」= bump 版本号 + 更新 CHANGELOG，不 `cargo publish`。

@@ -18,7 +18,41 @@ use only_torch::rl::algo::sac::{
 use only_torch::rl::{GymEnv, ReplayBuffer, Transition};
 use only_torch::tensor::Tensor;
 use pyo3::Python;
+use rand::SeedableRng;
+use rand::rngs::StdRng;
 use std::collections::VecDeque;
+
+fn eval_cartpole(
+    env: &GymEnv,
+    agent: &model::SacAgent,
+    obs_dim: usize,
+    n_episodes: usize,
+) -> Result<(f32, f32), GraphError> {
+    let mut total = 0.0f32;
+    let mut max_r = f32::NEG_INFINITY;
+    for _ in 0..n_episodes {
+        let mut obs = env.reset(None)[0].clone();
+        let mut ep_r = 0.0f32;
+        loop {
+            let logits = agent.actor.forward(&Tensor::new(&obs, &[1, obs_dim]))?;
+            let logits_val = logits.value()?.unwrap();
+            let probs = logits_val.softmax(1);
+            let action = probs.data_as_slice()
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            let (nobs, reward, terminated, truncated) = env.step(&[action as f32]);
+            ep_r += reward;
+            if terminated || truncated { break; }
+            obs = nobs[0].clone();
+        }
+        total += ep_r;
+        if ep_r > max_r { max_r = ep_r; }
+    }
+    Ok((total / n_episodes as f32, max_r))
+}
 
 fn main() -> Result<(), GraphError> {
     let smoke = std::env::var("SMOKE").is_ok();
@@ -39,11 +73,12 @@ fn main() -> Result<(), GraphError> {
         let mut c1_opt = Adam::new(&graph, &agent.critic1.parameters(), lr);
         let mut c2_opt = Adam::new(&graph, &agent.critic2.parameters(), lr);
         let mut buffer = ReplayBuffer::new(100_000);
-        let mut rng = rand::thread_rng();
+        let mut rng = StdRng::seed_from_u64(42);
         let mut ep_rewards: VecDeque<f32> = VecDeque::with_capacity(100);
         for ep in 0..max_ep {
             let t0 = std::time::Instant::now();
-            let mut obs = env.reset(None)[0].clone();
+            let seed = if ep == 0 { Some(42) } else { None };
+            let mut obs = env.reset(seed)[0].clone();
             let (mut ep_r, mut ep_len) = (0.0f32, 0);
 
             loop {
@@ -111,11 +146,27 @@ fn main() -> Result<(), GraphError> {
             }
 
             ep_rewards.push_back(ep_r);
-            if ep_rewards.len() > 100 { ep_rewards.pop_front(); }
+            if ep_rewards.len() > 20 { ep_rewards.pop_front(); }
             let avg = ep_rewards.iter().sum::<f32>() / ep_rewards.len() as f32;
-            println!("Ep {:3}: R={:5.1} len={:3} avg={:5.1} α={:.3} t={:.2}s",
+            println!("Ep {:3}: R={:5.1} len={:3} avg20={:5.1} α={:.3} t={:.2}s",
                 ep+1, ep_r, ep_len, avg, agent.alpha(), t0.elapsed().as_secs_f32());
-            if ep_r >= 195.0 { println!("✅ 达标 R={ep_r:.0}"); break; }
+            if !smoke && ep_rewards.len() >= 20 && avg >= 195.0 {
+                println!("✅ 最近 20 局均值达标 avg={avg:.1}");
+                break;
+            }
+        }
+
+        // eval：固定 seed 下 deterministic 跑 20 局
+        if !smoke {
+            let eval_env = GymEnv::new(py, "CartPole-v0");
+            let (eval_mean, eval_max) = eval_cartpole(&eval_env, &agent, obs_dim, 20)?;
+            println!("📊 Eval 20 局: mean={eval_mean:.1} max={eval_max:.0}");
+            if eval_mean >= 195.0 {
+                println!("✅ Eval 达标 mean={eval_mean:.1}");
+            } else {
+                println!("⚠️ Eval 未达标 mean={eval_mean:.1} < 195");
+            }
+            eval_env.close();
         }
 
         if smoke { println!("[SMOKE] 通过"); }

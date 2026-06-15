@@ -7,15 +7,17 @@
 //!
 //! - `agent` - Agent trait（无规划型 + 规划型）
 //! - `env/` - 环境交互层（GymEnv、MinariDataset）
-//! - `buffer/` - 经验回放（Transition、SelfPlayGame、ReplayBuffer）
+//! - `buffer/` - 经验回放（Transition、RolloutStep、SelfPlayGame、ReplayBuffer、RolloutBuffer）
 //!
 //! ## 主要组件
 //!
 //! - [`Agent`] / [`PlanningAgent`] - 无规划 / 规划型 Agent trait
 //! - [`GymEnv`] - Gymnasium 环境封装，支持离散/连续/混合动作空间
 //! - [`Transition`] - 单步交互数据（terminated + truncated 分离）
+//! - [`RolloutStep`] - 单步 on-policy 采集数据（PPO / A2C 族）
 //! - [`SelfPlayGame`] - 整局 self-play 样本（AlphaZero / MuZero / EZ-V2）
 //! - [`ReplayBuffer`] - 泛型经验回放缓冲区（有放回采样）
+//! - [`RolloutBuffer`] - 固定 n_steps 的 on-policy 采集缓冲区
 //! - [`MinariDataset`] - Minari 离线 RL 数据集封装
 //!
 //! ## 使用示例
@@ -63,4 +65,7 @@ pub use env::{
 pub use agent::{Agent, PlanningAgent};
 
 // 重新导出 buffer 层的核心类型
-pub use buffer::{BufferItem, GameOutcome, ReplayBuffer, SelfPlayGame, SelfPlayStep, Transition};
+pub use buffer::{
+    BufferItem, GameOutcome, ReplayBuffer, RolloutBuffer, RolloutStep, SelfPlayGame, SelfPlayStep,
+    Transition,
+};

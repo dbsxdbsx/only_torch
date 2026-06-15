@@ -2,6 +2,7 @@
 
 use rand::thread_rng;
 
+use super::min_max::MinMaxStats;
 use super::node::{Node, Tree};
 use super::traits::{MctsModel, SearchPolicy};
 use super::types::{ChildStat, MctsConfig, SearchResult};
@@ -50,13 +51,15 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
     apply_child_stats_to_tree(&mut tree, root_id, &root_child_stats);
 
     // 3. 模拟循环
+    let mut min_max = MinMaxStats::new();
+
     for _ in 0..cfg.num_simulations {
         // selection: 从根往下选择
-        let leaf_id = select(&tree, policy, cfg);
+        let leaf_id = select(&tree, policy, &min_max, cfg);
 
         // 若叶子已终止，只做 backup
         if tree.nodes[leaf_id].terminal {
-            backup(&mut tree, leaf_id, 0.0, cfg);
+            backup(&mut tree, leaf_id, 0.0, &mut min_max, cfg);
             continue;
         }
 
@@ -97,7 +100,7 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
         }
 
         // backup
-        backup(&mut tree, leaf_id, rec_out.value, cfg);
+        backup(&mut tree, leaf_id, rec_out.value, &mut min_max, cfg);
     }
 
     // 4. 收集最终根子节点统计
@@ -169,6 +172,7 @@ fn expand_root<M: MctsModel>(
 fn select<S: Clone + 'static, P: SearchPolicy>(
     tree: &Tree<S>,
     policy: &P,
+    stats: &MinMaxStats,
     cfg: &MctsConfig,
 ) -> usize {
     let mut current = tree.root;
@@ -196,7 +200,7 @@ fn select<S: Clone + 'static, P: SearchPolicy>(
             })
             .collect();
 
-        let idx = policy.select_child(node.visit_count, parent_to_play, &child_stats, cfg);
+        let idx = policy.select_child(node.visit_count, parent_to_play, &child_stats, stats, cfg);
         let idx = idx.min(node.children.len().saturating_sub(1));
         current = node.children[idx].child;
     }
@@ -206,14 +210,14 @@ fn select<S: Clone + 'static, P: SearchPolicy>(
 ///
 /// # v0.23+ TODO
 /// - scalar↔categorical value 支持变换（MuZero 原论文用 categorical）
-/// - 树内 min-max 归一化 Q 值（MuZero 用于 UCB 分母归一）
 /// - virtual loss 支持（并行 MCTS 时防重复展开同一路径）
 /// - tree reuse（搜索后不丢弃树，下一步 rebase 根节点）
 fn backup<S: Clone + 'static>(
     tree: &mut Tree<S>,
     leaf_id: usize,
     leaf_value: f32,
-    cfg: &MctsConfig,
+    stats: &mut MinMaxStats,
+    _cfg: &MctsConfig,
 ) {
     let mut current = leaf_id;
     let mut value = leaf_value;
@@ -234,8 +238,9 @@ fn backup<S: Clone + 'static>(
             Some(pid) => {
                 let parent_to_play = tree.nodes[pid].to_play;
                 let perspective = if to_play == parent_to_play { 1.0 } else { -1.0 };
-                // 统一使用节点上的 discount（模型返回的），cfg.discount 仅作 root 默认
                 value = reward + discount * value * perspective;
+                // MinMaxStats 用与 select 相同的 Q 定义更新，保持归一化一致
+                stats.update(value);
                 current = pid;
             }
             None => break,

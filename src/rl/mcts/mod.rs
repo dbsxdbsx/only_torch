@@ -19,6 +19,8 @@
 //! println!("学习目标: {:?}", result.learn_policy);
 //! ```
 
+pub mod dynamics;
+pub mod min_max;
 mod node;
 pub mod puct;
 pub mod search;
@@ -26,6 +28,8 @@ pub mod traits;
 pub mod types;
 
 // 重新导出核心公开 API
+pub use dynamics::{Dynamics, DynamicsModel, DynamicsOutput};
+pub use min_max::MinMaxStats;
 pub use puct::PuctPolicy;
 pub use search::mcts_search;
 pub use traits::{MctsModel, Predictor, SearchPolicy};

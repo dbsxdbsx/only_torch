@@ -2,6 +2,7 @@
 
 use rand::RngCore;
 
+use super::min_max::MinMaxStats;
 use super::traits::SearchPolicy;
 use super::types::{ChildStat, MctsConfig};
 
@@ -39,7 +40,7 @@ impl SearchPolicy for PuctPolicy {
     ///
     /// `Q(a) = r(a) + γ · perspective · V(child(a))`
     /// - perspective = +1（同一玩家）或 -1（对手，negamax）
-    fn select_child(&self, parent_visit: u32, parent_to_play: u8, children: &[ChildStat], cfg: &MctsConfig) -> usize {
+    fn select_child(&self, parent_visit: u32, parent_to_play: u8, children: &[ChildStat], stats: &MinMaxStats, cfg: &MctsConfig) -> usize {
         let pb_c = ((1.0 + parent_visit as f32 + cfg.pb_c_base) / cfg.pb_c_base).ln()
             + cfg.pb_c_init;
         let sqrt_parent = (parent_visit as f32).sqrt();
@@ -56,8 +57,9 @@ impl SearchPolicy for PuctPolicy {
             // 视角翻转：子节点 value_sum 是子方视角，父方选择需翻转
             let perspective = if child.to_play == parent_to_play { 1.0 } else { -1.0 };
             let q = child.reward + child.discount * perspective * v;
+            let normalized_q = stats.normalize(q);
             let exploration = pb_c * child.prior * sqrt_parent / (1.0 + child.visit_count as f32);
-            let score = q + exploration;
+            let score = normalized_q + exploration;
 
             if score > best_score {
                 best_score = score;
@@ -278,7 +280,7 @@ mod tests {
                 discount: 1.0,
             },
         ];
-        let idx = policy.select_child(10, 0, &children, &cfg);
+        let idx = policy.select_child(10, 0, &children, &MinMaxStats::new(), &cfg);
         assert_eq!(idx, 1, "高 prior 未访问节点应被优先选择");
     }
 

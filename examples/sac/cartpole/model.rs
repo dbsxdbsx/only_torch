@@ -4,8 +4,8 @@
 //!
 //! ## 网络结构
 //! ```text
-//! Actor:  Input(4) -> Linear(64, ReLU) -> Linear(2) -> Softmax → 动作概率
-//! Critic: Input(4) -> Linear(64, ReLU) -> Linear(2) → 每个动作的 Q 值
+//! Actor:  Input(4) -> Linear(128, ReLU) -> Linear(2) -> Softmax → 动作概率
+//! Critic: Input(4) -> Linear(128, ReLU) -> Linear(2) → 每个动作的 Q 值
 //! ```
 
 use only_torch::nn::distributions::Categorical;
@@ -26,8 +26,8 @@ impl SacActor {
     pub fn new(graph: &Graph, obs_dim: usize, action_dim: usize) -> Result<Self, GraphError> {
         let graph = graph.with_model_name("Actor");
         Ok(Self {
-            fc1: Linear::new(&graph, obs_dim, 64, true, "fc1")?,
-            fc2: Linear::new(&graph, 64, action_dim, true, "fc2")?,
+            fc1: Linear::new(&graph, obs_dim, 128, true, "fc1")?,
+            fc2: Linear::new(&graph, 128, action_dim, true, "fc2")?,
         })
     }
 
@@ -86,8 +86,8 @@ impl SacCritic {
     ) -> Result<Self, GraphError> {
         let graph = graph.with_model_name(name);
         Ok(Self {
-            fc1: Linear::new(&graph, obs_dim, 64, true, "fc1")?,
-            fc2: Linear::new(&graph, 64, action_dim, true, "fc2")?,
+            fc1: Linear::new(&graph, obs_dim, 128, true, "fc1")?,
+            fc2: Linear::new(&graph, 128, action_dim, true, "fc2")?,
         })
     }
 
