@@ -25,3 +25,4 @@ Cargo.lock
 /issues
 __pycache__/
 *.pyc
+python/gym_env/gym_env.egg-info/

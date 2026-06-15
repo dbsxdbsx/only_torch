@@ -1,11 +1,9 @@
 //! 环境相关测试
 //!
-//! 测试 RL 环境的创建、交互、空间解析等功能。
-//!
-//! ## 测试文件
-//!
 //! - `gym_env.rs` - GymEnv 环境覆盖测试（离散、连续、图像等代表性环境）
+//! - `gomoku_bridge.rs` - GymEnv 规划桥接测试（五子棋 Board snapshot/restore）
 //! - `minari.rs` - Minari 离线 RL 数据集测试（MinariDataset 封装）
 
+mod gomoku_bridge;
 mod gym_env;
 mod minari;

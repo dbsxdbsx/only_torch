@@ -1,5 +1,52 @@
 # 更新日志
 
+## [0.22.0] - 2026-06-15
+
+> AlphaZero 基础设施：库内 MCTS + Python 五子棋环境 + 规划桥接 + Agent trait。「发版」= bump 版本号 + 更新 CHANGELOG，不 `cargo publish`。
+
+### Added
+
+- **feat(rl): `python/gym_env/` 五子棋 Gymnasium 环境包**
+  - `board.py`：纯规则层（增量获胜检查 ~6μs、numpy legal_mask ~0.8μs）
+  - `env.py`：`GomokuSelfPlayEnv`（无对手，AlphaZero 训练）+ `GomokuEnv`（带 naive 对手，评测）
+  - `opponents.py`：5 级 naive 对手（random/naive0-3）
+  - `pip install -e python/gym_env`；Gymnasium 注册 `Gomoku-selfplay-v0` 等
+
+- **feat(rl): `src/rl/mcts/` MCTS 搜索引擎**
+  - `MctsModel` trait（root + recurrent，mctx 同构；State 关联类型不透明）
+  - `SearchPolicy` trait（hook 粒度：prepare_root / select_child / recommend / make_targets）
+  - `Predictor` trait（day-1 `predict_batch` 接口）
+  - `PuctPolicy`：Dirichlet 根噪声 + UCB 选择 + 温度采样
+  - `mcts_search(model, policy, obs, cfg)` 不吃 `&GymEnv`
+  - Arena 树结构（`Vec<Node>` + `NodeId`）
+  - Backup 统一公式（perspective_factor 支持单智能体 / 双人零和）
+  - 3 个单元测试
+
+- **feat(rl): `GymEnv` 规划桥接方法**
+  - `legal_mask` / `snapshot` / `restore` / `current_player` / `is_terminal` / `board_step` / `board_observation_flat`
+  - SAC 用户无感；AlphaZero 用它驱动 MCTS
+
+- **feat(rl): `SelfPlayGame` 数据结构入库**（`src/rl/buffer/self_play.rs`）
+  - `SelfPlayStep` / `SelfPlayGame` / `GameOutcome`
+  - `impl BufferItem for SelfPlayGame`，复用 `ReplayBuffer` 容器机制
+  - 5 个单元测试
+
+- **feat(rl): `Agent` / `PlanningAgent` 双 trait**（`src/rl/agent.rs`）
+
+### Changed
+
+- **refactor(rl): 五子棋环境迁移至 `python/gym_env/gomoku/`**
+  - 删除旧 `tests/python/custom_envs/gomoku.py` + `test_08_gomoku.py`
+  - 默认棋盘 9×9（旧为 15×15）；15×15 用 `Gomoku-*-15x15-v0`
+  - 旧测试适配新注册 ID
+
+- **refactor(rl): `GymEnv` 自定义环境注册改为统一 `import gym_env`**
+  - 去除 `Gomoku-` 硬编码 if 分支，新游戏只改 Python 侧
+
+### Docs
+
+- `rl_roadmap.md` 目录结构更新（含 mcts / agent / self_play / python/gym_env）
+
 ## [0.21.0] - 2026-06-15
 
 > SAC helper 入库 + 示例瘦身 + LunarLander + 目录重组。「发版」= bump 版本号 + 更新 CHANGELOG，不 `cargo publish`。

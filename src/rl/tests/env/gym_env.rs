@@ -496,16 +496,19 @@ fn register_gomoku_envs(py: Python<'_>) {
     }
 
     // 导入自定义环境模块（触发注册）
-    py.import("tests.python.custom_envs")
-        .expect("导入五子棋自定义环境模块失败");
+    // 优先使用新包 gym_env（v0.22，默认 9×9），回退到旧路径
+    if py.import("gym_env").is_err() {
+        py.import("tests.python.custom_envs")
+            .expect("导入五子棋自定义环境模块失败");
+    }
 }
 
-/// 测试五子棋环境基本功能（Gomoku-naive2-v0）
+/// 测试五子棋环境基本功能（Gomoku-naive2-v0，默认 9×9）
 ///
 /// 验证点：
 /// - 动作类型：SingleDiscrete
-/// - 观察空间：(3, 15, 15) 三通道
-/// - 动作空间：225 个离散动作（15x15 棋盘）
+/// - 观察空间：(3, 9, 9) 三通道
+/// - 动作空间：81 个离散动作（9×9 棋盘）
 #[test]
 #[serial]
 fn test_gomoku_env_basic() {
@@ -514,35 +517,25 @@ fn test_gomoku_env_basic() {
 
         let env = GymEnv::new(py, "Gomoku-naive2-v0");
 
-        // 验证动作类型
         assert_eq!(env.get_action_type(), ActionType::SingleDiscrete);
-
-        // 验证观察类型：3 通道图像（ChannelFirst）
         assert_eq!(env.get_obs_type(), ObsType::ChannelFirst);
 
-        // 验证观察空间：(3, 15, 15)
         let obs_prop = env.get_obs_prop();
         assert_eq!(obs_prop.len(), 1);
-        assert_eq!(obs_prop[0].shape_vec, vec![3, 15, 15]);
+        assert_eq!(obs_prop[0].shape_vec, vec![3, 9, 9]);
 
-        // 验证动作空间：225 个离散动作
         let action_ranges = env.get_all_action_valid_range();
         assert_eq!(action_ranges.len(), 1);
         assert!(action_ranges[0].is_discrete_action());
-        assert_eq!(action_ranges[0].get_discrete_action_selectable_num(), 225);
+        assert_eq!(action_ranges[0].get_discrete_action_selectable_num(), 81);
 
-        // 验证扁平化长度
-        assert_eq!(env.get_flatten_observation_len(), 3 * 15 * 15);
+        assert_eq!(env.get_flatten_observation_len(), 3 * 9 * 9);
 
         env.close();
     });
 }
 
-/// 测试五子棋环境 reset 和 step
-///
-/// 验证：
-/// - reset 返回正确形状的观察
-/// - step 能正确执行动作并返回结果
+/// 测试五子棋环境 reset 和 step（9×9 默认棋盘）
 #[test]
 #[serial]
 fn test_gomoku_env_reset_step() {
@@ -551,26 +544,20 @@ fn test_gomoku_env_reset_step() {
 
         let env = GymEnv::new(py, "Gomoku-naive2-v0");
 
-        // reset 验证
         let obs = env.reset(Some(42));
         assert_eq!(obs.len(), 1);
-        assert_eq!(obs[0].len(), 3 * 15 * 15); // 扁平化后的长度
+        assert_eq!(obs[0].len(), 3 * 9 * 9);
 
-        // step 验证：在中心位置落子 (7, 7) -> action = 7*15 + 7 = 112
-        let action = vec![112.0];
+        // 在中心位置落子 (4, 4) -> action = 4*9 + 4 = 40
+        let action = vec![40.0];
         let (next_obs, reward, terminated, truncated) = env.step(&action);
-        assert_eq!(next_obs[0].len(), 3 * 15 * 15);
-
-        // 奖励应该是 0（游戏继续）、1（玩家胜）或 -1（对手胜/非法）
+        assert_eq!(next_obs[0].len(), 3 * 9 * 9);
         assert!(reward == 0.0 || reward == 1.0 || reward == -1.0);
 
-        // 如果游戏未结束，继续验证
         if !(terminated || truncated) {
-            // 采样并执行随机动作
             let sampled = env.sample_action();
             assert_eq!(sampled.len(), 1);
-            assert!(sampled[0] >= 0.0 && sampled[0] < 225.0);
-
+            assert!(sampled[0] >= 0.0 && sampled[0] < 81.0);
             let (_obs, _reward, _terminated, _truncated) = env.step(&sampled);
         }
 

@@ -1,0 +1,38 @@
+//! Self-play 整局数据类型（AlphaZero / MuZero / EZ-V2 共用）
+
+use super::BufferItem;
+
+/// 整局 self-play 中的单步（MCTS 监督目标，非 SAC 五元组）。
+///
+/// # v0.23 TODO
+/// - 扩展 `reward: Option<f32>` 和 `root_value: Option<f32>`（MuZero 需要）
+#[derive(Debug, Clone)]
+pub struct SelfPlayStep {
+    pub obs: Vec<f32>,
+    /// 实际执行的动作（离散用 `vec![idx as f32]`，连续用原始向量）
+    pub action: Vec<f32>,
+    /// MCTS 输出的 π（visit count 归一化后的概率分布）
+    pub policy_target: Vec<f32>,
+    pub player: u8,
+}
+
+/// 终局结果
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum GameOutcome {
+    /// 胜方 player id
+    Win(u8),
+    Draw,
+    InProgress,
+}
+
+/// planning + self-play 族共用样本单元（AlphaZero / MuZero / EZ-V2）。
+///
+/// 存储单位是整局；训练时由 helper 再抽 position 展平为 (obs, π, z) batch。
+/// v0.23 MuZero 在 `SelfPlayStep` 上扩展 reward/root_value 字段，不新建第三种 sample。
+#[derive(Debug, Clone)]
+pub struct SelfPlayGame {
+    pub steps: Vec<SelfPlayStep>,
+    pub outcome: GameOutcome,
+}
+
+impl BufferItem for SelfPlayGame {}

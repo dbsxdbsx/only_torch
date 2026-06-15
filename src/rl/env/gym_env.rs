@@ -288,7 +288,11 @@ impl<'py> GymEnv<'py> {
     ///
     /// 某些第三方环境需要先导入其 Python 模块才能被 `gymnasium.make` 识别。
     fn try_import_gym_env_module(py: Python<'_>, env_name: &str) {
-        // Platform-v0 (hybrid-platform 包)
+        // 自定义环境统一入口：始终尝试导入 gym_env（注册所有自定义环境），
+        // 没安装则静默跳过。这样新增游戏只改 Python 侧，Rust 无需加 if 分支。
+        let _ = py.import("gym_env");
+
+        // 第三方包仍需按需导入（它们不在 gym_env 包内）
         if env_name == "Platform-v0" {
             let _ = py.import("gym_platform");
         }
@@ -385,6 +389,102 @@ impl<'py> GymEnv<'py> {
     /// 关闭环境
     pub fn close(&self) {
         let _ = self.env.call_method0("close");
+    }
+
+    // ========================================================================
+    // 规划桥接（MCTS 用，可选；SAC 用户无需关心）
+    // ========================================================================
+
+    /// 获取合法动作掩码
+    ///
+    /// 转调 `env.unwrapped.board.legal_mask()`。
+    /// 返回 `Vec<bool>`，长度 = 动作空间大小。
+    ///
+    /// # Panics
+    /// 环境不支持 Board 接口时 panic。
+    pub fn legal_mask(&self) -> Vec<bool> {
+        let board = self.get_board();
+        let mask = board
+            .call_method0("legal_mask")
+            .expect("调用 board.legal_mask() 失败");
+        mask.extract::<Vec<bool>>()
+            .expect("解析 legal_mask 为 Vec<bool> 失败")
+    }
+
+    /// 保存棋盘快照（供 MCTS 树搜索回滚）
+    ///
+    /// 转调 `env.unwrapped.board.get_snapshot()`，返回 Python dict。
+    /// 快照是 Python 对象，在 Rust 侧作为不透明 `Py<PyAny>` 持有。
+    pub fn snapshot(&self) -> Py<PyAny> {
+        let board = self.get_board();
+        board
+            .call_method0("get_snapshot")
+            .expect("调用 board.get_snapshot() 失败")
+            .unbind()
+    }
+
+    /// 从快照恢复棋盘状态
+    ///
+    /// 转调 `env.unwrapped.board.restore(snap)`。
+    pub fn restore(&self, snap: &Py<PyAny>) {
+        let board = self.get_board();
+        board
+            .call_method1("restore", (snap.bind(self.py),))
+            .expect("调用 board.restore() 失败");
+    }
+
+    /// 获取当前落子方
+    ///
+    /// 返回 0（黑）或 1（白）。
+    pub fn current_player(&self) -> u8 {
+        let board = self.get_board();
+        let player = board
+            .call_method0("current_player")
+            .expect("调用 board.current_player() 失败");
+        player.extract::<u8>().expect("解析 current_player 失败")
+    }
+
+    /// 获取棋盘是否已终局
+    pub fn is_terminal(&self) -> bool {
+        let board = self.get_board();
+        let t = board
+            .call_method0("is_terminal")
+            .expect("调用 board.is_terminal() 失败");
+        t.extract::<bool>().expect("解析 is_terminal 失败")
+    }
+
+    /// 在棋盘上直接落子（不经 env.step()，供 MCTS 内部使用）
+    ///
+    /// 返回 `(reward, terminal)`。
+    pub fn board_step(&self, action: usize) -> (f32, bool) {
+        let board = self.get_board();
+        let result = board
+            .call_method1("step", (action,))
+            .expect("调用 board.step() 失败");
+        let reward: f32 = result.get_item(0).expect("获取 reward").extract().expect("解析");
+        let terminal: bool = result.get_item(1).expect("获取 terminal").extract().expect("解析");
+        (reward, terminal)
+    }
+
+    /// 获取棋盘展平观察（f32 向量，供神经网络输入）
+    pub fn board_observation_flat(&self) -> Vec<f32> {
+        let board = self.get_board();
+        let obs = board
+            .call_method0("observation_flat")
+            .expect("调用 board.observation_flat() 失败");
+        obs.extract::<Vec<f32>>()
+            .expect("解析 observation_flat 失败")
+    }
+
+    /// 获取 Board Python 对象引用
+    ///
+    /// 通过 `env.unwrapped.board` 或 `env.board` 获取。
+    fn get_board(&self) -> Bound<'py, PyAny> {
+        self.env
+            .getattr("unwrapped")
+            .and_then(|u| u.getattr("board"))
+            .or_else(|_| self.env.getattr("board"))
+            .expect("环境不支持 Board 接口（需要 GomokuSelfPlayEnv 或 GomokuEnv）")
     }
 
     /// 执行一步动作

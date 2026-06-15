@@ -17,9 +17,9 @@ only_torch 是一个纯 Rust 的 PyTorch 风格玩具框架，当前重点是：
 
 | 项 | 内容 |
 |----|------|
-| **版本** | `0.21.0`（2026-06-15；本地可能超前 `origin/master`，以 `git log` / `CHANGELOG.md` 为准） |
-| **刚闭环** | **v0.21.0 SAC helper + 示例瘦身**：`src/rl/algo/sac/` 函数式 helper 入库、三示例瘦身（≤150 行）、LunarLander-v3 新增（78 行）、`examples/sac/` 目录重组 |
-| **当前主线** | **强化学习** v0.22.0：AlphaZero + MCTS + 五子棋（`python/gym_env/gomoku/`）；见 [RL 路线图](.doc/design/rl_roadmap.md) |
+| **版本** | `0.22.0`（2026-06-15；本地可能超前 `origin/master`，以 `git log` / `CHANGELOG.md` 为准） |
+| **刚闭环** | **v0.22.0 AlphaZero 基础设施**：库内 MCTS（`src/rl/mcts/`）、Python 五子棋环境（`python/gym_env/gomoku/`）、GymEnv 规划桥接、`SelfPlayGame` 入库、`Agent`/`PlanningAgent` 双 trait |
+| **当前主线** | **强化学习** v0.23.0：MuZero CartPole + PPO（`SelfPlayGame` 扩展 + `Rollout`/`RolloutBuffer` + `Dynamics`）；见 [RL 路线图](.doc/design/rl_roadmap.md) |
 | **刻意暂缓** | 演化 **阶段 D**（`CellAttention` ONNX、`Attention` Net2Net 函数保持、Conv2d Attention、3D batched MatMul）——与 RL 零耦合，见 [记忆机制设计 — Phase D](.doc/design/memory_mechanism_design.md#-后续-phase-d刻意未做) |
 | **路线展望** | RL 主线 v0.20–v0.24：**环境一律 `python/gym_env/<游戏>/` + `GymEnv` 桥接**（无 Rust 棋盘）。**架构跑通**：SAC/MuZero/PPO 用 **`CartPole-v0` ≥195**；**终极调优**：v0.24 **[EfficientZero V2](https://arxiv.org/abs/2403.00564)（EZ-V2，第二代，唯一）**（全 `-v1` 环境）。详见 [RL 主线实施计划](../c:/Users/Administrator/.cursor/plans/rl_主线实施计划_5966956a.plan.md) |
 

@@ -41,23 +41,44 @@
 
 ```
 src/rl/
-├── mod.rs              # 导出 env + buffer + Transition
+├── mod.rs              # 导出 env + buffer + algo + mcts + agent
+├── agent.rs            # Agent / PlanningAgent 双 trait（v0.22 新增）
 ├── env/
 │   ├── mod.rs
-│   ├── gym_env.rs      # GymEnv：仅 gymnasium.make（~1000 行，v0.20.0 去 legacy gym）
+│   ├── gym_env.rs      # GymEnv：gymnasium.make + 规划桥接（legal_mask/snapshot/restore）
 │   └── minari.rs       # MinariDataset（离线数据，独立 pip 包）
-├── buffer/             # v0.20.0 新增
-│   ├── transition.rs   # Transition { obs, action, reward, next_obs, terminated, truncated }
-│   └── replay.rs       # ReplayBuffer
+├── buffer/
+│   ├── transition.rs   # Transition（off-policy 五元组）
+│   ├── replay.rs       # ReplayBuffer<T: BufferItem>
+│   └── self_play.rs    # SelfPlayStep / SelfPlayGame / GameOutcome（v0.22 新增）
+├── algo/sac/           # SAC 函数式 helper（v0.21 新增）
+├── mcts/               # MCTS 搜索引擎（v0.22 新增）
+│   ├── mod.rs
+│   ├── types.rs        # ActionPayload, RootOut, RecurrentOut, ChildStat, SearchResult, MctsConfig
+│   ├── traits.rs       # MctsModel, SearchPolicy, Predictor
+│   ├── node.rs         # Node, Edge, Tree（arena 模式）
+│   ├── search.rs       # mcts_search 主循环
+│   └── puct.rs         # PuctPolicy（Dirichlet 噪声 + UCB 选择 + 温度采样）
 └── tests/
     ├── env/            # 环境测试（#[serial]）
-    └── buffer_replay.rs
+    ├── buffer_replay.rs
+    ├── buffer_self_play.rs  # SelfPlayGame 入库测试（v0.22 新增）
+    └── algo_sac.rs     # SAC helper 测试（v0.21 新增）
+
+python/gym_env/                  # 自定义 Gymnasium 环境包（v0.22 新增）
+├── pyproject.toml               # pip install -e python/gym_env
+├── __init__.py                  # gymnasium.register 集中入口
+└── gomoku/                      # 五子棋
+    ├── board.py                 # Board：纯规则 + clone/restore/legal_mask（增量 check_winner）
+    ├── env.py                   # GomokuSelfPlayEnv（无对手）+ GomokuEnv（带 naive 对手）
+    └── opponents.py             # naive 对手策略（random/naive0-3）
 
 examples/sac/
 ├── README.md
 ├── cartpole/           # 主线 + smoke
 ├── pendulum/
-└── platform/           # Hybrid SAC，Platform-v0（取代 moving/ + gym-hybrid）
+├── platform/           # Hybrid SAC，Platform-v0
+└── lunarlander/        # LunarLander-v3 离散 SAC（v0.21 新增）
 ```
 
 ---

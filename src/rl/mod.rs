@@ -5,13 +5,16 @@
 //!
 //! ## 模块结构
 //!
+//! - `agent` - Agent trait（无规划型 + 规划型）
 //! - `env/` - 环境交互层（GymEnv、MinariDataset）
-//! - `buffer/` - 经验回放（Transition、ReplayBuffer）
+//! - `buffer/` - 经验回放（Transition、SelfPlayGame、ReplayBuffer）
 //!
 //! ## 主要组件
 //!
+//! - [`Agent`] / [`PlanningAgent`] - 无规划 / 规划型 Agent trait
 //! - [`GymEnv`] - Gymnasium 环境封装，支持离散/连续/混合动作空间
 //! - [`Transition`] - 单步交互数据（terminated + truncated 分离）
+//! - [`SelfPlayGame`] - 整局 self-play 样本（AlphaZero / MuZero / EZ-V2）
 //! - [`ReplayBuffer`] - 泛型经验回放缓冲区（有放回采样）
 //! - [`MinariDataset`] - Minari 离线 RL 数据集封装
 //!
@@ -41,9 +44,11 @@
 //! });
 //! ```
 
+pub mod agent;
 pub mod algo;
 pub mod buffer;
 mod env;
+pub mod mcts;
 
 #[cfg(test)]
 mod tests;
@@ -54,5 +59,8 @@ pub use env::{
     ObsType,
 };
 
+// 重新导出 agent trait
+pub use agent::{Agent, PlanningAgent};
+
 // 重新导出 buffer 层的核心类型
-pub use buffer::{BufferItem, ReplayBuffer, Transition};
+pub use buffer::{BufferItem, GameOutcome, ReplayBuffer, SelfPlayGame, SelfPlayStep, Transition};
