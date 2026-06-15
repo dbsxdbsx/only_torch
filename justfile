@@ -169,7 +169,7 @@ examples: examples-traditional examples-evolution
 # 运行所有 traditional examples
 # 注:example-chinese-chess-yolov5-onnx-recognize-fen 不在此聚合内,因为它依赖 ~93MB 的 VinXiangQi
 # .onnx 模型(已被 .gitignore),需用户先跑 download_model.py 才能跑通
-examples-traditional: example-xor example-iris example-sine example-mnist example-mnist-cnn example-single-object-segmentation example-single-object-detection example-multi-instance-segmentation example-overlapping-shapes-semantic-segmentation example-overlapping-shapes-unet-lite-segmentation example-deformable-conv2d-segmentation example-overlapping-fixed-slot-instance-segmentation example-mnist-gan example-california example-parity example-dual-input example-siamese example-dual-output example-multi-io example-multi-label example-chinese-chess-cnn-onnx-finetune example-cartpole-sac example-pendulum-sac example-moving-sac
+examples-traditional: example-xor example-iris example-sine example-mnist example-mnist-cnn example-single-object-segmentation example-single-object-detection example-multi-instance-segmentation example-overlapping-shapes-semantic-segmentation example-overlapping-shapes-unet-lite-segmentation example-deformable-conv2d-segmentation example-overlapping-fixed-slot-instance-segmentation example-mnist-gan example-california example-parity example-dual-input example-siamese example-dual-output example-multi-io example-multi-label example-chinese-chess-cnn-onnx-finetune example-cartpole-sac example-pendulum-sac example-platform-sac
 
 # 运行所有 parity examples（RNN/LSTM/GRU）
 example-parity: example-parity-fixed example-parity-var example-parity-lstm example-parity-gru
@@ -289,9 +289,19 @@ example-pendulum-sac:
     @echo "=== Running Pendulum SAC [{{_blas_name}}] (requires Python + gymnasium) ==="
     cargo run --example pendulum_sac {{_blas_flag}}
 
-example-moving-sac:
-    @echo "=== Running Moving Hybrid SAC [{{_blas_name}}] (requires Python + gymnasium) ==="
-    cargo run --example moving_sac {{_blas_flag}}
+example-platform-sac:
+    @echo "=== Running Platform Hybrid SAC [{{_blas_name}}] (requires Python + gymnasium + hybrid-platform) ==="
+    cargo run --example platform_sac {{_blas_flag}}
+
+# ---------- RL 聚合 ----------
+
+# 运行所有 RL examples（需 Python + gymnasium）
+examples-rl: example-cartpole-sac example-pendulum-sac example-platform-sac
+
+# 验证 Platform-v0 Python 环境可用
+py-gym-platform:
+    @echo "=== Checking Platform-v0 (hybrid-platform) ==="
+    python -c "import gymnasium as gym; import gym_platform; env = gym.make('Platform-v0'); obs, _ = env.reset(); print(f'Platform-v0 OK, obs={obs}'); env.close()"
 
 # ---------- Evolution（神经架构自动演化）----------
 

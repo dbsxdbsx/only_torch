@@ -302,7 +302,7 @@ $$
 
 作为 TanhNormal 的备选连续策略后端。Beta 分布天然有界（[0, 1]，可缩放），无需 Jacobian 修正，在高维连续动作 + 严格边界控制的场景有优势。
 
-详见 [Beta 分布备选方案分析](../../examples/sac/beta_distribution_note.md)。
+详见 [Beta 分布备选方案分析](../../examples/traditional/sac/beta_distribution_note.md)。
 
 **依赖**：需要实现 `src/nn/distributions/beta.rs`。
 
