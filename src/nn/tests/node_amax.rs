@@ -12,7 +12,7 @@
  */
 
 use crate::nn::graph::Graph;
-use crate::nn::{Init, Var, VarLossOps};
+use crate::nn::{Init, Var, VarLossOps, VarReduceOps, VarShapeOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 use std::rc::Rc;
@@ -443,4 +443,61 @@ fn test_create_amax_node_drop_releases() {
     }
     assert!(weak_amax.upgrade().is_none());
     assert!(weak_input.upgrade().is_none());
+}
+
+// ==================== Var 级 amax/amin 包装器测试 ====================
+
+/// Var 级 `amax(axis)` / `amin(axis)` 包装器前向正确（复用底层已验证的 Amax/Amin 节点）
+#[test]
+fn test_var_amax_amin_wrappers() {
+    let graph = Graph::new();
+    let x = graph
+        .input(&Tensor::new(&[1.0, 5.0, 3.0, 2.0], &[1, 4]))
+        .unwrap();
+
+    let mx = x.amax(1);
+    let mn = x.amin(1);
+    mx.forward().unwrap();
+    mn.forward().unwrap();
+
+    assert_eq!(mx.value().unwrap().unwrap().data_as_slice(), &[5.0]);
+    assert_eq!(mn.value().unwrap().unwrap().data_as_slice(), &[1.0]);
+}
+
+/// min-max 归一化组合（amax/amin + reshape + repeat + sub/div）前向 + 反向。
+///
+/// 复刻 MuZero latent 归一化的算子路径，端到端确认基础组件正确（前向落 [0,1]、反向有限）。
+#[test]
+fn test_var_min_max_normalize_composition() {
+    let graph = Graph::new();
+    let x = graph.parameter(&[1, 4], Init::Zeros, "x").unwrap();
+    x.set_value(&Tensor::new(&[1.0, 5.0, 3.0, 2.0], &[1, 4]))
+        .unwrap();
+
+    let dim = 4;
+    let min_v = x.amin(1).reshape(&[1, 1]).unwrap();
+    let max_v = x.amax(1).reshape(&[1, 1]).unwrap();
+    let range = (&max_v - &min_v) + 1e-5_f32;
+    let min_b = min_v.repeat(&[1, dim]).unwrap();
+    let range_b = range.repeat(&[1, dim]).unwrap();
+    let y = &(&x - &min_b) / &range_b;
+
+    y.forward().unwrap();
+    let out = y.value().unwrap().unwrap();
+    assert_eq!(out.shape(), &[1, 4]);
+    // (x - min) / (max - min) = (x - 1) / 4 = [0, 1, 0.5, 0.25]
+    assert_abs_diff_eq!(out[[0, 0]], 0.0, epsilon = 1e-3);
+    assert_abs_diff_eq!(out[[0, 1]], 1.0, epsilon = 1e-3);
+    assert_abs_diff_eq!(out[[0, 2]], 0.5, epsilon = 1e-3);
+    assert_abs_diff_eq!(out[[0, 3]], 0.25, epsilon = 1e-3);
+
+    // 反向：经 amin/amax（梯度路由极值）+ repeat（梯度求和）回传，须有限且形状正确
+    let loss = y.sum().mse_loss(&Tensor::zeros(&[1, 1])).unwrap();
+    loss.forward().unwrap();
+    loss.backward().unwrap();
+    let grad = x.grad().unwrap().unwrap();
+    assert_eq!(grad.shape(), &[1, 4]);
+    for i in 0..4 {
+        assert!(grad[[0, i]].is_finite(), "grad[{i}] 应有限，实际 {}", grad[[0, i]]);
+    }
 }

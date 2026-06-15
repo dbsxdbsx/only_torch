@@ -88,6 +88,34 @@ pub trait VarReduceOps {
     /// // row_mean = [[2.], [5.]]
     /// ```
     fn mean_axis(&self, axis: usize) -> Var;
+
+    /// 沿指定轴取最大值（**移除该轴**，对齐 PyTorch `tensor.amax(dim)`，keepdims=false）
+    ///
+    /// 反向传播：梯度只流向该轴上取得最大值的位置，并列最大值平分。
+    ///
+    /// # 参数
+    /// - `axis`: 归约轴
+    ///
+    /// # 输出
+    /// 原形状移除第 `axis` 维（若结果为空则保留 `[1]`）
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let x = graph.input(&Tensor::new(&[1., 5., 3., 2.], &[1, 4])).unwrap();
+    /// let m = x.amax(1);  // [1, 4] -> [1]，值为 5
+    /// ```
+    fn amax(&self, axis: usize) -> Var;
+
+    /// 沿指定轴取最小值（**移除该轴**，对齐 PyTorch `tensor.amin(dim)`，keepdims=false）
+    ///
+    /// 反向传播：梯度只流向该轴上取得最小值的位置，并列最小值平分。
+    ///
+    /// # 参数
+    /// - `axis`: 归约轴
+    ///
+    /// # 输出
+    /// 原形状移除第 `axis` 维（若结果为空则保留 `[1]`）
+    fn amin(&self, axis: usize) -> Var;
 }
 
 impl VarReduceOps for Var {
@@ -124,6 +152,24 @@ impl VarReduceOps for Var {
             .borrow_mut()
             .create_mean_node(Rc::clone(self.node()), Some(axis), None)
             .expect("创建 Mean 节点失败");
+        Self::new_with_rc_graph(node, &graph)
+    }
+
+    fn amax(&self, axis: usize) -> Var {
+        let graph = self.graph();
+        let node = graph
+            .borrow_mut()
+            .create_amax_node(Rc::clone(self.node()), axis, None)
+            .expect("创建 Amax 节点失败");
+        Self::new_with_rc_graph(node, &graph)
+    }
+
+    fn amin(&self, axis: usize) -> Var {
+        let graph = self.graph();
+        let node = graph
+            .borrow_mut()
+            .create_amin_node(Rc::clone(self.node()), axis, None)
+            .expect("创建 Amin 节点失败");
         Self::new_with_rc_graph(node, &graph)
     }
 }

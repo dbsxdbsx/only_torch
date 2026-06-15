@@ -18,6 +18,12 @@ pub struct SelfPlayStep {
     pub reward: f32,
     /// MCTS 搜索根节点的 value 估计（MuZero 需要，AlphaZero 可省略）
     pub root_value: Option<f32>,
+    /// 该步是否为 MDP 真终止（杆倒 / 到达目标），区别于 truncation（步数上限截断）。
+    ///
+    /// 镜像 Gymnasium 的 `terminated`：n-step value target 仅在 `terminated` 时停止
+    /// bootstrap；**truncation（如 CartPole 撞 200 步）仍需 bootstrap**，否则会系统性
+    /// 低估满分局末端的 value（见 `compute_n_step_target`）。非终止步与 AlphaZero 填 `false`。
+    pub terminated: bool,
 }
 
 /// 终局结果

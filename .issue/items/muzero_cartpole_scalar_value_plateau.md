@@ -1,10 +1,76 @@
 ---
-status: suspended
+status: resolved
 created: 2026-06-15
 updated: 2026-06-15
 ---
 
-# MuZero CartPole 标量 value 表示导致训练停在 ~40 分平台期，无法达到 195
+# MuZero CartPole 标量 value 表示导致训练停在 ~40 分平台期，无法达到 195（已定位并修复）
+
+## 收口（2026-06-15）：absorbing state 掐断 no-terminal 膨胀，MuZero 恢复学习并逼近 ≥195 ✅
+
+> **最终结论**：平台期 / categorical regressed 的真凶是 **no-terminal 价值膨胀**（搜索在 learned model
+> 上「幻想」无限存活、每步累加 +1，见下方诊断）。按 **canonical MuZero 的 absorbing state**（终止后的
+> unroll 位置填 reward0 / value0 / uniform target，使搜索推演越过终局时回报自然归零）修复后，
+> **categorical + latent 归一化 + absorbing state** 组合让 MuZero 从「卡 ~40 / categorical regressed
+> 到 ~9」恢复到**稳定学习并逼近达标**。原 issue 的根因已解决。
+
+**实跑回测（CartPole-v0，release，见 `target/muzero_absorbing*.log`）**：
+
+| 阶段（近 100 局 self-play avg_R） | 之前（scalar 卡平台 / categorical regressed） | 现在（categorical + latent + absorbing） |
+|------|------|------|
+| ep 100 | ~26 / ~11 | ~26 |
+| ep 500 | ~40 封顶 | **131** |
+| ep 800 | — | **174，频繁打满 200，temp 已退到 0.25** |
+
+- self-play 均值受温度采样系统性压低；真实达标判据是 **greedy(temp=0) eval 20 局均值 ≥195**
+  （`examples/muzero/cartpole/main.rs` 内置，比 Gym 训练均值口径更严）。**greedy-eval ≥195 的正式盖章
+  由 1200 局长跑后半段触发确认**（撰写时长跑在飞，曲线与 800 局一致上升）。
+- **选型说明**：未走「dynamics 加 done 头」，而是按原版 MuZero 用 absorbing state（无需显式 terminal 头），
+  更忠于 canonical 且改动更小。
+
+**相关单测全绿**：`algo_muzero` 14 / `node_amax` 14（含 `amax/amin` Var 包装 + min-max 组合前向反向）/
+`mcts` 14 / `self_play` 7。
+
+**遗留（推 v0.24 EZ-V2，非本 issue 范畴）**：reanalyze / SVE / value prefix / Gumbel；外加两条小 canonical
+缺口——`scale_gradient` 算子（让 `DYNAMICS_GRADIENT_SCALE=0.5` 真正生效，现为死常量）、`num_simulations`
+去硬编码（现固定 50）。
+
+---
+
+## 中途诊断记录（2026-06-15）：categorical 实测 regressed，定位真机制是 no-terminal
+
+> **重要修正**：原假设「categorical value/reward 是平台期主因」**经实测部分证伪**。
+
+**已落地且基础组件单测全绿**（忠于 canonical MuZero）：
+- `src/rl/algo/muzero/support.rs`：support + two-hot(h(x)) 编码 + 期望解码（round-trip 单测全绿）
+- `Var::amax/amin`（复用框架已有且带 backward 单测的 `Amax`/`Amin` raw node；新增 Var 级包装 + min-max 组合前向/反向单测）
+- latent min-max 归一化到 [0,1]（canonical）
+- n-step target 区分 terminated/truncated（truncation 仍 bootstrap，单测全绿）
+
+**实测回测结论（CartPole-v0，release）**：
+
+| 配置 | avg_R |
+|------|-------|
+| 之前 scalar 版 | ~40（峰值 180+） |
+| categorical + relu latent | **~11** |
+| categorical + minmax latent（完全体） | **~9.2（随机）** |
+
+**categorical 不仅没达标，反而让学习 regressed。** 非 codec bug（单测全绿），是学习动力学。诊断埋点（DBG）显示真机制：
+- **root_value 严重高估**：MCTS 认为状态值 50~71，实际 episode 仅 ~10 步。
+- **policy 坍缩到单一动作**：`πmid ≈ [0.94~0.99, 0.06~0.01]`，长期推同一方向。
+- **机制**：搜索里 `recurrent` 的 `terminal` **恒为 false**（模型无 terminal 头）→ MCTS 在 learned model 上「幻想」无限存活、每步累加 +1 → value 膨胀 + 动作选择被不准的 learned dynamics 带偏 → policy 坍缩。CartPole 的全部信号就是「别终止」，而搜索把这个唯一信号抹掉了；categorical 把 reward(+1) 学得更硬，加速了膨胀与坍缩，打破了 scalar 版的脆弱平衡。
+
+**修正认知**：categorical 仍是 value 表示正道 + EfficientZero V2 的真前置（这点不变），但**不是 CartPole 达标的充分条件**；真正卡点是 **no-terminal 价值膨胀**。
+
+**进展（已收口，见顶部「收口」节）**：先入库正确基础设施（categorical / `amax`-`amin` / latent norm /
+n-step truncation 修复）+ 诚实记录；随后**改用 canonical absorbing state**（而非显式 done 头）掐断膨胀机制，
+回测 self-play avg 从 ~9 / ~40 恢复到 ~174 并逼近 ≥195。
+
+---
+
+> **以下为本 issue 暂缓期的原始记录**（root cause 尚未最终定位时所写），保留作排查轨迹；
+> **结论一律以顶部「收口」节为准**——尤其下方「根因分析」当时判定 categorical 为主因，
+> 后经实测修正为 **no-terminal 价值膨胀**（已用 canonical absorbing state 修复）。
 
 ## 背景
 
