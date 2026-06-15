@@ -1,13 +1,54 @@
 # 更新日志
 
-## [Unreleased] - 待提交
+## [0.20.0] - 2026-06-15
+
+> RL 主线首个**代码**版本：Gymnasium-only 环境清理 + buffer 基础 + smoke 门禁。「发版」= bump 版本号 + 更新 CHANGELOG，不 `cargo publish`。
+
+### Added
+
+- **feat(rl): `Transition` + `ReplayBuffer<T: BufferItem>` 入库**
+  - `Transition`：单步交互数据，存 `terminated` + `truncated`（不合并 `done`），含 action 编码约定 doc
+  - `BufferItem` trait：`Clone + 'static`（砍 `Send`，CPU-only 单线程）
+  - `ReplayBuffer<T>`：泛型 FIFO 淘汰 + 有放回 `gen_range` 采样（禁全长索引）
+  - 15 个纯 Rust 单元测试（FIFO / 有放回 / 空 buffer / seed 可复现 / action shape×3 / 终止字段保真 / clone 独立）
+
+- **feat(rl): `cartpole_sac` smoke 模式（`SMOKE=1`）**
+  - 3 episode 短跑，每步断言 `loss.is_finite()`，不验证 reward 收敛
+  - justfile `smoke-cartpole-sac` 目标
+
+- **feat(rl): `GymEnv::flatten_obs` Tuple 观察展平 helper**
+  - 按空间原生顺序拼接所有子空间为单一 `Vec<f32>`
 
 ### Changed
 
-- **docs(rl): RL 实施路线整体后移一版（0.19 占用规划版本号后顺延）**
-  - 因 0.19.0 作为「规划 / 文档发版」占用 0.19 版本号，后续**代码**里程碑统一后移一版：环境/buffer/smoke **v0.19→v0.20**、SAC helper + 示例瘦身 **v0.20→v0.21**、AlphaZero + MCTS **v0.21→v0.22**、MuZero + PPO **v0.22→v0.23**、EfficientZero V2 **v0.23→v0.24**（长期 backlog ≥ **v0.25**）
-  - 同步：`rl_roadmap.md`（§7 标题与锚点 → v0.20.0）、`AGENTS.md`（当前主线 v0.20.0 / 路线 v0.20–v0.24）、`rl_python_env_setup.md`、`examples/traditional/sac/README.md`、主线实施计划 plan
-  - 未改：gym 库版本引用（如 `shimmy[gym-v21]`）、演化特性版本（`InsertLayer` 0.20）等与 RL 路线无关的版本号
+- **refactor(rl): Gymnasium-only `GymEnv`（Phase 0 legacy 大清理）**
+  - 删除 `use_legacy_gym` 字段及所有 gym 回退分支（reset / step / get_module_name）
+  - 删除 `try_make_env` gym 回退、`extract_gym_reset_obs`、`gym_hybrid` 导入
+  - `gymnasium.make` 失败时 panic + 中文安装指引（不再 `import gym`）
+  - `GymEnv::step` 返回 `(obs, reward, terminated, truncated)` 四元组
+  - legacy 三条 grep 全零：`import("gym")` / `use_legacy_gym` / `gym_hybrid`
+
+- **refactor(rl): Platform-v0 替换 Moving-v0（Phase 0b）**
+  - `examples/traditional/sac/moving/` → `platform/`，Cargo.toml `moving_sac` → `platform_sac`
+  - 模型简化：统一连续头（3 维），无条件分支
+  - `try_import_gym_env_module`：`Platform-v0 → import gym_platform`
+  - 3 个 Platform-v0 Rust 测试 + Python `test_07_hybrid.py` 全面重写
+
+- **refactor(rl): 三个 SAC 示例 TD target 改用 `1 - terminated`**
+  - 修正 CartPole truncation 场景的 bootstrap 错误
+
+### Removed
+
+- `Step` struct（已替换为 `Transition`）
+- Moving-v0 / Sliding-v0 测试用例（已替换为 Platform-v0）
+- `import gym` / `gym_hybrid` 所有代码路径
+
+### Docs
+
+- `rl_roadmap.md`：新增 §2.2.1b 覆盖边界表 + Phase 0 大清理范围逐文件表
+- `rl_python_env_setup.md`：Gymnasium 版本锁定 `>=1.3.0,<2.0` + 实测记录
+- `distributions_design.md` / `rl_roadmap.md`：修正 `examples/sac/` 断链为 `examples/traditional/sac/`
+- justfile：新增 `examples-rl` / `py-gym-platform` / `smoke-cartpole-sac` 目标
 
 ## [0.19.0] - 2026-06-15
 

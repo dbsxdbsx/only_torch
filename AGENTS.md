@@ -17,15 +17,15 @@ only_torch 是一个纯 Rust 的 PyTorch 风格玩具框架，当前重点是：
 
 | 项 | 内容 |
 |----|------|
-| **版本** | `0.19.0`（2026-06-15；本地可能超前 `origin/master`，以 `git log` / `CHANGELOG.md` 为准） |
-| **刚闭环** | vision / detection 栈；Attention / Transformer Layer + `CellAttention` 演化主路径（Phase 3.5 / 4.5 ✅） |
-| **当前主线** | **强化学习** v0.20.0：**先** Gymnasium-only `GymEnv`（Phase 0），再 `Transition`/`ReplayBuffer` 入库；见 [RL 路线图 §7](.doc/design/rl_roadmap.md#7-v0200-实施计划) |
+| **版本** | `0.20.0`（2026-06-15；本地可能超前 `origin/master`，以 `git log` / `CHANGELOG.md` 为准） |
+| **刚闭环** | **v0.20.0 RL 环境/buffer/smoke**：Gymnasium-only `GymEnv`（legacy 清零）、`Transition`+`ReplayBuffer<T>` 入库、Platform-v0 替代 Moving-v0、smoke 门禁 |
+| **当前主线** | **强化学习** v0.21.0：SAC helper 入库 + 示例瘦身 + LunarLander-v3；见 [RL 路线图](.doc/design/rl_roadmap.md) |
 | **刻意暂缓** | 演化 **阶段 D**（`CellAttention` ONNX、`Attention` Net2Net 函数保持、Conv2d Attention、3D batched MatMul）——与 RL 零耦合，见 [记忆机制设计 — Phase D](.doc/design/memory_mechanism_design.md#-后续-phase-d刻意未做) |
 | **路线展望** | RL 主线 v0.20–v0.24：**环境一律 `python/gym_env/<游戏>/` + `GymEnv` 桥接**（无 Rust 棋盘）。**架构跑通**：SAC/MuZero/PPO 用 **`CartPole-v0` ≥195**；**终极调优**：v0.24 **[EfficientZero V2](https://arxiv.org/abs/2403.00564)（EZ-V2，第二代，唯一）**（全 `-v1` 环境）。详见 [RL 主线实施计划](../c:/Users/Administrator/.cursor/plans/rl_主线实施计划_5966956a.plan.md) |
 
 **进度符号**（设计文档统一口径）：✅ Phase 验收范围内已完成 · ⏳ 已识别、留后续 Phase · 🔲 可选增强 · 📦 已归档历史路径。
 
-**接手 RL 时建议顺序**：读 `rl_roadmap.md` §7 → 配环境 [`.doc/rl_python_env_setup.md`](.doc/rl_python_env_setup.md)（**仅 Gymnasium**）→ Phase 0 改 `gym_env.rs` → `just test-filter rl` → Phase 1 buffer → `just example-cartpole-sac` / smoke。
+**接手 RL 时建议顺序**：读 `rl_roadmap.md` → 配环境 [`.doc/rl_python_env_setup.md`](.doc/rl_python_env_setup.md)（**仅 Gymnasium**）→ `just test-filter buffer_replay`（15 测试确认 buffer）→ `just smoke-cartpole-sac`（管线验证）→ 推进 v0.21（helper 入库 + 示例瘦身）。
 
 **接手 Attention 阶段 D 时**：先读 [记忆机制设计 — 实现状态速览](.doc/design/memory_mechanism_design.md#-实现状态速览)（含 105 个相关单元测试与 IT-* 示例表），勿假设「打勾 = ONNX 也做完」。
 
