@@ -541,6 +541,28 @@ impl<'py> GymEnv<'py> {
         total_len
     }
 
+    /// 将分块观察展平为单个向量
+    ///
+    /// 对于 Tuple 观察空间（如 Platform-v0 的 `Tuple(Box(9,), Discrete(200))`），
+    /// `reset`/`step` 返回 `Vec<Vec<f32>>`（每个子空间一个 Vec）。
+    /// 本方法按**空间原生顺序**拼接所有子空间为单一 `Vec<f32>`。
+    ///
+    /// - Box 子空间：直接拼入
+    /// - Discrete 子空间：以标量 f32 拼入（即 `[idx as f32]`）
+    ///
+    /// 对于单一观察空间（非 Tuple），等价于 `obs_vec[0].clone()`。
+    pub fn flatten_obs(&self, obs_vec: &[Vec<f32>]) -> Vec<f32> {
+        if obs_vec.len() == 1 {
+            return obs_vec[0].clone();
+        }
+        let total_len = self.get_flatten_observation_len();
+        let mut flat = Vec::with_capacity(total_len);
+        for sub in obs_vec {
+            flat.extend_from_slice(sub);
+        }
+        flat
+    }
+
     // ========================================================================
     // 内部方法
     // ========================================================================

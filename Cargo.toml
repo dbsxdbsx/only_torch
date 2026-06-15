@@ -263,8 +263,8 @@
     path="examples/traditional/sac/pendulum/main.rs"
 
 [[example]]
-    name="moving_sac"
-    path="examples/traditional/sac/moving/main.rs"
+    name="platform_sac"
+    path="examples/traditional/sac/platform/main.rs"
 
 [[example]]
     name="evolution_xor"

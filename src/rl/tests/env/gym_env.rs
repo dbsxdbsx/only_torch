@@ -374,6 +374,98 @@ fn test_module_name_is_gymnasium() {
 }
 
 // ============================================================================
+// 混合动作环境（Platform-v0）
+// ============================================================================
+
+/// 测试 Platform-v0 混合动作空间结构
+///
+/// Platform-v0 动作空间：Tuple(Discrete(3), Tuple(Box(1,), Box(1,), Box(1,)))
+/// 观察空间：Tuple(Box(9,), Discrete(200))
+#[test]
+#[serial]
+fn test_platform_hybrid_action_space() {
+    Python::attach(|py| {
+        let env = GymEnv::new(py, "Platform-v0");
+
+        assert_eq!(env.get_action_type(), ActionType::Mix);
+        assert_eq!(env.get_module_name(), "gymnasium");
+
+        // 观察空间：Tuple → 扁平化后 10 维（9 + 1）
+        assert_eq!(env.get_flatten_observation_len(), 10);
+
+        // 动作空间：1 离散(3选1) + 3 连续参数 = 4 维
+        assert_eq!(env.get_action_num_for_each_step(), 4);
+
+        let action_ranges = env.get_all_action_valid_range();
+        assert_eq!(action_ranges.len(), 4, "混合动作应展平为 4 个维度");
+
+        // [0] 离散：Discrete(3)
+        assert!(action_ranges[0].is_discrete_action());
+        assert_eq!(action_ranges[0].get_discrete_action_selectable_num(), 3);
+
+        // [1..=3] 连续参数
+        for i in 1..=3 {
+            assert!(!action_ranges[i].is_discrete_action());
+        }
+
+        env.close();
+    });
+}
+
+/// 测试 Platform-v0 的 Tuple obs flatten
+#[test]
+#[serial]
+fn test_platform_tuple_obs_flatten() {
+    Python::attach(|py| {
+        let env = GymEnv::new(py, "Platform-v0");
+
+        let obs_vec = env.reset(Some(42));
+
+        // Tuple obs 应返回 2 个子空间
+        assert_eq!(obs_vec.len(), 2, "Platform obs 应有 2 个子空间");
+        assert_eq!(obs_vec[0].len(), 9, "Box(9,) 子空间长度应为 9");
+        assert_eq!(obs_vec[1].len(), 1, "Discrete(200) 子空间长度应为 1");
+
+        // flatten 后应为 10 维
+        let flat = env.flatten_obs(&obs_vec);
+        assert_eq!(flat.len(), 10);
+        assert_eq!(&flat[..9], &obs_vec[0][..]);
+        assert_eq!(flat[9], obs_vec[1][0]);
+
+        env.close();
+    });
+}
+
+/// 测试 Platform-v0 采样和执行
+#[test]
+#[serial]
+fn test_platform_sample_and_step() {
+    Python::attach(|py| {
+        let env = GymEnv::new(py, "Platform-v0");
+        let _obs = env.reset(Some(42));
+
+        for _ in 0..3 {
+            let sampled = env.sample_action();
+            assert_eq!(sampled.len(), 4);
+
+            // 离散部分：0, 1, 或 2
+            assert!(sampled[0] >= 0.0 && sampled[0] < 3.0);
+            assert_eq!(sampled[0], sampled[0].floor());
+
+            let (next_obs, _reward, terminated, truncated) = env.step(&sampled);
+            // Tuple obs: 2 子空间
+            assert_eq!(next_obs.len(), 2);
+
+            if terminated || truncated {
+                break;
+            }
+        }
+
+        env.close();
+    });
+}
+
+// ============================================================================
 // 自定义环境（五子棋）
 // ============================================================================
 
