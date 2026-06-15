@@ -6,17 +6,9 @@
 //! - 多维连续动作环境（BipedalWalker）
 //! - 高维连续动作环境（MuJoCo Ant）
 //! - 图像观察环境（Atari Breakout）
-//! - 混合动作环境（gym-hybrid Moving/Sliding）
+//! - 混合动作环境（Phase 0b: Platform-v0）
 //! - 自定义环境（五子棋 Gomoku）
-//!
-//! 对应 Python 测试：
-//! - `tests/python/gym/test_01_basic_discrete.py`
-//! - `tests/python/gym/test_02_basic_continuous.py`
-//! - `tests/python/gym/test_03_box2d.py`
-//! - `tests/python/gym/test_04_mujoco.py`
-//! - `tests/python/gym/test_05_atari.py`
-//! - `tests/python/gym/test_07_hybrid.py`
-//! - `tests/python/gym/test_08_gomoku.py`
+//! - terminated / truncated 分离验证
 //!
 //! 注意：所有测试使用 `#[serial]` 确保串行执行，避免 Python 模块导入竞争
 
@@ -62,7 +54,7 @@ fn test_discrete_env() {
         assert_eq!(obs[0].len(), 4);
 
         let action = vec![0.0];
-        let (next_obs, reward, _done) = env.step(&action);
+        let (next_obs, reward, _terminated, _truncated) = env.step(&action);
         assert_eq!(next_obs[0].len(), 4);
         assert!(reward > 0.0); // CartPole 每步奖励 1.0
 
@@ -112,7 +104,7 @@ fn test_continuous_1d_env() {
         assert_eq!(obs[0].len(), 3);
 
         let action = vec![0.5];
-        let (next_obs, reward, _done) = env.step(&action);
+        let (next_obs, reward, _terminated, _truncated) = env.step(&action);
         assert_eq!(next_obs[0].len(), 3);
         assert!(reward <= 0.0); // Pendulum 奖励通常为负
 
@@ -161,7 +153,7 @@ fn test_continuous_multi_dim_env() {
         assert_eq!(obs[0].len(), 24);
 
         let action = vec![0.0, 0.0, 0.0, 0.0];
-        let (next_obs, _reward, _done) = env.step(&action);
+        let (next_obs, _reward, _terminated, _truncated) = env.step(&action);
         assert_eq!(next_obs[0].len(), 24);
 
         env.close();
@@ -198,7 +190,7 @@ fn test_high_dim_continuous_env() {
         let action = env.sample_action();
         assert_eq!(action.len(), 8);
 
-        let (next_obs, _reward, _done) = env.step(&action);
+        let (next_obs, _reward, _terminated, _truncated) = env.step(&action);
         assert!(!next_obs[0].is_empty());
 
         env.close();
@@ -259,7 +251,7 @@ fn test_image_obs_env() {
         assert_eq!(obs[0].len(), 210 * 160 * 3);
 
         let action = vec![0.0]; // NOOP
-        let (next_obs, _reward, _done) = env.step(&action);
+        let (next_obs, _reward, _terminated, _truncated) = env.step(&action);
         assert_eq!(next_obs[0].len(), 210 * 160 * 3);
 
         // 采样验证
@@ -321,10 +313,10 @@ fn test_multiple_steps() {
 
         for _ in 0..10 {
             let action = env.sample_action();
-            let (_next_obs, reward, done) = env.step(&action);
+            let (_next_obs, reward, terminated, truncated) = env.step(&action);
             total_reward += reward;
 
-            if done {
+            if terminated || truncated {
                 break;
             }
         }
@@ -335,191 +327,48 @@ fn test_multiple_steps() {
 }
 
 // ============================================================================
-// 混合动作环境（gym-hybrid）
+// 终止语义测试
 // ============================================================================
 
-/// 测试混合动作环境的完整动作空间结构（Moving-v0）
+/// 测试 step 透出 terminated / truncated（不合并为 done）
 ///
-/// Moving-v0 动作空间结构：
-/// - Tuple(Discrete(3), Box(2,))
-/// - 展平后 3 个动作：
-///   - [0] 离散: 取值 0~2，共 3 个选择（加速/转向/刹车）
-///   - [1] 连续: 范围 0.0~1.0（acceleration 参数）
-///   - [2] 连续: 范围 -1.0~1.0（rotation 参数）
+/// CartPole-v1 撞 500 步为 truncated（非 terminated）
 #[test]
 #[serial]
-fn test_hybrid_action_space_structure() {
+fn test_step_terminated_truncated_separation() {
     Python::attach(|py| {
-        let env = GymEnv::new(py, "Moving-v0");
-
-        // 验证智能加载：自动回退到 gym 模块
-        assert_eq!(env.get_module_name(), "gym");
-        assert_eq!(env.get_action_type(), ActionType::Mix);
-
-        // 验证动作维度数：1 离散 + 2 连续 = 3
-        assert_eq!(env.get_action_num_for_each_step(), 3);
-
-        // 获取所有动作的详细范围
-        let action_ranges = env.get_all_action_valid_range();
-        assert_eq!(action_ranges.len(), 3, "混合动作应展平为 3 个维度");
-
-        // [0] 离散动作：取值 0~2，共 3 个选择
-        assert!(
-            action_ranges[0].is_discrete_action(),
-            "第一个动作应为离散类型"
-        );
-        assert_eq!(
-            action_ranges[0].get_discrete_action_selectable_num(),
-            3,
-            "离散动作应有 3 个选择 (0, 1, 2)"
-        );
-
-        // [1] 连续动作：范围 0.0~1.0
-        assert!(
-            !action_ranges[1].is_discrete_action(),
-            "第二个动作应为连续类型"
-        );
-        let (low1, high1) = action_ranges[1].get_continuous_action_low_high();
-        assert!(
-            (low1 - 0.0).abs() < 0.01,
-            "连续动作 [1] 下界应为 0.0，实际为 {}",
-            low1
-        );
-        assert!(
-            (high1 - 1.0).abs() < 0.01,
-            "连续动作 [1] 上界应为 1.0，实际为 {}",
-            high1
-        );
-
-        // [2] 连续动作：范围 -1.0~1.0
-        assert!(
-            !action_ranges[2].is_discrete_action(),
-            "第三个动作应为连续类型"
-        );
-        let (low2, high2) = action_ranges[2].get_continuous_action_low_high();
-        assert!(
-            (low2 - (-1.0)).abs() < 0.01,
-            "连续动作 [2] 下界应为 -1.0，实际为 {}",
-            low2
-        );
-        assert!(
-            (high2 - 1.0).abs() < 0.01,
-            "连续动作 [2] 上界应为 1.0，实际为 {}",
-            high2
-        );
-
-        env.close();
-    });
-}
-
-/// 测试混合动作的采样和执行
-///
-/// 验证：
-/// - 采样结果符合各维度的取值范围
-/// - step 能正确处理混合动作
-#[test]
-#[serial]
-fn test_hybrid_action_sample_and_step() {
-    Python::attach(|py| {
-        let env = GymEnv::new(py, "Moving-v0");
-
+        let env = GymEnv::new(py, "CartPole-v1");
         let _obs = env.reset(Some(42));
 
-        // 多次采样，验证每个维度的值都在有效范围内
-        for _ in 0..5 {
-            let sampled = env.sample_action();
-            assert_eq!(sampled.len(), 3);
-
-            // [0] 离散: 0, 1, 或 2
-            assert!(
-                sampled[0] >= 0.0 && sampled[0] < 3.0,
-                "离散动作应在 [0, 3) 范围，实际为 {}",
-                sampled[0]
-            );
-            assert_eq!(
-                sampled[0],
-                sampled[0].floor(),
-                "离散动作应为整数，实际为 {}",
-                sampled[0]
-            );
-
-            // [1] 连续: 0.0~1.0
-            assert!(
-                sampled[1] >= 0.0 && sampled[1] <= 1.0,
-                "连续动作 [1] 应在 [0, 1] 范围，实际为 {}",
-                sampled[1]
-            );
-
-            // [2] 连续: -1.0~1.0
-            assert!(
-                sampled[2] >= -1.0 && sampled[2] <= 1.0,
-                "连续动作 [2] 应在 [-1, 1] 范围，实际为 {}",
-                sampled[2]
-            );
-        }
-
-        // 手动构造动作并执行 step
-        // 动作含义：action=1 (转向), acceleration=0.5, rotation=0.3
-        let action = vec![1.0, 0.5, 0.3];
-        let (next_obs, _reward, _done) = env.step(&action);
-        assert_eq!(next_obs[0].len(), 10);
-
-        env.close();
-    });
-}
-
-/// 测试混合动作环境多步执行（Sliding-v0）
-///
-/// 验证混合动作空间在连续交互中的稳定性
-#[test]
-#[serial]
-fn test_hybrid_action_multiple_steps() {
-    Python::attach(|py| {
-        let env = GymEnv::new(py, "Sliding-v0");
-
-        assert_eq!(env.get_action_type(), ActionType::Mix);
-        assert_eq!(env.get_module_name(), "gym");
-
-        let _obs = env.reset(Some(42));
-        let mut total_steps = 0;
-
-        // 执行多步随机动作
-        for _ in 0..5 {
+        let mut saw_termination = false;
+        for _ in 0..600 {
             let action = env.sample_action();
-            assert_eq!(action.len(), 3); // 1 离散 + 2 连续
+            let (_next_obs, _reward, terminated, truncated) = env.step(&action);
 
-            let (next_obs, _reward, done) = env.step(&action);
-            assert_eq!(next_obs[0].len(), 10);
-            total_steps += 1;
-
-            if done {
+            if terminated {
+                saw_termination = true;
+                break;
+            }
+            if truncated {
+                // CartPole 撞步数上限 → truncated=true, terminated=false
+                assert!(!terminated, "truncated 时 terminated 应为 false");
                 break;
             }
         }
 
-        assert!(total_steps > 0);
+        // CartPole 随机动作通常很快 terminated（杆倒了）
+        assert!(saw_termination, "随机动作应很快导致 terminated");
         env.close();
     });
 }
 
-/// 测试智能加载：gymnasium 环境应使用 gymnasium 模块
+/// 测试 get_module_name 始终返回 "gymnasium"
 #[test]
 #[serial]
-fn test_smart_loading_gymnasium() {
+fn test_module_name_is_gymnasium() {
     Python::attach(|py| {
         let env = GymEnv::new(py, "CartPole-v1");
         assert_eq!(env.get_module_name(), "gymnasium");
-        env.close();
-    });
-}
-
-/// 测试混合动作环境信息打印
-#[test]
-#[serial]
-fn test_hybrid_env_print_info() {
-    Python::attach(|py| {
-        let env = GymEnv::new(py, "Moving-v0");
-        env.print_env_basic_info();
         env.close();
     });
 }
@@ -617,20 +466,20 @@ fn test_gomoku_env_reset_step() {
 
         // step 验证：在中心位置落子 (7, 7) -> action = 7*15 + 7 = 112
         let action = vec![112.0];
-        let (next_obs, reward, done) = env.step(&action);
+        let (next_obs, reward, terminated, truncated) = env.step(&action);
         assert_eq!(next_obs[0].len(), 3 * 15 * 15);
 
         // 奖励应该是 0（游戏继续）、1（玩家胜）或 -1（对手胜/非法）
         assert!(reward == 0.0 || reward == 1.0 || reward == -1.0);
 
         // 如果游戏未结束，继续验证
-        if !done {
+        if !(terminated || truncated) {
             // 采样并执行随机动作
             let sampled = env.sample_action();
             assert_eq!(sampled.len(), 1);
             assert!(sampled[0] >= 0.0 && sampled[0] < 225.0);
 
-            let (_obs, _reward, _done) = env.step(&sampled);
+            let (_obs, _reward, _terminated, _truncated) = env.step(&sampled);
         }
 
         env.close();
@@ -658,10 +507,10 @@ fn test_gomoku_env_multiple_steps() {
             let action = env.sample_action();
             assert_eq!(action.len(), 1);
 
-            let (_next_obs, reward, done) = env.step(&action);
+            let (_next_obs, reward, terminated, truncated) = env.step(&action);
             total_steps += 1;
 
-            if done {
+            if terminated || truncated {
                 game_ended = true;
                 // 游戏结束，验证奖励
                 assert!(

@@ -1,9 +1,11 @@
-//! Gymnasium/Gym 环境封装
+//! Gymnasium 环境封装
 //!
-//! 提供与 Python RL 环境交互的 Rust 接口，支持：
-//! - gymnasium 环境（推荐，现代标准）
-//! - gym 环境（兼容老式环境，如 gym-hybrid）
-//! - 自定义环境（注册到 gymnasium）
+//! 提供与 Python Gymnasium 环境交互的 Rust 接口，支持：
+//! - Gymnasium 标准环境（离散 / 连续 / 混合动作空间）
+//! - 自定义环境（注册到 Gymnasium）
+//!
+//! **唯一兼容契约**：仅 `gymnasium.make`，不兼容老 gym 库。
+//! 老 gym 环境须在 Python 侧用 shimmy 适配后再接入。
 //!
 //! 参考：
 //! - [gym-rs](https://github.com/MrRobb/gym-rs/blob/master/src/lib.rs)
@@ -133,19 +135,17 @@ impl ActionRange {
 // GymEnv 核心实现
 // ============================================================================
 
-/// Gymnasium/Gym 环境封装
+/// Gymnasium 环境封装
 ///
-/// 提供与 Python RL 环境交互的 Rust 接口。智能加载策略：
-/// 1. 优先尝试 gymnasium 模块
-/// 2. 若失败，自动回退到 gym 模块
-/// 3. 对用户完全透明
+/// 提供与 Python Gymnasium 环境交互的 Rust 接口。
+/// **仅支持 `gymnasium.make`**，不兼容老 gym 库。
 ///
 /// ## 支持的环境类型
 ///
 /// - **离散动作**：CartPole-v1, Acrobot-v1, LunarLander-v3 等
 /// - **连续动作**：Pendulum-v1, MountainCarContinuous-v0 等
 /// - **多维连续**：BipedalWalker-v3, Ant-v5, HalfCheetah-v5 等
-/// - **混合动作**：Moving-v0, Sliding-v0 等（离散 + 连续，来自 gym-hybrid）
+/// - **混合动作**：Platform-v0 等（离散 + 连续，Tuple 动作空间）
 ///
 /// ## 示例
 ///
@@ -154,12 +154,10 @@ impl ActionRange {
 /// use only_torch::rl::GymEnv;
 ///
 /// Python::attach(|py| {
-///     // 自动选择合适的模块加载
-///     let env = GymEnv::new(py, "CartPole-v1");  // gymnasium
-///     let hybrid_env = GymEnv::new(py, "Moving-v0");  // 自动回退到 gym
-///     
+///     let env = GymEnv::new(py, "CartPole-v1");
 ///     let obs = env.reset(Some(42));
-///     println!("初始观察: {:?}", obs);
+///     let (next_obs, reward, terminated, truncated) = env.step(&[0.0]);
+///     println!("terminated={terminated}, truncated={truncated}");
 /// });
 /// ```
 pub struct GymEnv<'py> {
@@ -167,8 +165,6 @@ pub struct GymEnv<'py> {
     py: Python<'py>,
     /// 环境对象
     env: Bound<'py, PyAny>,
-    /// 是否使用老式 gym 模块（影响 API 调用方式）
-    use_legacy_gym: bool,
 
     // 观察空间相关
     /// 观察空间属性列表
@@ -192,21 +188,19 @@ pub struct GymEnv<'py> {
 }
 
 impl<'py> GymEnv<'py> {
-    /// 创建新的环境（智能加载）
-    ///
-    /// 自动选择合适的 Python 模块：
-    /// 1. 优先尝试 gymnasium（现代标准）
-    /// 2. 若失败，自动回退到 gym（兼容老式环境如 gym-hybrid）
+    /// 创建新的 Gymnasium 环境
     ///
     /// # 参数
     /// - `py`: Python 解释器引用
-    /// - `env_name`: 环境名称，如 "CartPole-v1" 或 "Moving-v0"
+    /// - `env_name`: 环境名称，如 "CartPole-v1"、"Pendulum-v1"、"Platform-v0"
+    ///
+    /// # Panics
+    /// `gymnasium.make` 失败时 panic 并给出中文安装指引。
     ///
     /// # 示例
     /// ```ignore
     /// Python::attach(|py| {
-    ///     let env = GymEnv::new(py, "Pendulum-v1");     // gymnasium
-    ///     let hybrid = GymEnv::new(py, "Moving-v0");    // 自动回退到 gym
+    ///     let env = GymEnv::new(py, "CartPole-v1");
     /// });
     /// ```
     pub fn new(py: Python<'py>, env_name: &str) -> Self {
@@ -216,8 +210,10 @@ impl<'py> GymEnv<'py> {
             let _ = argv.call_method1("append", ("",));
         }
 
-        // 智能加载：先尝试 gymnasium，失败则回退到 gym
-        let (env, use_legacy_gym) = Self::try_make_env(py, env_name);
+        // 尝试导入环境注册模块（自定义环境需要先注册）
+        Self::try_import_gym_env_module(py, env_name);
+
+        let env = Self::make_env(py, env_name);
 
         // 解析观察空间
         let obs_space = env
@@ -237,7 +233,6 @@ impl<'py> GymEnv<'py> {
         let mut env_obj = Self {
             py,
             env,
-            use_legacy_gym,
             obs_prop_vec,
             obs_type: ObsType::Vector,
             action_space,
@@ -252,60 +247,56 @@ impl<'py> GymEnv<'py> {
         env_obj
     }
 
-    /// 尝试创建环境（gymnasium 优先，gym 回退）
-    ///
-    /// 返回 (env, `use_legacy_gym`)
-    fn try_make_env(py: Python<'py>, env_name: &str) -> (Bound<'py, PyAny>, bool) {
-        // 1. 先尝试 gymnasium
-        if let Ok(gymnasium) = py.import("gymnasium")
-            && let Ok(make) = gymnasium.getattr("make")
-            && let Ok(env) = make.call1((env_name,))
-        {
-            return (env, false);
-        }
+    /// 通过 `gymnasium.make` 创建环境，失败时 panic + 中文指引
+    fn make_env(py: Python<'py>, env_name: &str) -> Bound<'py, PyAny> {
+        let gymnasium = py.import("gymnasium").unwrap_or_else(|_| {
+            panic!(
+                "无法导入 gymnasium 模块。请安装：\n\
+                 \n\
+                 pip install \"gymnasium>=1.3.0,<2.0\"\n\
+                 \n\
+                 若需 Box2D 环境（LunarLander 等）：pip install \"gymnasium[box2d]\"\n\
+                 若需 MuJoCo 环境：pip install \"gymnasium[mujoco]\"\n\
+                 \n\
+                 注意：本框架仅支持 Gymnasium，不支持老 gym 库。\n\
+                 若你的环境只兼容老 gym，请先用 shimmy 适配：\n\
+                 pip install shimmy[gym-v21]"
+            )
+        });
 
-        // 2. gymnasium 失败，回退到 gym
-        // 需要先导入环境注册模块（如 gym_hybrid）
-        Self::try_import_gym_env_module(py, env_name);
+        let make = gymnasium.getattr("make").expect("获取 gymnasium.make 失败");
 
-        let gym = py
-            .import("gym")
-            .unwrap_or_else(|_| panic!("无法加载环境 '{env_name}': gymnasium 和 gym 模块均不可用"));
-
-        // 使用 kwargs 禁用 env_checker（解决 numpy 2.0 兼容性问题）
-        // gym 的 env_checker 使用了 np.bool8，在 numpy 2.0 中已移除
-        let kwargs = pyo3::types::PyDict::new(py);
-        kwargs.set_item("disable_env_checker", true).unwrap();
-
-        let env = gym
-            .getattr("make")
-            .expect("获取 gym.make 失败")
-            .call((env_name,), Some(&kwargs))
-            .unwrap_or_else(|_| panic!("无法创建环境 '{env_name}': 请确保已安装对应的环境包"));
-
-        (env, true)
+        make.call1((env_name,)).unwrap_or_else(|_| {
+            panic!(
+                "gymnasium.make('{env_name}') 失败。请检查：\n\
+                 \n\
+                 1. 环境 ID 是否正确（区分大小写和版本号，如 CartPole-v1）\n\
+                 2. 是否已安装对应的 extras：\n\
+                    - Box2D 环境：pip install \"gymnasium[box2d]\"\n\
+                    - MuJoCo 环境：pip install \"gymnasium[mujoco]\"\n\
+                    - Atari 环境：pip install \"gymnasium[atari]\" autorom[accept-rom-license]\n\
+                    - 混合动作（Platform-v0）：pip install hybrid-platform\n\
+                 3. 自定义环境是否已通过 gymnasium.register() 注册\n\
+                 \n\
+                 本框架仅支持 Gymnasium（>=1.3.0,<2.0），不兼容老 gym 库。\n\
+                 老 gym 专属环境请用 shimmy 适配后再接入：pip install shimmy[gym-v21]"
+            )
+        })
     }
 
-    /// 尝试导入 gym 环境的注册模块
+    /// 尝试导入环境注册模块
     ///
-    /// 某些环境（如 gym-hybrid）需要先导入其模块才能被 gym.make 识别
+    /// 某些第三方环境需要先导入其 Python 模块才能被 `gymnasium.make` 识别。
     fn try_import_gym_env_module(py: Python<'_>, env_name: &str) {
-        // gym-hybrid 环境：Moving-v0, Sliding-v0
-        if env_name == "Moving-v0" || env_name == "Sliding-v0" {
-            let _ = py.import("gym_hybrid");
+        // Platform-v0 (hybrid-platform 包)
+        if env_name == "Platform-v0" {
+            let _ = py.import("gym_platform");
         }
-        // 未来可在此处添加更多环境的导入逻辑
     }
 
-    /// 获取当前使用的模块类型
-    ///
-    /// 返回 "gymnasium" 或 "gym"
+    /// 获取环境后端模块名（始终为 "gymnasium"）
     pub const fn get_module_name(&self) -> &'static str {
-        if self.use_legacy_gym {
-            "gym"
-        } else {
-            "gymnasium"
-        }
+        "gymnasium"
     }
 
     /// 获取环境名称
@@ -371,56 +362,24 @@ impl<'py> GymEnv<'py> {
     ///
     /// # 返回
     /// 初始观察向量列表（通常只有一个元素）
-    pub fn reset(&self, seed: Option<u64>) -> Vec<Vec<f32>> {
-        if self.use_legacy_gym {
-            // gym API: env.seed(seed) + env.reset()
-            if let Some(s) = seed {
-                let _ = self.env.call_method1("seed", (s,));
-            }
-            let result = self.env.call_method0("reset").expect("调用 reset 失败");
-
-            // gym 返回值处理：
-            // - 0.26+: (obs, info) tuple
-            // - 旧版/某些环境: 直接返回 obs（可能是 list/ndarray）
-            let obs = self.extract_gym_reset_obs(&result);
-            self.get_obs_vec_from_python(&obs)
-        } else {
-            // gymnasium API: reset(seed=...)
-            let kwargs = pyo3::types::PyDict::new(self.py);
-            if let Some(s) = seed {
-                kwargs.set_item("seed", s).unwrap();
-            }
-
-            let result = self
-                .env
-                .call_method("reset", (), Some(&kwargs))
-                .expect("调用 reset 失败");
-
-            // Gymnasium 返回 (obs, info)
-            let obs = result.get_item(0).expect("获取 obs 失败");
-            self.get_obs_vec_from_python(&obs)
-        }
-    }
-
-    /// 从 gym reset 返回值中提取 obs
     ///
-    /// gym 的返回值可能是：
-    /// - tuple (obs, info) - gym 0.26+
-    /// - obs 本身 (list/ndarray) - 旧版或某些环境
-    fn extract_gym_reset_obs<'a>(&self, result: &'a Bound<'py, PyAny>) -> Bound<'a, PyAny> {
-        let type_name = result
-            .get_type()
-            .name()
-            .map(|s| s.to_string())
-            .unwrap_or_default();
-
-        // 如果是 tuple，取第一个元素
-        if type_name == "tuple" {
-            result.get_item(0).expect("获取 tuple[0] 失败")
-        } else {
-            // 否则直接返回（list/ndarray 都是 obs 本身）
-            result.clone()
+    /// # info 丢弃策略
+    /// Gymnasium `reset()` 返回 `(obs, info)`，当前丢弃 `info`。
+    /// 若需 episode metadata（如 TimeLimit.truncated），走单独路径扩展。
+    pub fn reset(&self, seed: Option<u64>) -> Vec<Vec<f32>> {
+        let kwargs = pyo3::types::PyDict::new(self.py);
+        if let Some(s) = seed {
+            kwargs.set_item("seed", s).unwrap();
         }
+
+        let result = self
+            .env
+            .call_method("reset", (), Some(&kwargs))
+            .expect("调用 reset 失败");
+
+        // Gymnasium 返回 (obs, info)，取 obs
+        let obs = result.get_item(0).expect("获取 obs 失败");
+        self.get_obs_vec_from_python(&obs)
     }
 
     /// 关闭环境
@@ -434,18 +393,25 @@ impl<'py> GymEnv<'py> {
     /// - `action`: 动作向量
     ///
     /// # 返回
-    /// (`obs_vec`, reward, done) 元组
-    pub fn step(&self, action: &[f32]) -> (Vec<Vec<f32>>, f32, bool) {
-        // 将 Rust 动作转换为 Python 对象
+    /// `(obs_vec, reward, terminated, truncated)` 四元组。
+    ///
+    /// - `terminated`：MDP 真终止（杆倒了 / 到达目标）→ 不 bootstrap
+    /// - `truncated`：外部截断（时间/步数上限）→ 仍需 bootstrap
+    ///
+    /// TD target：`r + γ·(1 - terminated)·V(next)`。
+    /// 判断回合结束用 `terminated || truncated`。
+    ///
+    /// # info 丢弃策略
+    /// Gymnasium `step()` 返回的第 5 元素 `info` 默认丢弃。
+    pub fn step(&self, action: &[f32]) -> (Vec<Vec<f32>>, f32, bool, bool) {
         let action_py = self.convert_action_to_python(action);
 
-        // 执行 step
         let result = self
             .env
             .call_method1("step", (action_py,))
             .expect("调用 step 失败");
 
-        // 解析返回值
+        // Gymnasium 返回 (obs, reward, terminated, truncated, info)
         let obs_py = result.get_item(0).expect("获取 obs 失败");
         let obs_vec = self.get_obs_vec_from_python(&obs_py);
 
@@ -455,34 +421,19 @@ impl<'py> GymEnv<'py> {
             .extract()
             .expect("解析 reward 失败");
 
-        // gym 和 gymnasium 的返回值差异：
-        // - gymnasium: (obs, reward, terminated, truncated, info) - 5 元素
-        // - gym: (obs, reward, done, info) - 4 元素
-        let done = if self.use_legacy_gym {
-            // gym API: 第 3 个元素是 done
-            result
-                .get_item(2)
-                .expect("获取 done 失败")
-                .extract()
-                .expect("解析 done 失败")
-        } else {
-            // gymnasium API: terminated || truncated
-            let terminated: bool = result
-                .get_item(2)
-                .expect("获取 terminated 失败")
-                .extract()
-                .expect("解析 terminated 失败");
+        let terminated: bool = result
+            .get_item(2)
+            .expect("获取 terminated 失败")
+            .extract()
+            .expect("解析 terminated 失败");
 
-            let truncated: bool = result
-                .get_item(3)
-                .expect("获取 truncated 失败")
-                .extract()
-                .expect("解析 truncated 失败");
+        let truncated: bool = result
+            .get_item(3)
+            .expect("获取 truncated 失败")
+            .extract()
+            .expect("解析 truncated 失败");
 
-            terminated || truncated
-        };
-
-        (obs_vec, reward, done)
+        (obs_vec, reward, terminated, truncated)
     }
 
     /// 采样随机动作

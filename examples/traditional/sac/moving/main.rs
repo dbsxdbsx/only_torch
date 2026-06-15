@@ -35,11 +35,12 @@ use std::collections::VecDeque;
 #[derive(Clone)]
 struct Experience {
     obs: Vec<f32>,
-    /// 展平动作向量：[discrete_float, acceleration, rotation]
+    /// 展平动作向量：[discrete_float, continuous_params...]
     action: Vec<f32>,
     reward: f32,
     next_obs: Vec<f32>,
-    done: bool,
+    /// MDP 真终止 → 不 bootstrap
+    terminated: bool,
 }
 
 /// 简单的经验回放缓冲区
@@ -187,7 +188,7 @@ fn main() -> Result<(), GraphError> {
                 let _ = discrete_action; // 仅用于调试
 
                 // 执行动作
-                let (next_obs_vec, reward, done) = env.step(&action_vec);
+                let (next_obs_vec, reward, terminated, truncated) = env.step(&action_vec);
                 let next_obs = next_obs_vec[0].clone();
 
                 episode_reward += reward;
@@ -200,7 +201,7 @@ fn main() -> Result<(), GraphError> {
                     action: action_vec,
                     reward,
                     next_obs: next_obs.clone(),
-                    done,
+                    terminated,
                 });
 
                 // SAC 更新
@@ -224,11 +225,11 @@ fn main() -> Result<(), GraphError> {
                     let rewards: Vec<f32> = batch.iter().map(|e| e.reward).collect();
                     let rewards_tensor = Tensor::new(&rewards, &[bs, 1]);
 
-                    let done_masks: Vec<f32> = batch
+                    let not_terminated: Vec<f32> = batch
                         .iter()
-                        .map(|e| if e.done { 0.0 } else { 1.0 })
+                        .map(|e| if e.terminated { 0.0 } else { 1.0 })
                         .collect();
-                    let done_masks_tensor = Tensor::new(&done_masks, &[bs, 1]);
+                    let not_terminated_tensor = Tensor::new(&not_terminated, &[bs, 1]);
 
                     // 从 batch 提取存储的动作（用于 Critic Loss）
                     // action_vec = [discrete, acc, rot]
@@ -310,9 +311,9 @@ fn main() -> Result<(), GraphError> {
                             - &(&next_log_prob_c * alpha_c)))
                         .sum_axis_keepdims(1);
 
-                    // target = r + γ * (1-done) * V(s')
+                    // target = r + γ * (1 - terminated) * V(s')
                     let target_tensor =
-                        &rewards_tensor + &(&done_masks_tensor * &(&v_next * config.gamma));
+                        &rewards_tensor + &(&not_terminated_tensor * &(&v_next * config.gamma));
 
                     // ========== Critic 更新 ==========
                     // Critic 用存储的 (state, action) 对，不需要全分支
@@ -436,7 +437,7 @@ fn main() -> Result<(), GraphError> {
                     ]);
                 }
 
-                if done {
+                if terminated || truncated {
                     break;
                 }
                 obs = next_obs;
@@ -490,10 +491,10 @@ fn main() -> Result<(), GraphError> {
             loop {
                 let obs_tensor = Tensor::new(&obs, &[1, obs_dim]);
                 let (_action, action_vec) = agent.actor.select_action(&obs_tensor)?;
-                let (next_obs_vec, reward, done) = env.step(&action_vec);
+                let (next_obs_vec, reward, terminated, truncated) = env.step(&action_vec);
                 episode_reward += reward;
 
-                if done {
+                if terminated || truncated {
                     test_rewards.push(episode_reward);
                     println!("  测试 {}: R = {:.3}", i + 1, episode_reward);
                     break;

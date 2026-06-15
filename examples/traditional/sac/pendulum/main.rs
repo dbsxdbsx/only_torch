@@ -36,7 +36,8 @@ struct Experience {
     action: Vec<f32>, // 连续动作（Pendulum: 1 维）
     reward: f32,
     next_obs: Vec<f32>,
-    done: bool,
+    /// MDP 真终止 → 不 bootstrap
+    terminated: bool,
 }
 
 /// 简单的经验回放缓冲区
@@ -201,7 +202,7 @@ fn main() -> Result<(), GraphError> {
                     (0..action_dim).map(|i| env_action[[0, i]]).collect();
 
                 // 执行动作
-                let (next_obs_vec, reward, done) = env.step(&env_action_vec);
+                let (next_obs_vec, reward, terminated, truncated) = env.step(&env_action_vec);
                 let next_obs = next_obs_vec[0].clone();
 
                 episode_reward += reward;
@@ -214,7 +215,7 @@ fn main() -> Result<(), GraphError> {
                     action: env_action_vec,
                     reward,
                     next_obs: next_obs.clone(),
-                    done,
+                    terminated,
                 });
 
                 // SAC 更新
@@ -246,11 +247,11 @@ fn main() -> Result<(), GraphError> {
                     let rewards: Vec<f32> = batch.iter().map(|e| e.reward).collect();
                     let rewards_tensor = Tensor::new(&rewards, &[bs, 1]);
 
-                    let done_masks: Vec<f32> = batch
+                    let not_terminated: Vec<f32> = batch
                         .iter()
-                        .map(|e| if e.done { 0.0 } else { 1.0 })
+                        .map(|e| if e.terminated { 0.0 } else { 1.0 })
                         .collect();
-                    let done_masks_tensor = Tensor::new(&done_masks, &[bs, 1]);
+                    let not_terminated_tensor = Tensor::new(&not_terminated, &[bs, 1]);
 
                     // ========== Target Q 计算（无梯度）==========
                     // 从当前策略采样 next_action 和 log_prob
@@ -269,9 +270,9 @@ fn main() -> Result<(), GraphError> {
                     let target_q_min = target_q1.minimum(&target_q2);
                     let target_v = &target_q_min - &(&next_log_prob_sum * agent.alpha());
 
-                    // y = r + γ * (1-done) * V(s')
+                    // y = r + γ * (1 - terminated) * V(s')
                     let target_tensor =
-                        &rewards_tensor + &(&done_masks_tensor * &(&target_v * config.gamma));
+                        &rewards_tensor + &(&not_terminated_tensor * &(&target_v * config.gamma));
 
                     // ========== Critic1 更新 ==========
                     let obs_var1 = graph.input_named(&obs_batch, "obs")?;
@@ -339,7 +340,7 @@ fn main() -> Result<(), GraphError> {
                     ]);
                 }
 
-                if done {
+                if terminated || truncated {
                     break;
                 }
                 obs = next_obs;
@@ -395,10 +396,10 @@ fn main() -> Result<(), GraphError> {
                 let env_action_vec: Vec<f32> =
                     (0..action_dim).map(|i| env_action[[0, i]]).collect();
 
-                let (next_obs_vec, reward, done) = env.step(&env_action_vec);
+                let (next_obs_vec, reward, terminated, truncated) = env.step(&env_action_vec);
                 episode_reward += reward;
 
-                if done {
+                if terminated || truncated {
                     test_rewards.push(episode_reward);
                     println!("  测试 {}: R = {:.1}", i + 1, episode_reward);
                     break;

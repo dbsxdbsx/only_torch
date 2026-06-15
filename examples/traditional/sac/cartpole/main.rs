@@ -48,7 +48,8 @@ struct Experience {
     action: usize,
     reward: f32,
     next_obs: Vec<f32>,
-    done: bool,
+    /// MDP 真终止（杆倒了）→ 不 bootstrap
+    terminated: bool,
 }
 
 /// 简单的经验回放缓冲区
@@ -204,20 +205,20 @@ fn main() -> Result<(), GraphError> {
                 let (action, _probs) = agent.actor.sample_action(&obs_tensor)?;
 
                 // 执行动作
-                let (next_obs_vec, reward, done) = env.step(&[action as f32]);
+                let (next_obs_vec, reward, terminated, truncated) = env.step(&[action as f32]);
                 let next_obs = next_obs_vec[0].clone();
 
                 episode_reward += reward;
                 episode_length += 1;
                 total_steps += 1;
 
-                // 存储经验
+                // 存储经验（TD target 用 terminated 判断是否 bootstrap）
                 buffer.push(Experience {
                     obs: obs.clone(),
                     action,
                     reward,
                     next_obs: next_obs.clone(),
-                    done,
+                    terminated,
                 });
 
                 // SAC 更新
@@ -256,16 +257,16 @@ fn main() -> Result<(), GraphError> {
                         agent.alpha(),
                     );
 
-                    // target = r + γ * (1-done) * V(s')（向量化计算）
+                    // target = r + γ * (1 - terminated) * V(s')
                     let rewards: Vec<f32> = batch.iter().map(|e| e.reward).collect();
                     let rewards_tensor = Tensor::new(&rewards, &[batch.len(), 1]);
-                    let done_masks: Vec<f32> = batch
+                    let not_terminated: Vec<f32> = batch
                         .iter()
-                        .map(|e| if e.done { 0.0 } else { 1.0 })
+                        .map(|e| if e.terminated { 0.0 } else { 1.0 })
                         .collect();
-                    let done_masks_tensor = Tensor::new(&done_masks, &[batch.len(), 1]);
+                    let not_terminated_tensor = Tensor::new(&not_terminated, &[batch.len(), 1]);
                     let target_tensor =
-                        &rewards_tensor + &(&done_masks_tensor * &(&v_next * config.gamma));
+                        &rewards_tensor + &(&not_terminated_tensor * &(&v_next * config.gamma));
                     let action_indices = build_action_indices(&batch);
 
                     // ========== Critic1 更新 ==========
@@ -345,7 +346,7 @@ fn main() -> Result<(), GraphError> {
                     // 运算节点在 Var 离开作用域时由 Rc 引用计数自动释放
                 }
 
-                if done {
+                if terminated || truncated {
                     break;
                 }
                 obs = next_obs;
@@ -401,10 +402,10 @@ fn main() -> Result<(), GraphError> {
                 // 测试时使用贪婪策略（argmax）
                 let action = probs.argmax(1)[[0]] as usize;
 
-                let (next_obs_vec, reward, done) = env.step(&[action as f32]);
+                let (next_obs_vec, reward, terminated, truncated) = env.step(&[action as f32]);
                 episode_reward += reward;
 
-                if done {
+                if terminated || truncated {
                     test_rewards.push(episode_reward);
                     println!("  测试 {}: R = {:.0}", i + 1, episode_reward);
                     break;
