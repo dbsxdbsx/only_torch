@@ -25,6 +25,11 @@
   - `GymEnv` 维持 panic 为主、不全面 `Result` 化；seed 显式注入契约
   - 文档同步：`rl_roadmap.md`（新增 §2.5 MCTS 抽象、§5.10 变体 backlog、§7.7 体检决策）、`AGENTS.md`、`rl.instructions.md`、`rl_python_env_setup.md`、`sac/README.md`、`sac_mathematical_foundations.md`；`examples/traditional/sac/cartpole` `target_reward` 190 → 195
 
+### Docs
+
+- 同步 `AGENTS.md` / `README` / `memory_mechanism_design.md` 至 v0.18.0 完成状态（Attention 阶段进度、RL 主线与 Phase D 留坑索引）
+- 统一 17 个文档的数学表达式为 LaTeX `$...$` / `$$...$$` 格式，修复此前公式无法正确渲染的问题
+
 ## [0.18.0] - 2026-05-27
 
 ### Added
