@@ -22,6 +22,32 @@
 
 **结论**：项目 **仅支持 Gymnasium**；不要安装或使用 OpenAI Gym（`pip install gym`）。`GymEnv` 不再回退到老 gym。
 
+### 老 gym / 其他库环境怎么办：Python 侧 shimmy 适配
+
+`GymEnv` 在 Rust 侧**只认 `gymnasium.make`**，永不 `import gym`。万一某个环境只在老 gym（或 dm_control / PettingZoo 等）注册，**不要回到 Rust 层恢复 gym 分支**，而是在 Python 侧用 Farama 官方 [`shimmy`](https://shimmy.farama.org/environments/gym/) 把它包成标准 Gymnasium 环境（与五子棋自定义环境同一套 `gymnasium.register` 思路，Rust `GymEnv` 零改动）：
+
+```python
+# pip install shimmy[gym-v21]   # 老 gym v0.21 风格；v0.26 风格用 shimmy[gym-v26]
+import gymnasium as gym
+from shimmy.openai_gym_compatibility import GymV21CompatibilityV0
+
+gym.register(
+    id="LegacyFoo-v0",
+    entry_point=lambda **kw: GymV21CompatibilityV0(env_id="Foo-v0", **kw),
+)
+```
+
+```rust
+let env = GymEnv::new(py, "LegacyFoo-v0"); // 对 Rust 就是普通 Gymnasium 环境
+// step() 已是 terminated/truncated 五元组：shimmy 用 info["TimeLimit.truncated"] 正确还原
+```
+
+**有损警告**：单一 `done` → `terminated`/`truncated` 的还原依赖环境暴露 `info["TimeLimit.truncated"]`；无此字段则只能当 `terminated`（信息有损）。这也是项目坚持 Gymnasium-only 的理由之一。
+
+**前提警告（2026-06-07 实测）**：shimmy 能用的前提是**底层老 gym 能在当前环境加载**。本机实测 `numpy 2.4.1` + 老 `gym 0.25.2`：老 gym 内部 `np.bool8` 已被 numpy 2.0 移除 → shimmy 直接 `AttributeError: module 'numpy' has no attribute 'bool8'`。即 **numpy ≥ 2.0 下，未维护的老 gym 环境往往根本加载不了，shimmy 也救不回**；此时唯一出路是把环境迁到 Gymnasium 原生（或为该环境单独建一个钉住 `numpy<2` 的 Python 环境）。
+
+**报错约定（Phase 0）**：`GymEnv` 加载失败（id 未在 gymnasium 注册）时**一律 panic + 中文友好提示**——①装 `gymnasium` ②确认 id 已注册到 gymnasium ③老 gym 专属环境用上面的 shimmy 适配；**不** `import gym` 自动回退。`#[should_panic(expected=…)]` + `#[serial]` 单测验证 panic 文案含指引；v0.19 **不**为此引入 `try_new` / `Result`（YAGNI，维持 panic 为主）。
+
 ### MuJoCo
 
 - 2021 年被 DeepMind 收购后**完全开源免费**（Apache 2.0 协议）
@@ -107,6 +133,7 @@ pip install --upgrade pip
 > - Atari 观察空间为 HWC 格式图像 (高度 × 宽度 × 通道)
 > - Minari 用于离线 RL，通过 `minari download <dataset_id>` 下载数据集
 > - Platform-v0：离散选 run(0)/hop(1)/leap(2)，连续参数见 [hybrid-platform PyPI](https://pypi.org/project/hybrid-platform/)
+> - **Tuple obs 处理（Rust `GymEnv` 约定，机制不政策）**：`GymEnv` 按子空间**暴露结构**（不钦定展平）；需要单向量时由上层 flatten helper **按 space 原生顺序拼接**（不赌"谁前谁后"——实测 Platform obs 是 Box 在前 Discrete 在后）、Discrete 编码 one-hot / 标量可配，训练/推理用同一套即可；图像 obs 保 `(C,H,W)` 不展平。action 维持按 `action_space` 原生结构递归处理
 
 ### 按学习范式分类
 
@@ -171,7 +198,7 @@ just py-gym-gomoku         # test_08: 五子棋自定义环境
 - [x] **批次 3**：MuJoCo 环境 ✅
 - [x] **批次 4**：Atari 环境 ✅
 - [x] **批次 5**：Minari 离线数据集 ✅
-- [ ] **批次 6**：混合动作空间（**Platform-v0 / hybrid-platform**，取代 gym-hybrid）⏳ Phase 0b
+- [x] **批次 6**：混合动作空间（**Platform-v0 / hybrid-platform**）✅ 2026-06-07 实测通过：obs `Tuple(Box(9),Discrete(200))`、action `Tuple(Discrete(3),Box×3)`、step 5 元组
 - [x] **批次 7**：五子棋自定义环境 ✅
 
 ## 后续步骤
@@ -353,7 +380,7 @@ GymEnv::new(py, "CartPole-v1")
         ↓
 gymnasium.make("CartPole-v1")
         ↓
-成功 → 统一 reset/step API（terminated || truncated → done）
+成功 → 统一 reset/step API（step 透出 terminated + truncated 两个信号，不再合并 done）
 失败 → 明确报错（缺 extra / 未 register），不尝试 gym
 ```
 
@@ -363,7 +390,7 @@ gymnasium.make("CartPole-v1")
 |------|------|
 | reset | `(obs, info)`，`reset(seed=…)` |
 | step | `(obs, reward, terminated, truncated, info)` |
-| done（Rust 侧） | `terminated \|\| truncated` |
+| step（Rust 侧） | 透出 `(obs, reward, terminated, truncated)`，**不合并 `done`**；便捷 `Transition::is_episode_end() = terminated \|\| truncated` |
 
 ### 架构图
 

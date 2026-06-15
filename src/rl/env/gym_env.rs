@@ -5,8 +5,9 @@
 //! - gym 环境（兼容老式环境，如 gym-hybrid）
 //! - 自定义环境（注册到 gymnasium）
 //!
-//! 参考：https://github.com/MrRobb/gym-rs/blob/master/src/lib.rs
-//! 基于 `RustRL` 项目迁移，适配 `only_torch`
+//! 参考：
+//! - [gym-rs](https://github.com/MrRobb/gym-rs/blob/master/src/lib.rs)
+//! - [rustRL](https://github.com/dbsxdbsx/rustRL) 的 `gym_env.rs`（设计来源，已在 only_torch 原生类型上重写）
 
 use numpy::ToPyArray;
 use numpy::ndarray::{Array1, array};
