@@ -32,13 +32,14 @@ impl MinMaxStats {
 
     /// 将 Q 值归一化到 [0, 1]
     ///
-    /// 若 min == max（所有 Q 相同或未更新），返回原始 Q
+    /// 若尚无有效 range（未更新或 min==max），返回 0.5（中性值），
+    /// 防止 raw Q 压死 PUCT exploration 项。
     pub fn normalize(&self, q: f32) -> f32 {
         let range = self.max - self.min;
         if range > f32::EPSILON {
             (q - self.min) / range
         } else {
-            q
+            0.5
         }
     }
 }

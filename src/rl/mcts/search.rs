@@ -99,8 +99,8 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
             );
         }
 
-        // backup
-        backup(&mut tree, leaf_id, rec_out.value, &mut min_max, cfg);
+        let backup_value = if rec_out.terminal { 0.0 } else { rec_out.value };
+        backup(&mut tree, leaf_id, backup_value, &mut min_max, cfg);
     }
 
     // 4. 收集最终根子节点统计

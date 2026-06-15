@@ -89,23 +89,28 @@ impl SearchPolicy for PuctPolicy {
                 .unwrap_or(0);
         }
 
-        // 计算 N(a)^(1/τ) 归一化概率，log-space 防溢出
+        // 全 0 visit → uniform fallback
+        let total_visits: u32 = children.iter().map(|c| c.visit_count).sum();
+        if total_visits == 0 {
+            return (rng.next_u32() as usize) % children.len();
+        }
+
+        // log-space 防溢出：未访问动作 weight=0
         let inv_temp = 1.0 / cfg.temperature;
         let log_counts: Vec<f32> = children
             .iter()
-            .map(|c| (c.visit_count.max(1) as f32).ln())
+            .map(|c| if c.visit_count > 0 { (c.visit_count as f32).ln() } else { f32::NEG_INFINITY })
             .collect();
         let max_log = log_counts.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
         let weights: Vec<f32> = log_counts
             .iter()
-            .map(|&lc| ((lc - max_log) * inv_temp).exp())
+            .map(|&lc| if lc == f32::NEG_INFINITY { 0.0 } else { ((lc - max_log) * inv_temp).exp() })
             .collect();
         let sum: f32 = weights.iter().sum();
         if sum <= 0.0 {
             return 0;
         }
 
-        // 按概率随机采样（用 RngCore 的 next_u32 生成 [0,1) 浮点）
         let threshold = (rng.next_u32() as f32 / u32::MAX as f32) * sum;
         let mut cumulative = 0.0;
         for (i, &w) in weights.iter().enumerate() {
@@ -144,16 +149,15 @@ impl SearchPolicy for PuctPolicy {
             }
             return targets;
         }
-        // log-space 计算避免 N^(1/τ) 溢出
         let inv_temp = 1.0 / cfg.temperature;
         let log_counts: Vec<f32> = children
             .iter()
-            .map(|c| (c.visit_count.max(1) as f32).ln())
+            .map(|c| if c.visit_count > 0 { (c.visit_count as f32).ln() } else { f32::NEG_INFINITY })
             .collect();
         let max_log = log_counts.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
         let weights: Vec<f32> = log_counts
             .iter()
-            .map(|&lc| ((lc - max_log) * inv_temp).exp())
+            .map(|&lc| if lc == f32::NEG_INFINITY { 0.0 } else { ((lc - max_log) * inv_temp).exp() })
             .collect();
         let sum: f32 = weights.iter().sum();
         weights.iter().map(|&w| w / sum).collect()

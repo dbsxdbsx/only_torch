@@ -18,8 +18,8 @@ only_torch 是一个纯 Rust 的 PyTorch 风格玩具框架，当前重点是：
 | 项 | 内容 |
 |----|------|
 | **版本** | `0.23.0`（2026-06-15；本地可能超前 `origin/master`，以 `git log` / `CHANGELOG.md` 为准） |
-| **刚闭环** | **v0.23.0 三算法统一验收**：SAC/PPO/MuZero 三大算法族统一 CartPole-v0 >= 195 门槛；MCTS 底座收口（`Dynamics` + `MinMaxStats`）；`RolloutBuffer` + PPO helper 入库 |
-| **当前主线** | **强化学习** v0.24.0：EfficientZero V2（终极调优，唯一） + 多模式环境矩阵（全 `-v1`）；见 [RL 路线图](.doc/design/rl_roadmap.md) |
+| **刚闭环** | **v0.23.0**：SAC ✅ / PPO ✅ CartPole-v0 ≥195；MCTS 底座收口（`Dynamics` + `MinMaxStats`）+ **8 个 MCTS/MuZero 逻辑 bug 修复**（AlphaZero 系列共享地基校正）；`RolloutBuffer` + PPO/MuZero helper 入库。**MuZero 架构已验证（能学习 avg~40），但 ≥195 推 v0.24**——缺 categorical value + latent 归一化，根因见 [`.issue/items/muzero_cartpole_scalar_value_plateau.md`](.issue/items/muzero_cartpole_scalar_value_plateau.md) |
+| **当前主线** | **强化学习** v0.24.0：**先补 MuZero 达标地基（categorical value/reward + latent 归一化）→ 回测 MuZero CartPole ≥195**，再上 EfficientZero V2（终极调优，唯一）+ 多模式环境矩阵（全 `-v1`）；见 [RL 路线图](.doc/design/rl_roadmap.md) |
 | **刻意暂缓** | 演化 **阶段 D**（`CellAttention` ONNX、`Attention` Net2Net 函数保持、Conv2d Attention、3D batched MatMul）——与 RL 零耦合，见 [记忆机制设计 — Phase D](.doc/design/memory_mechanism_design.md#-后续-phase-d刻意未做) |
 | **路线展望** | RL 主线 v0.20–v0.24：**环境一律 `python/gym_env/<游戏>/` + `GymEnv` 桥接**（无 Rust 棋盘）。**架构跑通**：SAC/MuZero/PPO 用 **`CartPole-v0` ≥195**；**终极调优**：v0.24 **[EfficientZero V2](https://arxiv.org/abs/2403.00564)（EZ-V2，第二代，唯一）**（全 `-v1` 环境）。详见 [RL 主线实施计划](../c:/Users/Administrator/.cursor/plans/rl_主线实施计划_5966956a.plan.md) |
 

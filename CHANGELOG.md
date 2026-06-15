@@ -2,7 +2,7 @@
 
 ## [0.23.0] - 2026-06-15
 
-> MuZero + PPO + SAC 三算法统一验收。MCTS 算法底座收口（Dynamics + MinMaxStats），on-policy buffer 入库。「发版」= bump 版本号 + 更新 CHANGELOG，不 `cargo publish`。
+> SAC ✅ / PPO ✅ CartPole-v0 ≥195；MCTS 算法底座收口（Dynamics + MinMaxStats）+ 8 个逻辑 bug 修复；on-policy buffer 入库。**MuZero 架构已验证（能学习），但 ≥195 推 v0.24**（缺 categorical value + latent 归一化，见 `.issue/items/muzero_cartpole_scalar_value_plateau.md`）。「发版」= bump 版本号 + 更新 CHANGELOG，不 `cargo publish`。
 
 ### Added
 
@@ -30,11 +30,25 @@
   - GAE + clipped surrogate + value loss + entropy bonus
   - SMOKE 模式支持
 
+- **feat(rl): `src/rl/algo/muzero/` MuZero 函数式 helper 入库**
+  - `value_transform` / `value_transform_inv`：标量 value/reward 变换 `h(x)=sign(x)(sqrt(|x|+1)-1)+εx`
+  - `compute_n_step_target`：n-step bootstrapped return
+  - `loss` 模块：value/reward loss 系数 + 梯度缩放常量
+  - 9 个单元测试（变换 round-trip + 单调性 + 压缩 + n-step 手算）
+
 - **feat(rl): MuZero CartPole-v0 示例**（`examples/muzero/cartpole/`）
-  - representation / dynamics / prediction 三网络
-  - MCTS-on-latent（复用 mcts_search + DynamicsModel）
-  - K=5 步 unroll + n-step value target
-  - ReplayBuffer<SelfPlayGame> 整局存储
+  - representation / dynamics / prediction 三网络（128 隐藏层）
+  - MCTS-on-latent（复用 mcts_search + DynamicsModel）+ value transform + 温度退火 + 真 batch 梯度累积训练
+  - K=5 步 unroll + n-step(50) value target；`ReplayBuffer<SelfPlayGame>` 整局存储
+  - **现状**：训练能学习（avg 9.4→~40，峰值 180+）但卡平台期，未达 195；缺 categorical value + latent 归一化（推 v0.24，见 issue）
+
+### Fixed
+
+- **fix(rl): 修复 8 个 MCTS/MuZero 逻辑 bug（AlphaZero 系列共享地基校正）**
+  - `search.rs`：首次 terminal 叶子 backup 用 0（而非网络预测 value），终局 bootstrap 口径一致
+  - `min_max.rs`：`MinMaxStats` 无有效 range 时归一化返回 0.5 中性值（而非 raw Q，原会压死 PUCT exploration）
+  - `puct.rs`：`recommend` / `make_targets` 用真实 visit count（去掉 `max(1)`，全 0 才 uniform fallback）
+  - MuZero 示例：`root_value` 按 `reward + γ·V(child)` 口径加权（原漏即时奖励与折扣）；移除恒不触发的 `reward<-0.5` terminal 误判；`value_transform_inv` 输出 clamp 防未训练网络噪声放大；梯度缩放不再误缩 prediction head；训练改真 batch 梯度累积 + 允许 short unroll 覆盖 episode 尾部
 
 ### Changed
 
@@ -54,6 +68,7 @@
 ### Docs
 
 - justfile：新增 `example-cartpole-ppo` / `smoke-cartpole-ppo` / `example-cartpole-muzero` / `smoke-cartpole-muzero`
+- `.issue/items/muzero_cartpole_scalar_value_plateau.md`：记录 MuZero CartPole 标量 value 表示导致 ~40 平台期的根因（缺 categorical + latent 归一化）与 v0.24 补齐方案
 
 ## [0.22.0] - 2026-06-15
 
