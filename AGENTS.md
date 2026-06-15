@@ -17,7 +17,7 @@ only_torch 是一个纯 Rust 的 PyTorch 风格玩具框架，当前重点是：
 
 | 项 | 内容 |
 |----|------|
-| **版本** | `0.18.0`（2026-05-27；本地可能超前 `origin/master`，以 `git log` / `CHANGELOG.md` 为准） |
+| **版本** | `0.19.0`（2026-06-15；本地可能超前 `origin/master`，以 `git log` / `CHANGELOG.md` 为准） |
 | **刚闭环** | vision / detection 栈；Attention / Transformer Layer + `CellAttention` 演化主路径（Phase 3.5 / 4.5 ✅） |
 | **当前主线** | **强化学习** v0.19.0：**先** Gymnasium-only `GymEnv`（Phase 0），再 `Transition`/`ReplayBuffer` 入库；见 [RL 路线图 §7](.doc/design/rl_roadmap.md#7-v0190-实施计划) |
 | **刻意暂缓** | 演化 **阶段 D**（`CellAttention` ONNX、`Attention` Net2Net 函数保持、Conv2d Attention、3D batched MatMul）——与 RL 零耦合，见 [记忆机制设计 — Phase D](.doc/design/memory_mechanism_design.md#-后续-phase-d刻意未做) |

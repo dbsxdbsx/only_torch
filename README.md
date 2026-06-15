@@ -600,7 +600,7 @@ cargo build --features blas-openblas
 
 > 按优先级排序。Agent 接手任务时：**优先「当前主线」**，演化阶段 D 与低优先级项除非用户点名否则不默认展开。
 
-### 🟢 当前主线（v0.18.0 后）
+### 🟢 当前主线（v0.19.0 后）
 
 **强化学习** — 详见 [RL 路线图](.doc/design/rl_roadmap.md) 与 [AGENTS.md — 当前版本与焦点](AGENTS.md#当前版本与焦点)
 

@@ -1,16 +1,20 @@
 # 更新日志
 
-## [Unreleased] - 待提交
+## [0.19.0] - 2026-06-15
+
+> RL 主线首个版本：**规划与设计决策定稿**（纯文档 / 规划发版——bump 版本号 + 更新 `CHANGELOG.md`，**不** `cargo publish`）。运行时改造（Gymnasium-only `GymEnv`、buffer 落库、smoke 门禁）自 **v0.20.0** 起实施，详见 [RL 路线图](.doc/design/rl_roadmap.md) 与主线实施计划。
 
 ### Changed
 
-- **docs(rl): v0.19 主线规划定稿 + 2026-06-07 体检决策同步**
+- **docs(rl): RL 主线规划定稿 + 2026-06-07 体检决策同步**
   - 环境：`GymEnv` 定调 **Gymnasium-only**（删 legacy gym 回退）；混合动作改用 **`Platform-v0`**（`hybrid-platform`），弃 gym-hybrid / Moving；离线数据用 Minari
+  - 老 gym / 其他库环境：不在 Rust 层兼容，改在 **Python 侧用 [`shimmy`](https://shimmy.farama.org/) 适配**成标准 Gymnasium 环境后经 `GymEnv` 接入（Rust 永不 `import gym`）
   - 验收分层：SAC / MuZero / PPO 架构跑通统一 **`CartPole-v0` reward ≥ 195**；**EfficientZero V2（EZ-V2，第二代）** 为唯一终极调优算法（全 `-v1` 环境）
-  - buffer（v0.19 计划）：`Transition` 取代 `Step`；`ReplayBuffer<T: Clone + 'static>` 泛型（砍 `Send`）；`sample` 定义为按存储单位有放回抽样、**非训练采样器**，禁建全长索引、返 owned `Vec<T>`
+  - buffer 设计：`Transition` 取代 `Step`；`ReplayBuffer<T: Clone + 'static>` 泛型（砍 `Send`）；`sample` 定义为按存储单位有放回抽样、**非训练采样器**，禁建全长索引、返 owned `Vec<T>`
   - **终止语义**：`Transition` 存 `terminated` + `truncated`（对齐 Gymnasium），`truncated` 仍 bootstrap；`GymEnv::step` 透出两信号，修正 `CartPole-v0` 200 步截断被当真终止导致的 TD target 误算
+  - **MCTS 抽象边界（§2.5）**：`mcts_search` 吃 `MctsModel`(root+recurrent) + `SearchPolicy`、**不吃 `&GymEnv`**；`SearchResult` 暴露根孩子原始统计，为后续 AlphaZero / MuZero / EZ-V2 复用同一搜索预留
   - `GymEnv` 维持 panic 为主、不全面 `Result` 化；seed 显式注入契约
-  - 文档同步：`rl_roadmap.md`（新增 §7.7 体检决策）、`AGENTS.md`、`rl.instructions.md`、`rl_python_env_setup.md`、`sac/README.md`、`sac_mathematical_foundations.md`；`examples/traditional/sac/cartpole` `target_reward` 190 → 195
+  - 文档同步：`rl_roadmap.md`（新增 §2.5 MCTS 抽象、§5.10 变体 backlog、§7.7 体检决策）、`AGENTS.md`、`rl.instructions.md`、`rl_python_env_setup.md`、`sac/README.md`、`sac_mathematical_foundations.md`；`examples/traditional/sac/cartpole` `target_reward` 190 → 195
 
 ## [0.18.0] - 2026-05-27
 
