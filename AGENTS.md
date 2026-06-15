@@ -19,9 +19,9 @@ only_torch 是一个纯 Rust 的 PyTorch 风格玩具框架，当前重点是：
 |----|------|
 | **版本** | `0.19.0`（2026-06-15；本地可能超前 `origin/master`，以 `git log` / `CHANGELOG.md` 为准） |
 | **刚闭环** | vision / detection 栈；Attention / Transformer Layer + `CellAttention` 演化主路径（Phase 3.5 / 4.5 ✅） |
-| **当前主线** | **强化学习** v0.19.0：**先** Gymnasium-only `GymEnv`（Phase 0），再 `Transition`/`ReplayBuffer` 入库；见 [RL 路线图 §7](.doc/design/rl_roadmap.md#7-v0190-实施计划) |
+| **当前主线** | **强化学习** v0.20.0：**先** Gymnasium-only `GymEnv`（Phase 0），再 `Transition`/`ReplayBuffer` 入库；见 [RL 路线图 §7](.doc/design/rl_roadmap.md#7-v0200-实施计划) |
 | **刻意暂缓** | 演化 **阶段 D**（`CellAttention` ONNX、`Attention` Net2Net 函数保持、Conv2d Attention、3D batched MatMul）——与 RL 零耦合，见 [记忆机制设计 — Phase D](.doc/design/memory_mechanism_design.md#-后续-phase-d刻意未做) |
-| **路线展望** | RL 主线 v0.19–v0.23：**环境一律 `python/gym_env/<游戏>/` + `GymEnv` 桥接**（无 Rust 棋盘）。**架构跑通**：SAC/MuZero/PPO 用 **`CartPole-v0` ≥195**；**终极调优**：v0.23 **[EfficientZero V2](https://arxiv.org/abs/2403.00564)（EZ-V2，第二代，唯一）**（全 `-v1` 环境）。详见 [RL 主线实施计划](../c:/Users/Administrator/.cursor/plans/rl_主线实施计划_5966956a.plan.md) |
+| **路线展望** | RL 主线 v0.20–v0.24：**环境一律 `python/gym_env/<游戏>/` + `GymEnv` 桥接**（无 Rust 棋盘）。**架构跑通**：SAC/MuZero/PPO 用 **`CartPole-v0` ≥195**；**终极调优**：v0.24 **[EfficientZero V2](https://arxiv.org/abs/2403.00564)（EZ-V2，第二代，唯一）**（全 `-v1` 环境）。详见 [RL 主线实施计划](../c:/Users/Administrator/.cursor/plans/rl_主线实施计划_5966956a.plan.md) |
 
 **进度符号**（设计文档统一口径）：✅ Phase 验收范围内已完成 · ⏳ 已识别、留后续 Phase · 🔲 可选增强 · 📦 已归档历史路径。
 
@@ -107,9 +107,9 @@ just example-cartpole-sac      # RL 示例，需 Python + gymnasium
 3. 确保 `parameters()` 返回完整可训练参数。
 
 ### 修改 RL
-1. 改前读 [RL 路线图 §7](.doc/design/rl_roadmap.md#7-v0190-实施计划) 与 [`.github/instructions/rl.instructions.md`](.github/instructions/rl.instructions.md)。
+1. 改前读 [RL 路线图 §7](.doc/design/rl_roadmap.md#7-v0200-实施计划) 与 [`.github/instructions/rl.instructions.md`](.github/instructions/rl.instructions.md)。
 2. **Phase 0 优先**：`GymEnv` 仅 `gymnasium.make`，禁止 `import gym`；**Phase 0b**：混合动作用 **`Platform-v0`**（`hybrid-platform`），不用 gym-hybrid / Moving。
-3. v0.19.0 入库 `Transition` + `ReplayBuffer`（删 `Step`）；`SacAgent` 仍只在示例。
+3. v0.20.0 入库 `Transition` + `ReplayBuffer`（删 `Step`）；`SacAgent` 仍只在示例。
 4. 验证：`just test-filter rl`；训练 `just example-cartpole-sac`；发版前 `SMOKE=1` / smoke just 目标（见路线图 §7.4）。
 
 ### 修改 Evolution

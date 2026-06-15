@@ -1,5 +1,14 @@
 # 更新日志
 
+## [Unreleased] - 待提交
+
+### Changed
+
+- **docs(rl): RL 实施路线整体后移一版（0.19 占用规划版本号后顺延）**
+  - 因 0.19.0 作为「规划 / 文档发版」占用 0.19 版本号，后续**代码**里程碑统一后移一版：环境/buffer/smoke **v0.19→v0.20**、SAC helper + 示例瘦身 **v0.20→v0.21**、AlphaZero + MCTS **v0.21→v0.22**、MuZero + PPO **v0.22→v0.23**、EfficientZero V2 **v0.23→v0.24**（长期 backlog ≥ **v0.25**）
+  - 同步：`rl_roadmap.md`（§7 标题与锚点 → v0.20.0）、`AGENTS.md`（当前主线 v0.20.0 / 路线 v0.20–v0.24）、`rl_python_env_setup.md`、`examples/traditional/sac/README.md`、主线实施计划 plan
+  - 未改：gym 库版本引用（如 `shimmy[gym-v21]`）、演化特性版本（`InsertLayer` 0.20）等与 RL 路线无关的版本号
+
 ## [0.19.0] - 2026-06-15
 
 > RL 主线首个版本：**规划与设计决策定稿**（纯文档 / 规划发版——bump 版本号 + 更新 `CHANGELOG.md`，**不** `cargo publish`）。运行时改造（Gymnasium-only `GymEnv`、buffer 落库、smoke 门禁）自 **v0.20.0** 起实施，详见 [RL 路线图](.doc/design/rl_roadmap.md) 与主线实施计划。

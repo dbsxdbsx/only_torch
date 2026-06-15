@@ -2,8 +2,8 @@
 
 > 本目录包含基于 SAC 算法的强化学习示例，以及 SAC 核心概念的系统讲解。
 >
-> **TODO v0.19 Phase 0b**：`moving/` 将迁移为 `platform/`（`Platform-v0`，[`hybrid-platform`](https://pypi.org/project/hybrid-platform/)），取代依赖老 gym 的 gym-hybrid。
-> **TODO v0.20**：本目录将从 `examples/traditional/sac/` 重组为 `examples/sac/`（为 v0.21 `examples/alphazero/` 与 v0.22 `examples/muzero/` 顶层目录腾位置）；同时三示例瘦身到 ≤ 150 行 main.rs，新增 `lunarlander/`（≤ 80 行）。
+> **TODO v0.20 Phase 0b**：`moving/` 将迁移为 `platform/`（`Platform-v0`，[`hybrid-platform`](https://pypi.org/project/hybrid-platform/)），取代依赖老 gym 的 gym-hybrid。
+> **TODO v0.21**：本目录将从 `examples/traditional/sac/` 重组为 `examples/sac/`（为 v0.22 `examples/alphazero/` 与 v0.23 `examples/muzero/` 顶层目录腾位置）；同时三示例瘦身到 ≤ 150 行 main.rs，新增 `lunarlander/`（≤ 80 行）。
 > 详见 [RL 主线实施计划](../../../c:/Users/Administrator/.cursor/plans/rl_主线实施计划_5966956a.plan.md)。
 
 ## 目录
@@ -12,7 +12,7 @@
 | --- | --- | --- |
 | [cartpole/](cartpole/) | SAC-Discrete，CartPole 平衡杆任务 | `cargo run --example cartpole_sac` |
 | [pendulum/](pendulum/) | SAC-Continuous，Pendulum 摆锤控制 | `cargo run --example pendulum_sac` |
-| [moving/](moving/) → [platform/](platform/) (v0.19 Phase 0b) | Hybrid SAC，Platform-v0 混合动作空间 | `cargo run --example platform_sac`（v0.19 Phase 0b 之前为 `moving_sac`） |
+| [moving/](moving/) → [platform/](platform/) (v0.20 Phase 0b) | Hybrid SAC，Platform-v0 混合动作空间 | `cargo run --example platform_sac`（v0.20 Phase 0b 之前为 `moving_sac`） |
 
 ---
 
