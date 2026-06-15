@@ -1,5 +1,36 @@
 # 更新日志
 
+## [0.21.0] - 2026-06-15
+
+> SAC helper 入库 + 示例瘦身 + LunarLander + 目录重组。「发版」= bump 版本号 + 更新 CHANGELOG，不 `cargo publish`。
+
+### Added
+
+- **feat(rl): `src/rl/algo/sac/` 函数式 helper 入库**
+  - `SacBatch` + `transitions_to_batch`：`&[Transition]` 一次性转批量 Tensor
+  - `compute_td_target`：`r + γ·(1-terminated)·V(s')`
+  - `compute_v_discrete` / `compute_v_continuous` / `compute_v_hybrid`：三变体软 V 值
+  - `update_alpha`：温度梯度步进 + clamp
+  - 22 个纯 Rust 单元测试
+
+- **feat(rl): LunarLander-v3 SAC-Discrete 示例**（`examples/sac/lunarlander/`，78 行）
+  - 验证 SAC helper 跨环境复用（与 CartPole 同构，obs=8 / actions=4）
+
+### Changed
+
+- **refactor(rl): 三个 SAC 示例瘦身**
+  - CartPole 469→125 行 / Pendulum 442→117 行 / Platform 319→129 行
+  - 删除各示例本地 Experience / ReplayBuffer，改用库的 `Transition` + `ReplayBuffer` + SAC helper
+
+- **refactor(rl): 目录重组 `examples/traditional/sac/` → `examples/sac/`**
+  - Cargo.toml / justfile / README / 全项目路径引用同步
+
+### Docs
+
+- SAC `README.md`：加 LunarLander 行、更新 helper 说明
+- justfile：加 `example-lunarlander-sac` 目标
+- README.md：修正 `moving_sac` → `platform_sac`、加 LunarLander 行
+
 ## [0.20.0] - 2026-06-15
 
 > RL 主线首个**代码**版本：Gymnasium-only 环境清理 + buffer 基础 + smoke 门禁。「发版」= bump 版本号 + 更新 CHANGELOG，不 `cargo publish`。
