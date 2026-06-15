@@ -143,9 +143,19 @@ fn build_action_indices(batch: &[Experience]) -> Tensor {
 // ============================================================================
 
 fn main() -> Result<(), GraphError> {
-    println!("=== CartPole SAC-Discrete 强化学习示例 ===\n");
-
-    let config = SacConfig::default();
+    let smoke = std::env::var("SMOKE").is_ok();
+    let config = if smoke {
+        println!("=== CartPole SAC-Discrete [SMOKE 模式] ===\n");
+        SacConfig {
+            max_episodes: 3,
+            start_training_after: 32,
+            batch_size: 32,
+            ..SacConfig::default()
+        }
+    } else {
+        println!("=== CartPole SAC-Discrete 强化学习示例 ===\n");
+        SacConfig::default()
+    };
 
     Python::attach(|py| {
         // 1. 创建环境
@@ -333,6 +343,16 @@ fn main() -> Result<(), GraphError> {
                     // ========== Alpha 更新 ==========
                     agent.update_alpha(avg_entropy);
 
+                    // Smoke 门禁：每步 loss 必须有限（非 NaN / 非 ±∞）
+                    if smoke {
+                        let c1 = critic1_loss.value()?.unwrap()[[0, 0]];
+                        let c2 = critic2_loss.value()?.unwrap()[[0, 0]];
+                        let a = actor_loss.value()?.unwrap()[[0, 0]];
+                        assert!(c1.is_finite(), "SMOKE: critic1_loss={c1} 非有限");
+                        assert!(c2.is_finite(), "SMOKE: critic2_loss={c2} 非有限");
+                        assert!(a.is_finite(), "SMOKE: actor_loss={a} 非有限");
+                    }
+
                     // ========== 软更新目标网络 ==========
                     agent.soft_update_targets();
 
@@ -385,6 +405,13 @@ fn main() -> Result<(), GraphError> {
                 );
                 break;
             }
+        }
+
+        // Smoke 模式：训练循环正常结束即通过，不测试 reward
+        if smoke {
+            println!("\n[SMOKE] 管线验证通过：{} episode 完成，loss 均有限。", config.max_episodes);
+            env.close();
+            return Ok(());
         }
 
         // 6. 测试（3 轮，平均达标即成功）

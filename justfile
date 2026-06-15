@@ -285,6 +285,11 @@ example-cartpole-sac:
     @echo "=== Running CartPole SAC [{{_blas_name}}] (requires Python + gymnasium) ==="
     cargo run --example cartpole_sac {{_blas_flag}}
 
+# CartPole SAC smoke 验证（≥3 episode + loss 有限，不断言 reward）
+smoke-cartpole-sac:
+    @echo "=== CartPole SAC SMOKE [{{_blas_name}}] ==="
+    SMOKE=1 cargo run --release --example cartpole_sac {{_blas_flag}}
+
 example-pendulum-sac:
     @echo "=== Running Pendulum SAC [{{_blas_name}}] (requires Python + gymnasium) ==="
     cargo run --example pendulum_sac {{_blas_flag}}
