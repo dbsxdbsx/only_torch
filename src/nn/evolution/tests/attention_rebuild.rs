@@ -54,8 +54,7 @@ fn replace_rnn_with_attention(
         .iter()
         .filter(|n| {
             n.block_id == Some(0)
-                && (matches!(n.node_type, NodeTypeDescriptor::CellRnn { .. })
-                    || n.is_parameter())
+                && (matches!(n.node_type, NodeTypeDescriptor::CellRnn { .. }) || n.is_parameter())
         })
         .map(|n| n.innovation_number)
         .collect();
@@ -111,9 +110,8 @@ fn attention_block_rebuilds_and_forwards_with_pooling() {
     let seq_len = 6;
     let output_dim = 3;
 
-    let genome = replace_rnn_with_attention(
-        in_dim, embed_dim, num_heads, seq_len, output_dim, false,
-    );
+    let genome =
+        replace_rnn_with_attention(in_dim, embed_dim, num_heads, seq_len, output_dim, false);
 
     let mut rng = rng();
     let build = genome.build(&mut rng).expect("Attention 块应能构图");
@@ -142,9 +140,8 @@ fn attention_block_with_return_sequences_keeps_seq_dim() {
     let seq_len = 4;
     let output_dim = 2;
 
-    let genome = replace_rnn_with_attention(
-        in_dim, embed_dim, num_heads, seq_len, output_dim, true,
-    );
+    let genome =
+        replace_rnn_with_attention(in_dim, embed_dim, num_heads, seq_len, output_dim, true);
 
     // 找到 attention cell node 输出形状
     let cell_shape = genome
@@ -165,9 +162,8 @@ fn two_attention_blocks_stack_without_panic() {
     let output_dim = 2;
 
     // 先构造单层 attention 基因组（attention return_sequences=true 给第二层留 3D 输入）
-    let mut genome = replace_rnn_with_attention(
-        in_dim, embed_dim, num_heads, seq_len, output_dim, true,
-    );
+    let mut genome =
+        replace_rnn_with_attention(in_dim, embed_dim, num_heads, seq_len, output_dim, true);
 
     // attn1 的输出 id（CellAttention 节点）
     let attn1_out = genome

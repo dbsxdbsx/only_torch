@@ -27,9 +27,9 @@ use crate::nn::evolution::gene::{
 };
 use crate::nn::evolution::mutation::SizeConstraints;
 use crate::nn::evolution::node_expansion::{
-    InnovationCounter, expand_activation, expand_batch_norm, expand_conv2d,
-    expand_attention, expand_deformable_conv2d, expand_gru, expand_layer_norm, expand_linear,
-    expand_lstm, expand_pool2d, expand_rms_norm, expand_rnn,
+    InnovationCounter, expand_activation, expand_attention, expand_batch_norm, expand_conv2d,
+    expand_deformable_conv2d, expand_gru, expand_layer_norm, expand_linear, expand_lstm,
+    expand_pool2d, expand_rms_norm, expand_rnn,
 };
 use crate::nn::evolution::node_gene::{GenomeAnalysis, NodeGene};
 
@@ -1667,8 +1667,7 @@ pub fn create_insert_nodes(
             }
         } else {
             // 注意力分支：embed_dim = hidden_size, num_heads 从合法候选中采样
-            let num_heads =
-                pick_heads(hidden_size, rng).expect("attention slot 已通过整除检查");
+            let num_heads = pick_heads(hidden_size, rng).expect("attention slot 已通过整除检查");
             expand_attention(
                 after_id,
                 in_dim,

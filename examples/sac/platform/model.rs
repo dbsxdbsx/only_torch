@@ -85,10 +85,7 @@ impl SacActor {
     ///
     /// 返回 (probs_var, log_probs_var, cont_action_var, cont_log_prob_var)
     /// - cont_log_prob_var: [batch, CONT_DIM]
-    pub fn forward_train(
-        &self,
-        obs: impl IntoVar,
-    ) -> Result<(Var, Var, Var, Var), GraphError> {
+    pub fn forward_train(&self, obs: impl IntoVar) -> Result<(Var, Var, Var, Var), GraphError> {
         let features = self.shared_features(obs);
 
         let logits = self.discrete_head.forward(&features);

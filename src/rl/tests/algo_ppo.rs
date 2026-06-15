@@ -25,7 +25,16 @@ fn test_gae_3_steps_no_termination() {
     let truncated = [false, false, false];
 
     let next_values = [values[1], values[2], 4.0];
-    let (adv, ret) = compute_gae(&rewards, &values, &terminated, &truncated, &next_values, 4.0, 0.99, 0.95);
+    let (adv, ret) = compute_gae(
+        &rewards,
+        &values,
+        &terminated,
+        &truncated,
+        &next_values,
+        4.0,
+        0.99,
+        0.95,
+    );
 
     assert_eq!(adv.len(), 3);
     assert!((adv[2] - 1.46).abs() < 1e-4, "A_2={}", adv[2]);
@@ -53,7 +62,16 @@ fn test_gae_terminated_no_bootstrap() {
     let truncated = [false, false];
 
     let next_values = [values[1], 10.0]; // terminated 时 next_value 不影响（被 mask）
-    let (adv, _) = compute_gae(&rewards, &values, &terminated, &truncated, &next_values, 10.0, 0.99, 0.95);
+    let (adv, _) = compute_gae(
+        &rewards,
+        &values,
+        &terminated,
+        &truncated,
+        &next_values,
+        10.0,
+        0.99,
+        0.95,
+    );
 
     // δ_1 = 1.0 + 0.99 * 10.0 * 0.0 - 0.5 = 0.5 (terminated → not_terminated=0)
     // A_1 = 0.5
@@ -78,7 +96,16 @@ fn test_gae_truncated_bootstraps_value() {
 
     // next_values[1] 是被截断状态的真实后继 V（不是 reset 后的）
     let next_values = [values[1], 10.0];
-    let (adv, _) = compute_gae(&rewards, &values, &terminated, &truncated, &next_values, 10.0, 0.99, 0.95);
+    let (adv, _) = compute_gae(
+        &rewards,
+        &values,
+        &terminated,
+        &truncated,
+        &next_values,
+        10.0,
+        0.99,
+        0.95,
+    );
 
     // δ_1 = 1.0 + 0.99 * 10.0 * 1.0 - 0.5 = 10.4 (truncated → not_terminated=1, bootstrap 有效)
     // A_1 = 10.4
@@ -110,10 +137,7 @@ fn test_normalize_advantages() {
     assert!(mean.abs() < 1e-5, "标准化后均值应近零: {mean}");
 
     let var: f32 = adv.iter().map(|&a| a * a).sum::<f32>() / adv.len() as f32;
-    assert!(
-        (var - 1.0).abs() < 0.1,
-        "标准化后方差应近 1: {var}"
-    );
+    assert!((var - 1.0).abs() < 0.1, "标准化后方差应近 1: {var}");
 }
 
 #[test]

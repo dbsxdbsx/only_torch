@@ -171,5 +171,4 @@ impl SacAgent {
         self.target_critic2
             .soft_update_from(&self.critic2, self.tau);
     }
-
 }

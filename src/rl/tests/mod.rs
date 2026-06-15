@@ -14,7 +14,7 @@ mod algo_sac;
 mod buffer_replay;
 mod buffer_rollout;
 mod buffer_self_play;
+mod env;
 mod mcts_cartpole_env;
 mod mcts_dynamics;
 mod mcts_search;
-mod env;

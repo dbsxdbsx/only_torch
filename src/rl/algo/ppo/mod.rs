@@ -48,7 +48,10 @@ pub fn rollout_to_batch(
     let action_dim = steps[0].action.len();
 
     let obs_data: Vec<f32> = steps.iter().flat_map(|s| s.obs.iter().copied()).collect();
-    let actions_data: Vec<f32> = steps.iter().flat_map(|s| s.action.iter().copied()).collect();
+    let actions_data: Vec<f32> = steps
+        .iter()
+        .flat_map(|s| s.action.iter().copied())
+        .collect();
     let log_probs: Vec<f32> = steps.iter().map(|s| s.log_prob).collect();
 
     PpoBatch {

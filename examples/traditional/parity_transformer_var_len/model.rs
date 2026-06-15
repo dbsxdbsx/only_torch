@@ -27,8 +27,8 @@
 //! 用于直观对照"序列建模算子"的差异。
 
 use only_torch::nn::{
-    Embedding, Graph, GraphError, Linear, Module, SinusoidalPositionalEncoding,
-    TransformerEncoder, Var, VarShapeOps,
+    Embedding, Graph, GraphError, Linear, Module, SinusoidalPositionalEncoding, TransformerEncoder,
+    Var, VarShapeOps,
 };
 use only_torch::tensor::Tensor;
 

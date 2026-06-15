@@ -40,9 +40,16 @@ impl SearchPolicy for PuctPolicy {
     ///
     /// `Q(a) = r(a) + γ · perspective · V(child(a))`
     /// - perspective = +1（同一玩家）或 -1（对手，negamax）
-    fn select_child(&self, parent_visit: u32, parent_to_play: u8, children: &[ChildStat], stats: &MinMaxStats, cfg: &MctsConfig) -> usize {
-        let pb_c = ((1.0 + parent_visit as f32 + cfg.pb_c_base) / cfg.pb_c_base).ln()
-            + cfg.pb_c_init;
+    fn select_child(
+        &self,
+        parent_visit: u32,
+        parent_to_play: u8,
+        children: &[ChildStat],
+        stats: &MinMaxStats,
+        cfg: &MctsConfig,
+    ) -> usize {
+        let pb_c =
+            ((1.0 + parent_visit as f32 + cfg.pb_c_base) / cfg.pb_c_base).ln() + cfg.pb_c_init;
         let sqrt_parent = (parent_visit as f32).sqrt();
 
         let mut best_idx = 0;
@@ -55,7 +62,11 @@ impl SearchPolicy for PuctPolicy {
                 child.value_sum / child.visit_count as f32
             };
             // 视角翻转：子节点 value_sum 是子方视角，父方选择需翻转
-            let perspective = if child.to_play == parent_to_play { 1.0 } else { -1.0 };
+            let perspective = if child.to_play == parent_to_play {
+                1.0
+            } else {
+                -1.0
+            };
             let q = child.reward + child.discount * perspective * v;
             let normalized_q = stats.normalize(q);
             let exploration = pb_c * child.prior * sqrt_parent / (1.0 + child.visit_count as f32);
@@ -99,12 +110,24 @@ impl SearchPolicy for PuctPolicy {
         let inv_temp = 1.0 / cfg.temperature;
         let log_counts: Vec<f32> = children
             .iter()
-            .map(|c| if c.visit_count > 0 { (c.visit_count as f32).ln() } else { f32::NEG_INFINITY })
+            .map(|c| {
+                if c.visit_count > 0 {
+                    (c.visit_count as f32).ln()
+                } else {
+                    f32::NEG_INFINITY
+                }
+            })
             .collect();
         let max_log = log_counts.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
         let weights: Vec<f32> = log_counts
             .iter()
-            .map(|&lc| if lc == f32::NEG_INFINITY { 0.0 } else { ((lc - max_log) * inv_temp).exp() })
+            .map(|&lc| {
+                if lc == f32::NEG_INFINITY {
+                    0.0
+                } else {
+                    ((lc - max_log) * inv_temp).exp()
+                }
+            })
             .collect();
         let sum: f32 = weights.iter().sum();
         if sum <= 0.0 {
@@ -145,19 +168,33 @@ impl SearchPolicy for PuctPolicy {
             }
             let s: f32 = targets.iter().sum();
             if s > 0.0 {
-                for t in &mut targets { *t /= s; }
+                for t in &mut targets {
+                    *t /= s;
+                }
             }
             return targets;
         }
         let inv_temp = 1.0 / cfg.temperature;
         let log_counts: Vec<f32> = children
             .iter()
-            .map(|c| if c.visit_count > 0 { (c.visit_count as f32).ln() } else { f32::NEG_INFINITY })
+            .map(|c| {
+                if c.visit_count > 0 {
+                    (c.visit_count as f32).ln()
+                } else {
+                    f32::NEG_INFINITY
+                }
+            })
             .collect();
         let max_log = log_counts.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
         let weights: Vec<f32> = log_counts
             .iter()
-            .map(|&lc| if lc == f32::NEG_INFINITY { 0.0 } else { ((lc - max_log) * inv_temp).exp() })
+            .map(|&lc| {
+                if lc == f32::NEG_INFINITY {
+                    0.0
+                } else {
+                    ((lc - max_log) * inv_temp).exp()
+                }
+            })
             .collect();
         let sum: f32 = weights.iter().sum();
         weights.iter().map(|&w| w / sum).collect()
@@ -254,7 +291,10 @@ mod tests {
         let d = sample_dirichlet(0.3, 5, &mut rng);
         assert_eq!(d.len(), 5);
         let sum: f32 = d.iter().sum();
-        assert!((sum - 1.0).abs() < 1e-5, "Dirichlet 样本之和应为 1，实际: {sum}");
+        assert!(
+            (sum - 1.0).abs() < 1e-5,
+            "Dirichlet 样本之和应为 1，实际: {sum}"
+        );
         for &x in &d {
             assert!(x >= 0.0, "Dirichlet 分量不应为负");
         }

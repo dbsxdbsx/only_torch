@@ -1072,13 +1072,7 @@ pub fn expand_attention(
             vec![],
             bid,
         ),
-        NodeGene::new(
-            w_v_id,
-            NodeTypeDescriptor::Parameter,
-            qkv_w,
-            vec![],
-            bid,
-        ),
+        NodeGene::new(w_v_id, NodeTypeDescriptor::Parameter, qkv_w, vec![], bid),
         NodeGene::new(
             b_v_id,
             NodeTypeDescriptor::Parameter,
@@ -1086,20 +1080,8 @@ pub fn expand_attention(
             vec![],
             bid,
         ),
-        NodeGene::new(
-            w_o_id,
-            NodeTypeDescriptor::Parameter,
-            o_w,
-            vec![],
-            bid,
-        ),
-        NodeGene::new(
-            b_o_id,
-            NodeTypeDescriptor::Parameter,
-            bias,
-            vec![],
-            bid,
-        ),
+        NodeGene::new(w_o_id, NodeTypeDescriptor::Parameter, o_w, vec![], bid),
+        NodeGene::new(b_o_id, NodeTypeDescriptor::Parameter, bias, vec![], bid),
         NodeGene::new(
             cell_id,
             NodeTypeDescriptor::CellAttention {

@@ -2,11 +2,11 @@
 //!
 //! 覆盖 `transitions_to_batch`、TD target、V 值计算、alpha 更新
 
+use crate::rl::Transition;
 use crate::rl::algo::sac::{
-    compute_v_continuous, compute_v_discrete, compute_v_hybrid, compute_td_target,
+    compute_td_target, compute_v_continuous, compute_v_discrete, compute_v_hybrid,
     transitions_to_batch, update_alpha,
 };
-use crate::rl::Transition;
 use crate::tensor::Tensor;
 
 // ============================================================================

@@ -498,6 +498,10 @@ fn test_var_min_max_normalize_composition() {
     let grad = x.grad().unwrap().unwrap();
     assert_eq!(grad.shape(), &[1, 4]);
     for i in 0..4 {
-        assert!(grad[[0, i]].is_finite(), "grad[{i}] 应有限，实际 {}", grad[[0, i]]);
+        assert!(
+            grad[[0, i]].is_finite(),
+            "grad[{i}] 应有限，实际 {}",
+            grad[[0, i]]
+        );
     }
 }

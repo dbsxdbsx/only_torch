@@ -3,8 +3,12 @@ mod model;
 
 use model::SacAgent;
 use only_torch::nn::distributions::Categorical;
-use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps, VarReduceOps, VarShapeOps};
-use only_torch::rl::algo::sac::{compute_td_target, compute_v_discrete, transitions_to_batch, update_alpha};
+use only_torch::nn::{
+    Adam, Graph, GraphError, Module, Optimizer, VarLossOps, VarReduceOps, VarShapeOps,
+};
+use only_torch::rl::algo::sac::{
+    compute_td_target, compute_v_discrete, transitions_to_batch, update_alpha,
+};
 use only_torch::rl::{GymEnv, ReplayBuffer, Transition};
 use only_torch::tensor::Tensor;
 use pyo3::Python;
@@ -34,43 +38,77 @@ fn main() -> Result<(), GraphError> {
                 let nxt = nobs[0].clone();
                 ep_r += r;
                 buf.push(Transition {
-                    obs: obs.clone(), action: vec![action as f32], reward: r,
-                    next_obs: nxt.clone(), terminated: term, truncated: trunc,
+                    obs: obs.clone(),
+                    action: vec![action as f32],
+                    reward: r,
+                    next_obs: nxt.clone(),
+                    terminated: term,
+                    truncated: trunc,
                 });
                 if buf.len() >= 1000 {
                     let batch = buf.sample(64, &mut rng);
                     let b = transitions_to_batch(&batch, obs_dim);
                     let (np, nlp) = ag.actor.get_action_probs(&b.next_obs)?;
-                    let tq = ag.target_critic1.get_q_values(&b.next_obs)?
+                    let tq = ag
+                        .target_critic1
+                        .get_q_values(&b.next_obs)?
                         .minimum(&ag.target_critic2.get_q_values(&b.next_obs)?);
-                    let tgt = compute_td_target(&b.rewards,
-                        &compute_v_discrete(&np, &tq, &nlp, ag.alpha()), &b.not_terminated, gamma);
+                    let tgt = compute_td_target(
+                        &b.rewards,
+                        &compute_v_discrete(&np, &tq, &nlp, ag.alpha()),
+                        &b.not_terminated,
+                        gamma,
+                    );
                     let q1 = ag.critic1.forward(&graph.input_named(&b.obs, "o")?)?;
-                    c1_opt.zero_grad()?; q1.gather(1, &b.actions)?.mse_loss(&tgt)?.backward()?; c1_opt.step()?;
+                    c1_opt.zero_grad()?;
+                    q1.gather(1, &b.actions)?.mse_loss(&tgt)?.backward()?;
+                    c1_opt.step()?;
                     let q2 = ag.critic2.forward(&graph.input_named(&b.obs, "o")?)?;
-                    c2_opt.zero_grad()?; q2.gather(1, &b.actions)?.mse_loss(&tgt)?.backward()?; c2_opt.step()?;
-                    let qm = ag.critic1.get_q_values(&b.obs)?.minimum(&ag.critic2.get_q_values(&b.obs)?);
+                    c2_opt.zero_grad()?;
+                    q2.gather(1, &b.actions)?.mse_loss(&tgt)?.backward()?;
+                    c2_opt.step()?;
+                    let qm = ag
+                        .critic1
+                        .get_q_values(&b.obs)?
+                        .minimum(&ag.critic2.get_q_values(&b.obs)?);
                     let logits = ag.actor.forward(&graph.input_named(&b.obs, "o")?)?;
                     let d = Categorical::new(logits);
                     let (p, lp) = (d.probs(), d.log_probs());
-                    let al = (&p * (&lp * Tensor::new(&[ag.alpha()], &[1, 1]) - &qm)).sum_axis(1).mean();
+                    let al = (&p * (&lp * Tensor::new(&[ag.alpha()], &[1, 1]) - &qm))
+                        .sum_axis(1)
+                        .mean();
                     al.forward()?;
                     let (pv, lpv) = (p.value()?.unwrap(), lp.value()?.unwrap());
                     let h = -(&pv * &lpv).sum().get_data_number().unwrap() / pv.shape()[0] as f32;
-                    a_opt.zero_grad()?; al.backward()?; a_opt.step()?;
+                    a_opt.zero_grad()?;
+                    al.backward()?;
+                    a_opt.step()?;
                     ag.log_alpha = update_alpha(ag.log_alpha, ag.alpha_lr, h, ag.target_entropy);
                     ag.soft_update_targets();
                 }
-                if term || trunc { break; }
+                if term || trunc {
+                    break;
+                }
                 obs = nxt;
             }
             hist.push_back(ep_r);
-            if hist.len() > 100 { hist.pop_front(); }
+            if hist.len() > 100 {
+                hist.pop_front();
+            }
             let avg = hist.iter().sum::<f32>() / hist.len() as f32;
             if (ep + 1) % 10 == 0 {
-                println!("Ep {:4}: R={:6.1} avg={:6.1} α={:.3}", ep+1, ep_r, avg, ag.alpha());
+                println!(
+                    "Ep {:4}: R={:6.1} avg={:6.1} α={:.3}",
+                    ep + 1,
+                    ep_r,
+                    avg,
+                    ag.alpha()
+                );
             }
-            if avg >= 200.0 { println!("✅ avg={avg:.1}"); break; }
+            if avg >= 200.0 {
+                println!("✅ avg={avg:.1}");
+                break;
+            }
         }
         env.close();
         Ok(())

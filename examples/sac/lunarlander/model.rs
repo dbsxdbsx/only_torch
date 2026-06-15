@@ -6,7 +6,11 @@ use only_torch::nn::distributions::Categorical;
 use only_torch::nn::{Graph, GraphError, IntoVar, Linear, Module, Var, VarActivationOps};
 use only_torch::tensor::Tensor;
 
-pub struct SacActor { fc1: Linear, fc2: Linear, fc3: Linear }
+pub struct SacActor {
+    fc1: Linear,
+    fc2: Linear,
+    fc3: Linear,
+}
 
 impl SacActor {
     pub fn new(graph: &Graph, obs_dim: usize, action_dim: usize) -> Result<Self, GraphError> {
@@ -36,14 +40,28 @@ impl SacActor {
 
 impl Module for SacActor {
     fn parameters(&self) -> Vec<Var> {
-        [self.fc1.parameters(), self.fc2.parameters(), self.fc3.parameters()].concat()
+        [
+            self.fc1.parameters(),
+            self.fc2.parameters(),
+            self.fc3.parameters(),
+        ]
+        .concat()
     }
 }
 
-pub struct SacCritic { fc1: Linear, fc2: Linear, fc3: Linear }
+pub struct SacCritic {
+    fc1: Linear,
+    fc2: Linear,
+    fc3: Linear,
+}
 
 impl SacCritic {
-    pub fn new(graph: &Graph, obs_dim: usize, action_dim: usize, name: &str) -> Result<Self, GraphError> {
+    pub fn new(
+        graph: &Graph,
+        obs_dim: usize,
+        action_dim: usize,
+        name: &str,
+    ) -> Result<Self, GraphError> {
         let g = graph.with_model_name(name);
         Ok(Self {
             fc1: Linear::new(&g, obs_dim, 128, true, "fc1")?,
@@ -63,7 +81,12 @@ impl SacCritic {
 
 impl Module for SacCritic {
     fn parameters(&self) -> Vec<Var> {
-        [self.fc1.parameters(), self.fc2.parameters(), self.fc3.parameters()].concat()
+        [
+            self.fc1.parameters(),
+            self.fc2.parameters(),
+            self.fc3.parameters(),
+        ]
+        .concat()
     }
 }
 
@@ -91,7 +114,9 @@ impl SacAgent {
             alpha_lr: 0.001,
         })
     }
-    pub fn alpha(&self) -> f32 { self.log_alpha.exp() }
+    pub fn alpha(&self) -> f32 {
+        self.log_alpha.exp()
+    }
     pub fn soft_update_targets(&self) {
         self.target_critic1.soft_update_from(&self.critic1, 0.005);
         self.target_critic2.soft_update_from(&self.critic2, 0.005);

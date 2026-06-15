@@ -38,7 +38,15 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
     }
 
     let mut tree = Tree::new(root_out.state.clone(), root_out.to_play);
-    expand_root(&mut tree, model, &root_out.candidate_actions, &root_out.prior, &root_out.state, root_out.to_play, cfg.discount);
+    expand_root(
+        &mut tree,
+        model,
+        &root_out.candidate_actions,
+        &root_out.prior,
+        &root_out.state,
+        root_out.to_play,
+        cfg.discount,
+    );
 
     // 根节点 backup 初始价值
     tree.nodes[tree.root].visit_count = 1;
@@ -113,7 +121,11 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
     } else if !final_children.is_empty() {
         final_children[0].action.clone()
     } else {
-        root_out.candidate_actions.first().cloned().unwrap_or(super::types::ActionPayload::Discrete(0))
+        root_out
+            .candidate_actions
+            .first()
+            .cloned()
+            .unwrap_or(super::types::ActionPayload::Discrete(0))
     };
 
     let learn_policy = policy.make_targets(&final_children, cfg);

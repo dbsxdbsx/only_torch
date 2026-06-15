@@ -3,9 +3,7 @@
 use rand::RngCore;
 
 use super::min_max::MinMaxStats;
-use super::types::{
-    ActionPayload, ChildStat, MctsConfig, RecurrentOut, RootOut,
-};
+use super::types::{ActionPayload, ChildStat, MctsConfig, RecurrentOut, RootOut};
 
 /// MCTS 模型接口（root + recurrent，与 mctx 同构）
 ///
@@ -46,7 +44,14 @@ pub trait SearchPolicy {
     fn prepare_root(&self, children: &mut [ChildStat], cfg: &MctsConfig, rng: &mut dyn RngCore);
 
     /// 选择要展开的子节点索引（从父节点视角计算 Q 值）
-    fn select_child(&self, parent_visit: u32, parent_to_play: u8, children: &[ChildStat], stats: &MinMaxStats, cfg: &MctsConfig) -> usize;
+    fn select_child(
+        &self,
+        parent_visit: u32,
+        parent_to_play: u8,
+        children: &[ChildStat],
+        stats: &MinMaxStats,
+        cfg: &MctsConfig,
+    ) -> usize;
 
     /// 搜索结束后推荐最终动作索引（训练时随机采样，评测时可贪心）
     fn recommend(&self, children: &[ChildStat], cfg: &MctsConfig, rng: &mut dyn RngCore) -> usize;

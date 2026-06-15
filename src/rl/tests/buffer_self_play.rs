@@ -1,8 +1,8 @@
 //! SelfPlayGame + ReplayBuffer 单元测试（纯 Rust，无 pyo3）
 
 use crate::rl::buffer::{GameOutcome, ReplayBuffer, SelfPlayGame, SelfPlayStep};
-use rand::rngs::StdRng;
 use rand::SeedableRng;
+use rand::rngs::StdRng;
 
 fn make_step(id: usize, player: u8) -> SelfPlayStep {
     let action_dim = 9;
@@ -20,9 +20,7 @@ fn make_step(id: usize, player: u8) -> SelfPlayStep {
 }
 
 fn make_game(n_steps: usize, outcome: GameOutcome) -> SelfPlayGame {
-    let steps = (0..n_steps)
-        .map(|i| make_step(i, (i % 2) as u8))
-        .collect();
+    let steps = (0..n_steps).map(|i| make_step(i, (i % 2) as u8)).collect();
     SelfPlayGame { steps, outcome }
 }
 

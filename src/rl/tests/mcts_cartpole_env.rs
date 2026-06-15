@@ -41,10 +41,12 @@ impl MctsModel for CartPoleEnvModel {
     fn root(&self, _obs: &[f32]) -> RootOut<Self::State> {
         Python::attach(|py| {
             let copy_mod = py.import("copy").expect("import copy 失败");
-            let state = EnvSnapshot(copy_mod
-                .call_method1("deepcopy", (self.env.bind(py),))
-                .expect("deepcopy env 失败")
-                .unbind());
+            let state = EnvSnapshot(
+                copy_mod
+                    .call_method1("deepcopy", (self.env.bind(py),))
+                    .expect("deepcopy env 失败")
+                    .unbind(),
+            );
 
             RootOut {
                 state,
@@ -137,7 +139,9 @@ fn test_mcts_cartpole_env_episode() {
 
         // 将 env 存入模型（共享同一个 Python 对象）
         let env_py: Py<PyAny> = env.unbind();
-        let model = CartPoleEnvModel { env: env_py.clone_ref(py) };
+        let model = CartPoleEnvModel {
+            env: env_py.clone_ref(py),
+        };
 
         // MCTS 配置：50 次模拟 + 0.99 折扣
         let policy = PuctPolicy::new();
@@ -194,9 +198,7 @@ fn test_mcts_cartpole_env_episode() {
         // 关闭环境
         let _ = env_py.bind(py).call_method0("close");
 
-        println!(
-            "MCTS CartPole episode 完成: steps={steps}, total_reward={total_reward}"
-        );
+        println!("MCTS CartPole episode 完成: steps={steps}, total_reward={total_reward}");
 
         // 验证搜索核心可运行且不崩溃（哑 value 估计下无法期望高分）
         assert!(
@@ -217,5 +219,7 @@ fn extract_obs(_py: Python<'_>, obs_py: &Bound<'_, PyAny>) -> Vec<f32> {
             }
         }
     }
-    obs_py.extract::<Vec<f32>>().unwrap_or_else(|_| vec![0.0; 4])
+    obs_py
+        .extract::<Vec<f32>>()
+        .unwrap_or_else(|_| vec![0.0; 4])
 }

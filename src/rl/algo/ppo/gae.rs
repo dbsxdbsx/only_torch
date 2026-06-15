@@ -43,7 +43,11 @@ pub fn compute_gae(
     let mut last_gae = 0.0f32;
 
     for t in (0..n).rev() {
-        let next_v = if t + 1 < n { next_values[t] } else { last_value };
+        let next_v = if t + 1 < n {
+            next_values[t]
+        } else {
+            last_value
+        };
         let not_terminated = if terminated[t] { 0.0 } else { 1.0 };
         let not_done = if terminated[t] || truncated[t] {
             0.0

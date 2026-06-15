@@ -73,7 +73,11 @@ impl<D: Dynamics> MctsModel for DynamicsModel<D> {
             reward: out.reward,
             value: out.value,
             prior: out.prior,
-            candidate_actions: if out.terminal { vec![] } else { self.actions.clone() },
+            candidate_actions: if out.terminal {
+                vec![]
+            } else {
+                self.actions.clone()
+            },
             terminal: out.terminal,
             to_play: 0,
             discount: self.discount,

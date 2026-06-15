@@ -55,8 +55,7 @@ fn build_attention_genome() -> NetworkGenome {
         .iter()
         .filter(|n| {
             n.block_id == Some(0)
-                && (matches!(n.node_type, NodeTypeDescriptor::CellRnn { .. })
-                    || n.is_parameter())
+                && (matches!(n.node_type, NodeTypeDescriptor::CellRnn { .. }) || n.is_parameter())
         })
         .map(|n| n.innovation_number)
         .collect();

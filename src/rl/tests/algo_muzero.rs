@@ -1,11 +1,11 @@
 //! MuZero helper 单元测试
 
+use crate::rl::SelfPlayStep;
 use crate::rl::algo::muzero::loss;
 use crate::rl::algo::muzero::{
-    compute_n_step_target, scalar_to_two_hot, two_hot_to_scalar, value_transform,
-    value_transform_inv, SupportConfig,
+    SupportConfig, compute_n_step_target, scalar_to_two_hot, two_hot_to_scalar, value_transform,
+    value_transform_inv,
 };
-use crate::rl::SelfPlayStep;
 
 // ============================================================================
 // value_transform 测试
@@ -151,7 +151,9 @@ fn support_config_size_and_atoms() {
 #[test]
 fn two_hot_sums_to_one() {
     let cfg = SupportConfig::new(20);
-    for &x in &[0.0, 1.0, -1.0, 5.0, 42.0, -42.0, 150.0, 333.0, -333.0, 0.37, -0.37] {
+    for &x in &[
+        0.0, 1.0, -1.0, 5.0, 42.0, -42.0, 150.0, 333.0, -333.0, 0.37, -0.37,
+    ] {
         let th = scalar_to_two_hot(x, &cfg);
         assert_eq!(th.len(), cfg.size());
         let s: f32 = th.iter().sum();
@@ -190,7 +192,10 @@ fn two_hot_clamps_out_of_range() {
     let cfg = SupportConfig::new(20);
     // 远超 support 覆盖范围的 value：编码应饱和到最高原子，解码回来被 clamp
     let th = scalar_to_two_hot(1.0e6, &cfg);
-    assert!((th[cfg.size() - 1] - 1.0).abs() < 1e-5, "极大值应全压最高原子");
+    assert!(
+        (th[cfg.size() - 1] - 1.0).abs() < 1e-5,
+        "极大值应全压最高原子"
+    );
     let th_neg = scalar_to_two_hot(-1.0e6, &cfg);
     assert!((th_neg[0] - 1.0).abs() < 1e-5, "极小值应全压最低原子");
 }

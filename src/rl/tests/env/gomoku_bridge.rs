@@ -17,10 +17,7 @@ fn test_gomoku_bridge_legal_mask() {
 
         let mask = env.legal_mask();
         assert_eq!(mask.len(), 81, "9×9 棋盘 legal_mask 长度应为 81");
-        assert!(
-            mask.iter().all(|&b| b),
-            "初始棋盘所有位置应合法"
-        );
+        assert!(mask.iter().all(|&b| b), "初始棋盘所有位置应合法");
 
         // 下一步后掩码应少一个
         env.board_step(40); // 中心
@@ -58,10 +55,7 @@ fn test_gomoku_bridge_snapshot_restore() {
         // 恢复
         env.restore(&snap);
         let mask_restored = env.legal_mask();
-        assert!(
-            mask_restored.iter().all(|&b| b),
-            "恢复后所有位置应合法"
-        );
+        assert!(mask_restored.iter().all(|&b| b), "恢复后所有位置应合法");
         assert_eq!(env.current_player(), 0, "恢复后应为黑方");
 
         env.close();

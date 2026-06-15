@@ -68,14 +68,8 @@ mod tests {
     #[test]
     fn compresses_large_values() {
         let h200 = value_transform(200.0);
-        assert!(
-            h200 < 15.0,
-            "h(200) = {h200}，应显著小于 200"
-        );
-        assert!(
-            h200 > 10.0,
-            "h(200) = {h200}，应大于 10（非退化）"
-        );
+        assert!(h200 < 15.0, "h(200) = {h200}，应显著小于 200");
+        assert!(h200 > 10.0, "h(200) = {h200}，应大于 10（非退化）");
     }
 
     #[test]

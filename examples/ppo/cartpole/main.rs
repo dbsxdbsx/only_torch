@@ -10,15 +10,14 @@ mod model;
 use model::{PpoActor, PpoCritic};
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer};
 use only_torch::rl::algo::ppo::{
-    clipped_policy_loss, compute_gae, entropy_bonus, normalize_advantages,
-    value_loss,
+    clipped_policy_loss, compute_gae, entropy_bonus, normalize_advantages, value_loss,
 };
 use only_torch::rl::{GymEnv, RolloutBuffer, RolloutStep};
 use only_torch::tensor::Tensor;
 use pyo3::Python;
-use rand::seq::SliceRandom;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
+use rand::seq::SliceRandom;
 use std::collections::VecDeque;
 
 fn eval_cartpole(
@@ -136,8 +135,16 @@ fn main() -> Result<(), GraphError> {
             let term: Vec<bool> = steps.iter().map(|s| s.terminated).collect();
             let trunc: Vec<bool> = steps.iter().map(|s| s.truncated).collect();
 
-            let (mut advantages, returns) =
-                compute_gae(&rewards, &values, &term, &trunc, &next_values_buf, last_value, gamma, lambda);
+            let (mut advantages, returns) = compute_gae(
+                &rewards,
+                &values,
+                &term,
+                &trunc,
+                &next_values_buf,
+                last_value,
+                gamma,
+                lambda,
+            );
             normalize_advantages(&mut advantages);
 
             // 准备原始数据用于 shuffle
@@ -158,8 +165,14 @@ fn main() -> Result<(), GraphError> {
                     let mb_idx = &indices[mb_start..mb_end];
                     let bs = mb_idx.len();
 
-                    let mb_obs_data: Vec<f32> = mb_idx.iter().flat_map(|&i| raw_obs[i].iter().copied()).collect();
-                    let mb_act_data: Vec<f32> = mb_idx.iter().flat_map(|&i| raw_act[i].iter().copied()).collect();
+                    let mb_obs_data: Vec<f32> = mb_idx
+                        .iter()
+                        .flat_map(|&i| raw_obs[i].iter().copied())
+                        .collect();
+                    let mb_act_data: Vec<f32> = mb_idx
+                        .iter()
+                        .flat_map(|&i| raw_act[i].iter().copied())
+                        .collect();
                     let mb_olp_data: Vec<f32> = mb_idx.iter().map(|&i| raw_olp[i]).collect();
                     let mb_adv_data: Vec<f32> = mb_idx.iter().map(|&i| advantages[i]).collect();
                     let mb_ret_data: Vec<f32> = mb_idx.iter().map(|&i| returns[i]).collect();
@@ -170,7 +183,8 @@ fn main() -> Result<(), GraphError> {
                     let obs_var = graph.input_named(&mb_obs, "o")?;
                     let (new_log_probs, dist_entropy) =
                         actor.evaluate_actions(&obs_var, &mb_actions)?;
-                    let old_lp_var = graph.input_named(&Tensor::new(&mb_olp_data, &[bs, 1]), "old_lp")?;
+                    let old_lp_var =
+                        graph.input_named(&Tensor::new(&mb_olp_data, &[bs, 1]), "old_lp")?;
                     let adv_var = graph.input_named(&Tensor::new(&mb_adv_data, &[bs, 1]), "adv")?;
                     let ret_var = graph.input_named(&Tensor::new(&mb_ret_data, &[bs, 1]), "ret")?;
 
@@ -189,8 +203,7 @@ fn main() -> Result<(), GraphError> {
                     actor_loss.backward()?;
                     actor_opt.step()?;
 
-                    let new_values =
-                        critic.forward(&graph.input_named(&mb_obs, "o")?)?;
+                    let new_values = critic.forward(&graph.input_named(&mb_obs, "o")?)?;
                     let v_loss = value_loss(&new_values, &ret_var);
                     let critic_loss = &v_loss * vf_coef;
                     critic_loss.forward()?;

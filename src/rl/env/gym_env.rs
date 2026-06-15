@@ -461,8 +461,16 @@ impl<'py> GymEnv<'py> {
         let result = board
             .call_method1("step", (action,))
             .expect("调用 board.step() 失败");
-        let reward: f32 = result.get_item(0).expect("获取 reward").extract().expect("解析");
-        let terminal: bool = result.get_item(1).expect("获取 terminal").extract().expect("解析");
+        let reward: f32 = result
+            .get_item(0)
+            .expect("获取 reward")
+            .extract()
+            .expect("解析");
+        let terminal: bool = result
+            .get_item(1)
+            .expect("获取 terminal")
+            .extract()
+            .expect("解析");
         (reward, terminal)
     }
 

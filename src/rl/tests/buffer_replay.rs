@@ -1,8 +1,8 @@
 //! ReplayBuffer + Transition 单元测试（纯 Rust，无 pyo3）
 
 use crate::rl::buffer::{BufferItem, ReplayBuffer, Transition};
-use rand::rngs::StdRng;
 use rand::SeedableRng;
+use rand::rngs::StdRng;
 
 fn make_transition(id: usize, terminated: bool, truncated: bool) -> Transition {
     Transition {
@@ -232,8 +232,12 @@ fn test_custom_buffer_item() {
     impl BufferItem for MyItem {}
 
     let mut buf = ReplayBuffer::new(5);
-    buf.push(MyItem { data: vec![1.0, 2.0] });
-    buf.push(MyItem { data: vec![3.0, 4.0] });
+    buf.push(MyItem {
+        data: vec![1.0, 2.0],
+    });
+    buf.push(MyItem {
+        data: vec![3.0, 4.0],
+    });
     let mut rng = StdRng::seed_from_u64(0);
     let batch = buf.sample(2, &mut rng);
     assert_eq!(batch.len(), 2);

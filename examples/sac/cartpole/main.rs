@@ -37,7 +37,8 @@ fn eval_cartpole(
             let logits = agent.actor.forward(&Tensor::new(&obs, &[1, obs_dim]))?;
             let logits_val = logits.value()?.unwrap();
             let probs = logits_val.softmax(1);
-            let action = probs.data_as_slice()
+            let action = probs
+                .data_as_slice()
                 .iter()
                 .enumerate()
                 .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
@@ -45,11 +46,15 @@ fn eval_cartpole(
                 .unwrap_or(0);
             let (nobs, reward, terminated, truncated) = env.step(&[action as f32]);
             ep_r += reward;
-            if terminated || truncated { break; }
+            if terminated || truncated {
+                break;
+            }
             obs = nobs[0].clone();
         }
         total += ep_r;
-        if ep_r > max_r { max_r = ep_r; }
+        if ep_r > max_r {
+            max_r = ep_r;
+        }
     }
     Ok((total / n_episodes as f32, max_r))
 }
@@ -82,7 +87,9 @@ fn main() -> Result<(), GraphError> {
             let (mut ep_r, mut ep_len) = (0.0f32, 0);
 
             loop {
-                let (action, _) = agent.actor.sample_action(&Tensor::new(&obs, &[1, obs_dim]))?;
+                let (action, _) = agent
+                    .actor
+                    .sample_action(&Tensor::new(&obs, &[1, obs_dim]))?;
                 let (nobs, reward, terminated, truncated) = env.step(&[action as f32]);
                 let next_obs = nobs[0].clone();
                 ep_r += reward;
@@ -111,24 +118,35 @@ fn main() -> Result<(), GraphError> {
                     // Critic 更新
                     let q1 = agent.critic1.forward(&graph.input_named(&b.obs, "o")?)?;
                     let c1_loss = q1.gather(1, &b.actions)?.mse_loss(&target)?;
-                    c1_opt.zero_grad()?; c1_loss.backward()?; c1_opt.step()?;
+                    c1_opt.zero_grad()?;
+                    c1_loss.backward()?;
+                    c1_opt.step()?;
                     let q2 = agent.critic2.forward(&graph.input_named(&b.obs, "o")?)?;
                     let c2_loss = q2.gather(1, &b.actions)?.mse_loss(&target)?;
-                    c2_opt.zero_grad()?; c2_loss.backward()?; c2_opt.step()?;
+                    c2_opt.zero_grad()?;
+                    c2_loss.backward()?;
+                    c2_opt.step()?;
 
                     // Actor 更新
-                    let q_min = agent.critic1.get_q_values(&b.obs)?
+                    let q_min = agent
+                        .critic1
+                        .get_q_values(&b.obs)?
                         .minimum(&agent.critic2.get_q_values(&b.obs)?);
                     let logits = agent.actor.forward(&graph.input_named(&b.obs, "o")?)?;
                     let dist = Categorical::new(logits);
                     let (probs, log_probs) = (dist.probs(), dist.log_probs());
                     let alpha_t = Tensor::new(&[agent.alpha()], &[1, 1]);
-                    let a_loss = (&probs * (&log_probs * alpha_t - &q_min)).sum_axis(1).mean();
+                    let a_loss = (&probs * (&log_probs * alpha_t - &q_min))
+                        .sum_axis(1)
+                        .mean();
                     a_loss.forward()?;
                     let pv = probs.value()?.unwrap();
                     let lpv = log_probs.value()?.unwrap();
-                    let avg_h = -(&pv * &lpv).sum().get_data_number().unwrap() / pv.shape()[0] as f32;
-                    actor_opt.zero_grad()?; a_loss.backward()?; actor_opt.step()?;
+                    let avg_h =
+                        -(&pv * &lpv).sum().get_data_number().unwrap() / pv.shape()[0] as f32;
+                    actor_opt.zero_grad()?;
+                    a_loss.backward()?;
+                    actor_opt.step()?;
 
                     if smoke {
                         for (name, l) in [("c1", &c1_loss), ("c2", &c2_loss), ("a", &a_loss)] {
@@ -137,19 +155,31 @@ fn main() -> Result<(), GraphError> {
                         }
                     }
 
-                    agent.log_alpha = update_alpha(agent.log_alpha, agent.alpha_lr, avg_h, agent.target_entropy);
+                    agent.log_alpha =
+                        update_alpha(agent.log_alpha, agent.alpha_lr, avg_h, agent.target_entropy);
                     agent.soft_update_targets();
                 }
 
-                if terminated || truncated { break; }
+                if terminated || truncated {
+                    break;
+                }
                 obs = next_obs;
             }
 
             ep_rewards.push_back(ep_r);
-            if ep_rewards.len() > 20 { ep_rewards.pop_front(); }
+            if ep_rewards.len() > 20 {
+                ep_rewards.pop_front();
+            }
             let avg = ep_rewards.iter().sum::<f32>() / ep_rewards.len() as f32;
-            println!("Ep {:3}: R={:5.1} len={:3} avg20={:5.1} α={:.3} t={:.2}s",
-                ep+1, ep_r, ep_len, avg, agent.alpha(), t0.elapsed().as_secs_f32());
+            println!(
+                "Ep {:3}: R={:5.1} len={:3} avg20={:5.1} α={:.3} t={:.2}s",
+                ep + 1,
+                ep_r,
+                ep_len,
+                avg,
+                agent.alpha(),
+                t0.elapsed().as_secs_f32()
+            );
             if !smoke && ep_rewards.len() >= 20 && avg >= 195.0 {
                 println!("✅ 最近 20 局均值达标 avg={avg:.1}");
                 break;
@@ -169,7 +199,9 @@ fn main() -> Result<(), GraphError> {
             eval_env.close();
         }
 
-        if smoke { println!("[SMOKE] 通过"); }
+        if smoke {
+            println!("[SMOKE] 通过");
+        }
         env.close();
         Ok(())
     })

@@ -17,14 +17,19 @@ pub fn clipped_policy_loss(
     let clipped_ratio = ratio.clip(1.0 - clip_eps, 1.0 + clip_eps);
     let surr1 = &ratio * advantages;
     let surr2 = &clipped_ratio * advantages;
-    -(surr1.minimum(&surr2).expect("clipped_policy_loss: minimum shape 不匹配")).mean()
+    -(surr1
+        .minimum(&surr2)
+        .expect("clipped_policy_loss: minimum shape 不匹配"))
+    .mean()
 }
 
 /// PPO value loss（MSE）
 ///
 /// L_v = MSE(new_values, returns)
 pub fn value_loss(new_values: &Var, returns: &Var) -> Var {
-    new_values.mse_loss(returns).expect("value_loss: shape 不匹配")
+    new_values
+        .mse_loss(returns)
+        .expect("value_loss: shape 不匹配")
 }
 
 /// 熵 bonus（鼓励探索）

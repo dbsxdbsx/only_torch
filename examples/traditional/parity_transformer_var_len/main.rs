@@ -45,9 +45,7 @@ fn main() -> Result<(), GraphError> {
 
     println!("超参数:");
     println!("  序列长度范围: [{min_len}, {max_len}]");
-    println!(
-        "  layers={num_layers}, d_model={d_model}, num_heads={num_heads}, d_ff={d_ff}"
-    );
+    println!("  layers={num_layers}, d_model={d_model}, num_heads={num_heads}, d_ff={d_ff}");
     println!("  优化器: Adam, lr: {lr}");
     println!("  损失函数: CrossEntropy");
     println!();
@@ -85,8 +83,7 @@ fn main() -> Result<(), GraphError> {
 
     // ========== 模型构建 ==========
     let graph = Graph::new_with_seed(seed);
-    let model =
-        ParityTransformer::new(&graph, pe_max_len, d_model, num_heads, d_ff, num_layers)?;
+    let model = ParityTransformer::new(&graph, pe_max_len, d_model, num_heads, d_ff, num_layers)?;
     let mut optimizer = Adam::new(&graph, &model.parameters(), lr);
 
     println!("开始训练...\n");

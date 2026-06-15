@@ -72,19 +72,12 @@ impl MctsModel for TwoPlayerMock {
             state: (0, 0),
             prior: vec![0.5, 0.5],
             value: 0.3,
-            candidate_actions: vec![
-                ActionPayload::Discrete(0),
-                ActionPayload::Discrete(1),
-            ],
+            candidate_actions: vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)],
             to_play: 0, // 黑方
         }
     }
 
-    fn recurrent(
-        &self,
-        state: &Self::State,
-        _action: &ActionPayload,
-    ) -> RecurrentOut<Self::State> {
+    fn recurrent(&self, state: &Self::State, _action: &ActionPayload) -> RecurrentOut<Self::State> {
         let (depth, current) = *state;
         let next_depth = depth + 1;
         let next_player = 1 - current;
@@ -98,10 +91,7 @@ impl MctsModel for TwoPlayerMock {
             candidate_actions: if terminal {
                 vec![]
             } else {
-                vec![
-                    ActionPayload::Discrete(0),
-                    ActionPayload::Discrete(1),
-                ]
+                vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)]
             },
             terminal,
             to_play: next_player,
@@ -159,28 +149,67 @@ fn test_temperature_affects_make_targets() {
     let policy = PuctPolicy::new();
     // 模拟一组 visit counts：动作 0 明显多
     let children = vec![
-        ChildStat { action: ActionPayload::Discrete(0), visit_count: 60, value_sum: 30.0, prior: 0.6, reward: 0.0, to_play: 0, discount: 1.0 },
-        ChildStat { action: ActionPayload::Discrete(1), visit_count: 30, value_sum: 15.0, prior: 0.3, reward: 0.0, to_play: 0, discount: 1.0 },
-        ChildStat { action: ActionPayload::Discrete(2), visit_count: 10, value_sum: 5.0, prior: 0.1, reward: 0.0, to_play: 0, discount: 1.0 },
+        ChildStat {
+            action: ActionPayload::Discrete(0),
+            visit_count: 60,
+            value_sum: 30.0,
+            prior: 0.6,
+            reward: 0.0,
+            to_play: 0,
+            discount: 1.0,
+        },
+        ChildStat {
+            action: ActionPayload::Discrete(1),
+            visit_count: 30,
+            value_sum: 15.0,
+            prior: 0.3,
+            reward: 0.0,
+            to_play: 0,
+            discount: 1.0,
+        },
+        ChildStat {
+            action: ActionPayload::Discrete(2),
+            visit_count: 10,
+            value_sum: 5.0,
+            prior: 0.1,
+            reward: 0.0,
+            to_play: 0,
+            discount: 1.0,
+        },
     ];
 
     // 低温度 → 接近 one-hot
-    let cfg_cold = MctsConfig { temperature: 0.01, ..MctsConfig::default() };
+    let cfg_cold = MctsConfig {
+        temperature: 0.01,
+        ..MctsConfig::default()
+    };
     let targets_cold = policy.make_targets(&children, &cfg_cold);
     let max_cold = targets_cold.iter().cloned().fold(0.0_f32, f32::max);
 
     // 正常温度 → 按 visit count 比例
-    let cfg_normal = MctsConfig { temperature: 1.0, ..MctsConfig::default() };
+    let cfg_normal = MctsConfig {
+        temperature: 1.0,
+        ..MctsConfig::default()
+    };
     let targets_normal = policy.make_targets(&children, &cfg_normal);
     let max_normal = targets_normal.iter().cloned().fold(0.0_f32, f32::max);
 
     // 高温度 → 更均匀
-    let cfg_hot = MctsConfig { temperature: 10.0, ..MctsConfig::default() };
+    let cfg_hot = MctsConfig {
+        temperature: 10.0,
+        ..MctsConfig::default()
+    };
     let targets_hot = policy.make_targets(&children, &cfg_hot);
     let max_hot = targets_hot.iter().cloned().fold(0.0_f32, f32::max);
 
-    assert!(max_cold > max_normal, "低温度({max_cold}) 应 > 正常({max_normal})");
-    assert!(max_normal > max_hot, "正常({max_normal}) 应 > 高温({max_hot})");
+    assert!(
+        max_cold > max_normal,
+        "低温度({max_cold}) 应 > 正常({max_normal})"
+    );
+    assert!(
+        max_normal > max_hot,
+        "正常({max_normal}) 应 > 高温({max_hot})"
+    );
     assert!(max_cold > 0.95, "温度→0 应接近 1.0，实际: {max_cold}");
     assert!(max_hot < 0.5, "高温应接近均匀(0.33)，实际: {max_hot}");
 }
@@ -273,19 +302,12 @@ impl MctsModel for AllTerminalMock {
             state: 0,
             prior: vec![0.5, 0.5],
             value: 0.0,
-            candidate_actions: vec![
-                ActionPayload::Discrete(0),
-                ActionPayload::Discrete(1),
-            ],
+            candidate_actions: vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)],
             to_play: 0,
         }
     }
 
-    fn recurrent(
-        &self,
-        _state: &Self::State,
-        action: &ActionPayload,
-    ) -> RecurrentOut<Self::State> {
+    fn recurrent(&self, _state: &Self::State, action: &ActionPayload) -> RecurrentOut<Self::State> {
         let reward = match action {
             ActionPayload::Discrete(0) => 1.0,
             _ => -1.0,

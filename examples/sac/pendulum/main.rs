@@ -7,7 +7,9 @@
 mod model;
 
 use model::SacAgent;
-use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarActivationOps, VarLossOps, VarReduceOps};
+use only_torch::nn::{
+    Adam, Graph, GraphError, Module, Optimizer, VarActivationOps, VarLossOps, VarReduceOps,
+};
 use only_torch::rl::algo::sac::{
     compute_td_target, compute_v_continuous, transitions_to_batch, update_alpha,
 };
@@ -43,7 +45,9 @@ fn main() -> Result<(), GraphError> {
             let (mut ep_r, mut ep_len) = (0.0f32, 0);
 
             loop {
-                let (tanh_act, _) = agent.actor.sample_action(&Tensor::new(&obs, &[1, obs_dim]))?;
+                let (tanh_act, _) = agent
+                    .actor
+                    .sample_action(&Tensor::new(&obs, &[1, obs_dim]))?;
                 let env_act = agent.scale_action(&tanh_act);
                 let act_vec: Vec<f32> = (0..action_dim).map(|i| env_act[[0, i]]).collect();
                 let (nobs, reward, terminated, truncated) = env.step(&act_vec);
@@ -52,8 +56,12 @@ fn main() -> Result<(), GraphError> {
                 ep_len += 1;
 
                 buffer.push(Transition {
-                    obs: obs.clone(), action: act_vec, reward,
-                    next_obs: next_obs.clone(), terminated, truncated,
+                    obs: obs.clone(),
+                    action: act_vec,
+                    reward,
+                    next_obs: next_obs.clone(),
+                    terminated,
+                    truncated,
                 });
 
                 if buffer.len() >= 500 {
@@ -73,11 +81,15 @@ fn main() -> Result<(), GraphError> {
                     let ov1 = graph.input_named(&b.obs, "o")?;
                     let av1 = graph.input_named(&act_norm, "a")?;
                     let c1_loss = agent.critic1.forward_q(&ov1, &av1)?.mse_loss(&target)?;
-                    c1_opt.zero_grad()?; c1_loss.backward()?; c1_opt.step()?;
+                    c1_opt.zero_grad()?;
+                    c1_loss.backward()?;
+                    c1_opt.step()?;
                     let ov2 = graph.input_named(&b.obs, "o")?;
                     let av2 = graph.input_named(&act_norm, "a")?;
                     let c2_loss = agent.critic2.forward_q(&ov2, &av2)?.mse_loss(&target)?;
-                    c2_opt.zero_grad()?; c2_loss.backward()?; c2_opt.step()?;
+                    c2_opt.zero_grad()?;
+                    c2_loss.backward()?;
+                    c2_opt.step()?;
 
                     // Actor 更新
                     let ov_a = graph.input_named(&b.obs, "o")?;
@@ -93,22 +105,39 @@ fn main() -> Result<(), GraphError> {
                     a_loss.forward()?;
                     let avg_h = -(lp_sum.value()?.unwrap().sum().get_data_number().unwrap())
                         / batch.len() as f32;
-                    a_opt.zero_grad()?; a_loss.backward()?; a_opt.step()?;
+                    a_opt.zero_grad()?;
+                    a_loss.backward()?;
+                    a_opt.step()?;
 
-                    agent.log_alpha = update_alpha(agent.log_alpha, agent.alpha_lr, avg_h, agent.target_entropy);
+                    agent.log_alpha =
+                        update_alpha(agent.log_alpha, agent.alpha_lr, avg_h, agent.target_entropy);
                     agent.soft_update_targets();
                 }
 
-                if terminated || truncated { break; }
+                if terminated || truncated {
+                    break;
+                }
                 obs = next_obs;
             }
 
             ep_rewards.push_back(ep_r);
-            if ep_rewards.len() > 100 { ep_rewards.pop_front(); }
+            if ep_rewards.len() > 100 {
+                ep_rewards.pop_front();
+            }
             let avg = ep_rewards.iter().sum::<f32>() / ep_rewards.len() as f32;
-            println!("Ep {:3}: R={:7.1} len={:3} avg={:7.1} α={:.4} t={:.2}s",
-                ep+1, ep_r, ep_len, avg, agent.alpha(), t0.elapsed().as_secs_f32());
-            if ep_r >= -300.0 { println!("✅ 达标 R={ep_r:.1}"); break; }
+            println!(
+                "Ep {:3}: R={:7.1} len={:3} avg={:7.1} α={:.4} t={:.2}s",
+                ep + 1,
+                ep_r,
+                ep_len,
+                avg,
+                agent.alpha(),
+                t0.elapsed().as_secs_f32()
+            );
+            if ep_r >= -300.0 {
+                println!("✅ 达标 R={ep_r:.1}");
+                break;
+            }
         }
 
         env.close();

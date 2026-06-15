@@ -33,6 +33,4 @@ pub use min_max::MinMaxStats;
 pub use puct::PuctPolicy;
 pub use search::mcts_search;
 pub use traits::{MctsModel, Predictor, SearchPolicy};
-pub use types::{
-    ActionPayload, ChildStat, MctsConfig, RecurrentOut, RootOut, SearchResult,
-};
+pub use types::{ActionPayload, ChildStat, MctsConfig, RecurrentOut, RootOut, SearchResult};

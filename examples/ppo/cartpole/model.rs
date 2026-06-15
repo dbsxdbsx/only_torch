@@ -7,7 +7,9 @@
 //! ```
 
 use only_torch::nn::distributions::Categorical;
-use only_torch::nn::{Graph, GraphError, IntoVar, Linear, Module, Var, VarActivationOps, VarShapeOps};
+use only_torch::nn::{
+    Graph, GraphError, IntoVar, Linear, Module, Var, VarActivationOps, VarShapeOps,
+};
 use only_torch::tensor::Tensor;
 
 pub struct PpoActor {
