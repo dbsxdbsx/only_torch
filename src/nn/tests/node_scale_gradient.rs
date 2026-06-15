@@ -1,6 +1,11 @@
 /*
  * scale_gradient 测试（梯度缩放：前向恒等，反向 ×scale）
  *
+ * scale_gradient 是 Mode B（Var 便捷方法），无独立 NodeType：复用 detach + 标量乘 +
+ * 加法组合实现（x = scale·x + (1-scale)·detach(x)），与 squeeze / unsqueeze / split
+ * 同属「无独立 NodeType 的组合算子」。本文件沿用 node_ 前缀仅表示「算子级单测」，
+ * 不代表底层存在 ScaleGradient 节点。
+ *
  * 通过 `Var::scale_gradient(scale)` 创建，语义与 PyTorch/JAX 的 scale_gradient、
  * MuZero 论文伪码的 scale_gradient(tensor, scale) 一致：
  *   forward:  y = x
