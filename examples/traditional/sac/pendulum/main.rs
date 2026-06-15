@@ -106,7 +106,7 @@ impl Default for SacConfig {
             start_training_after: 500,
             update_every: 1,
             max_episodes: 300,
-            target_reward: -300.0, // 展示用：首次达到即停止
+            target_reward: -300.0,
         }
     }
 }
@@ -368,7 +368,7 @@ fn main() -> Result<(), GraphError> {
                 episode_time,
             );
 
-            // 检查是否达标（展示用：首次单回合达到目标即停止）
+            // 检查是否达标
             if episode_reward >= config.target_reward {
                 println!(
                     "\n✅ 达到目标！Ep {} R={:.1}（目标 >= {:.0}）",

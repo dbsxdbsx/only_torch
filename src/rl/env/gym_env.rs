@@ -9,7 +9,7 @@
 //!
 //! 参考：
 //! - [gym-rs](https://github.com/MrRobb/gym-rs/blob/master/src/lib.rs)
-//! - [rustRL](https://github.com/dbsxdbsx/rustRL) 的 `gym_env.rs`（设计来源，已在 only_torch 原生类型上重写）
+//! - [rustRL](https://github.com/dbsxdbsx/rustRL) 的 `gym_env.rs`
 
 use numpy::ToPyArray;
 use numpy::ndarray::{Array1, array};

@@ -6,7 +6,7 @@
 //! - 多维连续动作环境（BipedalWalker）
 //! - 高维连续动作环境（MuJoCo Ant）
 //! - 图像观察环境（Atari Breakout）
-//! - 混合动作环境（Phase 0b: Platform-v0）
+//! - 混合动作环境（Platform-v0）
 //! - 自定义环境（五子棋 Gomoku）
 //! - terminated / truncated 分离验证
 //!

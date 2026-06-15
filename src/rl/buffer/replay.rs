@@ -11,7 +11,7 @@ use std::collections::VecDeque;
 ///
 /// # 设计边界
 /// - `sample` = 按**存储单位** `T` 随机有放回抽样，**不是**训练采样器
-/// - v0.22 `SelfPlayGame` 的 position 级采样由上层 helper 负责
+/// - position 级等更细粒度的采样由上层 helper 负责
 pub struct ReplayBuffer<T: BufferItem> {
     buffer: VecDeque<T>,
     capacity: usize,

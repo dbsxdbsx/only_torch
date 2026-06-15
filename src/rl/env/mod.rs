@@ -4,7 +4,7 @@
 //!
 //! ## 主要组件
 //!
-//! - [`GymEnv`] - Gymnasium/Gym 环境封装，支持离散/连续/混合动作空间
+//! - [`GymEnv`] - Gymnasium 环境封装，支持离散/连续/混合动作空间
 //! - [`MinariDataset`] - Minari 离线 RL 数据集封装
 //!
 //! ## 使用示例

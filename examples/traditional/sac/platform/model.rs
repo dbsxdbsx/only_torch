@@ -11,8 +11,7 @@
 //!   [obs(10), cont_action(3)] → Concat → 128(ReLU) → 128(ReLU) → Q_values(3)
 //! ```
 //!
-//! Platform-v0 的 3 个连续参数始终同时生效（不像 Moving-v0 的条件分支），
-//! 模型结构比 Moving 版本更简洁。
+//! Platform-v0 的 3 个连续参数始终同时生效，模型结构简洁。
 
 use only_torch::nn::distributions::{Categorical, TanhNormal};
 use only_torch::nn::{Graph, GraphError, IntoVar, Linear, Module, Var, VarActivationOps};

@@ -342,8 +342,8 @@ NF 在 RL 中的数值稳定性不如在生成模型中（因为 RL 的梯度信
 
 | 场景 | 推荐方案 | 理由 |
 |------|---------|------|
-| Phase 2-3（连续 SAC） | TanhNormal（标准方案） | 生态成熟，对照资料多 |
-| Phase 4（Hybrid SAC） | 双 $α$ + TanhNormal | 实践效果可靠，与论文一致 |
+| 连续 SAC（Pendulum 等） | TanhNormal（标准方案） | 生态成熟，对照资料多 |
+| Hybrid SAC（Platform 等） | 双 $α$ + TanhNormal | 实践效果可靠，与论文一致 |
 | 备选实验（短期） | Beta 替代 TanhNormal | 成本低，收益确定（消除边界偏差） |
 | 备选实验（远期） | NF + Gaussian/Beta base | 成本高，收益依赖任务（稀疏奖励时值得） |
 | 架构设计 | 分布模块可替换 | 保留切换 Gaussian/Beta/NF 的能力 |
@@ -365,5 +365,5 @@ NF 在 RL 中的数值稳定性不如在生成模型中（因为 RL 的梯度信
 - [SAC 示例总览与核心概念](README.md) — 熵、α、Target Entropy 的实践指南
 - [Beta 分布备选方案](beta_distribution_note.md) — 有界分布替代 Gaussian+tanh
 - [概率分布模块设计](../../.doc/design/distributions_design.md) — Categorical/Normal/TanhNormal 的 API 设计
-- [RL 路线图](../../.cursor/plans/) — Phase 1-4 的开发规划
+- [RL 路线图](../../../.doc/design/rl_roadmap.md) — RL 架构设计与版本规划
 - SAC+NF 论文原文：Ward et al., *Improving Exploration in Soft-Actor-Critic with Normalizing Flows Policies*（[arXiv:1906.02771](https://arxiv.org/abs/1906.02771)）

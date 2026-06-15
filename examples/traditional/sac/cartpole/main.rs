@@ -18,11 +18,6 @@
 //!
 //! 关于 SAC 算法的完整说明（Entropy、Alpha 等核心概念），
 //! 请参阅 [`examples/sac/README.md`](../README.md)。
-//!
-//! ## 原始运行命令
-//! ```bash
-//! cargo run --example cartpole_sac
-//! ```
 
 mod model;
 
@@ -100,8 +95,7 @@ struct SacConfig {
     start_training_after: usize, // 开始训练前需要收集的经验数
     update_every: usize,         // 每 N 步更新一次
     max_episodes: usize,
-    /// 训练达标线（单回合达到即停止训练，测试 3 轮平均达到即判定成功）
-    /// CartPole-v0 最大步数 200，Gym solved 条件为 195（SAC/MuZero/PPO 统一架构跑通标准）
+    /// 训练达标线（CartPole-v0 最大步数 200，Gym solved = 195）
     target_reward: f32,
 }
 
@@ -200,7 +194,6 @@ fn main() -> Result<(), GraphError> {
         let mut episode_rewards: VecDeque<f32> = VecDeque::with_capacity(100);
         let mut total_steps = 0usize;
 
-        // 调试计时
         use std::time::Instant;
 
         for episode in 0..config.max_episodes {
@@ -302,10 +295,9 @@ fn main() -> Result<(), GraphError> {
                     critic2_optimizer.step()?;
 
                     // ========== Actor 更新 ==========
-                    // SAC-Discrete Actor Loss（原始公式，兼容未来 Continuous/Hybrid 扩展）:
+                    // SAC-Discrete Actor Loss（原始公式）:
                     //   L = mean(Σ_a π(a) × (α·log π(a) - Q(a)))
-                    // 等价于 L = -(E_π[Q] + α·H(π))，但以 log_prob 为核心构建，
-                    // 便于未来用"哑值填充"统一 Discrete/Continuous/Hybrid 三种 Action 类型
+                    // 等价于 L = -(E_π[Q] + α·H(π))，以 log_prob 为核心构建
                     let q1 = agent.critic1.get_q_values(&obs_batch)?;
                     let q2 = agent.critic2.get_q_values(&obs_batch)?;
                     let q_min = q1.minimum(&q2);
@@ -395,7 +387,7 @@ fn main() -> Result<(), GraphError> {
                 episode_time,
             );
 
-            // 检查是否达标（示范用：单回合达到目标即退出）
+            // 检查是否达标
             if episode_reward >= config.target_reward {
                 println!(
                     "\n✅ 达到目标！Ep {} 获得 R={:.0}（目标 >= {:.0}）",

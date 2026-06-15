@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Platform-v0 混合动作空间测试（替代已弃用的 gym-hybrid Moving/Sliding）
+Platform-v0 混合动作空间测试
 
 使用 hybrid-platform 包的 Platform-v0 环境：
 - 观察空间: Tuple(Box(9,), Discrete(200))
