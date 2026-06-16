@@ -271,6 +271,14 @@
     path="examples/sac/lunarlander/main.rs"
 
 [[example]]
+    name="my_zero_cartpole"
+    path="examples/my_zero/cartpole/main.rs"
+
+[[example]]
+    name="my_zero_pendulum"
+    path="examples/my_zero/pendulum/main.rs"
+
+[[example]]
     name="muzero_cartpole"
     path="examples/muzero/cartpole/main.rs"
 

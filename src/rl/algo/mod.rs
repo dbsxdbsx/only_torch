@@ -4,5 +4,6 @@
 
 pub mod efficientzero;
 pub mod muzero;
+pub mod my_zero;
 pub mod ppo;
 pub mod sac;
