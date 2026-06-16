@@ -1,9 +1,12 @@
-//! CartPole SAC-Discrete 示例
+//! CartPole SAC-Discrete 示例（CartPole-v1，500 制）
 //!
 //! ```bash
-//! cargo run --example cartpole_sac
+//! cargo run --example cartpole_sac --release
 //! SMOKE=1 cargo run --example cartpole_sac  # 管线验证（3 ep，不验收敛）
 //! ```
+//!
+//! 达标：greedy(temp=0) eval 20 局（固定 seed）均值 ≥ 475（Gymnasium CartPole-v1 官方 solved）。
+//! 全项目 CartPole 统一用 v1，不再使用 v0。
 
 mod model;
 
@@ -27,11 +30,12 @@ fn eval_cartpole(
     agent: &model::SacAgent,
     obs_dim: usize,
     n_episodes: usize,
+    seed_base: Option<u64>,
 ) -> Result<(f32, f32), GraphError> {
     let mut total = 0.0f32;
     let mut max_r = f32::NEG_INFINITY;
-    for _ in 0..n_episodes {
-        let mut obs = env.reset(None)[0].clone();
+    for i in 0..n_episodes {
+        let mut obs = env.reset(seed_base.map(|b| b + i as u64))[0].clone();
         let mut ep_r = 0.0f32;
         loop {
             let logits = agent.actor.forward(&Tensor::new(&obs, &[1, obs_dim]))?;
@@ -61,11 +65,21 @@ fn eval_cartpole(
 
 fn main() -> Result<(), GraphError> {
     let smoke = std::env::var("SMOKE").is_ok();
-    let (max_ep, start_after, batch_size) = if smoke { (3, 32, 32) } else { (500, 1000, 64) };
+    // CartPole-v1 达标门槛（Gymnasium 官方 solved = greedy eval 均值 ≥ 475）。
+    let solved = 475.0_f32;
+    let max_ep = if smoke {
+        3
+    } else {
+        std::env::var("MAX_EP")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(2000)
+    };
+    let (start_after, batch_size) = if smoke { (32, 32) } else { (1000, 64) };
     let (lr, gamma) = (0.001, 0.99);
 
     Python::attach(|py| {
-        let env = GymEnv::new(py, "CartPole-v0");
+        let env = GymEnv::new(py, "CartPole-v1");
         let obs_dim = env.get_flatten_observation_len();
         let action_dim = 2;
 
@@ -80,6 +94,9 @@ fn main() -> Result<(), GraphError> {
         let mut buffer = ReplayBuffer::new(100_000);
         let mut rng = StdRng::seed_from_u64(42);
         let mut ep_rewards: VecDeque<f32> = VecDeque::with_capacity(100);
+        // 样本效率：累计真实 env-step + 首次达标的 (episode, env_step)
+        let mut total_steps: u64 = 0;
+        let mut hit_solved: Option<(usize, u64)> = None;
         for ep in 0..max_ep {
             let t0 = std::time::Instant::now();
             let seed = if ep == 0 { Some(42) } else { None };
@@ -166,6 +183,7 @@ fn main() -> Result<(), GraphError> {
                 obs = next_obs;
             }
 
+            total_steps += ep_len as u64;
             ep_rewards.push_back(ep_r);
             if ep_rewards.len() > 20 {
                 ep_rewards.pop_front();
@@ -180,23 +198,43 @@ fn main() -> Result<(), GraphError> {
                 agent.alpha(),
                 t0.elapsed().as_secs_f32()
             );
-            if !smoke && ep_rewards.len() >= 20 && avg >= 195.0 {
-                println!("✅ 最近 20 局均值达标 avg={avg:.1}");
-                break;
+            // 每 25 局跑 greedy eval（固定 seed）；达标即记录样本量并停。
+            if !smoke && (ep + 1) % 25 == 0 {
+                let (eval_mean, _) = eval_cartpole(&env, &agent, obs_dim, 20, Some(12345))?;
+                println!(
+                    "  📊 greedy eval@ep{}: mean={:.1}（env_steps={}）",
+                    ep + 1,
+                    eval_mean,
+                    total_steps
+                );
+                if eval_mean >= solved {
+                    hit_solved = Some((ep + 1, total_steps));
+                    println!(
+                        "✅ CartPole-v1 达标！greedy eval={:.1} ≥ {solved}（ep={} env_steps={}）",
+                        eval_mean,
+                        ep + 1,
+                        total_steps
+                    );
+                    break;
+                }
             }
         }
 
         // eval：固定 seed 下 deterministic 跑 20 局
         if !smoke {
-            let eval_env = GymEnv::new(py, "CartPole-v0");
-            let (eval_mean, eval_max) = eval_cartpole(&eval_env, &agent, obs_dim, 20)?;
+            let eval_env = GymEnv::new(py, "CartPole-v1");
+            let (eval_mean, eval_max) = eval_cartpole(&eval_env, &agent, obs_dim, 20, Some(12345))?;
             println!("📊 Eval 20 局: mean={eval_mean:.1} max={eval_max:.0}");
-            if eval_mean >= 195.0 {
-                println!("✅ Eval 达标 mean={eval_mean:.1}");
+            if eval_mean >= solved {
+                println!("✅ Eval 达标 mean={eval_mean:.1} ≥ {solved}");
             } else {
-                println!("⚠️ Eval 未达标 mean={eval_mean:.1} < 195");
+                println!("⚠️ Eval 未达标 mean={eval_mean:.1} < {solved}");
             }
             eval_env.close();
+            let eff = hit_solved
+                .map(|(e, s)| format!("ep{e} / {s} env-steps"))
+                .unwrap_or_else(|| "未达到".to_string());
+            println!("📈 [样本效率] CartPole-v1 SAC 到 {solved}: {eff}");
         }
 
         if smoke {

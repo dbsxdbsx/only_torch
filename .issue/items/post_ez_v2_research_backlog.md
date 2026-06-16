@@ -17,11 +17,23 @@ updated: 2026-06-16
 > ⚠️ EZ-V2 **尚未做完**（仅 1/6 模式落地），本节只记真实进度，**不据此剪枝 §二 扩展方向**——剪枝时机见 §五，须 v0.24 各 Phase 收口后。
 
 - **Phase 0（5 根接缝）+ 0b 脚手架**：✅ 已完成（ActionSampler / RootScheduler+RNG 注入 / SelfPlayStepExtras / sample_indexed / State 携带 recurrent hidden；含 golden 回归护栏）。
-- **Phase 1（CartPole-v1 离散 EZ 核心）**：⏳ 代码已融合 + **逐增量消融完成**（2026-06-16）。结论：base / +consistency / +value_prefix / +target 单项 greedy eval **均健康（≥ self-play）**，consistency/value_prefix 各自比 base 学得更快（正贡献，峰值 greedy 131/315/281）。**唯一暴雷是三件套含 target 时 greedy < self-play**——根因见下条（已修）。**达标 450 未完成**，作为独立后续调参任务（见末条）。
+- **Phase 1（CartPole-v1 离散 EZ 核心）**：✅ **达标已达成（2026-06-16）**。`cons+vp` 长跑 greedy eval(20局) 轨迹 44→104→142→145→163→176→**500** @ **Ep350 / 31,413 env-steps**（满分，≥450 门禁）。逐增量消融亦完成：base / +consistency / +value_prefix / +target 单项 greedy eval **均健康（≥ self-play）**。**唯一暴雷是三件套含 target 时 greedy < self-play**——根因见下条（已修）。**注**：此前 backlog 据 Ep300 平台（greedy 176）误判「到不了 450」，实际 Ep350 突破到满分——MCTS greedy eval 是阶跃式突破，不宜中途下悲观结论。
 - **简化 / 待补**：SVE 为固定权重 blend（论文是按样本新鲜度自适应的 mixed value target）；value prefix hidden 穿树目前仅 mock 契约测试，缺真实 LSTM 专项测试。
 - **✅ target 用法已修正（2026-06-16）**：原实现「n-step bootstrap 单点评估（`eval_value`）+ EMA tau=0.01 每步」是非官方简化版，在三件套组合时 greedy<self-play 暴雷；**已改回官方口径「hard update（`sync_interval=200` 训练步）+ 专供 reanalyze」**（论文 §C target updating interval=400）。验证：全开（含修正后 target）Ep100 greedy 31 ≈ self-play 34（回到持平、消除暴雷），但 reanalyze 让 wall-clock 慢 ~8 倍——印证 CartPole（数据不受限）本不需 target/reanalyze。**遗留**：off-policy 受限环境（Atari）再验 target+reanalyze 的真实增益。
 - **未开始**：Phase 2a Gumbel 连续搜索（`gumbel.rs` 不存在，仅 `GumbelConfig` 空壳）、Phase 2b 混合 Platform、Phase 3 五子棋 learned-model 博弈、Phase 4 Atari/Ant/Minari smoke。
-- **🔲 CartPole-v1 达标 450（后续调参任务，非本轮死磕）**：消融已证 cons+vp 健康有效（greedy 稳定 130+），但当前超参（`lr 0.02` / `num_sim 50` / 网络容量）下收敛慢、greedy 进 ~150-200 平台，1000 局到不了 450（类比 MuZero CartPole-v0 到 195 也是多轮迭代闭环）。已留调参旋钮 `NUM_SIM/TRAINS/LR/EVAL_EVERY`（环境变量，不重编译）。首轮 num_sim100+trains16 有 early boost（Ep50 greedy 105）但 trains16 过拟合（self-play 反超），待续调（trains 回 8 + lr↓ / 容量 / 温度退火）。
+- **⏳ CartPole-v1 达标 450：cons+vp 已实证、稳健复现待续（2026-06-16）**：一次 cons+vp 长跑（`num_sim 50` / `trains 8`，**不开** target/reanalyze/SVE）在 **Ep350 greedy eval 20 局均值 = 500.0 满分 ≥ 450** 自动 break——**证明 cons+vp 能让 CartPole-v1 达标、EZ 核心增量有效**（这条结论硬）。**但稳健性存疑**：用当前 commit 代码（target 修正后）同 seed/同 MAX_EP 复现走了另一条更慢轨迹（Ep100 greedy 53 vs 那次 104），说明达标对 seed/轨迹敏感，且 commit 改动改变了 cons+vp 的 rng 流 / 浮点累加顺序。**待续**：① 当前代码完整跑确认能否复现达标 ② 查 commit 改动为何拖慢轨迹 / 固定温度退火（当前按 `ep/MAX_EP` 退火，依赖跑满预期局数）。**判断修正记录**：曾据 Ep300 greedy 176 线性外推误判「到不了 450」，实际 greedy 阶跃突破（176→500），RL 性能不可线性外推。调参旋钮 `NUM_SIM/TRAINS/LR/EVAL_EVERY` 保留备用。
+
+- **✅ 四算法 v1 样本效率对照（2026-06-16，为 EZ-V2 定标）**：在 **v1（500 制）** 各跑一次性测量 SAC/PPO/MuZero（最初经临时 `ENV_ID` 开关，**后续已彻底统一 v1、删开关**，见 §1.1 与 plan todo `v024-cartpole-v1-unify`），记录「greedy eval(20局,固定seed) 首次到 450/500 所需真实 env-step」：
+
+  | 算法 | 类型 | 到 450 | **到 500（满分）** | greedy 轨迹 |
+  |------|------|--------|--------------------|-------------|
+  | **MuZero**（canonical，无 EZ 增量） | model-based MCTS | 1,538 步 | **3,772 步**（ep150） | **噪声大**：9→9→9→472→107→500（首次跨 500 是 spike） |
+  | **EZ**（cons+vp） | model-based MCTS | — | **31,413 步**（ep350） | 平滑单调：44→104→…→176→500 |
+  | **PPO** | model-free on-policy | 61,440 步 | **102,400 步** | 平滑稳定 |
+  | **SAC-Discrete** | model-free off-policy | 93,757 步 | **129,325 步**（ep475） | 平滑稳定 |
+
+  **结论**：(1) 四算法**全部达满分 500**（v1 天花板）。(2) **model-based（MuZero/EZ）样本效率碾压 model-free（SAC/PPO）3–40×**——eval 期 MCTS num_sim=50 步前瞻是主因，代价是每 env-step ~50× 算力。(3) **CartPole-v1 太简单，区分不出 EZ 增量 vs canonical MuZero**——canonical 首次跨 500 反而更早但噪声大，cons+vp 更平滑但更慢；EZ 专属增量（Gumbel 连续 / value prefix 长程 / SVE 抗 stale）的真实价值要到**更难矩阵格**（连续/像素/稀疏/博弈）才显现。(4) **单 seed、MCMC/MCTS spike 噪声大**，严谨对标需多 seed 取中位数。
+  - **对 EZ-V2 定标的启示**：CartPole-v1 应视作 **sanity/smoke（已满分通过）**，**非** EZ-V2 的区分性门禁；真正的 EZ-V2 验收锚点是 §1.2 矩阵其余 5 格的 per-task 指标（Pendulum 对标 SAC、Gomoku 对标 naive3、Atari pixel pipeline 等），核心判据统一为「**达任务天花板/阈值所需 env-sample 显著少于 model-free 基线**」（即"Efficient"的字面含义）。
 
 **对 §二 扩展方向的影响**：暂无可剪。唯一与 EZ-V2 直接重叠的 **Sampled MuZero（§二 P3）** 须待 **Gumbel（Phase 2a）真正落地**后才能确认「被覆盖、退役」；其余（Stochastic MuZero / 纯 offline / 多智能体 / 19×19 / GPU）本就是 EZ-V2 **不包含**的独立方向，与 EZ-V2 做得好坏无关，维持原 P 级。
 
@@ -33,10 +45,10 @@ updated: 2026-06-16
 
 | 层级 | 算法 | 环境 ID | 门禁 | 状态 |
 |------|------|---------|------|------|
-| **架构跑通** | SAC / MuZero / PPO | **`CartPole-v0`** | greedy(temp=0) eval 20 局均值 **≥195** | ✅ v0.23.1 已收口 |
-| **终极调优** | **EfficientZero V2（唯一）** | **一律 `-v1` / 新版 ID** | **各任务 EZ 专属指标**（见下表） | ⏳ v0.24 进行中（Phase 1 离散达标训练中；见「当前进度」） |
+| **架构跑通** | SAC / MuZero / PPO | **`CartPole-v1`**（2026-06-16 统一 v1、废弃 v0） | greedy(temp=0) eval 20 局均值 **≥475**（官方 solved） | ✅ 已达标（SAC/PPO greedy 500 平滑；MuZero greedy 500 但噪声大、首达 spike） |
+| **终极调优** | **EfficientZero V2（唯一）** | **一律 `-v1` / 新版 ID** | **各任务 EZ 专属指标**（见下表；CartPole 侧重样本效率 env-steps） | ⏳ v0.24 进行中（Phase 1 离散已达标 greedy 500；见「当前进度」） |
 
-**CartPole 在 EZ 层用 `CartPole-v1`（500 步上限），不再用 195 门槛**——与 v0/v1 分层、与 SAC/MuZero/PPO 的 v0 门禁 deliberately 区分。
+**2026-06-16 起全项目 CartPole 统一 `CartPole-v1`（500 步上限），废弃 v0**——架构跑通与 EZ-V2 共用 v1 环境，差异仅在验收指标：架构跑通看 greedy ≥ 475，EZ-V2 看样本效率（env-steps）。原「v0=架构 / v1=EZ」分层已取消（v0 在新 Gymnasium 仅 DeprecationWarning + v1 是 EZ 对标基准）。
 
 ### 1.2 EZ-V2 六格矩阵：验什么、验到什么程度
 

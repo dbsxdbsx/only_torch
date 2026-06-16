@@ -117,18 +117,18 @@ impl MctsModel for CartPoleEnvModel {
 // 测试：MCTS + 真实环境跑完整 episode
 // ============================================================================
 
-/// 用 MCTS 搜索驱动 CartPole-v0 完整 episode，验证：
+/// 用 MCTS 搜索驱动 CartPole-v1 完整 episode，验证：
 /// 1. mcts_search + PuctPolicy + MinMaxStats 在真实环境中能正确运行
 /// 2. 搜索结果显著优于随机策略（随机 ~20 步，MCTS 应 > 50）
 #[test]
 #[serial]
 fn test_mcts_cartpole_env_episode() {
     Python::attach(|py| {
-        // 创建 CartPole-v0 环境
+        // 创建 CartPole-v1 环境
         let gymnasium = py.import("gymnasium").expect("import gymnasium 失败");
         let env = gymnasium
-            .call_method1("make", ("CartPole-v0",))
-            .expect("gymnasium.make('CartPole-v0') 失败");
+            .call_method1("make", ("CartPole-v1",))
+            .expect("gymnasium.make('CartPole-v1') 失败");
 
         // Reset
         let kwargs = PyDict::new(py);

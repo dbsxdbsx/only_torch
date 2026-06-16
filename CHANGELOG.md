@@ -1,5 +1,17 @@
 # 更新日志
 
+## [未发布]
+
+> **CartPole 统一到 v1（废弃 v0）**：全项目 CartPole 示例与测试从 `CartPole-v0`（200 制）统一迁移到 `CartPole-v1`（500 制），并删除临时的 `ENV_ID` v0/v1 切换。背景：v0 在新 Gymnasium 仅留 DeprecationWarning，且 v1 是 EfficientZero V2 的对标基准。架构跑通门槛随之由 reward ≥ 195 改为 **greedy(temp=0) eval 20 局均值 ≥ 475**（Gymnasium 官方 solved）。
+
+### Changed
+
+- **refactor(rl): CartPole 示例/测试/文档统一 v1，废弃 v0**
+  - `examples/{sac,ppo,muzero}/cartpole/`：环境硬编码 `CartPole-v1`，达标门槛 `greedy eval ≥ 475`，并打印「到 475 所需 episode/env-step」样本效率指标；移除临时 `ENV_ID` 切换与 v0 分支
+  - `src/rl/tests/mcts_cartpole_env.rs`：`CartPole-v0` → `CartPole-v1`
+  - 同步更新 AGENTS.md / rl_roadmap.md / rl.instructions.md / rl_python_env_setup.md / RL 主线 plan 的验收分层（v0→v1、195→475）
+  - 一次性测得四算法 v1 样本效率（到 500 满分所需 env-step）：MuZero ~3.8k（噪声大、spike）/ EZ(cons+vp) ~31k / PPO ~102k / SAC ~129k——model-based 样本效率碾压 model-free，详见 [`.issue/items/post_ez_v2_research_backlog.md`](.issue/items/post_ez_v2_research_backlog.md)
+
 ## [0.23.1] - 2026-06-15
 
 > **MuZero canonical 完全体达标**：补齐 categorical value/reward + latent min-max 归一化 + absorbing state + canonical 梯度缩放后，MuZero CartPole-v0 从「卡 ~40 平台期」收口到 **greedy(temp=0) eval 20 局均值 199.5 ≥ 195**。真因是搜索在 learned model 上的 **no-terminal 价值膨胀**，由 absorbing state 直击修复。这套机制是整个 `*Zero` 家族（AlphaZero / MuZero / EfficientZero）的共享地基，已逐项正确性验证。「发版」= bump 版本号 + 更新 CHANGELOG，不 `cargo publish`。

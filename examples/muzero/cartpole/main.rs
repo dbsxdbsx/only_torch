@@ -1,9 +1,13 @@
-//! MuZero CartPole-v0 训练示例
+//! MuZero CartPole-v1 训练示例（500 制）
 //!
 //! ```bash
 //! cargo run --example muzero_cartpole --release
 //! SMOKE=1 cargo run --example muzero_cartpole  # 管线验证（3 局 self-play + 1 次训练）
 //! ```
+//!
+//! 达标：greedy(temp=0) eval 20 局（固定 seed）均值 ≥ 475（Gymnasium CartPole-v1 官方 solved）。
+//! 全项目 CartPole 统一用 v1，不再使用 v0。注：MuZero greedy eval 噪声较大（MCTS spike），
+//! 首次达标可能是 spike，稳定性待后续多 seed 复测。
 
 mod model;
 
@@ -168,6 +172,7 @@ fn eval_episodes(
     gamma: f32,
     n_episodes: usize,
     num_simulations: u32,
+    seed_base: Option<u64>,
 ) -> f32 {
     let eval_cfg = MctsConfig {
         num_simulations,
@@ -180,8 +185,9 @@ fn eval_episodes(
     // eval 用独立种子 rng，使训练可复现不受 eval 调用次数影响（greedy 下 rng 不影响输出）
     let mut eval_rng = StdRng::seed_from_u64(0xE7A1);
     let mut total_reward = 0.0;
-    for _ in 0..n_episodes {
-        let obs_raw = env.reset(None);
+    for i in 0..n_episodes {
+        // v1 测量传 Some(seed) 固定每局起点可复现；v0 传 None 保持原行为
+        let obs_raw = env.reset(seed_base.map(|b| b + i as u64));
         let mut obs = obs_raw[0].clone();
         let mut ep_reward = 0.0;
 
@@ -222,6 +228,9 @@ fn main() -> Result<(), GraphError> {
     let action_dim = 2;
     let obs_dim = 4;
 
+    // CartPole-v1 达标门槛（Gymnasium 官方 solved = greedy eval 均值 ≥ 475）。
+    let solved = 475.0_f32;
+
     // 算法超参：库级 MuZeroConfig 容器，按环境配置（CartPole 用 CPU 友好默认）。
     // 换环境时在此覆盖字段，尤其 num_simulations（棋类自对弈应显著调高）。
     let mut cfg = MuZeroConfig::default();
@@ -250,11 +259,11 @@ fn main() -> Result<(), GraphError> {
         std::env::var("MAX_EP")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(1000)
+            .unwrap_or(2000)
     };
 
     Python::attach(|py| {
-        let env = GymEnv::new(py, "CartPole-v0");
+        let env = GymEnv::new(py, "CartPole-v1");
         let graph = Graph::new_with_seed(42);
         let model = MuZeroModel::new(&graph, obs_dim, action_dim, latent_dim)?;
         let mut optimizer = Adam::new(&graph, &model.parameters(), lr);
@@ -264,6 +273,9 @@ fn main() -> Result<(), GraphError> {
         let actions: Vec<ActionPayload> = (0..action_dim).map(ActionPayload::Discrete).collect();
 
         let mut ep_rewards: VecDeque<f32> = VecDeque::with_capacity(100);
+        // 样本效率：累计真实 env-step + 首次达标的 (episode, env_step)
+        let mut total_steps: u64 = 0;
+        let mut hit_solved: Option<(usize, u64)> = None;
 
         for ep in 0..max_episodes {
             let t0 = std::time::Instant::now();
@@ -286,6 +298,7 @@ fn main() -> Result<(), GraphError> {
             let steps = self_play_one_episode(&env, &model, &actions, &mcts_cfg, gamma, &mut rng);
             let ep_reward: f32 = steps.iter().map(|s| s.reward).sum();
             let ep_len = steps.len();
+            total_steps += ep_len as u64;
 
             // 诊断：观察 root_value 分布与 MCTS policy target 是否差异化
             if std::env::var("DBG").is_ok() && ep % 20 == 0 {
@@ -369,21 +382,40 @@ fn main() -> Result<(), GraphError> {
                 t0.elapsed().as_secs_f32()
             );
 
-            // 达标判定：CartPole「solved」的真实度量是**贪心(temp=0) eval 均值 ≥195**。
-            // self-play 带温度采样会系统性压低其均值，故不以 self-play 均值当门槛，
-            // 而是在 self-play 近 20 局均值达到合理预阈值后，**定期跑贪心 eval 确认**。
-            // 真实门槛仍是 greedy eval ≥195（比 Gym 的训练均值口径更严）。
+            // 达标判定：CartPole「solved」的真实度量是**贪心(temp=0) eval 均值 ≥475**。
+            // self-play 带温度采样会系统性压低其均值，故每 25 局跑一次贪心 eval（固定 seed）确认；
+            // 达标即记录样本量并停。注：MuZero greedy eval 噪声大，首次达标可能是 spike。
             if !smoke && ep_rewards.len() >= 20 && (ep + 1) % 25 == 0 {
+                let eval_r = eval_episodes(
+                    &env,
+                    &model,
+                    &actions,
+                    gamma,
+                    20,
+                    num_simulations,
+                    Some(0xE7A1),
+                );
                 let recent: f32 = ep_rewards.iter().rev().take(20).sum::<f32>() / 20.0;
-                if recent >= 170.0 {
-                    let eval_r = eval_episodes(&env, &model, &actions, gamma, 20, num_simulations);
-                    println!("  贪心 eval 20 局均值={eval_r:.1}（self-play 近20均值={recent:.1}）");
-                    if eval_r >= 195.0 {
-                        println!("MuZero CartPole-v0 达标！贪心 eval 20 局均值={eval_r:.1} ≥ 195");
-                        break;
-                    }
+                println!(
+                    "  贪心 eval 20 局均值={eval_r:.1}（self-play 近20均值={recent:.1} env_steps={total_steps}）"
+                );
+                if eval_r >= solved {
+                    hit_solved = Some((ep + 1, total_steps));
+                    println!(
+                        "✅ MuZero CartPole-v1 达标！greedy eval={eval_r:.1} ≥ {solved}（ep={} env_steps={}）",
+                        ep + 1,
+                        total_steps
+                    );
+                    break;
                 }
             }
+        }
+
+        if !smoke {
+            let eff = hit_solved
+                .map(|(e, s)| format!("ep{e} / {s} env-steps"))
+                .unwrap_or_else(|| "未达到".to_string());
+            println!("📈 [样本效率] CartPole-v1 MuZero 到 {solved}: {eff}");
         }
 
         if smoke {
