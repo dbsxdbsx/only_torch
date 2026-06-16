@@ -105,7 +105,7 @@ impl SearchResult {
 }
 
 /// MCTS 搜索配置
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MctsConfig {
     /// 模拟次数
     pub num_simulations: u32,

@@ -241,4 +241,66 @@ fn test_custom_buffer_item() {
     let mut rng = StdRng::seed_from_u64(0);
     let batch = buf.sample(2, &mut rng);
     assert_eq!(batch.len(), 2);
+    assert!(!batch[0].data.is_empty(), "采样的自定义条目应保真");
+}
+
+// ============================================================================
+// sample_indexed + update_at（v0.24 Phase 0a 接缝：reanalyze 回写 / PER 预留）
+// ============================================================================
+
+#[test]
+fn test_sample_indexed_returns_valid_indices() {
+    let mut buf = ReplayBuffer::new(10);
+    for i in 0..5 {
+        buf.push(make_transition(i, false, false)); // obs[0] = i = 存储下标
+    }
+    let mut rng = StdRng::seed_from_u64(7);
+    let batch = buf.sample_indexed(8, &mut rng); // 有放回，可超过 len
+    assert_eq!(batch.len(), 8);
+    for (idx, item) in &batch {
+        assert!(*idx < buf.len(), "下标应在 buffer 范围内");
+        // 未发生淘汰时存储顺序 == push 顺序 == id == obs[0]
+        assert_eq!(item.obs[0] as usize, *idx, "返回的下标应对应该条目");
+    }
+}
+
+#[test]
+fn test_sample_indexed_empty_and_zero() {
+    let buf: ReplayBuffer<Transition> = ReplayBuffer::new(4);
+    let mut rng = StdRng::seed_from_u64(1);
+    assert!(
+        buf.sample_indexed(3, &mut rng).is_empty(),
+        "空 buffer 返回空"
+    );
+
+    let mut buf2 = ReplayBuffer::new(4);
+    buf2.push(make_transition(0, false, false));
+    assert!(
+        buf2.sample_indexed(0, &mut rng).is_empty(),
+        "batch=0 返回空"
+    );
+}
+
+#[test]
+fn test_update_at_writes_back() {
+    let mut buf = ReplayBuffer::new(4);
+    for i in 0..3 {
+        buf.push(make_transition(i, false, false));
+    }
+    // 回写下标 1 → reward 改成 99.0
+    let mut replacement = make_transition(1, false, false);
+    replacement.reward = 99.0;
+    buf.update_at(1, replacement);
+
+    let mut rng = StdRng::seed_from_u64(0);
+    let all = buf.sample_indexed(20, &mut rng);
+    let got = all
+        .iter()
+        .find(|(idx, _)| *idx == 1)
+        .expect("应能采到下标 1");
+    assert_eq!(got.1.reward, 99.0, "update_at 应原地回写");
+
+    // 越界 update_at 是 no-op，不 panic、不改变长度
+    buf.update_at(999, make_transition(0, false, false));
+    assert_eq!(buf.len(), 3);
 }

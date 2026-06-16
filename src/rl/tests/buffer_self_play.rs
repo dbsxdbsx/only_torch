@@ -16,6 +16,7 @@ fn make_step(id: usize, player: u8) -> SelfPlayStep {
         reward: 0.0,
         root_value: None,
         terminated: false,
+        extras: Default::default(),
     }
 }
 
@@ -127,4 +128,24 @@ fn test_fifo_eviction() {
     for game in &all {
         assert!(game.steps.len() >= 3);
     }
+}
+
+// ============================================================================
+// SelfPlayStepExtras：默认 + builder（v0.24 Phase 0a 接缝）
+// ============================================================================
+
+#[test]
+fn test_self_play_step_extras_default_and_builder() {
+    // 既有路径默认 extras 不含 value prefix（MuZero/AlphaZero 行为不变）
+    let step = make_step(0, 0);
+    assert_eq!(
+        step.extras.value_prefix_target, None,
+        "默认 extras 应无 value prefix（既有路径行为不变）"
+    );
+
+    // builder 链式注入 value prefix 目标（EZ +value prefix 用）
+    let step2 = make_step(1, 0).with_value_prefix_target(2.5);
+    assert_eq!(step2.extras.value_prefix_target, Some(2.5));
+    // 其余字段不受影响
+    assert_eq!(step2.player, 0);
 }

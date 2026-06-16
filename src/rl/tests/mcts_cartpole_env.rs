@@ -14,6 +14,8 @@ use serial_test::serial;
 use crate::rl::mcts::{
     ActionPayload, MctsConfig, MctsModel, PuctPolicy, RecurrentOut, RootOut, mcts_search,
 };
+use rand::SeedableRng;
+use rand::rngs::StdRng;
 
 // ============================================================================
 // EnvSnapshot：包装 Py<PyAny> 以满足 Clone + 'static
@@ -154,9 +156,10 @@ fn test_mcts_cartpole_env_episode() {
 
         let mut total_reward = 0.0f32;
         let mut steps = 0u32;
+        let mut rng = StdRng::seed_from_u64(42);
 
         loop {
-            let result = mcts_search(&model, &policy, &obs, &cfg);
+            let result = mcts_search(&model, &policy, &obs, &cfg, &mut rng);
 
             let action = match &result.recommended {
                 ActionPayload::Discrete(a) => *a as i64,

@@ -24,6 +24,34 @@ pub struct SelfPlayStep {
     /// bootstrap；**truncation（如 CartPole 撞 200 步）仍需 bootstrap**，否则会系统性
     /// 低估满分局末端的 value（见 `compute_n_step_target`）。非终止步与 AlphaZero 填 `false`。
     pub terminated: bool,
+    /// 可扩展附加字段（EZ value prefix 等，v0.24 引入）。
+    ///
+    /// 既有 MuZero / AlphaZero 路径填 [`SelfPlayStepExtras::default()`]。后续算法增量的字段一律
+    /// 进 `extras`，避免在本结构上堆裸 `Option` 或全仓 struct-literal 改动。
+    pub extras: SelfPlayStepExtras,
+}
+
+/// `SelfPlayStep` 的可扩展附加字段（v0.24 引入）。
+///
+/// 用一个结构化 extras 承载「会随算法增量增长」的字段，避免在 `SelfPlayStep` 上堆裸 `Option`
+/// 造成「万能 Option 字段坟场」。**只放 v0.24 真用到的字段**——SVE / PER 等用到时再加，
+/// 不预埋全程 `None` 的空字段（守主线 v0.20「禁空占位」红线）；builder 模式保证未来字段可加。
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SelfPlayStepExtras {
+    /// EfficientZero value prefix 训练目标（K 步累计 reward 前缀）。
+    ///
+    /// MuZero / AlphaZero 路径填 `None`；EZ +value prefix（Phase 1）填实际前缀目标。
+    pub value_prefix_target: Option<f32>,
+}
+
+impl SelfPlayStep {
+    /// 链式设置 EZ value prefix 训练目标（builder）。
+    ///
+    /// 未来 extras 新增字段时，继续以 `with_*` builder 方法暴露，调用点无需改 struct-literal。
+    pub fn with_value_prefix_target(mut self, target: f32) -> Self {
+        self.extras.value_prefix_target = Some(target);
+        self
+    }
 }
 
 /// 终局结果

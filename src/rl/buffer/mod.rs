@@ -16,5 +16,5 @@ mod transition;
 pub use replay::ReplayBuffer;
 pub use rollout::RolloutStep;
 pub use rollout_buffer::RolloutBuffer;
-pub use self_play::{GameOutcome, SelfPlayGame, SelfPlayStep};
+pub use self_play::{GameOutcome, SelfPlayGame, SelfPlayStep, SelfPlayStepExtras};
 pub use transition::{BufferItem, Transition};

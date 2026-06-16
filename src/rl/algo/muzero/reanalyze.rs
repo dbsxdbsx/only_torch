@@ -11,6 +11,8 @@
 //! - **算力换样本效率**：每个被 reanalyze 的位置 = 一整棵 MCTS；CPU only 下开销显著，
 //!   故由调用方控制 reanalyze 的比例 / 频率（见示例训练循环），库不强制全量。
 
+use rand::RngCore;
+
 use crate::rl::SelfPlayGame;
 use crate::rl::mcts::{MctsConfig, MctsModel, SearchPolicy, mcts_search};
 
@@ -22,13 +24,18 @@ use crate::rl::mcts::{MctsConfig, MctsModel, SearchPolicy, mcts_search};
 ///   与 self-play 保持一致，使 `root_value` 口径统一（见 [`SearchResult::root_value`]）。
 ///
 /// [`SearchResult::root_value`]: crate::rl::mcts::SearchResult::root_value
-pub fn reanalyze_game<M, P>(model: &M, policy: &P, game: &mut SelfPlayGame, cfg: &MctsConfig)
-where
+pub fn reanalyze_game<M, P>(
+    model: &M,
+    policy: &P,
+    game: &mut SelfPlayGame,
+    cfg: &MctsConfig,
+    rng: &mut dyn RngCore,
+) where
     M: MctsModel,
     P: SearchPolicy,
 {
     for step in game.steps.iter_mut() {
-        let result = mcts_search(model, policy, &step.obs, cfg);
+        let result = mcts_search(model, policy, &step.obs, cfg, rng);
         if result.children.is_empty() {
             continue; // 终局 / 空候选：保留原 target
         }
@@ -44,6 +51,8 @@ mod tests {
     use super::*;
     use crate::rl::mcts::{ActionPayload, PuctPolicy, RecurrentOut, RootOut};
     use crate::rl::{GameOutcome, SelfPlayStep};
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
 
     /// 极简确定性 MctsModel：2 个离散动作、固定 prior/value、不终止。
     struct MockModel;
@@ -86,6 +95,7 @@ mod tests {
             reward: 1.0,
             root_value: Some(99.0), // 故意离谱占位，reanalyze 后应被重算
             terminated: false,
+            extras: Default::default(),
         }
     }
 
@@ -105,7 +115,8 @@ mod tests {
             outcome: GameOutcome::InProgress,
         };
 
-        reanalyze_game(&model, &policy, &mut game, &cfg);
+        let mut rng = StdRng::seed_from_u64(7);
+        reanalyze_game(&model, &policy, &mut game, &cfg, &mut rng);
 
         for step in &game.steps {
             // policy_target 刷新为合法概率分布（长度 2、和 ≈ 1）

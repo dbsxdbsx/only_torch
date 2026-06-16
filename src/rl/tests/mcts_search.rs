@@ -4,8 +4,12 @@
 //! 纯 Rust，不依赖 pyo3。
 
 use crate::rl::mcts::{
-    ActionPayload, MctsConfig, MctsModel, PuctPolicy, RecurrentOut, RootOut, mcts_search,
+    ActionPayload, ChildStat, MctsConfig, MctsModel, MinMaxStats, PuctPolicy, RecurrentOut,
+    RootOut, RootScheduler, SearchPolicy, mcts_search,
 };
+use rand::RngCore;
+use rand::SeedableRng;
+use rand::rngs::StdRng;
 
 // ============================================================================
 // Mock: 确定性 3 选 1 单智能体（类 CartPole 简化）
@@ -114,7 +118,8 @@ fn test_search_single_agent_basic() {
         ..MctsConfig::default()
     };
 
-    let result = mcts_search(&model, &policy, &[0.0], &cfg);
+    let mut rng = StdRng::seed_from_u64(42);
+    let result = mcts_search(&model, &policy, &[0.0], &cfg, &mut rng);
 
     // 有 3 个子节点
     assert_eq!(result.children.len(), 3);
@@ -144,8 +149,6 @@ fn test_search_single_agent_basic() {
 
 #[test]
 fn test_temperature_affects_make_targets() {
-    use crate::rl::mcts::{ChildStat, SearchPolicy};
-
     let policy = PuctPolicy::new();
     // 模拟一组 visit counts：动作 0 明显多
     let children = vec![
@@ -228,7 +231,8 @@ fn test_search_two_player_negamax() {
         ..MctsConfig::default()
     };
 
-    let result = mcts_search(&model, &policy, &[0.0], &cfg);
+    let mut rng = StdRng::seed_from_u64(42);
+    let result = mcts_search(&model, &policy, &[0.0], &cfg, &mut rng);
 
     assert_eq!(result.children.len(), 2);
     let total_visits: u32 = result.children.iter().map(|c| c.visit_count).sum();
@@ -264,7 +268,8 @@ fn test_search_single_agent_discount() {
         discount: 0.0,
         ..MctsConfig::default()
     };
-    let result_no = mcts_search(&model, &policy, &[0.0], &cfg_no_discount);
+    let mut rng_no = StdRng::seed_from_u64(42);
+    let result_no = mcts_search(&model, &policy, &[0.0], &cfg_no_discount, &mut rng_no);
 
     // γ = 0.99 → 累积未来价值
     let cfg_full = MctsConfig {
@@ -272,7 +277,8 @@ fn test_search_single_agent_discount() {
         discount: 0.99,
         ..MctsConfig::default()
     };
-    let result_full = mcts_search(&model, &policy, &[0.0], &cfg_full);
+    let mut rng_full = StdRng::seed_from_u64(42);
+    let result_full = mcts_search(&model, &policy, &[0.0], &cfg_full, &mut rng_full);
 
     // 两种配置都应产生有效结果
     assert_eq!(result_no.children.len(), 3);
@@ -329,12 +335,16 @@ impl MctsModel for AllTerminalMock {
 fn test_search_terminal_nodes() {
     let model = AllTerminalMock;
     let policy = PuctPolicy::new();
+    // temperature=0：recommend 走确定性 argmax（本测试断言"必推荐高 reward 动作"，
+    // 默认 temp=1 是按 visit 概率采样、无法保证；种子化后此断言才暴露需贪心口径）
     let cfg = MctsConfig {
         num_simulations: 20,
+        temperature: 0.0,
         ..MctsConfig::default()
     };
 
-    let result = mcts_search(&model, &policy, &[0.0], &cfg);
+    let mut rng = StdRng::seed_from_u64(42);
+    let result = mcts_search(&model, &policy, &[0.0], &cfg, &mut rng);
 
     assert_eq!(result.children.len(), 2);
     // 动作 0 给 reward=1，动作 1 给 reward=-1
@@ -366,7 +376,8 @@ fn test_search_zero_simulations() {
         ..MctsConfig::default()
     };
 
-    let result = mcts_search(&model, &policy, &[0.0], &cfg);
+    let mut rng = StdRng::seed_from_u64(42);
+    let result = mcts_search(&model, &policy, &[0.0], &cfg, &mut rng);
 
     // 即使 0 次模拟，根节点仍应展开（root 推理 + prepare_root）
     assert_eq!(result.children.len(), 3);
@@ -391,7 +402,8 @@ fn test_search_result_exposes_raw_stats() {
         ..MctsConfig::default()
     };
 
-    let result = mcts_search(&model, &policy, &[0.0], &cfg);
+    let mut rng = StdRng::seed_from_u64(42);
+    let result = mcts_search(&model, &policy, &[0.0], &cfg, &mut rng);
 
     // 每个 ChildStat 都包含完整字段
     for (i, child) in result.children.iter().enumerate() {
@@ -411,4 +423,113 @@ fn test_search_result_exposes_raw_stats() {
 
     // learn_policy 长度 == children 数量
     assert_eq!(result.learn_policy.len(), result.children.len());
+}
+
+// ============================================================================
+// 测试：RNG 注入后可复现（v0.24 Phase 0a 可复现性接线）
+// ============================================================================
+
+/// 同一 seed → SearchResult 逐位一致；这是「固定 seed 可复现」验收口径的地基，
+/// 也充当默认 PUCT 路径的回归护栏（Phase 2a 接 Gumbel 时不得破坏默认路径确定性）。
+#[test]
+fn test_search_reproducible_with_seeded_rng() {
+    let model = SingleAgentMock;
+    let policy = PuctPolicy::new();
+    let cfg = MctsConfig {
+        num_simulations: 40,
+        temperature: 1.0, // 含采样路径，最能体现可复现性
+        ..MctsConfig::default()
+    };
+
+    let mut rng_a = StdRng::seed_from_u64(123);
+    let mut rng_b = StdRng::seed_from_u64(123);
+    let ra = mcts_search(&model, &policy, &[0.0], &cfg, &mut rng_a);
+    let rb = mcts_search(&model, &policy, &[0.0], &cfg, &mut rng_b);
+
+    let visits_a: Vec<u32> = ra.children.iter().map(|c| c.visit_count).collect();
+    let visits_b: Vec<u32> = rb.children.iter().map(|c| c.visit_count).collect();
+    assert_eq!(visits_a, visits_b, "同 seed 的 visit_count 应逐位一致");
+    assert_eq!(
+        ra.learn_policy, rb.learn_policy,
+        "同 seed 的 learn_policy 应一致"
+    );
+    assert_eq!(ra.recommended, rb.recommended, "同 seed 的推荐动作应一致");
+}
+
+// ============================================================================
+// 测试：根调度 hook（v0.24 Phase 0a，为 Gumbel sequential halving 留位）
+// ============================================================================
+
+/// 强制每次模拟都从根子节点 0 起步的调度器。
+struct ForceChild0Scheduler;
+
+impl RootScheduler for ForceChild0Scheduler {
+    fn is_active(&self) -> bool {
+        true
+    }
+    fn next_root_child(
+        &mut self,
+        _root_children: &[ChildStat],
+        _sim_idx: usize,
+        _cfg: &MctsConfig,
+    ) -> Option<usize> {
+        Some(0)
+    }
+}
+
+/// 包装 PuctPolicy，仅覆盖 make_root_scheduler 返回强制调度器。
+struct ForceChild0Policy(PuctPolicy);
+
+impl SearchPolicy for ForceChild0Policy {
+    fn prepare_root(&self, children: &mut [ChildStat], cfg: &MctsConfig, rng: &mut dyn RngCore) {
+        self.0.prepare_root(children, cfg, rng);
+    }
+    fn select_child(
+        &self,
+        parent_visit: u32,
+        parent_to_play: u8,
+        children: &[ChildStat],
+        stats: &MinMaxStats,
+        cfg: &MctsConfig,
+    ) -> usize {
+        self.0
+            .select_child(parent_visit, parent_to_play, children, stats, cfg)
+    }
+    fn recommend(&self, children: &[ChildStat], cfg: &MctsConfig, rng: &mut dyn RngCore) -> usize {
+        self.0.recommend(children, cfg, rng)
+    }
+    fn make_targets(&self, children: &[ChildStat], cfg: &MctsConfig) -> Vec<f32> {
+        self.0.make_targets(children, cfg)
+    }
+    fn make_root_scheduler(
+        &self,
+        _num_root_children: usize,
+        _cfg: &MctsConfig,
+    ) -> Box<dyn RootScheduler> {
+        Box::new(ForceChild0Scheduler)
+    }
+}
+
+/// 验证 RootScheduler hook 真正改变了搜索循环：强制根子节点 0 后，
+/// 只有 child0 被访问，child1/child2 维持 0 访问（默认 PUCT 下三者都会被访问）。
+#[test]
+fn test_root_scheduler_hook_forces_root_child() {
+    let model = SingleAgentMock;
+    let policy = ForceChild0Policy(PuctPolicy::new());
+    let cfg = MctsConfig {
+        num_simulations: 30,
+        temperature: 0.0,
+        ..MctsConfig::default()
+    };
+    let mut rng = StdRng::seed_from_u64(1);
+    let result = mcts_search(&model, &policy, &[0.0], &cfg, &mut rng);
+
+    assert_eq!(result.children.len(), 3);
+    assert_eq!(
+        result.children[0].visit_count, 30,
+        "强制起步的 child0 应吸收全部 {} 次模拟",
+        cfg.num_simulations
+    );
+    assert_eq!(result.children[1].visit_count, 0, "child1 不应被访问");
+    assert_eq!(result.children[2].visit_count, 0, "child2 不应被访问");
 }

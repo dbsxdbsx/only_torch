@@ -63,6 +63,7 @@ mod tests {
             reward,
             root_value,
             terminated: false,
+            extras: Default::default(),
         }
     }
 

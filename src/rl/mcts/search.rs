@@ -1,6 +1,6 @@
 //! MCTS 主搜索循环
 
-use rand::thread_rng;
+use rand::RngCore;
 
 use super::min_max::MinMaxStats;
 use super::node::{Node, Tree};
@@ -22,9 +22,8 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
     policy: &P,
     obs: &[f32],
     cfg: &MctsConfig,
+    rng: &mut dyn RngCore,
 ) -> SearchResult {
-    let mut rng = thread_rng();
-
     // 1. root 推理 → 建根节点 + 展开子节点
     let root_out = model.root(obs);
 
@@ -55,15 +54,26 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
     // 2. 注入根节点 Dirichlet 噪声
     let root_id = tree.root;
     let mut root_child_stats = collect_child_stats(&tree, root_id);
-    policy.prepare_root(&mut root_child_stats, cfg, &mut rng);
+    policy.prepare_root(&mut root_child_stats, cfg, rng);
     apply_child_stats_to_tree(&mut tree, root_id, &root_child_stats);
 
-    // 3. 模拟循环
+    // 3. 模拟循环（含根调度 hook：默认 PuctScheduler 不干预、零开销）
     let mut min_max = MinMaxStats::new();
+    let num_root_children = tree.nodes[tree.root].children.len();
+    let mut scheduler = policy.make_root_scheduler(num_root_children, cfg);
+    let use_scheduler = scheduler.is_active();
 
-    for _ in 0..cfg.num_simulations {
+    for sim_idx in 0..cfg.num_simulations as usize {
+        // 根调度：Gumbel 等可强制本次模拟的根起步子节点；默认 None=走 PUCT
+        let forced_root = if use_scheduler {
+            let root_children = collect_child_stats(&tree, tree.root);
+            scheduler.next_root_child(&root_children, sim_idx, cfg)
+        } else {
+            None
+        };
+
         // selection: 从根往下选择
-        let leaf_id = select(&tree, policy, &min_max, cfg);
+        let leaf_id = select(&tree, policy, &min_max, cfg, forced_root);
 
         // 若叶子已终止，只做 backup
         if tree.nodes[leaf_id].terminal {
@@ -114,8 +124,10 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
     // 4. 收集最终根子节点统计
     let final_children = collect_child_stats(&tree, tree.root);
 
-    // 5. 推荐动作 + 学习目标
-    let rec_idx = policy.recommend(&final_children, cfg, &mut rng);
+    // 5. 推荐动作 + 学习目标（scheduler 可覆盖推荐，如 Gumbel 用最终幸存者）
+    let rec_idx = scheduler
+        .final_recommendation(&final_children)
+        .unwrap_or_else(|| policy.recommend(&final_children, cfg, rng));
     let recommended = if rec_idx < final_children.len() {
         final_children[rec_idx].action.clone()
     } else if !final_children.is_empty() {
@@ -186,8 +198,16 @@ fn select<S: Clone + 'static, P: SearchPolicy>(
     policy: &P,
     stats: &MinMaxStats,
     cfg: &MctsConfig,
+    forced_root: Option<usize>,
 ) -> usize {
     let mut current = tree.root;
+    // 根调度 hook：若指定，强制第一步走该根子节点（其下仍走 PUCT 选择）
+    if let Some(ci) = forced_root {
+        let root = &tree.nodes[tree.root];
+        if root.expanded && ci < root.children.len() {
+            current = root.children[ci].child;
+        }
+    }
     loop {
         let node = &tree.nodes[current];
         if !node.expanded || node.children.is_empty() {

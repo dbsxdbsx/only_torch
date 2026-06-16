@@ -23,6 +23,7 @@ fn self_play_one_episode(
     actions: &[ActionPayload],
     mcts_cfg: &MctsConfig,
     gamma: f32,
+    rng: &mut StdRng,
 ) -> Vec<SelfPlayStep> {
     let obs_raw = env.reset(None);
     let mut obs = obs_raw[0].clone();
@@ -30,7 +31,7 @@ fn self_play_one_episode(
 
     loop {
         let dyn_model = DynamicsModel::new(model, actions.to_vec(), gamma);
-        let result = mcts_search(&dyn_model, &PuctPolicy::new(), &obs, mcts_cfg);
+        let result = mcts_search(&dyn_model, &PuctPolicy::new(), &obs, mcts_cfg, rng);
 
         let action_idx = match &result.recommended {
             ActionPayload::Discrete(idx) => *idx,
@@ -48,6 +49,7 @@ fn self_play_one_episode(
             reward: 0.0,
             root_value: Some(root_value),
             terminated: false,
+            extras: Default::default(),
         });
 
         let (next_obs_raw, reward, terminated, truncated) = env.step(&[action_idx as f32]);
@@ -175,6 +177,8 @@ fn eval_episodes(
         ..MctsConfig::default()
     };
 
+    // eval 用独立种子 rng，使训练可复现不受 eval 调用次数影响（greedy 下 rng 不影响输出）
+    let mut eval_rng = StdRng::seed_from_u64(0xE7A1);
     let mut total_reward = 0.0;
     for _ in 0..n_episodes {
         let obs_raw = env.reset(None);
@@ -183,7 +187,13 @@ fn eval_episodes(
 
         loop {
             let dyn_model = DynamicsModel::new(model, actions.to_vec(), gamma);
-            let result = mcts_search(&dyn_model, &PuctPolicy::new(), &obs, &eval_cfg);
+            let result = mcts_search(
+                &dyn_model,
+                &PuctPolicy::new(),
+                &obs,
+                &eval_cfg,
+                &mut eval_rng,
+            );
 
             let action_idx = match &result.recommended {
                 ActionPayload::Discrete(idx) => *idx,
@@ -273,7 +283,7 @@ fn main() -> Result<(), GraphError> {
                 ..MctsConfig::default()
             };
 
-            let steps = self_play_one_episode(&env, &model, &actions, &mcts_cfg, gamma);
+            let steps = self_play_one_episode(&env, &model, &actions, &mcts_cfg, gamma, &mut rng);
             let ep_reward: f32 = steps.iter().map(|s| s.reward).sum();
             let ep_len = steps.len();
 
@@ -320,7 +330,7 @@ fn main() -> Result<(), GraphError> {
                         for g in games.iter_mut() {
                             if rng.gen_range(0.0..1.0) < reanalyze_fraction {
                                 let dyn_model = DynamicsModel::new(&model, actions.clone(), gamma);
-                                reanalyze_game(&dyn_model, &re_policy, g, &re_cfg);
+                                reanalyze_game(&dyn_model, &re_policy, g, &re_cfg, &mut rng);
                             }
                         }
                     }

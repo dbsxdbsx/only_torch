@@ -6,6 +6,8 @@ use crate::rl::mcts::{
     ActionPayload, Dynamics, DynamicsModel, DynamicsOutput, MctsConfig, MctsModel, PuctPolicy,
     RecurrentOut, RootOut, mcts_search,
 };
+use rand::SeedableRng;
+use rand::rngs::StdRng;
 
 // ============================================================================
 // Mock: 固定输出的 Dynamics 实现
@@ -90,7 +92,8 @@ fn test_dynamics_model_mcts_search() {
         ..MctsConfig::default()
     };
 
-    let result = mcts_search(&model, &policy, &[0.0; 4], &cfg);
+    let mut rng = StdRng::seed_from_u64(42);
+    let result = mcts_search(&model, &policy, &[0.0; 4], &cfg, &mut rng);
 
     assert_eq!(result.children.len(), 3, "应有 3 个根子节点");
     let total_visits: u32 = result.children.iter().map(|c| c.visit_count).sum();

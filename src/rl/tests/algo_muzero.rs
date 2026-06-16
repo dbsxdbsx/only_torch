@@ -82,6 +82,7 @@ fn make_step(reward: f32, root_value: Option<f32>) -> SelfPlayStep {
         reward,
         root_value,
         terminated: false,
+        extras: Default::default(),
     }
 }
 
