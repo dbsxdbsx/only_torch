@@ -12,6 +12,19 @@
   - 同步更新 AGENTS.md / rl_roadmap.md / rl.instructions.md / rl_python_env_setup.md / RL 主线 plan 的验收分层（v0→v1、195→475）
   - 一次性测得四算法 v1 样本效率（到 500 满分所需 env-step）：MuZero ~3.8k（噪声大、spike）/ EZ(cons+vp) ~31k / PPO ~102k / SAC ~129k——model-based 样本效率碾压 model-free，详见 [`.issue/items/post_ez_v2_research_backlog.md`](.issue/items/post_ez_v2_research_backlog.md)
 
+### Added
+
+- **feat(rl): EZ-V2 多模式示例矩阵 SMOKE 全绿（Phase 2–4 管线打通）**
+  - 新增 5 个 EZ 示例（复用 `examples/efficientzero/cartpole/model.rs`，零库层改动）：
+    - `examples/efficientzero/pendulum/`（Pendulum-v1，纯连续→离散化 9 档）
+    - `examples/efficientzero/platform/`（Platform-v0，混合 Tuple→离散化候选）
+    - `examples/efficientzero/gomoku/`（双人 learned-model，自定义 `to_play` 携带适配器**首次触发内核 negamax 双人路径**，6×6 小盘）
+    - `examples/efficientzero/ant/`（Ant-v5，8 维连续→固定候选）
+    - `examples/efficientzero/atari/`（ALE/Breakout-v5，像素降采样→MLP）
+    - `examples/efficientzero/minari/`（Minari 离线 load + 训练，无本地数据集优雅跳过）
+  - 六格示例 `SMOKE=1` 全部跑通（交互/自对弈 + 训练 + loss 有限 + 无 panic）；本机 ale-py/mujoco/minari 依赖齐全，Atari/Ant/Minari 真跑通
+  - **定位**：v0.24 EZ **框架管线完备（smoke 级）**，分数未压测达标；简化点（离散化候选替代忠实 Gumbel 连续/混合搜索、Atari 降采样替代 CNN repr、Gomoku 小盘 best-effort）均在示例 doc 与 `examples/efficientzero/README.md` 标注为 TODO
+
 ## [0.23.1] - 2026-06-15
 
 > **MuZero canonical 完全体达标**：补齐 categorical value/reward + latent min-max 归一化 + absorbing state + canonical 梯度缩放后，MuZero CartPole-v0 从「卡 ~40 平台期」收口到 **greedy(temp=0) eval 20 局均值 199.5 ≥ 195**。真因是搜索在 learned model 上的 **no-terminal 价值膨胀**，由 absorbing state 直击修复。这套机制是整个 `*Zero` 家族（AlphaZero / MuZero / EfficientZero）的共享地基，已逐项正确性验证。「发版」= bump 版本号 + 更新 CHANGELOG，不 `cargo publish`。

@@ -14,15 +14,17 @@
 
 ## 示例矩阵与验收口径
 
-| 示例 | 环境 | 动作 | 验收口径 | 状态 |
+| 示例 | 环境 | 动作 | 验收口径 | 状态（2026-06-16） |
 |------|------|------|----------|------|
-| `cartpole/` | `CartPole-v1` | 离散 | **达标**：greedy eval ≥ 阈值（建议 ≥450；非 v0 的 195） | Phase 1 |
-| `pendulum/` | `Pendulum-v1` | 纯连续 | **达标**：greedy eval 平均 return ≥ 阈值（建议 ≥ -200，对比 SAC 基线） | Phase 2a |
-| `platform/` | `Platform-v0` | 混合 Tuple | **闭环**：return 趋势上升（不强制达标分数） | Phase 2b |
-| `gomoku/` | `Gomoku-*-v0` | 离散博弈 | **best-effort**：vs `naive3` 胜率 ≥ 阈值（CPU 学不动可降棋盘/sims/对手级别） | Phase 3 |
-| `atari/` | `ALE/*-v5` | 图像离散 | **pipeline smoke**：能学、loss 有限、无 panic（CPU 不追分数） | Phase 4 |
-| `ant/` | `Ant-v5` | 高维连续 | **pipeline smoke**：高维连续管线跑通（不追分数） | Phase 4 |
-| `minari/` | Minari 数据集 | 离线 | **pipeline smoke**：load + 一步训练（不进性能门禁） | Phase 4 |
+| `cartpole/` | `CartPole-v1` | 离散 | **达标**：greedy eval ≥ 阈值（建议 ≥450；非 v0 的 195） | Phase 1：cons+vp 已达 greedy 500（满分），全开+target 待调参 |
+| `pendulum/` | `Pendulum-v1` | 纯连续 | **达标**：greedy eval 平均 return ≥ 阈值（建议 ≥ -200，对比 SAC 基线） | Phase 2a：**SMOKE ✅**（离散化连续，忠实 Gumbel 待续） |
+| `platform/` | `Platform-v0` | 混合 Tuple | **闭环**：return 趋势上升（不强制达标分数） | Phase 2b：**SMOKE ✅**（离散化混合候选） |
+| `gomoku/` | `Gomoku-*-v0` | 离散博弈 | **best-effort**：vs `naive3` 胜率 ≥ 阈值（CPU 学不动可降棋盘/sims/对手级别） | Phase 3：**SMOKE ✅**（双人 learned-model + negamax 首次实跑，6×6 小盘） |
+| `atari/` | `ALE/*-v5` | 图像离散 | **pipeline smoke**：能学、loss 有限、无 panic（CPU 不追分数） | Phase 4：**SMOKE ✅**（像素降采样→MLP，CNN repr 待续） |
+| `ant/` | `Ant-v5` | 高维连续 | **pipeline smoke**：高维连续管线跑通（不追分数） | Phase 4：**SMOKE ✅**（8 维连续→固定候选） |
+| `minari/` | Minari 数据集 | 离线 | **pipeline smoke**：load + 一步训练（不进性能门禁） | Phase 4：**SMOKE ✅**（本地数据集 load + 离线训练；无本地数据集优雅跳过） |
+
+> **当前定位（2026-06-16）**：v0.24 EZ 框架**六格示例管线全部 `SMOKE` 跑通**（`SMOKE=1` 各示例：自对弈/交互 + 训练 + loss 有限 + 无 panic）。**分数尚未压测到达标**——Phase 2a/2b/4 用了「离散化候选」简化（忠实 Gumbel 连续/混合搜索待续）、Atari 用降采样换 CNN repr、Gomoku 为 6×6 小盘 best-effort。各示例顶部 doc 注释标注了简化点与 TODO。
 
 ## 两套判据，分开跑、不混用
 
