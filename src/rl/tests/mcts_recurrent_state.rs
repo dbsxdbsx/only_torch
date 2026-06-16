@@ -1,4 +1,4 @@
-//! 第 5 根接缝契约测试（v0.24 Phase 0a）：
+//! State 携带 recurrent hidden 契约测试：
 //! `MctsModel::State` 携带 recurrent hidden + `recurrent` 返回 value prefix 增量 reward。
 //!
 //! 目的：证明 EfficientZero **value prefix 忠实版**（LSTM hidden 穿过搜索树、reward 取 prefix

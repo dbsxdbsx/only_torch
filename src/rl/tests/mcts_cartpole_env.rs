@@ -1,4 +1,4 @@
-//! Phase 3b: 用真实 CartPole 环境当 MctsModel 验证 MCTS 搜索 + MinMaxStats 正确性
+//! 用真实 CartPole 环境当 MctsModel 验证 MCTS 搜索 + MinMaxStats 正确性
 //!
 //! 将 GymEnv 的 Python 环境直接作为 world model：
 //! - State = Py<PyAny>（环境 deepcopy 快照）

@@ -1,9 +1,9 @@
-//! Value prefix 目标（LSTM 累计 reward 前缀）—— v0.24 Phase 1 `+value prefix`（忠实版）。
+//! Value prefix 目标（LSTM 累计 reward 前缀，忠实版）。
 //!
 //! Value prefix（EfficientZero V1 提出）把「逐步精确预测 reward」改为「预测从子根到第 k 步的
 //! 累计 reward 前缀和」，规避 reward 落点的 state-aliasing，使监督更稳。
 //!
-//! **忠实版**：LSTM hidden 穿过 MCTS 搜索树（见 `MctsModel::State` 不透明契约 + 第 5 根接缝
+//! **忠实版**：LSTM hidden 穿过 MCTS 搜索树（见 `MctsModel::State` 不透明契约 +
 //! 契约测试 `rl::tests::mcts_recurrent_state`），搜索期每条边的 reward 取 prefix **增量**
 //! （`prefix_k − prefix_{k-1}`）。
 //!
@@ -27,8 +27,8 @@ pub fn reward_prefix_targets(rewards: &[f32]) -> Vec<f32> {
 
 /// 从累计前缀序列还原单步增量：`delta[k] = prefix[k] − prefix[k-1]`（`prefix[-1] = 0`）。
 ///
-/// 用于校验「搜索期 reward 取 prefix 增量」与训练期累计前缀口径一致（呼应第 5 根接缝契约
-/// 测试 `rl::tests::mcts_recurrent_state`：prefix-delta reward ≡ 单步 reward）。
+/// 用于校验「搜索期 reward 取 prefix 增量」与训练期累计前缀口径一致（呼应
+/// 契约测试 `rl::tests::mcts_recurrent_state`：prefix-delta reward ≡ 单步 reward）。
 pub fn prefix_to_delta(prefix: &[f32]) -> Vec<f32> {
     let mut out = Vec::with_capacity(prefix.len());
     let mut prev = 0.0;

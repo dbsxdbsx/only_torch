@@ -47,7 +47,7 @@ impl<T: BufferItem> ReplayBuffer<T> {
             .collect()
     }
 
-    /// 有放回随机抽样，额外返回每个样本在 buffer 中的**存储下标**（v0.24 Phase 0a 接缝）。
+    /// 有放回随机抽样，额外返回每个样本在 buffer 中的**存储下标**。
     ///
     /// 与 [`sample`](Self::sample) 的唯一区别是带回下标，使「完整 reanalyze 写回」
     /// 「PER priority 更新」等未来能力能定位回原条目（配合 [`update_at`](Self::update_at)）。

@@ -2,10 +2,10 @@
 //!
 //! 复用 `muzero/` 的 `support` / `value_transform` / `n_step` / `reanalyze`；EZ 专属增量分模块：
 //! - [`config`]：[`EfficientZeroConfig`]（组合 base/search/gumbel/reanalyze/target/loss）
-//! - [`consistency`]：自监督 consistency loss（SimSiam stop-grad）—— Phase 1 实现
-//! - [`value_prefix`]：value prefix（LSTM 累计 reward 前缀）目标 —— Phase 1 实现（忠实版）
-//! - [`target`]：target network（hard / EMA 更新 + 同步间隔）—— Phase 1 实现
-//! - [`sve`]：search-based value estimation —— Phase 1 实现
+//! - [`consistency`]：自监督 consistency loss（SimSiam stop-grad）
+//! - [`value_prefix`]：value prefix（LSTM 累计 reward 前缀）目标（忠实版）
+//! - [`target`]：target network（hard / EMA 更新 + 同步间隔）
+//! - [`sve`]：search-based value estimation
 //!
 //! # 设计边界
 //! - **入库**：配置组合、consistency / value-prefix 目标、target 更新、SVE blend（纯函数）

@@ -40,7 +40,7 @@ pub struct SelfPlayStep {
 pub struct SelfPlayStepExtras {
     /// EfficientZero value prefix 训练目标（K 步累计 reward 前缀）。
     ///
-    /// MuZero / AlphaZero 路径填 `None`；EZ +value prefix（Phase 1）填实际前缀目标。
+    /// MuZero / AlphaZero 路径填 `None`；EZ value prefix 填实际前缀目标。
     pub value_prefix_target: Option<f32>,
 }
 

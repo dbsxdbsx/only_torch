@@ -1,4 +1,4 @@
-//! Target network 参数同步（hard / EMA + 同步间隔）—— v0.24 Phase 1 `+target`。
+//! Target network 参数同步（hard / EMA + 同步间隔）。
 //!
 //! Target network 是 EZ 的稳定性增强（base MuZero 不需要）。本模块提供在两份参数列表
 //! （online / target）间同步的纯操作；模型结构与两份实例化属环境相关，留示例。

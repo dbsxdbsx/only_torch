@@ -245,7 +245,7 @@ fn test_custom_buffer_item() {
 }
 
 // ============================================================================
-// sample_indexed + update_at（v0.24 Phase 0a 接缝：reanalyze 回写 / PER 预留）
+// sample_indexed + update_at（reanalyze 回写 / PER 预留）
 // ============================================================================
 
 #[test]

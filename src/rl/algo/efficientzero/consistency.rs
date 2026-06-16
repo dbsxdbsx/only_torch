@@ -1,4 +1,4 @@
-//! 自监督 consistency loss（SimSiam 负余弦相似度）—— v0.24 Phase 1 `+consistency`。
+//! 自监督 consistency loss（SimSiam 负余弦相似度）。
 //!
 //! 让 dynamics 预测的 `next_latent`（经 projector + predictor 的 online 分支）与
 //! `repr(next_obs)`（经 projector 的 target 分支，**stop-gradient**）对齐，给 dynamics 一个

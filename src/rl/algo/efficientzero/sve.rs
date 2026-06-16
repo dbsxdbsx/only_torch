@@ -1,4 +1,4 @@
-//! SVE：Search-based Value Estimation —— v0.24 Phase 1 `+SVE`。
+//! SVE：Search-based Value Estimation。
 //!
 //! EfficientZero V2 增量：用 MCTS 搜索本身产出的（更可靠的）root value 修正 stale buffer 的
 //! n-step bootstrap value 目标，缓解旧数据的 value 漂移。与 reanalyze 协同（reanalyze 重搜得到

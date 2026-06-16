@@ -11,7 +11,7 @@ use super::types::{ActionPayload, ChildStat, MctsConfig, RecurrentOut, RootOut};
 /// - `root`：从原始观测生成初始隐状态和先验
 /// - `recurrent`：从父状态 + 动作推演下一步
 ///
-/// # State 是不透明的（v0.24 复核要点，第 5 根接缝）
+/// # State 是不透明的
 ///
 /// `State` 为关联类型、对内核不透明，搜索树原样克隆 / 存储它。因此它可承载**任意**推演期
 /// 状态，不止 latent：
@@ -65,7 +65,7 @@ pub trait SearchPolicy {
     /// 生成学习用策略目标（visit count → 概率分布）
     fn make_targets(&self, children: &[ChildStat], cfg: &MctsConfig) -> Vec<f32>;
 
-    /// 创建本次搜索的根调度器（搜索生命周期 hook，v0.24 复核新增）。
+    /// 创建本次搜索的根调度器（搜索生命周期 hook）。
     ///
     /// 默认返回 [`PuctScheduler`]（不干预，行为与历史 PUCT 单叶循环**完全一致**）。
     /// Gumbel 等需要「分轮预算 + 逐轮淘汰」的策略覆盖此方法返回自定义 scheduler，
@@ -87,7 +87,7 @@ pub trait SearchPolicy {
 /// `select_child` 表达。本 trait 给搜索循环一个**有状态**的根调度 hook：
 ///
 /// - 默认实现 [`PuctScheduler`]：`is_active() == false` → 搜索循环零开销，走原 PUCT 路径。
-/// - Gumbel（Phase 2a）实现自己的 scheduler：按当前根统计逐轮缩小候选集。
+/// - Gumbel 实现自己的 scheduler：按当前根统计逐轮缩小候选集。
 pub trait RootScheduler {
     /// 是否启用根调度。默认 `false` → 搜索循环零开销、行为同历史 PUCT。
     fn is_active(&self) -> bool {
@@ -122,7 +122,7 @@ pub struct PuctScheduler;
 
 impl RootScheduler for PuctScheduler {}
 
-/// 动作候选采样上下文：采样器决定候选所需的信息（v0.24 复核新增接缝）
+/// 动作候选采样上下文：采样器决定候选所需的信息
 pub struct ActionSampleContext<'a, S> {
     /// 当前节点隐状态
     pub state: &'a S,
@@ -142,12 +142,12 @@ pub struct ActionCandidates {
     pub priors: Option<Vec<f32>>,
 }
 
-/// 动作候选采样器（独立接缝，v0.24 复核新增）
+/// 动作候选采样器（独立接缝）
 ///
 /// 负责「给某节点生成 K 个候选动作 + proposal prior」，与 [`SearchPolicy`]（只消费
 /// [`ChildStat`]）**解耦**。这样同一接缝同时服务：
 /// - 离散：枚举固定 / 合法动作集（行为不变，见 [`DiscreteActionSampler`]）；
-/// - 纯连续（Gumbel @ Phase 2a）/ 混合（Phase 2b）/ 未来 Sampled MuZero：从策略分布采样 K 个候选。
+/// - 纯连续（Gumbel）/ 混合 / 未来 Sampled MuZero：从策略分布采样 K 个候选。
 ///
 /// 由 learned-model adapter 在产出 `RootOut/RecurrentOut.candidate_actions` 时调用。
 pub trait ActionSampler<S> {
@@ -157,7 +157,7 @@ pub trait ActionSampler<S> {
 
 /// 离散动作采样器：枚举固定离散动作集（行为等价现有「全量离散候选」）。
 ///
-/// Phase 0a 默认实现；棋类的「按 `legal_mask` 过滤」留 Phase 3 扩展（按状态变化的合法集）。
+/// 默认实现；棋类的「按 `legal_mask` 过滤」留后续扩展（按状态变化的合法集）。
 #[derive(Debug, Clone)]
 pub struct DiscreteActionSampler {
     actions: Vec<ActionPayload>,

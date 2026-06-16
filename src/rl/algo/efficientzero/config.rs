@@ -1,4 +1,4 @@
-//! EfficientZero V2 配置：**组合而非扁平**（reviewer P1）。
+//! EfficientZero V2 配置：**组合而非扁平**。
 //!
 //! 把 `num_simulations` / `gumbel_sims` / `eval_sims` 等易互相覆盖的魔法常量按职责分组，
 //! 避免一个扁平大结构里语义打架。各子配置独立 `Default`，组合成 [`EfficientZeroConfig`]。
@@ -9,7 +9,7 @@
 use crate::rl::algo::muzero::MuZeroConfig;
 use crate::rl::mcts::MctsConfig;
 
-/// Gumbel 搜索配置（Phase 2a 起用；离散 CartPole 走 PUCT 时忽略）。
+/// Gumbel 搜索配置（连续/混合动作空间用；离散 CartPole 走 PUCT 时忽略）。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GumbelConfig {
     /// 根候选采样数 m（Gumbel-Top-k 的 k）。连续/大动作空间从策略采样 m 个候选。
@@ -39,7 +39,7 @@ pub struct ReanalyzeConfig {
     /// 每次训练采样的整局中，以此概率 reanalyze ∈ [0,1]。
     ///
     /// EZ 推荐开启（batch-time）以提样本效率；但 CPU only 下每个被重算位置 = 一整棵 MCTS，
-    /// 故 `Default` 保守置 `0.0`，由 Phase 1 EZ 示例按算力调高（与 `MuZeroConfig` 一致的取舍）。
+    /// 故 `Default` 保守置 `0.0`，由示例按算力调高（与 `MuZeroConfig` 一致的取舍）。
     pub fraction: f32,
     /// reanalyze 用 target net（`true`）还是 online net（`false`）。EZ 增强用 target net。
     pub use_target_net: bool,
@@ -57,7 +57,7 @@ impl Default for ReanalyzeConfig {
 /// Target network 配置（EZ 稳定性增强；base MuZero 不需要）。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TargetConfig {
-    /// 是否启用 target net（Phase 1 +target 消融开关）。
+    /// 是否启用 target net（消融开关）。
     pub enabled: bool,
     /// EMA 软更新系数 τ（`sync_interval == 0` 时生效）。
     pub tau: f32,

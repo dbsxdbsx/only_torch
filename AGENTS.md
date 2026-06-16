@@ -17,15 +17,15 @@ only_torch 是一个纯 Rust 的 PyTorch 风格玩具框架，当前重点是：
 
 | 项 | 内容 |
 |----|------|
-| **版本** | `0.23.1`（2026-06-15；本地可能超前 `origin/master`，以 `git log` / `CHANGELOG.md` 为准） |
-| **刚闭环** | **v0.23.1 + CartPole 统一 v1**：**MuZero canonical 完全体达标**（v0.23.1 时代 CartPole-v0 greedy **199.5**）；**2026-06-16 全项目 CartPole 统一到 v1（废弃 v0）**——SAC/PPO/MuZero greedy eval 均达 **500**（门槛 ≥475 官方 solved；MuZero greedy 噪声大、首达可能 spike）。算法地基：categorical value/reward（`support.rs`）+ latent min-max 归一化（`Var::amax/amin`）+ **absorbing state**（破 no-terminal 价值膨胀，平台期真因）+ canonical 梯度缩放（`Var::scale_gradient`）+ `MuZeroConfig` + `reanalyze_game`（默认关）。这些是 `*Zero` 家族共享地基；根因复盘见 [`.issue/_archive/muzero_cartpole_scalar_value_plateau.md`](.issue/_archive/muzero_cartpole_scalar_value_plateau.md) |
-| **当前主线** | **强化学习** v0.24.0：MuZero 达标地基已就绪，直接上 **EfficientZero V2**（EZ-V2，终极调优，唯一）：value prefix / reanalyze 调强 / SVE / Gumbel 搜索 + 多模式环境矩阵（全 `-v1`）；见 [RL 路线图](.doc/design/rl_roadmap.md) |
+| **版本** | `0.24.0`（2026-06-16；本地可能超前 `origin/master`，以 `git log` / `CHANGELOG.md` 为准） |
+| **刚闭环** | **v0.24.0 EZ-V2 框架管线完备**：Phase 0a 五根接缝契约（`ActionSampler` / `RootScheduler` / RNG 注入 / `SelfPlayStepExtras` / `sample_indexed` / State 不透明契约）+ EZ 算法 helper 入库（consistency / value_prefix / target / SVE / config）+ 六格示例矩阵 SMOKE 全绿（CartPole/Pendulum/Platform/Gomoku/Atari/Ant/Minari）+ 全项目 CartPole 统一 v1（greedy eval ≥475）。样本效率实测：MuZero ~3.8k / EZ(cons+vp) ~31k / PPO ~102k / SAC ~129k env-step 到满分 |
+| **当前主线** | **强化学习** v0.25.0：**MyZero 统一算法**——从 CartPole-v1 消融实验起步，逐增量叠加（consistency / value prefix / target net / SVE / Gumbel），最终覆盖全动作空间（离散/连续/混合）与全状态类型（确定/随机），取代分散的 MuZero + EfficientZero 实现。MuZero/EZ 代码保留为消融对照基线，组件按需提取到公共位置 |
 | **刻意暂缓** | 演化 **阶段 D**（`CellAttention` ONNX、`Attention` Net2Net 函数保持、Conv2d Attention、3D batched MatMul）——与 RL 零耦合，见 [记忆机制设计 — Phase D](.doc/design/memory_mechanism_design.md#-后续-phase-d刻意未做) |
-| **路线展望** | RL 主线 v0.20–v0.24：**环境一律 `python/gym_env/<游戏>/` + `GymEnv` 桥接**（无 Rust 棋盘）。**架构跑通**：SAC/MuZero/PPO 用 **`CartPole-v1` greedy eval ≥475**（2026-06-16 统一 v1，废弃 v0）；**终极调优**：v0.24 **[EfficientZero V2](https://arxiv.org/abs/2403.00564)（EZ-V2，第二代，唯一）**（全 `-v1` 环境，侧重样本效率）。详见 [RL 主线实施计划](../c:/Users/Administrator/.cursor/plans/rl_主线实施计划_5966956a.plan.md) |
+| **路线展望** | v0.25 **MyZero**（`src/rl/algo/my_zero/`）：统一 `*Zero` 族算法，消融驱动迭代。从 CartPole 最简 base 开始，每叠一个增量组件做 A/B 消融对比、记录 benchmark。全动作/状态类型覆盖后删除旧 `muzero/` + `efficientzero/`，MyZero 成为唯一 `*Zero` 实现。详见 [RL 路线图](.doc/design/rl_roadmap.md) |
 
 **进度符号**（设计文档统一口径）：✅ Phase 验收范围内已完成 · ⏳ 已识别、留后续 Phase · 🔲 可选增强 · 📦 已归档历史路径。
 
-**接手 RL 时建议顺序**：读 `rl_roadmap.md` → 配环境 [`.doc/rl_python_env_setup.md`](.doc/rl_python_env_setup.md)（**仅 Gymnasium**）→ `just test-filter rl`（60+ 测试确认 buffer + algo helper + MCTS）→ `just smoke-cartpole-sac`（SAC 管线验证）→ `just smoke-cartpole-ppo`（PPO 管线验证）→ 推进 v0.24（EfficientZero V2）。
+**接手 RL 时建议顺序**：读 `rl_roadmap.md` → 配环境 [`.doc/rl_python_env_setup.md`](.doc/rl_python_env_setup.md)（**仅 Gymnasium**）→ `just test-filter rl`（60+ 测试确认 buffer + algo helper + MCTS）→ `just smoke-cartpole-sac`（SAC 管线验证）→ `just smoke-cartpole-ppo`（PPO 管线验证）→ 推进 v0.25（MyZero 统一算法，从 CartPole 消融起步）。
 
 **接手 Attention 阶段 D 时**：先读 [记忆机制设计 — 实现状态速览](.doc/design/memory_mechanism_design.md#-实现状态速览)（含 105 个相关单元测试与 IT-* 示例表），勿假设「打勾 = ONNX 也做完」。
 

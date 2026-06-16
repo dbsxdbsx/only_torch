@@ -55,7 +55,7 @@ impl<D: Dynamics> DynamicsModel<D> {
     /// 用任意 [`ActionSampler`] 作为候选来源构造（接缝统一入口）。
     ///
     /// 离散候选与 state / rng 无关，构造期经 sampler 产出一次并缓存，搜索期零开销复用；
-    /// 连续 / 混合（Phase 2a 起）的 per-state 动态采样将在引入 `GumbelPolicy` 时扩展
+    /// 连续 / 混合的 per-state 动态采样将在引入 `GumbelPolicy` 时扩展
     /// adapter 的动态路径（届时 `recurrent` 按 state 调 sampler），此处先打通离散统一来源。
     pub fn new_with_sampler<A: ActionSampler<Vec<f32>>>(
         inner: D,

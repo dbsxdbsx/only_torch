@@ -426,11 +426,11 @@ fn test_search_result_exposes_raw_stats() {
 }
 
 // ============================================================================
-// 测试：RNG 注入后可复现（v0.24 Phase 0a 可复现性接线）
+// 测试：RNG 注入后可复现
 // ============================================================================
 
 /// 同一 seed → SearchResult 逐位一致；这是「固定 seed 可复现」验收口径的地基，
-/// 也充当默认 PUCT 路径的回归护栏（Phase 2a 接 Gumbel 时不得破坏默认路径确定性）。
+/// 也充当默认 PUCT 路径的回归护栏（接 Gumbel 时不得破坏默认路径确定性）。
 #[test]
 fn test_search_reproducible_with_seeded_rng() {
     let model = SingleAgentMock;
@@ -457,7 +457,7 @@ fn test_search_reproducible_with_seeded_rng() {
 }
 
 // ============================================================================
-// 测试：根调度 hook（v0.24 Phase 0a，为 Gumbel sequential halving 留位）
+// 测试：根调度 hook（为 Gumbel sequential halving 留位）
 // ============================================================================
 
 /// 强制每次模拟都从根子节点 0 起步的调度器。
@@ -542,7 +542,7 @@ fn test_root_scheduler_hook_forces_root_child() {
 ///
 /// 区别于 `test_search_reproducible_with_seeded_rng`（仅证同 seed 两次一致 = 防随机泄漏），
 /// 本测试硬编码精确数值：**任何改动 select/backup/expand/recommend 逻辑导致输出变化都会被抓**——
-/// 这是 Phase 2a 接 Gumbel（改搜索循环）时护住默认 PUCT 路径不回归的真正护栏。
+/// 这是接 Gumbel（改搜索循环）时护住默认 PUCT 路径不回归的真正护栏。
 ///
 /// 注：MuZero CartPole 端到端棋力（greedy ~199.5）的回归靠示例 SMOKE + 达标流程覆盖；
 /// 此处用确定性 mock 锁定**搜索内核本身**的逐位行为（不依赖 pyo3 / 示例网络）。

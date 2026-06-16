@@ -1,7 +1,7 @@
-//! ActionSampler 接缝契约测试（v0.24 Phase 0a）
+//! ActionSampler 接缝契约测试
 //!
 //! 验证离散默认采样器的「行为不变」契约：枚举固定动作集、不产 proposal prior。
-//! 连续 / 混合采样器的性质测试随 Phase 2a/2b 的 GumbelPolicy 一起补。
+//! 连续 / 混合采样器的性质测试随 GumbelPolicy 一起补。
 
 use crate::rl::mcts::{
     ActionCandidates, ActionPayload, ActionSampleContext, ActionSampler, DiscreteActionSampler,

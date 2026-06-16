@@ -1,18 +1,28 @@
 # 更新日志
 
-## [未发布]
+## [0.24.0] - 2026-06-16
 
-> **CartPole 统一到 v1（废弃 v0）**：全项目 CartPole 示例与测试从 `CartPole-v0`（200 制）统一迁移到 `CartPole-v1`（500 制），并删除临时的 `ENV_ID` v0/v1 切换。背景：v0 在新 Gymnasium 仅留 DeprecationWarning，且 v1 是 EfficientZero V2 的对标基准。架构跑通门槛随之由 reward ≥ 195 改为 **greedy(temp=0) eval 20 局均值 ≥ 475**（Gymnasium 官方 solved）。
-
-### Changed
-
-- **refactor(rl): CartPole 示例/测试/文档统一 v1，废弃 v0**
-  - `examples/{sac,ppo,muzero}/cartpole/`：环境硬编码 `CartPole-v1`，达标门槛 `greedy eval ≥ 475`，并打印「到 475 所需 episode/env-step」样本效率指标；移除临时 `ENV_ID` 切换与 v0 分支
-  - `src/rl/tests/mcts_cartpole_env.rs`：`CartPole-v0` → `CartPole-v1`
-  - 同步更新 AGENTS.md / rl_roadmap.md / rl.instructions.md / rl_python_env_setup.md / RL 主线 plan 的验收分层（v0→v1、195→475）
-  - 一次性测得四算法 v1 样本效率（到 500 满分所需 env-step）：MuZero ~3.8k（噪声大、spike）/ EZ(cons+vp) ~31k / PPO ~102k / SAC ~129k——model-based 样本效率碾压 model-free，详见 [`.issue/items/post_ez_v2_research_backlog.md`](.issue/items/post_ez_v2_research_backlog.md)
+> **EfficientZero V2 框架管线完备（SMOKE 级）**：Phase 0a 五根接缝契约 + EZ 算法 helper 入库 + 六格示例矩阵 SMOKE 全绿（CartPole/Pendulum/Platform/Gomoku/Atari/Ant/Minari）+ 全项目 CartPole 统一 v1。分数未全面压测达标——简化点（离散化候选替代忠实 Gumbel、降采样替代 CNN、小盘 best-effort）均在示例 doc 标注。**v0.25 起由 MyZero 统一算法接棒，以消融实验方式逐增量迭代，最终取代分散的 MuZero/EfficientZero 实现。**「发版」= bump 版本号 + 更新 CHANGELOG，不 `cargo publish`。
 
 ### Added
+
+- **feat(rl): EZ-V2 Phase 0a 五根接缝契约（MCTS 可扩展性地基）**
+  - `ActionSampler` trait + `DiscreteActionSampler`（`src/rl/mcts/traits.rs`）：独立接缝负责候选动作生成，与 `SearchPolicy` 解耦；离散/连续/混合/Sampled 统一入口
+  - `RootScheduler` trait + `PuctScheduler`（搜索生命周期 hook）：Gumbel sequential halving 留位；默认实现零开销等价历史 PUCT
+  - `SearchPolicy::make_root_scheduler` 默认方法
+  - `mcts_search` RNG 注入：签名加 `rng: &mut dyn RngCore` 参数，所有调用点（示例/reanalyze/测试）统一改用外部 seeded RNG，训练可复现
+  - `SelfPlayStepExtras`（`src/rl/buffer/self_play.rs`）：builder 模式承载算法增量字段（`value_prefix_target`），禁裸 Option 坟场
+  - `ReplayBuffer::sample_indexed`（`src/rl/buffer/replay.rs`）：返回 `(index, item)` 对，完整 reanalyze 回写 / PER priority 更新预留
+  - `MctsModel::State` 不透明契约文档（第 5 根接缝）+ 契约测试 `mcts_recurrent_state.rs`：证明 EZ value prefix 忠实版（LSTM hidden 穿 MCTS 树）无需改内核 backup
+  - `mcts_sampler.rs` ActionSampler 接缝契约测试
+
+- **feat(rl): `src/rl/algo/efficientzero/` EZ-V2 函数式 helper 入库**
+  - `EfficientZeroConfig`（组合 base/search/gumbel/reanalyze/target/loss 六子配置，非扁平）
+  - `negative_cosine_similarity`（SimSiam consistency loss，stop-gradient）
+  - `reward_prefix_targets` / `prefix_to_delta`（value prefix 累计目标 + 增量还原校验）
+  - `ema_update` / `hard_update` / `sync_target`（target network 同步，hard/EMA + 间隔调度）
+  - `sve_blend`（search-based value estimation，n-step 与 search root value 混合）
+  - 各子模块含单元测试（consistency 3 / value_prefix 4 / target 3 / sve 2 / config 2）
 
 - **feat(rl): EZ-V2 多模式示例矩阵 SMOKE 全绿（Phase 2–4 管线打通）**
   - 新增 5 个 EZ 示例（复用 `examples/efficientzero/cartpole/model.rs`，零库层改动）：
@@ -24,6 +34,14 @@
     - `examples/efficientzero/minari/`（Minari 离线 load + 训练，无本地数据集优雅跳过）
   - 六格示例 `SMOKE=1` 全部跑通（交互/自对弈 + 训练 + loss 有限 + 无 panic）；本机 ale-py/mujoco/minari 依赖齐全，Atari/Ant/Minari 真跑通
   - **定位**：v0.24 EZ **框架管线完备（smoke 级）**，分数未压测达标；简化点（离散化候选替代忠实 Gumbel 连续/混合搜索、Atari 降采样替代 CNN repr、Gomoku 小盘 best-effort）均在示例 doc 与 `examples/efficientzero/README.md` 标注为 TODO
+
+### Changed
+
+- **refactor(rl): CartPole 示例/测试/文档统一 v1，废弃 v0**
+  - `examples/{sac,ppo,muzero}/cartpole/`：环境硬编码 `CartPole-v1`，达标门槛 `greedy eval ≥ 475`，并打印「到 475 所需 episode/env-step」样本效率指标；移除临时 `ENV_ID` 切换与 v0 分支
+  - `src/rl/tests/mcts_cartpole_env.rs`：`CartPole-v0` → `CartPole-v1`
+  - 同步更新 AGENTS.md / rl_roadmap.md / rl.instructions.md / rl_python_env_setup.md / RL 主线 plan 的验收分层（v0→v1、195→475）
+  - 一次性测得四算法 v1 样本效率（到 500 满分所需 env-step）：MuZero ~3.8k（噪声大、spike）/ EZ(cons+vp) ~31k / PPO ~102k / SAC ~129k——model-based 样本效率碾压 model-free，详见 [`.issue/items/post_ez_v2_research_backlog.md`](.issue/items/post_ez_v2_research_backlog.md)
 
 ## [0.23.1] - 2026-06-15
 
