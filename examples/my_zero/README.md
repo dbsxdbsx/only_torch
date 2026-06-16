@@ -5,50 +5,42 @@
 
 ## 设计理念
 
-- **一个算法，持续迭代**：不再为每篇论文建独立实现（MuZero / EfficientZero），
-  而是维护一个不断进化的 MyZero
+- **一个算法，持续迭代**：不再为每篇论文建独立实现（MuZero / EfficientZero），而是维护一个不断进化的 MyZero
 - **奥卡姆剃刀**：每叠一个组件必须用消融证明其价值，保证不回归
 - **从简到繁**：CartPole → Pendulum → Platform → 更多环境
+- **判别环境原则**：组件的去留必须在「能分辨出它价值」的环境上验证；在分辨不出的环境（如 value_prefix 之于 CartPole）上得到的结论，**不当作全局裁决**
 
-## 消融序列
+## 组件 × 环境 效果矩阵
 
-MyZero 从 canonical MuZero（S0 base）出发，逐步叠加 EfficientZero 增量组件：
+> **单一事实源（dashboard）**：一行一个组件、一列一个环境，格子是该组件在该环境的**实测裁决**。
+> 满屏 ⏳ 是好事——它就是「待办地图」。**表头的环境名是链接**，点一下即进入该环境子文档（配置 / 实测明细）。
 
-| 步骤 | 开关 | 说明 | 环境变量 |
-|------|------|------|---------|
-| S0 | 全关 | canonical MuZero（base） | （默认） |
-| S1 | +consistency | SimSiam 自监督对齐 | `EZ_CONS=1` |
-| S2 | +value prefix | LSTM 累计 reward 前缀 | `EZ_VP=1` |
-| S3 | +target net | EMA/hard 参数同步 | `EZ_TARGET=1` |
-| S4 | +SVE | search value blend | `EZ_SVE=0.5` |
-| S5 | +Gumbel | 搜索改进（少模拟仍稳 + 连续动作）见「搜索改进方向」 | （待实现） |
+图例：`✅ 实测有效(留下)` · `❌ 实测有害(该环境删)` · `⏳ 待测` · `⏸ 此规模不适用` · `— 未开始`
 
-## 环境矩阵（v0.25 硬承诺）
+| 组件 | 开关 | [CartPole-v1](cartpole/README.md) | [Pendulum-v1](pendulum/README.md) | Platform-v0 |
+|------|------|:---:|:---:|:---:|
+| consistency¹ | `EZ_CONS=1` | ✅ | ⏳ | — |
+| value_prefix² | `EZ_VP=1` | ❌ ᵃ | ⏳ | — |
+| target_net² | `EZ_TARGET=1` | ⏳ | ⏳ | — |
+| SVE² | `EZ_SVE=0.5` | ⏳ | ⏳ | — |
+| completedQ³ | `CQ=1` | ✅ | ⏳ | — |
+| Gumbel-root⁴ | （待实现） | ⏳ ᵇ | ⏳ | — |
 
-| 环境 | 动作类型 | 达标门禁 | 配置要点 | 状态 |
-|------|---------|---------|---------|------|
-| **CartPole-v1** | 离散（2） | greedy eval ≥ 475 | `num_simulations=50`，`gamma=0.997` | ✅ S1 稳定达标（双 seed greedy 500），转回归哨兵 |
-| **Pendulum-v1** | 纯连续（1） | return ≥ -200 | 离散化候选（骨架）→ Gumbel 连续搜索（目标） | 骨架已建+管线通；待 Gumbel 提升至达标 |
-| **Platform-v0** | 混合 Tuple | return 趋势上升 | 需 Gumbel + 混合编码 | 待实现 |
+- ᵃ value_prefix 在 CartPole（reward 恒 +1）退化成「步数计数器」→ 有害；但它是 EfficientZero 在 **Atari / 稀疏奖励 / 长 horizon** 的关键组件，**CartPole 删 ≠ 组件坏**，留待判别环境重测（故 Pendulum 标 ⏳ 而非沿用 ❌）。详见 [CartPole 详情](cartpole/README.md)。
+- ᵇ Gumbel-root 的判别环境是 **大动作空间 / 连续动作**（Pendulum 起）；CartPole（2 动作）上 completedQ 已打满，预计仅边际收益。
 
-## 运行
+**脚注（源论文）**
 
-```bash
-# S0 base 完整训练（CartPole-v1，~5 分钟）
-cargo run --example my_zero_cartpole --release
+1. `consistency` ← SimSiam（Chen & He 2021）/ EfficientZero
+2. `value_prefix` / `target_net` / `SVE` ← EfficientZero（Ye et al. 2021）
+3. `completedQ` ← Grill et al. 2020《MCTS as Regularized Policy Optimization》+ Gumbel MuZero（Danihelka et al. 2022）
+4. `Gumbel-root` ← Gumbel MuZero（Danihelka et al. 2022）
+5. 连续采样候选 ← Sampled MuZero（Hubert et al. 2021）
+6. Dirichlet 根噪声 ← MuZero（Schrittwieser et al. 2020）
 
-# S1 消融（开 consistency，当前 CartPole 最优配置）
-EZ_CONS=1 cargo run --example my_zero_cartpole --release
-
-# 多 seed 稳定基线（seed 42/43/44 取中位数，可复现回归锚点）
-SEEDS=3 EZ_CONS=1 cargo run --example my_zero_cartpole --release
-
-# Pendulum（连续动作 → 离散化候选，骨架，待 Gumbel 提升）
-EZ_CONS=1 cargo run --example my_zero_pendulum --release
-
-# SMOKE 管线验证（3 局 + 1 次训练，~30 秒）
-SMOKE=1 cargo run --example my_zero_cartpole
-```
+> **搜索内部·已读未取**：Sequential Halving⁴（仅当 `sims < 动作数`，CartPole(2)/Pendulum(9) 用不上）、非根确定性选择⁴（论文 Fig.7 增益很小）、连续采样候选⁵（离散化已覆盖当前格，高维连续再上）、Dirichlet 根噪声⁶（MuZero 原配，计划由 Gumbel-root 取代）。
+>
+> 注：早期 commit 用 `S0/S1/S2` 指代 `base/+consistency/+value_prefix`，现统一以开关名为准。
 
 ## 评判口径（所有环境通用）
 
@@ -58,82 +50,27 @@ SMOKE=1 cargo run --example my_zero_cartpole
 | **稳（stable）** | 多 seed（≥3）都达标，取中位数 | 排除单 seed spike |
 | **快（fast）** | env-steps-to-solved 为主，wall-clock 为辅 | 同算法消融看 wall-clock；跨算法看 env-step（样本效率） |
 
-## 关键超参
+## 各环境
 
-| 参数 | CartPole 默认 | 说明 |
-|------|-------------|------|
-| `num_simulations` | 50 | 每步 MCTS 模拟次数；按动作数和环境复杂度调整 |
-| `gamma` | 0.997 | 折扣因子 |
-| `k_unroll` | 5 | 训练期 K 步 dynamics 展开 |
-| `td_steps` | 50 | n-step bootstrap 步数 |
-| `lr` | 0.02 | 学习率 |
-| `batch_games` | 8 | 每次训练采样的整局数 |
-| `trains_per_episode` | 8 | 每个 episode 后的训练迭代次数 |
+> 环境名即链接，点击进入对应子文档（与上方矩阵表头一致）。
 
-## Benchmark 基线（CartPole-v1，2026-06-16 实测）
+| 环境 | 动作类型 | 门禁 | 状态 |
+|------|---------|------|------|
+| [**CartPole-v1**](cartpole/README.md) | 离散（2） | greedy eval ≥ 475 | ✅ 又好又稳，回归哨兵 |
+| [**Pendulum-v1**](pendulum/README.md) | 纯连续（1） | return ≥ -200 | 骨架 + 管线通，**判别环境** |
+| **Platform-v0** | 混合 Tuple | return 趋势上升 | 待实现（子目录待建） |
 
-| 算法 | greedy eval | env-steps | wall-clock | 备注 |
-|------|-----------|-----------|------------|------|
-| **PPO** | 484.6 | 81,920 | 107s | model-free，最快达标 |
-| **SAC** | 487.0 | 104,982 | 186s | model-free |
-| **MyZero S0** (sim=50) | 500.0 | 17,260 | 287s | model-based，样本效率最高但 wall-clock 最慢 |
+## 快速开始
 
-### 消融快照（Ep250 时对比，CartPole-v1，sim=50，seed=42）
+```bash
+# 最快达标路径（CartPole · +consistency +completedQ · sims=16 · ~40 秒）
+EZ_CONS=1 CQ=1 SIMS=16 cargo run --example my_zero_cartpole --release
 
-| 配置 | avg_R @ep250 | 最高单局 | loss | 观察 |
-|------|-------------|---------|------|------|
-| S0 base | 80.3 | 182 | ~9.6 | 学习中，尚未达标 |
-| **S1 +consistency** | **97.1** | **366** | **~0.7** | loss 低一个数量级，学习显著更快 |
-| S1+S2 +value_prefix | 15.5 @ep250 | 56 | ~0 振荡 | **严重退化**：Ep659 avg_R 仍 ~13，greedy 9.4；VP 在 CartPole 上有害 |
+# 管线自检（~30 秒）
+SMOKE=1 cargo run --example my_zero_cartpole
+```
 
-> **解读**：MyZero S0 用最少的 env-step（17k vs PPO 82k）达到满分，但 wall-clock 反而最慢——
-> 因为每个 env-step 包含 50 次 MCTS 模拟（dynamics 网络推理），实际计算量 ~50 倍于 model-free。
-> **样本效率 vs 计算效率是 model-based 的核心权衡**：在数据昂贵/交互成本高的环境（机器人、真实世界）
-> model-based 更有价值；在 CartPole 这种模拟器廉价的环境，model-free 的 wall-clock 优势更明显。
-> S1 consistency 的自监督信号让 dynamics 网络学得更准（loss 从 ~10 降到 ~0.7），avg_R 在同样 episode 数下高 21%。
-
-### S1 多 seed 稳定基线（CartPole-v1，sim=50，EZ_CONS=1）
-
-| seed | greedy eval | env-steps to 500 | 备注 |
-|------|-----------|------------------|------|
-| 42 | 500.0 | 18,159 | |
-| 43 | 500.0 | 13,684 | |
-| 中位数 | **500.0** | **~16k** | 2/2 达满分 → CartPole S1 已"稳定+好" |
-
-> **结论**：按上方"评判口径"，CartPole 在 S1 下**已又好又稳**（greedy 双 seed 满分），且 env-step 比 PPO/SAC 省 5–7×。CartPole 至此转为**回归哨兵**。eval harness 已减半（20→10 局）降低 wall-clock，纯开销优化、不改算法。下一步主攻 **Gumbel 搜索**（少模拟仍稳 + 解锁连续动作），见 plan。
-
-## 搜索改进方向：轻量 Gumbel
-
-> 动机：vanilla MCTS 在**少模拟**时学习信号噪声大、不稳。根因是用 **visit-count 当策略目标**——
-> 这是 Grill 2020（*MCTS as Regularized Policy Optimization*）与 Danihelka 2022（*Gumbel MuZero*）
-> 的共识：两篇都主张用「Q 值算出的改进策略」替代 visit-count。Gumbel 论文实测 9x9 Go / Atari
-> 在 n=2 模拟即可稳定学习，而 vanilla 在 n≤16 学不动。
-
-采纳 **Gumbel 的核心两件（轻量版）**，跳过当前规模用不上的重型机制：
-
-| 状态 | 组件 | 作用 |
-|:---:|------|------|
-| ✅ **已验证** | **completedQ 策略目标** `π'=softmax(logits+σ(completedQ))`（`CQ=1`） | 替 visit-count 目标；**闭式**（无需 Grill ¯π 二分搜索）；未访问补 `v_π` |
-| ⚠️ 计划 | **Gumbel-Top-k 根部探索** | 替 Dirichlet + 温度退火；少模拟下保证策略提升 |
-| ⏸ | Sequential Halving | 仅当 `sims < 动作数`（大/连续空间）；CartPole(2)/Pendulum(9) 用不上 |
-| ⏸ | 非根确定性选择 | 论文 Fig.7 增益很小 |
-| ⏸ | 连续采样候选（Sampled MuZero 式） | 离散化已覆盖当前三格；高维连续再上 |
-
-- 超参：`σ(q)=(c_visit+max_b N(b))·c_scale·q`（`CQ_SCALE` 可调）。**实测 CartPole 用 `c_scale=0.02`**；`0.1`（论文图像档）在 2 动作噪声 Q 上**过锐、反而更差**。
-- **闭式 ≠ 无超参**：闭式指「一步算出、无需迭代求解」；`c_visit/c_scale` 仍是超参。轻量 Gumbel 去掉了 Dirichlet + 温度调度。
-
-### ✅ completedQ 目标实测（CartPole-v1，S1+CQ，低 sims A/B）
-
-| 配置 | greedy（中位数） | env-steps to 475（中位数） | wall（中位数） | 结论 |
-|------|:---:|:---:|:---:|------|
-| visit-count @ sims=16 | 299.5 | **未达标** | 248s | ❌ 少模拟下 visit-count 学不动 |
-| completedQ `c_scale=0.1` @ sims=16 | 138.5 | 未达标 | 242s | ❌ 过锐、噪声 Q 上过度自信 |
-| **completedQ `c_scale=0.02` @ sims=16** | **500.0** | **5,141**（3/3 达标） | **39.6s** | ✅ 稳定达标 |
-| 参照：S1 visit-count @ sims=50 | 500.0 | ~16k | ~287s | 旧基线 |
-
-> **结论**：completedQ 目标（c_scale=0.02）让 sims 从 50 降到 16 仍 **3/3 seed 稳定满分**，
-> env-step ~3× 更省、wall-clock ~7× 更快。**该组件经实证留下**（按奥卡姆，已证明价值）。
-> 下一步验证 Gumbel-Top-k 根部探索是否在此之上再加分。
+> 各环境完整命令、超参与实测，见上表「详情」链接。
 
 ## 算法核心
 
