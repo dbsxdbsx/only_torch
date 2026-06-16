@@ -19,6 +19,9 @@ pub struct FeatureSet {
     pub sve_weight: f32,
     /// S5：使用 Gumbel 搜索替代 PUCT（连续/混合动作必需）
     pub gumbel: bool,
+    /// 轻量 Gumbel-A：用 completedQ 改进策略替代 visit-count 作为策略训练目标
+    /// （Danihelka 2022 Eq.10-12；少模拟更稳）。
+    pub completed_q_target: bool,
 }
 
 impl Default for FeatureSet {
@@ -29,6 +32,7 @@ impl Default for FeatureSet {
             target_net: false,
             sve_weight: 0.0,
             gumbel: false,
+            completed_q_target: false,
         }
     }
 }
@@ -57,5 +61,6 @@ mod tests {
         assert!(!f.target_net);
         assert!(!f.sve_enabled());
         assert!(!f.gumbel);
+        assert!(!f.completed_q_target);
     }
 }

@@ -26,6 +26,8 @@
 
 pub mod config;
 pub mod feature;
+pub mod target;
 
 pub use config::MyZeroConfig;
 pub use feature::FeatureSet;
+pub use target::completed_q_policy_target;

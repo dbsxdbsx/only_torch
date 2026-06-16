@@ -21,7 +21,7 @@ use model::MyZeroModel;
 use only_torch::nn::{Adam, Graph, GraphError, Optimizer};
 use only_torch::rl::algo::efficientzero::reward_prefix_targets;
 use only_torch::rl::algo::muzero::{MuZeroConfig, compute_n_step_target, reanalyze_game};
-use only_torch::rl::algo::my_zero::{FeatureSet, MyZeroConfig};
+use only_torch::rl::algo::my_zero::{FeatureSet, MyZeroConfig, completed_q_policy_target};
 use only_torch::rl::mcts::{ActionPayload, DynamicsModel, MctsConfig, PuctPolicy, mcts_search};
 use only_torch::rl::{GameOutcome, GymEnv, ReplayBuffer, SelfPlayGame, SelfPlayStep};
 use pyo3::Python;
@@ -47,6 +47,9 @@ fn features_from_env() -> FeatureSet {
             fs.sve_weight = w;
         }
     }
+    if std::env::var("CQ").is_ok() {
+        fs.completed_q_target = true;
+    }
     fs
 }
 
@@ -68,6 +71,9 @@ fn print_features(fs: &FeatureSet) {
     if fs.gumbel {
         tags.push("Gumbel(S5)");
     }
+    if fs.completed_q_target {
+        tags.push("completedQ-target");
+    }
     if tags.is_empty() {
         println!("[MyZero] features: base (all features off)");
     } else {
@@ -81,6 +87,7 @@ fn self_play_one_episode(
     actions: &[ActionPayload],
     mcts_cfg: &MctsConfig,
     gamma: f32,
+    cq: Option<f32>, // Some(c_scale) → 用 completedQ 改进策略当目标；None → visit-count
     rng: &mut StdRng,
 ) -> Vec<SelfPlayStep> {
     let obs_raw = env.reset(None);
@@ -98,10 +105,16 @@ fn self_play_one_episode(
 
         let root_value = result.root_value();
 
+        // 策略目标：completedQ 改进策略 或 visit-count（A/B 开关）
+        let policy_target = match cq {
+            Some(c_scale) => completed_q_policy_target(&result.children, root_value, 50.0, c_scale),
+            None => result.learn_policy,
+        };
+
         steps.push(SelfPlayStep {
             obs: obs.clone(),
             action: vec![action_idx as f32],
-            policy_target: result.learn_policy,
+            policy_target,
             player: 0,
             reward: 0.0,
             root_value: Some(root_value),
@@ -380,6 +393,18 @@ fn run_one_training(
         reanalyze_fraction,
     } = cfg.base;
     let features = cfg.features.clone();
+    // completedQ 改进策略目标的 c_scale（CQ_SCALE 可调）。
+    // 实测：CartPole 用 0.02（0.1 偏锐、在噪声 Q 上过度自信反而更差）。
+    let cq: Option<f32> = if features.completed_q_target {
+        Some(
+            std::env::var("CQ_SCALE")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0.02_f32),
+        )
+    } else {
+        None
+    };
 
     let env = GymEnv::new(py, "CartPole-v1");
     let graph = Graph::new_with_seed(seed);
@@ -412,7 +437,7 @@ fn run_one_training(
             ..MctsConfig::default()
         };
 
-        let steps = self_play_one_episode(&env, &model, &actions, &mcts_cfg, gamma, &mut rng);
+        let steps = self_play_one_episode(&env, &model, &actions, &mcts_cfg, gamma, cq, &mut rng);
         let ep_reward: f32 = steps.iter().map(|s| s.reward).sum();
         let ep_len = steps.len();
         total_steps += ep_len as u64;
@@ -579,6 +604,12 @@ fn main() -> Result<(), GraphError> {
     if let Ok(v) = std::env::var("REANALYZE") {
         if let Ok(f) = v.parse::<f32>() {
             cfg.base.reanalyze_fraction = f.clamp(0.0, 1.0);
+        }
+    }
+    // 每步 MCTS 模拟数（A/B 用：低 sims 是 completedQ / Gumbel 的关键检验区）
+    if let Ok(v) = std::env::var("SIMS") {
+        if let Ok(n) = v.parse::<u32>() {
+            cfg.base.num_simulations = n;
         }
     }
 
