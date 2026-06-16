@@ -5,7 +5,10 @@
 //!
 //! 库只服务搜索期推理（返回 detached latent）；训练期 K 步 unroll 属于 example。
 
-use super::traits::MctsModel;
+use rand::SeedableRng;
+use rand::rngs::StdRng;
+
+use super::traits::{ActionSampleContext, ActionSampler, DiscreteActionSampler, MctsModel};
 use super::types::{ActionPayload, RecurrentOut, RootOut};
 
 /// MuZero learned dynamics 接口
@@ -38,15 +41,40 @@ pub struct DynamicsOutput {
 /// terminal 由 `Dynamics::recurrent` 返回决定。
 pub struct DynamicsModel<D: Dynamics> {
     inner: D,
+    /// 候选动作集——经 [`ActionSampler`] 接缝统一产出（不再是外部直接塞入的裸字段）。
     actions: Vec<ActionPayload>,
     discount: f32,
 }
 
 impl<D: Dynamics> DynamicsModel<D> {
+    /// 用固定离散动作集构造（内部经 [`DiscreteActionSampler`] 统一产出候选）。
     pub fn new(inner: D, actions: Vec<ActionPayload>, discount: f32) -> Self {
+        Self::new_with_sampler(inner, &DiscreteActionSampler::new(actions), discount)
+    }
+
+    /// 用任意 [`ActionSampler`] 作为候选来源构造（接缝统一入口）。
+    ///
+    /// 离散候选与 state / rng 无关，构造期经 sampler 产出一次并缓存，搜索期零开销复用；
+    /// 连续 / 混合（Phase 2a 起）的 per-state 动态采样将在引入 `GumbelPolicy` 时扩展
+    /// adapter 的动态路径（届时 `recurrent` 按 state 调 sampler），此处先打通离散统一来源。
+    pub fn new_with_sampler<A: ActionSampler<Vec<f32>>>(
+        inner: D,
+        sampler: &A,
+        discount: f32,
+    ) -> Self {
+        let empty: Vec<f32> = Vec::new();
+        let ctx = ActionSampleContext {
+            state: &empty,
+            depth: 0,
+            to_play: 0,
+            num_candidates: 0,
+        };
+        // 离散采样忽略 rng；占位固定种子以满足签名且保持确定性。
+        let mut rng = StdRng::seed_from_u64(0);
+        let candidates = sampler.sample(ctx, &mut rng);
         Self {
             inner,
-            actions,
+            actions: candidates.actions,
             discount,
         }
     }

@@ -1,7 +1,71 @@
-//! 自监督 consistency loss（SimSiam stop-grad）—— v0.24 Phase 1 `+consistency` 实现。
+//! 自监督 consistency loss（SimSiam 负余弦相似度）—— v0.24 Phase 1 `+consistency`。
 //!
-//! 目标：让 dynamics 预测的 `next_latent` 与 `repr(next_obs)`（stop-grad）对齐，给 dynamics
-//! 一个稠密的自监督信号（EZ 样本效率的关键之一）。
+//! 让 dynamics 预测的 `next_latent`（经 projector + predictor 的 online 分支）与
+//! `repr(next_obs)`（经 projector 的 target 分支，**stop-gradient**）对齐，给 dynamics 一个
+//! 稠密自监督信号（EZ 样本效率的关键之一）。
 //!
-//! 需在 `Var`（autograd）层实现负余弦相似度 + stop-gradient（复用 `detach`），与示例 model 的
-//! projector / predictor 头耦合，故随 Phase 1 EZ 示例一起落地；此处先占位，保持模块结构稳定。
+//! 本模块只提供「两个向量的负余弦」纯 `Var` 运算；projector / predictor 头属环境相关网络，
+//! 在示例 model 实现。
+
+use crate::nn::{GraphError, Var, VarActivationOps, VarReduceOps};
+
+/// SimSiam 负余弦相似度：`-cos(p, stop_grad(z))`。
+///
+/// - `p`：online 分支输出（dynamics 预测 next_latent 经 projector + predictor）。
+/// - `z`：target 分支输出（repr(next_obs) 经 projector），内部对其 `detach()` 做 stop-gradient。
+///
+/// 两者形状须一致（如 `[1, proj_dim]`）。返回**标量** loss `Var`（值域 [-1, 1]，越小越对齐）。
+pub fn negative_cosine_similarity(p: &Var, z: &Var) -> Result<Var, GraphError> {
+    // stop-gradient：target 分支不回传梯度（SimSiam 防坍缩的关键）
+    let z_sg = z.detach();
+
+    let dot = (p * &z_sg).sum(); // Σ p_i z_i
+    let p_norm = p.square().sum().sqrt(); // ‖p‖
+    let z_norm = z_sg.square().sum().sqrt(); // ‖z‖
+    let denom = &(&p_norm * &z_norm) + 1e-8_f32; // 防除零
+    let cos = &dot / &denom;
+    Ok(cos * -1.0_f32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::nn::Graph;
+    use crate::tensor::Tensor;
+
+    fn input(graph: &Graph, data: &[f32]) -> Var {
+        graph
+            .input(&Tensor::new(data, &[1, data.len()]))
+            .expect("建 input 失败")
+    }
+
+    #[test]
+    fn identical_vectors_give_neg_one() {
+        let graph = Graph::new_with_seed(0);
+        let a = input(&graph, &[1.0, 2.0, 3.0, 4.0]);
+        let b = input(&graph, &[1.0, 2.0, 3.0, 4.0]);
+        let loss = negative_cosine_similarity(&a, &b).unwrap();
+        let s = loss.value().unwrap().unwrap().data_as_slice()[0];
+        assert!((s + 1.0).abs() < 1e-4, "相同向量负余弦应 ≈ -1，实际 {s}");
+    }
+
+    #[test]
+    fn orthogonal_vectors_give_zero() {
+        let graph = Graph::new_with_seed(0);
+        let a = input(&graph, &[1.0, 0.0]);
+        let b = input(&graph, &[0.0, 1.0]);
+        let loss = negative_cosine_similarity(&a, &b).unwrap();
+        let s = loss.value().unwrap().unwrap().data_as_slice()[0];
+        assert!(s.abs() < 1e-4, "正交向量负余弦应 ≈ 0，实际 {s}");
+    }
+
+    #[test]
+    fn opposite_vectors_give_pos_one() {
+        let graph = Graph::new_with_seed(0);
+        let a = input(&graph, &[1.0, 2.0, 3.0]);
+        let b = input(&graph, &[-1.0, -2.0, -3.0]);
+        let loss = negative_cosine_similarity(&a, &b).unwrap();
+        let s = loss.value().unwrap().unwrap().data_as_slice()[0];
+        assert!((s - 1.0).abs() < 1e-4, "反向向量负余弦应 ≈ +1，实际 {s}");
+    }
+}

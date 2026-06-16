@@ -23,6 +23,26 @@ use crate::rl::SelfPlayStep;
 ///
 /// `b < len` 且 `root_value_b` 存在时才加 bootstrap 项。
 pub fn compute_n_step_target(steps: &[SelfPlayStep], start: usize, n: usize, gamma: f32) -> f32 {
+    // bootstrap 尾值取 buffer 里存的 root_value（None → 评估为 0，等价不 bootstrap）
+    compute_n_step_target_with(steps, start, n, gamma, |s| s.root_value.unwrap_or(0.0))
+}
+
+/// 与 [`compute_n_step_target`] 同口径，但 bootstrap 尾值由 `bootstrap_value` 闭包提供，
+/// 而非读 `steps[b].root_value`。
+///
+/// 用于 EfficientZero **target network**：bootstrap 尾值用「稳定的 target 网络当前评估」，
+/// 而非 buffer 里 stale 的 self-play root value——这样 `+target` 增量能真正影响 value 目标
+/// （而非仅在 reanalyze 时才起作用）。
+pub fn compute_n_step_target_with<F>(
+    steps: &[SelfPlayStep],
+    start: usize,
+    n: usize,
+    gamma: f32,
+    bootstrap_value: F,
+) -> f32
+where
+    F: Fn(&SelfPlayStep) -> f32,
+{
     let len = steps.len();
     if len == 0 || start >= len {
         return 0.0;
@@ -36,14 +56,12 @@ pub fn compute_n_step_target(steps: &[SelfPlayStep], start: usize, n: usize, gam
     let bootstrap = (start + n).min(max_bootstrap);
 
     let mut target = 0.0;
-    for i in start..bootstrap {
-        target += gamma.powi((i - start) as i32) * steps[i].reward;
+    for (offset, step) in steps[start..bootstrap].iter().enumerate() {
+        target += gamma.powi(offset as i32) * step.reward;
     }
 
     if bootstrap < len {
-        if let Some(root_v) = steps[bootstrap].root_value {
-            target += gamma.powi((bootstrap - start) as i32) * root_v;
-        }
+        target += gamma.powi((bootstrap - start) as i32) * bootstrap_value(&steps[bootstrap]);
     }
 
     target

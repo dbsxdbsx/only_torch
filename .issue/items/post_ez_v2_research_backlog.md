@@ -1,7 +1,7 @@
 ---
 status: suspended
 created: 2026-06-15
-updated: 2026-06-15
+updated: 2026-06-16
 ---
 
 # EZ-V2（v0.24）收口后：验收口径 + 后续研究方向 backlog
@@ -12,6 +12,21 @@ updated: 2026-06-15
 
 ---
 
+## 当前进度（2026-06-16，开工后首次回填）
+
+> ⚠️ EZ-V2 **尚未做完**（仅 1/6 模式落地），本节只记真实进度，**不据此剪枝 §二 扩展方向**——剪枝时机见 §五，须 v0.24 各 Phase 收口后。
+
+- **Phase 0（5 根接缝）+ 0b 脚手架**：✅ 已完成（ActionSampler / RootScheduler+RNG 注入 / SelfPlayStepExtras / sample_indexed / State 携带 recurrent hidden；含 golden 回归护栏）。
+- **Phase 1（CartPole-v1 离散 EZ 核心）**：⏳ 代码已融合 + **逐增量消融完成**（2026-06-16）。结论：base / +consistency / +value_prefix / +target 单项 greedy eval **均健康（≥ self-play）**，consistency/value_prefix 各自比 base 学得更快（正贡献，峰值 greedy 131/315/281）。**唯一暴雷是三件套含 target 时 greedy < self-play**——根因见下条（已修）。**达标 450 未完成**，作为独立后续调参任务（见末条）。
+- **简化 / 待补**：SVE 为固定权重 blend（论文是按样本新鲜度自适应的 mixed value target）；value prefix hidden 穿树目前仅 mock 契约测试，缺真实 LSTM 专项测试。
+- **✅ target 用法已修正（2026-06-16）**：原实现「n-step bootstrap 单点评估（`eval_value`）+ EMA tau=0.01 每步」是非官方简化版，在三件套组合时 greedy<self-play 暴雷；**已改回官方口径「hard update（`sync_interval=200` 训练步）+ 专供 reanalyze」**（论文 §C target updating interval=400）。验证：全开（含修正后 target）Ep100 greedy 31 ≈ self-play 34（回到持平、消除暴雷），但 reanalyze 让 wall-clock 慢 ~8 倍——印证 CartPole（数据不受限）本不需 target/reanalyze。**遗留**：off-policy 受限环境（Atari）再验 target+reanalyze 的真实增益。
+- **未开始**：Phase 2a Gumbel 连续搜索（`gumbel.rs` 不存在，仅 `GumbelConfig` 空壳）、Phase 2b 混合 Platform、Phase 3 五子棋 learned-model 博弈、Phase 4 Atari/Ant/Minari smoke。
+- **🔲 CartPole-v1 达标 450（后续调参任务，非本轮死磕）**：消融已证 cons+vp 健康有效（greedy 稳定 130+），但当前超参（`lr 0.02` / `num_sim 50` / 网络容量）下收敛慢、greedy 进 ~150-200 平台，1000 局到不了 450（类比 MuZero CartPole-v0 到 195 也是多轮迭代闭环）。已留调参旋钮 `NUM_SIM/TRAINS/LR/EVAL_EVERY`（环境变量，不重编译）。首轮 num_sim100+trains16 有 early boost（Ep50 greedy 105）但 trains16 过拟合（self-play 反超），待续调（trains 回 8 + lr↓ / 容量 / 温度退火）。
+
+**对 §二 扩展方向的影响**：暂无可剪。唯一与 EZ-V2 直接重叠的 **Sampled MuZero（§二 P3）** 须待 **Gumbel（Phase 2a）真正落地**后才能确认「被覆盖、退役」；其余（Stochastic MuZero / 纯 offline / 多智能体 / 19×19 / GPU）本就是 EZ-V2 **不包含**的独立方向，与 EZ-V2 做得好坏无关，维持原 P 级。
+
+---
+
 ## 一、v0.24 EZ-V2 必须验证什么（发版门禁）
 
 ### 1.1 两层验收，不要混用
@@ -19,7 +34,7 @@ updated: 2026-06-15
 | 层级 | 算法 | 环境 ID | 门禁 | 状态 |
 |------|------|---------|------|------|
 | **架构跑通** | SAC / MuZero / PPO | **`CartPole-v0`** | greedy(temp=0) eval 20 局均值 **≥195** | ✅ v0.23.1 已收口 |
-| **终极调优** | **EfficientZero V2（唯一）** | **一律 `-v1` / 新版 ID** | **各任务 EZ 专属指标**（见下表） | 🔲 v0.24 目标 |
+| **终极调优** | **EfficientZero V2（唯一）** | **一律 `-v1` / 新版 ID** | **各任务 EZ 专属指标**（见下表） | ⏳ v0.24 进行中（Phase 1 离散达标训练中；见「当前进度」） |
 
 **CartPole 在 EZ 层用 `CartPole-v1`（500 步上限），不再用 195 门槛**——与 v0/v1 分层、与 SAC/MuZero/PPO 的 v0 门禁 deliberately 区分。
 

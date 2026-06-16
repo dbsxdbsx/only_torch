@@ -21,3 +21,7 @@ pub mod target;
 pub mod value_prefix;
 
 pub use config::{EfficientZeroConfig, EzLossConfig, GumbelConfig, ReanalyzeConfig, TargetConfig};
+pub use consistency::negative_cosine_similarity;
+pub use sve::sve_blend;
+pub use target::{ema_update, hard_update, is_hard_sync_step, sync_target};
+pub use value_prefix::{prefix_to_delta, reward_prefix_targets};

@@ -533,3 +533,50 @@ fn test_root_scheduler_hook_forces_root_child() {
     assert_eq!(result.children[1].visit_count, 0, "child1 不应被访问");
     assert_eq!(result.children[2].visit_count, 0, "child2 不应被访问");
 }
+
+// ============================================================================
+// 测试：golden 快照回归（护住默认搜索内核的精确行为）
+// ============================================================================
+
+/// 固定 seed + 固定 mock 下，`mcts_search` 的 visit 分布 / learn_policy / 推荐动作的**精确**快照。
+///
+/// 区别于 `test_search_reproducible_with_seeded_rng`（仅证同 seed 两次一致 = 防随机泄漏），
+/// 本测试硬编码精确数值：**任何改动 select/backup/expand/recommend 逻辑导致输出变化都会被抓**——
+/// 这是 Phase 2a 接 Gumbel（改搜索循环）时护住默认 PUCT 路径不回归的真正护栏。
+///
+/// 注：MuZero CartPole 端到端棋力（greedy ~199.5）的回归靠示例 SMOKE + 达标流程覆盖；
+/// 此处用确定性 mock 锁定**搜索内核本身**的逐位行为（不依赖 pyo3 / 示例网络）。
+#[test]
+fn test_search_golden_snapshot() {
+    let model = SingleAgentMock;
+    let policy = PuctPolicy::new();
+    let cfg = MctsConfig {
+        num_simulations: 50,
+        temperature: 1.0,
+        ..MctsConfig::default()
+    };
+    let mut rng = StdRng::seed_from_u64(7);
+    let result = mcts_search(&model, &policy, &[0.0], &cfg, &mut rng);
+
+    let visits: Vec<u32> = result.children.iter().map(|c| c.visit_count).collect();
+    // GOLDEN：seed=7 / 50 sims 下搜索内核的精确输出快照（漂移即说明内核行为被改动）
+    assert_eq!(
+        visits,
+        vec![46, 2, 2],
+        "golden: visit 分布漂移 → 搜索内核行为已改变（select/backup/expand 之一）"
+    );
+    assert_eq!(
+        result.recommended,
+        ActionPayload::Discrete(0),
+        "golden: 推荐动作漂移"
+    );
+    let expected_policy = [0.92_f32, 0.04, 0.04];
+    assert_eq!(result.learn_policy.len(), expected_policy.len());
+    for (got, exp) in result.learn_policy.iter().zip(expected_policy.iter()) {
+        assert!(
+            (got - exp).abs() < 1e-4,
+            "golden: learn_policy 漂移 got={:?} exp={expected_policy:?}",
+            result.learn_policy
+        );
+    }
+}

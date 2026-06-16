@@ -21,7 +21,7 @@ pub mod support;
 mod value_transform;
 
 pub use config::MuZeroConfig;
-pub use n_step::compute_n_step_target;
+pub use n_step::{compute_n_step_target, compute_n_step_target_with};
 pub use reanalyze::reanalyze_game;
 pub use support::{SupportConfig, scalar_to_two_hot, two_hot_to_scalar};
 pub use value_transform::{value_transform, value_transform_inv};

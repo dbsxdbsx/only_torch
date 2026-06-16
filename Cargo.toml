@@ -279,6 +279,10 @@
     path="examples/ppo/cartpole/main.rs"
 
 [[example]]
+    name="efficientzero_cartpole"
+    path="examples/efficientzero/cartpole/main.rs"
+
+[[example]]
     name="evolution_xor"
     path="examples/evolution/xor/main.rs"
 
