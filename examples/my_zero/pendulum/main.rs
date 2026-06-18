@@ -349,6 +349,122 @@ fn eval_episodes(
     total_reward / n_episodes as f32
 }
 
+/// Dynamics 诊断：对比 learned model 的「想象」reward/value 与真实环境。
+///
+/// 回答 sample-efficiency 红利的前提——「模型这条腿立住没有」：用 greedy 策略跑一个
+/// episode，逐步比较模型预测（反 scale 回原始空间）与真实值。若 reward/value 预测
+/// **坍缩成常数**或与真实严重不符，说明 learned model 没学准，瓶颈在训练/表示/目标，
+/// 而非搜索分辨率（再扫 sims / 离散档数无意义）。仅诊断、不改训练。
+#[allow(clippy::too_many_arguments)]
+fn dynamics_diagnostic(
+    env: &GymEnv,
+    model: &MyZeroModel,
+    actions: &[ActionPayload],
+    gamma: f32,
+    lo: f32,
+    hi: f32,
+    reward_scale: f32,
+    num_simulations: u32,
+) {
+    use only_torch::rl::mcts::Dynamics;
+
+    let eval_cfg = MctsConfig {
+        num_simulations,
+        temperature: 0.0,
+        discount: gamma,
+        root_exploration_fraction: 0.0,
+        ..MctsConfig::default()
+    };
+    let mut rng = StdRng::seed_from_u64(0xD1A6);
+    let mut obs = env.reset(Some(0xD1A6))[0].clone();
+
+    let mut obses: Vec<Vec<f32>> = Vec::new();
+    let mut act_idxs: Vec<usize> = Vec::new();
+    let mut true_rewards: Vec<f32> = Vec::new();
+    loop {
+        let dyn_model = DynamicsModel::new(model, actions.to_vec(), gamma);
+        let result = mcts_search(&dyn_model, &PuctPolicy::new(), &obs, &eval_cfg, &mut rng);
+        let action_idx = match &result.recommended {
+            ActionPayload::Discrete(idx) => *idx,
+            _ => 0,
+        };
+        let torque = idx_to_torque(action_idx, lo, hi, actions.len());
+        let (next_obs_raw, reward, terminated, truncated) = env.step(&[torque]);
+        obses.push(obs.clone());
+        act_idxs.push(action_idx);
+        true_rewards.push(reward);
+        if terminated || truncated {
+            break;
+        }
+        obs = next_obs_raw[0].clone();
+    }
+
+    let n = obses.len();
+    if n == 0 {
+        println!("[诊断] 空 episode，跳过");
+        return;
+    }
+
+    // 真实折扣 MC return（原始空间）
+    let mut mc_return = vec![0.0f32; n];
+    let mut acc = 0.0;
+    for t in (0..n).rev() {
+        acc = true_rewards[t] + gamma * acc;
+        mc_return[t] = acc;
+    }
+
+    let mut r_preds = Vec::with_capacity(n);
+    let mut v_roots = Vec::with_capacity(n);
+    let mut reward_mae = 0.0f32;
+    let mut value_mae = 0.0f32;
+    for t in 0..n {
+        let (latent, _prior, rv_scaled) = Dynamics::initial_state(&model, &obses[t]);
+        let out = Dynamics::recurrent(&model, &latent, &ActionPayload::Discrete(act_idxs[t]));
+        let r_pred = out.reward / reward_scale;
+        let v_root = rv_scaled / reward_scale;
+        reward_mae += (r_pred - true_rewards[t]).abs();
+        value_mae += (v_root - mc_return[t]).abs();
+        r_preds.push(r_pred);
+        v_roots.push(v_root);
+    }
+    reward_mae /= n as f32;
+    value_mae /= n as f32;
+
+    let stats = |v: &[f32]| -> (f32, f32, f32, f32) {
+        let mean = v.iter().sum::<f32>() / v.len() as f32;
+        let std = (v.iter().map(|x| (x - mean).powi(2)).sum::<f32>() / v.len() as f32).sqrt();
+        let min = v.iter().cloned().fold(f32::INFINITY, f32::min);
+        let max = v.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        (mean, std, min, max)
+    };
+    let (tr_m, tr_s, tr_lo, tr_hi) = stats(&true_rewards);
+    let (rp_m, rp_s, rp_lo, rp_hi) = stats(&r_preds);
+    let (vt_m, vt_s, vt_lo, vt_hi) = stats(&mc_return);
+    let (vp_m, vp_s, vp_lo, vp_hi) = stats(&v_roots);
+
+    println!("\n========== Dynamics 诊断（greedy episode，n={n} 步；已反 scale 回原始空间）==========");
+    println!("逐步样本（t | r_true vs r_pred | v_mc vs v_root_pred）：");
+    for t in 0..n {
+        if t < 5 || t % 40 == 0 || t == n - 1 {
+            println!(
+                "  t={t:3} | r {:8.3} vs {:8.3} | v {:9.1} vs {:9.1}",
+                true_rewards[t], r_preds[t], mc_return[t], v_roots[t]
+            );
+        }
+    }
+    println!("----------------------------------------------------------------------------------");
+    println!("单步 reward：真实 mean={tr_m:.3} std={tr_s:.3} range=[{tr_lo:.3},{tr_hi:.3}]");
+    println!("            预测 mean={rp_m:.3} std={rp_s:.3} range=[{rp_lo:.3},{rp_hi:.3}] | MAE={reward_mae:.3}");
+    println!("root value：真实(MC) mean={vt_m:.1} std={vt_s:.1} range=[{vt_lo:.1},{vt_hi:.1}]");
+    println!("            预测     mean={vp_m:.1} std={vp_s:.1} range=[{vp_lo:.1},{vp_hi:.1}] | MAE={value_mae:.1}");
+    println!("----------------------------------------------------------------------------------");
+    println!("判读：");
+    println!("  · r_pred / v_root 的 std ≈ 0（坍缩成常数）→ head 退化、没学到区分 → 模型没立住");
+    println!("  · MAE 接近量程（reward~16 / value~数百）→ 想象与真实严重不符 → 问题在训练/表示/目标");
+    println!("  · 两者都小 → 模型其实学准了，瓶颈转向搜索/策略目标（再看 sims / completedQ）");
+    println!("==================================================================================");
+}
+
 /// 单次训练运行的 benchmark 结果（多 seed 汇总用）
 struct RunResult {
     seed: u64,
@@ -607,6 +723,20 @@ fn run_one_training(
             .map(|(e, s)| format!("ep{e} / {s} env-steps"))
             .unwrap_or_else(|| "未达标".to_string());
         println!("📈 [样本效率] Pendulum-v1 MyZero 到 {solved}: {eff}");
+    }
+
+    // Dynamics 诊断（DIAG=1）：对比 learned model 想象的 reward/value 与真实环境。
+    if !smoke && std::env::var("DIAG").is_ok() {
+        dynamics_diagnostic(
+            &env,
+            &model,
+            &actions,
+            gamma,
+            lo,
+            hi,
+            hyper.reward_scale,
+            num_simulations,
+        );
     }
 
     env.close();

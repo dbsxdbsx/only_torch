@@ -9,7 +9,8 @@ reviewers: []
 # MyZero · Pendulum-v1 失败诊断（进行中，求专家审阅）
 
 > **状态**：active —— 诊断实验跑了一半（base + 臂 A 完成，臂 B/C 未跑）。
-> **审阅结论（2026-06-18）**：方法论成立——失败区间内不下组件裁决。已据此把两份 README 的 Pendulum `➖` 改回 `⏳`（无信号），保留诊断旋钮，删除原始日志。下一步：跑 base / 低 LR / `NUM_ACTIONS=25` / `EZ_CONS` 体检 sweep，按 −800/−600 门限决定是否提前上 Gumbel-root。
+> **审阅结论（2026-06-18）**：方法论成立——失败区间内不下组件裁决。已据此把两份 README 的 Pendulum `➖` 改回 `⏳`（无信号），保留诊断旋钮，删除原始日志。
+> **诊断更新（2026-06-18，dynamics 探针）**：base 150ep 跑 dynamics 诊断（对比 model 想象 vs 真实）——**reward head 健康**（预测 std 1.86 ≈ 真实 1.87），**value head 坍缩成常数**（预测 std 26 vs 真实 MC return std 175；episode 末尾真实剩余 −10 仍预测 −500）。**病根精确锁定在 value 学习**，不在 reward / 搜索 / 离散粒度——这也再次**证伪**「reward 分辨率头号嫌疑」。下一步：先区分 value target 本身坍缩（`td_steps`/`gamma`）vs head 学不动（网络/loss/lr），再对症，不盲改。
 > **背景对话**：本 issue 源于一次对话中关于"consistency 在 Pendulum 上是否为中性"的争论。原作者认为：当前 Pendulum 所有配置都在"失败区间"（−353 ~ −1445，门禁 −200），在模型根本没学会的任务上做组件消融，➖ 裁决全是噪声，不足以回答中性问题。故转向"先查清为什么学不会"。
 > **关联文档**：[MyZero 总览](../../examples/my_zero/README.md) · [Pendulum 详情](../../examples/my_zero/pendulum/README.md) · [RL 路线图](../../.doc/design/rl_roadmap.md)
 
@@ -76,6 +77,8 @@ reviewers: []
 | sims 不够 | ⏸ **硬约束** | MuZero/EZ 上限就是 50 sims；用户领域知识："不靠加算力解决"。9 动作 × 50 sims → 每根动作平均 ~5.5 次访问 |
 | reward head 分辨率（RSCALE）| ❌ **实测证伪** | 见 §五臂 A，RSCALE 0.1→0.5 不仅没解锁学习，反而略差 |
 | `EZ_CONS` 实现 | ⚠️ **存疑待查** | 见 §六，偏离 SimSiam 设计，但 CartPole 开 cons 反而学得好 → 非致命 bug，须 base 对照定性 |
+
+**新增确认根因（2026-06-18，dynamics 诊断）**：`value head 坍缩`——base 150ep 跑 dynamics 探针，value 预测 std=26 vs 真实 MC return std=175（坍缩成近似常数；episode 末尾真实剩余 −10 仍预测 −500）；reward head 反而健康（预测 std 1.86 ≈ 真实 1.87）。**病根锁定在 value 学习**，上表 reward 分辨率「证伪」由此再获印证。待区分：value target 本身坍缩（`td_steps`/`gamma`）vs head 学不动（网络/loss/lr）。
 
 ---
 
