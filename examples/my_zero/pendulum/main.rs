@@ -28,17 +28,48 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::collections::VecDeque;
 
-/// 连续力矩离散粒度（[lo, hi] 等分 K 档）。触顶可调大（代价是需要更多模拟）。
-const NUM_ACTIONS: usize = 9;
-/// Pendulum reward ∈ [-16.27, 0]；缩放使累计 value 落入 categorical support 域。
-const REWARD_SCALE: f32 = 0.1;
+/// 示例侧超参（不进库 `MyZeroConfig`，因为它们是 Pendulum 离散化专属）。
+///
+/// 这些值影响示例侧逻辑（动作离散化、reward 缩放），通过 `Hyperparams` 结构体
+/// 显式透传，避免全局可变状态。默认值与原 const 一致（9 档、0.1 缩放），
+/// 可用环境变量 `NUM_ACTIONS` / `RSCALE` 覆盖，用于失败诊断 sweep。
+struct Hyperparams {
+    /// 连续力矩离散粒度（[lo, hi] 等分 K 档）。触顶可调大（代价是需要更多模拟）。
+    num_actions: usize,
+    /// Pendulum reward ∈ [-16.27, 0]；缩放使累计 value 落入 categorical support 域。
+    reward_scale: f32,
+}
+
+impl Hyperparams {
+    /// 默认值（与历史 const 一致）：9 档、0.1 缩放。
+    const DEFAULT_NUM_ACTIONS: usize = 9;
+    const DEFAULT_REWARD_SCALE: f32 = 0.1;
+
+    /// 从环境变量读取（缺省回退到默认值）。
+    fn from_env() -> Self {
+        let num_actions = std::env::var("NUM_ACTIONS")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .filter(|&n| n >= 1)
+            .unwrap_or(Self::DEFAULT_NUM_ACTIONS);
+        let reward_scale = std::env::var("RSCALE")
+            .ok()
+            .and_then(|s| s.parse::<f32>().ok())
+            .filter(|s| s.is_finite() && *s > 0.0)
+            .unwrap_or(Self::DEFAULT_REWARD_SCALE);
+        Self {
+            num_actions,
+            reward_scale,
+        }
+    }
+}
 
 /// 离散候选 idx → 连续力矩（线性映射到 [lo, hi]）。
-fn idx_to_torque(idx: usize, lo: f32, hi: f32) -> f32 {
-    if NUM_ACTIONS <= 1 {
+fn idx_to_torque(idx: usize, lo: f32, hi: f32, num_actions: usize) -> f32 {
+    if num_actions <= 1 {
         return 0.5 * (lo + hi);
     }
-    lo + (hi - lo) * (idx as f32) / ((NUM_ACTIONS - 1) as f32)
+    lo + (hi - lo) * (idx as f32) / ((num_actions - 1) as f32)
 }
 
 /// 从环境变量读取 FeatureSet 消融开关
@@ -101,7 +132,8 @@ fn self_play_one_episode(
     gamma: f32,
     lo: f32,
     hi: f32,
-    cq: Option<f32>,
+    cq: Option<(f32, f32)>,
+    reward_scale: f32,
     rng: &mut StdRng,
 ) -> Vec<SelfPlayStep> {
     let obs_raw = env.reset(None);
@@ -119,7 +151,9 @@ fn self_play_one_episode(
         let root_value = result.root_value();
         // 策略目标：completedQ 改进策略 或 visit-count（A/B 开关）
         let policy_target = match cq {
-            Some(c_scale) => completed_q_policy_target(&result.children, root_value, 50.0, c_scale),
+            Some((c_visit, c_scale)) => {
+                completed_q_policy_target(&result.children, root_value, c_visit, c_scale)
+            }
             None => result.learn_policy,
         };
 
@@ -134,10 +168,10 @@ fn self_play_one_episode(
             extras: Default::default(),
         });
 
-        let torque = idx_to_torque(action_idx, lo, hi);
+        let torque = idx_to_torque(action_idx, lo, hi, actions.len());
         let (next_obs_raw, reward, terminated, truncated) = env.step(&[torque]);
         let last = steps.last_mut().unwrap();
-        last.reward = reward * REWARD_SCALE;
+        last.reward = reward * reward_scale;
         last.terminated = terminated;
 
         if terminated || truncated {
@@ -301,7 +335,7 @@ fn eval_episodes(
                 _ => 0,
             };
 
-            let torque = idx_to_torque(action_idx, lo, hi);
+            let torque = idx_to_torque(action_idx, lo, hi, actions.len());
             let (next_obs_raw, reward, terminated, truncated) = env.step(&[torque]);
             total_reward += reward;
 
@@ -385,6 +419,7 @@ fn run_one_training(
     max_episodes: usize,
     smoke: bool,
     solved: f32,
+    hyper: &Hyperparams,
 ) -> Result<RunResult, GraphError> {
     let wall_t0 = std::time::Instant::now();
 
@@ -401,14 +436,17 @@ fn run_one_training(
         reanalyze_fraction,
     } = cfg.base;
     let features = cfg.features.clone();
-    // completedQ 改进策略目标的 c_scale（CQ_SCALE 可调；默认 0.02 同 CartPole，按环境再扫）。
-    let cq: Option<f32> = if features.completed_q_target {
-        Some(
-            std::env::var("CQ_SCALE")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(0.02_f32),
-        )
+    // completedQ 改进策略目标的超参（CQ_SCALE / CQ_VISIT 可调；默认 0.02 / 50.0 同 CartPole，按环境再扫）。
+    let cq: Option<(f32, f32)> = if features.completed_q_target {
+        let c_scale = std::env::var("CQ_SCALE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0.02_f32);
+        let c_visit = std::env::var("CQ_VISIT")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(50.0_f32);
+        Some((c_visit, c_scale))
     } else {
         None
     };
@@ -417,11 +455,12 @@ fn run_one_training(
     let obs_dim = env.get_flatten_observation_len();
     let ranges = env.get_all_action_valid_range();
     let (lo, hi) = ranges[0].get_continuous_action_low_high();
-    let action_dim = NUM_ACTIONS;
+    let action_dim = hyper.num_actions;
 
     if seed == 42 {
         println!(
-            "[MyZero Pendulum] obs_dim={obs_dim} action(连续)→离散 {NUM_ACTIONS} 档 ∈[{lo:.2},{hi:.2}] gamma={gamma} sims={num_simulations}"
+            "[MyZero Pendulum] obs_dim={obs_dim} action(连续)→离散 {} 档 ∈[{lo:.2},{hi:.2}] gamma={gamma} sims={num_simulations} reward_scale={}",
+            hyper.num_actions, hyper.reward_scale
         );
     }
 
@@ -454,10 +493,20 @@ fn run_one_training(
             ..MctsConfig::default()
         };
 
-        let steps =
-            self_play_one_episode(&env, &model, &actions, &mcts_cfg, gamma, lo, hi, cq, &mut rng);
+        let steps = self_play_one_episode(
+            &env,
+            &model,
+            &actions,
+            &mcts_cfg,
+            gamma,
+            lo,
+            hi,
+            cq,
+            hyper.reward_scale,
+            &mut rng,
+        );
         // 原始 return（反缩放回报告）
-        let ep_reward: f32 = steps.iter().map(|s| s.reward).sum::<f32>() / REWARD_SCALE;
+        let ep_reward: f32 = steps.iter().map(|s| s.reward).sum::<f32>() / hyper.reward_scale;
         let ep_len = steps.len();
         total_steps += ep_len as u64;
 
@@ -594,6 +643,16 @@ fn main() -> Result<(), GraphError> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(0.99);
 
+    // 学习率（默认 0.02 同 CartPole；Pendulum 失败诊断可用 LR 覆盖）。
+    cfg.base.lr = std::env::var("LR")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .filter(|f: &f32| f.is_finite() && *f > 0.0)
+        .unwrap_or(cfg.base.lr);
+
+    // 示例侧超参（动作离散化档数、reward 缩放），用于失败诊断 sweep。
+    let hyper = Hyperparams::from_env();
+
     if let Ok(v) = std::env::var("SIMS") {
         if let Ok(n) = v.parse::<u32>() {
             cfg.base.num_simulations = n;
@@ -628,7 +687,16 @@ fn main() -> Result<(), GraphError> {
             if n_seeds > 1 {
                 println!("\n===== seed {seed}（{}/{n_seeds}）=====", i + 1);
             }
-            let r = run_one_training(py, seed, &cfg, latent_dim, max_episodes, smoke, solved)?;
+            let r = run_one_training(
+                py,
+                seed,
+                &cfg,
+                latent_dim,
+                max_episodes,
+                smoke,
+                solved,
+                &hyper,
+            )?;
             results.push(r);
         }
 

@@ -324,6 +324,11 @@ smoke-cartpole-muzero:
     @echo "=== Running CartPole MuZero Smoke ==="
     SMOKE=1 cargo run --example muzero_cartpole
 
+# MyZero Pendulum smoke（管线验证，不验收敛；验证 env 旋钮 plumbing）
+smoke-my-zero-pendulum:
+    @echo "=== Running MyZero Pendulum Smoke ==="
+    SMOKE=1 cargo run --example my_zero_pendulum
+
 # 运行所有 RL examples（需 Python + gymnasium + extras）
 examples-rl: example-cartpole-sac example-pendulum-sac example-platform-sac example-lunarlander-sac example-cartpole-ppo example-cartpole-muzero
 
