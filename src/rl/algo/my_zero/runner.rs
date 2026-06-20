@@ -232,7 +232,6 @@ pub(crate) fn train_batch(
     td_steps: usize,
     gamma: f32,
     components: &Components,
-    _rng: &mut impl Rng,
 ) -> Result<f32, GraphError> {
     if samples.is_empty() {
         return Ok(0.0);
@@ -739,7 +738,6 @@ fn train_one_seed(
                     t.td_steps,
                     gamma,
                     &cfg.components,
-                    &mut rng,
                 )?;
                 writeback_reanalyzed_samples(&mut buffer, batch);
                 loss_sum += l;
