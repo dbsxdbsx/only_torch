@@ -1,5 +1,37 @@
 # 更新日志
 
+## [Unreleased]
+
+> **v0.25 MyZero 统一算法（Phase 0/1）**：算法主体统一进库 + 全部组件吸收，MyZero 自包含；**旧 `muzero/` + `efficientzero/` 已整体删除，MyZero 成为项目唯一的 `*Zero` 实现**。CartPole-v1 回归哨兵全程 greedy 500 不变。
+
+### Added
+
+- **feat(rl): MyZero 统一进库 `src/rl/algo/my_zero/`（Phase 0，算法主体下沉）**
+  - 5 层 `MyZeroConfig`（`EnvConfig` / `ModelConfig` / `TrainConfig` / `ComponentConfig` / `RunConfig`）+ `apply_env_overrides`（`EZ_CONS/CQ/SIMS/SEEDS/SMOKE/DIAG/GAMMA/LR/MAX_EP/NUM_ACTIONS/RSCALE/SOLVED` 旋钮集中一处）
+  - `network.rs`：三网络模型（repr/dyn/pred + value-prefix LSTM + SimSiam 分支）从示例迁入
+  - `action.rs`：`ActionAdapter` 从 `GymEnv` **自动推断**动作空间（离散/连续/范围/档数）+ idx→env 映射；`ActionPlan::{Auto, Discretize}`——动作类型是 env 事实（库自动推断），「连续如何近似」才是用户选择
+  - `runner.rs`：统一 `run()`（self-play + 训练 + greedy eval + 多 seed + SMOKE + DIAG），内部 `Python::attach`
+- **feat(rl): MyZero 吸收全部算法组件，自包含（Phase 1，不再 import muzero/ez）**
+  - 从 `muzero/` 吸收：`support` / `value_transform` / `n_step` / `reanalyze` / `loss`
+  - 从 `efficientzero/` 吸收：`consistency` / `value_prefix` / `sve` / `target_net`（含本地 `TargetConfig`）
+  - `my_zero` 模块单测 31 个全绿；旧 `muzero/` + `efficientzero/` 模块与示例已删除（见下方 Removed）
+- **test(rl): MyZero value-head 容量诊断单测**
+  - `my_zero::tests::value_head_capacity`：喂高方差可分 value 目标，head 把高/低组预测间隔训到精确 **14.0** → 证伪「value head 学不动」，Pendulum value 坍缩根因缩到上游 target/搜索（见 [`pendulum_failure_diagnosis.md`](.issue/items/pendulum_failure_diagnosis.md)）
+
+### Changed
+
+- **refactor(rl): MyZero 示例瘦身为 thin `main.rs`**：`cartpole` 663→41 行、`pendulum` 842→45 行（只填 config + 调 `run`）；删 `examples/my_zero/cartpole/model.rs`（并入库 `network.rs`），移除 pendulum 的 `#[path]` 复用
+- **refactor(rl): MyZero 配置命名归位**：`FeatureSet`→`ComponentConfig`（对齐文档「组件」术语）；示例侧 `MuZeroConfig` 依赖 → my_zero 自有 `TrainConfig`（告别 MuZero 名）；字段统一 `*_config: *Config`
+- **refactor(rl): MyZero 命名清理（去 EZ/MuZero 残留）**：`support.rs`→`value_encoding.rs`（自报「value/reward 分类编码层」用途，"support" 退为模块内术语）；消融环境变量去 `EZ_` 前缀、改用组件名 `CONSISTENCY` / `VALUE_PREFIX` / `TARGET_NET` / `SVE`（`TARGET_NET` 刻意避开 Rust 构建系统占用的 `TARGET`）；9 个组件文件头「吸收自 MuZero/EfficientZero」改为纯描述 + 论文引用（保留 `canonical MuZero` / Schrittwieser 等**学术溯源**）
+
+### Removed
+
+- **chore(rl): 删除旧 `muzero/` + `efficientzero/` 全部代码，MyZero 成为项目唯一的 `*Zero` 实现**
+  - 删 `src/rl/algo/muzero/` 与 `src/rl/algo/efficientzero/`（组件已于 Phase 1 吸收进 `my_zero/`，无 kept-code 依赖；`cargo check` 通过）
+  - 删 `examples/muzero/`（CartPole）与 `examples/efficientzero/`（cartpole/pendulum/platform/gomoku/atari/ant/minari 七格矩阵），并移除 `Cargo.toml` 对应 `[[example]]` 条目
+  - 删 `src/rl/tests/algo_muzero.rs`（n-step / value transform 已由 `my_zero` 内部单测覆盖）；`justfile` 去掉 `example-cartpole-muzero` / `smoke-cartpole-muzero`，改提供对等的 `example-cartpole-my-zero` / `smoke-my-zero-cartpole`
+  - 文档（`AGENTS.md` / `rl_roadmap.md` / `rl.instructions.md` / `rl_python_env_setup.md` / `examples/my_zero/README.md`）同步收口为「MyZero 唯一实现」；论文溯源（MuZero / EfficientZero / SimSiam / Gumbel 等）作为**学术引用**保留
+
 ## [0.24.0] - 2026-06-16
 
 > **EfficientZero V2 框架管线完备（SMOKE 级）**：Phase 0a 五根接缝契约 + EZ 算法 helper 入库 + 六格示例矩阵 SMOKE 全绿（CartPole/Pendulum/Platform/Gomoku/Atari/Ant/Minari）+ 全项目 CartPole 统一 v1。分数未全面压测达标——简化点（离散化候选替代忠实 Gumbel、降采样替代 CNN、小盘 best-effort）均在示例 doc 标注。**v0.25 起由 MyZero 统一算法接棒，以消融实验方式逐增量迭代，最终取代分散的 MuZero/EfficientZero 实现。**「发版」= bump 版本号 + 更新 CHANGELOG，不 `cargo publish`。

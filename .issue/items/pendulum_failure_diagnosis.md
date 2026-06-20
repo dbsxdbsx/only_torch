@@ -13,6 +13,8 @@ reviewers: []
 > **诊断更新（2026-06-18，dynamics 探针）**：base 150ep 跑 dynamics 诊断（对比 model 想象 vs 真实）——**reward head 健康**（预测 std 1.86 ≈ 真实 1.87），**value head 坍缩成常数**（预测 std 26 vs 真实 MC return std 175；episode 末尾真实剩余 −10 仍预测 −500）。**病根精确锁定在 value 学习**，不在 reward / 搜索 / 离散粒度——这也再次**证伪**「reward 分辨率头号嫌疑」。下一步：先区分 value target 本身坍缩（`td_steps`/`gamma`）vs head 学不动（网络/loss/lr），再对症，不盲改。
 > **背景对话**：本 issue 源于一次对话中关于"consistency 在 Pendulum 上是否为中性"的争论。原作者认为：当前 Pendulum 所有配置都在"失败区间"（−353 ~ −1445，门禁 −200），在模型根本没学会的任务上做组件消融，➖ 裁决全是噪声，不足以回答中性问题。故转向"先查清为什么学不会"。
 > **关联文档**：[MyZero 总览](../../examples/my_zero/README.md) · [Pendulum 详情](../../examples/my_zero/pendulum/README.md) · [RL 路线图](../../.doc/design/rl_roadmap.md)
+> **代码位置更新（2026-06-18，v0.25 Phase 0/1 重构）**：MyZero 已统一进库 `src/rl/algo/my_zero/`——模型在 `network.rs`（原 `examples/my_zero/cartpole/model.rs`，consistency 块在其 `train_unroll`），训练循环 / dynamics 诊断在 `runner.rs`，旋钮在 `config.rs::apply_env_overrides`（原 `pendulum/main.rs` 的 `Hyperparams` / env 解析），动作离散化在 `action.rs`。组件（consistency / value_prefix / n_step / support 等）已从 muzero/ez **吸收进 my_zero**。本 issue 下文旧的 `model.rs:NNN` / `main.rs:NNN` 行号据此失效，对应逻辑见上述新文件。
+> **value-head 容量诊断（2026-06-18，决定性新结果）**：库内单测 `my_zero::tests::value_head_capacity` 喂高方差、obs 可分的 value 目标，只训 repr+pred 的 value head——高/低价值组预测间隔从 1.77 训练到 **14.00**（真实间隔 14.0，**精确拟合**）→ §一 的分叉 **(b)「head 学不动」证伪**。坍缩来自**上游**（n-step target 构造 / 搜索），非 head 表达力。下一步探针：在 Pendulum 跑里实测 n-step target 的 std，与全程 MC std(≈175)、模型预测 std(≈26) 三者对比，定位是 target 截断（td_steps/gamma）还是搜索。
 
 ---
 
@@ -76,7 +78,7 @@ reviewers: []
 | value support 溢出 | ✅ **排除** | `support.rs:69` `clamp(-20,20)`，变换域 [−20,20] 覆盖原始 value ±440；Pendulum 最差 value target ≈ −316（`h=−17.0`），不溢出 |
 | sims 不够 | ⏸ **硬约束** | MuZero/EZ 上限就是 50 sims；用户领域知识："不靠加算力解决"。9 动作 × 50 sims → 每根动作平均 ~5.5 次访问 |
 | reward head 分辨率（RSCALE）| ❌ **实测证伪** | 见 §五臂 A，RSCALE 0.1→0.5 不仅没解锁学习，反而略差 |
-| `EZ_CONS` 实现 | ⚠️ **存疑待查** | 见 §六，偏离 SimSiam 设计，但 CartPole 开 cons 反而学得好 → 非致命 bug，须 base 对照定性 |
+| `CONSISTENCY` 实现 | ⚠️ **存疑待查** | 见 §六，偏离 SimSiam 设计，但 CartPole 开 cons 反而学得好 → 非致命 bug，须 base 对照定性 |
 
 **新增确认根因（2026-06-18，dynamics 诊断）**：`value head 坍缩`——base 150ep 跑 dynamics 探针，value 预测 std=26 vs 真实 MC return std=175（坍缩成近似常数；episode 末尾真实剩余 −10 仍预测 −500）；reward head 反而健康（预测 std 1.86 ≈ 真实 1.87）。**病根锁定在 value 学习**，上表 reward 分辨率「证伪」由此再获印证。待区分：value target 本身坍缩（`td_steps`/`gamma`）vs head 学不动（网络/loss/lr）。
 
@@ -141,13 +143,13 @@ reviewers: []
 
 > 🔑 **关键负面发现**：原作者押注的"reward 分辨率是头号嫌疑"**被证伪**。RSCALE 0.1→0.5（reward head 有效原子从 ~1.6 格 → ~3 格）不仅没解锁学习，反而略差。这**排除**了"reward 表示域分辨率不足"作为主因——瓶颈在别处（dynamics 误差累积？模型容量？离散化结构本身？）。
 
-### 臂 B（+NUM_ACTIONS=25） / 臂 C（+EZ_CONS=1）—— **未跑**
+### 臂 B（+NUM_ACTIONS=25） / 臂 C（+CONSISTENCY=1）—— **未跑**
 
 原作者暂停在此，转而写本 issue 求审。
 
 ---
 
-## 六、`EZ_CONS` 实现的存疑点（请专家重点判）
+## 六、`CONSISTENCY` 实现的存疑点（请专家重点判）
 
 `examples/my_zero/cartpole/model.rs:432-443`（Pendulum 通过 `#[path]` 复用）：
 
@@ -169,7 +171,7 @@ if consistency_coef > 0.0 {
 1. **`proj_target` 与 `proj_online` 走同一个 `self.projector`**。标准 SimSiam 是 online encoder + online predictor vs **target encoder（stop-gradient，且 target encoder 是 online 的 EMA）**。这里 target 路径没有独立的 target projector / EMA。
 2. **`repr_target` 对 `next_obs` 正常前向、无 `stop_gradient`**。`pred_online` 与 `proj_target` 在同一参数空间，存在表征塌缩（representation collapse）的理论风险。
 
-**但**：CartPole 上开 `EZ_CONS` 反而学得显著更好（loss 9.6→0.7，一个数量级；avg_R 80→97），说明它**不是致命 bug**，而是**环境敏感**。
+**但**：CartPole 上开 `CONSISTENCY` 反而学得显著更好（loss 9.6→0.7，一个数量级；avg_R 80→97），说明它**不是致命 bug**，而是**环境敏感**。
 
 **请专家判**：
 - 这个实现是"简化版 SimSiam（可接受）"还是"实现错误（应修）"？
@@ -189,7 +191,7 @@ if consistency_coef > 0.0 {
 
 1. **方法论层面**：§3.1"消融必须在学会的任务上做"是否成立？如果成立，Pendulum 的 consistency ➖ 裁决应否**降级为"无信号/待定"**而非"中性"？
 2. **是否继续跑臂 B/C**？还是先回答 §一的核心分叉（离散化方案能否学会）？
-3. **`EZ_CONS` 实现（§六）是否需要修正**为标准 SimSiam（独立 target encoder + EMA + stop-grad）后再做消融？
+3. **`CONSISTENCY` 实现（§六）是否需要修正**为标准 SimSiam（独立 target encoder + EMA + stop-grad）后再做消融？
 4. **是否承认"纯离散化 MCTS 走不通"并提前启动 Gumbel-root**？还是再试更多离散化变体（非均匀离散化、更大 NUM_ACTIONS）？
 
 ---

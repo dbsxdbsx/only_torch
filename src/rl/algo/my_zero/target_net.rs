@@ -1,14 +1,37 @@
-//! Target network 参数同步（hard / EMA + 同步间隔）。
+//! MyZero target network 参数同步（hard / EMA + 同步间隔）。
 //!
-//! Target network 是 EZ 的稳定性增强（base MuZero 不需要）。本模块提供在两份参数列表
-//! （online / target）间同步的纯操作；模型结构与两份实例化属环境相关，留示例。
+//! Target network 是稳定性增强（base 不需要）。本模块提供在两份参数列表（online / target）
+//! 间同步的纯操作；模型结构与两份实例化属网络结构，留 [`super::network`]。
 //!
 //! 配置见 [`TargetConfig`]：`sync_interval > 0` 走 hard copy（每 interval 步），
 //! `== 0` 走 EMA（每步用 `tau`）。
+//!
+//! 注：目前作为可用组件入库（消融开关 `ComponentConfig::target_net`），尚未接入训练循环——
+//! 接线属后续消融工作。
 
-use super::config::TargetConfig;
 use crate::nn::Var;
 use crate::tensor::Tensor;
+
+/// Target network 配置。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TargetConfig {
+    /// 是否启用 target net（消融开关）。
+    pub enabled: bool,
+    /// EMA 软更新系数 τ（`sync_interval == 0` 时生效）。
+    pub tau: f32,
+    /// hard update 间隔（步）：`> 0` 走 hard copy；`== 0` 走 EMA（用 `tau`）。
+    pub sync_interval: u32,
+}
+
+impl Default for TargetConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            tau: 0.01,
+            sync_interval: 0,
+        }
+    }
+}
 
 /// 硬更新：`target ← online`（逐参数覆盖值）。
 pub fn hard_update(online: &[Var], target: &[Var]) {
@@ -46,10 +69,7 @@ pub fn is_hard_sync_step(step: u32, sync_interval: u32) -> bool {
     sync_interval > 0 && step > 0 && step.is_multiple_of(sync_interval)
 }
 
-/// 按 [`TargetConfig`] 在第 `step` 步同步 target：
-/// - `enabled == false`：不动；
-/// - `sync_interval > 0`：到间隔 hard copy，否则不动；
-/// - `sync_interval == 0`：每步 EMA（用 `tau`）。
+/// 按 [`TargetConfig`] 在第 `step` 步同步 target。
 pub fn sync_target(online: &[Var], target: &[Var], cfg: &TargetConfig, step: u32) {
     if !cfg.enabled {
         return;

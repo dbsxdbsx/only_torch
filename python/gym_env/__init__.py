@@ -11,7 +11,7 @@ from gymnasium.envs.registration import register
 # 五子棋环境注册
 # ============================================================================
 
-# Self-play 版（无内置对手，双方外部落子；AlphaZero 训练用）
+# Self-play 版（无内置对手，双方外部落子；self-play 自对弈训练用）
 register(
     id="Gomoku-selfplay-v0",
     entry_point="gym_env.gomoku.env:GomokuSelfPlayEnv",

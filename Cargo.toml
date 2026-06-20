@@ -279,40 +279,8 @@
     path="examples/my_zero/pendulum/main.rs"
 
 [[example]]
-    name="muzero_cartpole"
-    path="examples/muzero/cartpole/main.rs"
-
-[[example]]
     name="ppo_cartpole"
     path="examples/ppo/cartpole/main.rs"
-
-[[example]]
-    name="efficientzero_cartpole"
-    path="examples/efficientzero/cartpole/main.rs"
-
-[[example]]
-    name="efficientzero_pendulum"
-    path="examples/efficientzero/pendulum/main.rs"
-
-[[example]]
-    name="efficientzero_platform"
-    path="examples/efficientzero/platform/main.rs"
-
-[[example]]
-    name="efficientzero_gomoku"
-    path="examples/efficientzero/gomoku/main.rs"
-
-[[example]]
-    name="efficientzero_ant"
-    path="examples/efficientzero/ant/main.rs"
-
-[[example]]
-    name="efficientzero_atari"
-    path="examples/efficientzero/atari/main.rs"
-
-[[example]]
-    name="efficientzero_minari"
-    path="examples/efficientzero/minari/main.rs"
 
 [[example]]
     name="evolution_xor"

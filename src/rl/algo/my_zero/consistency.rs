@@ -1,11 +1,11 @@
-//! 自监督 consistency loss（SimSiam 负余弦相似度）。
+//! MyZero 自监督 consistency loss（SimSiam 负余弦相似度，Chen & He 2021）。
 //!
 //! 让 dynamics 预测的 `next_latent`（经 projector + predictor 的 online 分支）与
 //! `repr(next_obs)`（经 projector 的 target 分支，**stop-gradient**）对齐，给 dynamics 一个
-//! 稠密自监督信号（EZ 样本效率的关键之一）。
+//! 稠密自监督信号（样本效率的关键之一）。
 //!
-//! 本模块只提供「两个向量的负余弦」纯 `Var` 运算；projector / predictor 头属环境相关网络，
-//! 在示例 model 实现。
+//! 本模块只提供「两个向量的负余弦」纯 `Var` 运算；projector / predictor 头属网络结构，
+//! 在 [`super::network`] 实现。
 
 use crate::nn::{GraphError, Var, VarActivationOps, VarReduceOps};
 
@@ -14,7 +14,7 @@ use crate::nn::{GraphError, Var, VarActivationOps, VarReduceOps};
 /// - `p`：online 分支输出（dynamics 预测 next_latent 经 projector + predictor）。
 /// - `z`：target 分支输出（repr(next_obs) 经 projector），内部对其 `detach()` 做 stop-gradient。
 ///
-/// 两者形状须一致（如 `[1, proj_dim]`）。返回**标量** loss `Var`（值域 [-1, 1]，越小越对齐）。
+/// 两者形状须一致。返回**标量** loss `Var`（值域 [-1, 1]，越小越对齐）。
 pub fn negative_cosine_similarity(p: &Var, z: &Var) -> Result<Var, GraphError> {
     // stop-gradient：target 分支不回传梯度（SimSiam 防坍缩的关键）
     let z_sg = z.detach();

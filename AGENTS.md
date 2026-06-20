@@ -18,10 +18,10 @@ only_torch 是一个纯 Rust 的 PyTorch 风格玩具框架，当前重点是：
 | 项 | 内容 |
 |----|------|
 | **版本** | `0.24.0`（2026-06-16；本地可能超前 `origin/master`，以 `git log` / `CHANGELOG.md` 为准） |
-| **刚闭环** | **v0.24.0 EZ-V2 框架管线完备**：Phase 0a 五根接缝契约（`ActionSampler` / `RootScheduler` / RNG 注入 / `SelfPlayStepExtras` / `sample_indexed` / State 不透明契约）+ EZ 算法 helper 入库（consistency / value_prefix / target / SVE / config）+ 六格示例矩阵 SMOKE 全绿（CartPole/Pendulum/Platform/Gomoku/Atari/Ant/Minari）+ 全项目 CartPole 统一 v1（greedy eval ≥475）。样本效率实测：MuZero ~3.8k / EZ(cons+vp) ~31k / PPO ~102k / SAC ~129k env-step 到满分 |
-| **当前主线** | **强化学习** v0.25.0：**MyZero 统一算法**——从 CartPole-v1 消融实验起步，逐增量叠加（consistency / value prefix / target net / SVE / Gumbel），最终覆盖全动作空间（离散/连续/混合）与全状态类型（确定/随机），取代分散的 MuZero + EfficientZero 实现。MuZero/EZ 代码保留为消融对照基线，组件按需提取到公共位置 |
+| **刚闭环** | **MyZero 统一 + 旧 `*Zero` 清除**（v0.25 开发中）：MyZero 算法主体（模型 + 训练循环 + self-play）+ 全部组件统一进库 `src/rl/algo/my_zero/`（自包含）；**删除**旧 `muzero/` + `efficientzero/` 模块与示例，MyZero 成为项目**唯一**的 `*Zero` 实现。CartPole-v1 回归哨兵全程 greedy 500。样本效率实测（CartPole-v1 到满分 env-step）：MyZero ~17k / PPO ~82k / SAC ~105k——model-based 样本效率领先 |
+| **当前主线** | **强化学习** v0.25.0：**MyZero 统一算法**——项目**唯一**的 `*Zero` 实现，从 CartPole-v1 消融实验起步，逐增量叠加（consistency / value prefix / target net / SVE / Gumbel），最终覆盖全动作空间（离散/连续/混合）与全状态类型（确定/随机）。**Phase 0/1 已完成**：算法主体（模型 + 训练循环 + self-play）+ 全部组件（value_encoding / value_transform / n_step / reanalyze / loss / consistency / value_prefix / target_net / sve）统一进库 `src/rl/algo/my_zero/`，自包含；示例只剩 thin `main.rs`（config + `run`）。旧 `muzero/` + `efficientzero/` 模块与示例**已删除** |
 | **刻意暂缓** | 演化 **阶段 D**（`CellAttention` ONNX、`Attention` Net2Net 函数保持、Conv2d Attention、3D batched MatMul）——与 RL 零耦合，见 [记忆机制设计 — Phase D](.doc/design/memory_mechanism_design.md#-后续-phase-d刻意未做) |
-| **路线展望** | v0.25 **MyZero**（`src/rl/algo/my_zero/`）：统一 `*Zero` 族算法，消融驱动迭代。从 CartPole 最简 base 开始，每叠一个增量组件做 A/B 消融对比、记录 benchmark。全动作/状态类型覆盖后删除旧 `muzero/` + `efficientzero/`，MyZero 成为唯一 `*Zero` 实现。详见 [RL 路线图](.doc/design/rl_roadmap.md) |
+| **路线展望** | v0.25 **MyZero**（`src/rl/algo/my_zero/`）：项目**唯一**的 `*Zero` 实现，消融驱动迭代。从 CartPole 最简 base 开始，每叠一个增量组件做 A/B 消融对比、记录 benchmark，逐步覆盖全动作/状态类型。详见 [RL 路线图](.doc/design/rl_roadmap.md) |
 
 **进度符号**（设计文档统一口径）：✅ Phase 验收范围内已完成 · ⏳ 已识别、留后续 Phase · 🔲 可选增强 · 📦 已归档历史路径。
 

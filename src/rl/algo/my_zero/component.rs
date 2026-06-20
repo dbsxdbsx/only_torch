@@ -1,0 +1,79 @@
+//! MyZero 组件开关（消融）
+//!
+//! 每个开关对应一个增量组件，用于 A/B 消融实验。
+//! 全关 = canonical MuZero（base）；逐个开启 = 消融序列。
+
+/// 组件开关集合（消融）
+///
+/// 全部 `false` / `0.0` 等价于 canonical MuZero（base）。
+/// 消融过程中逐个开启，验证每个组件的增量贡献。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ComponentConfig {
+    /// 自监督 consistency loss（SimSiam stop-grad）
+    pub consistency: bool,
+    /// value prefix（LSTM 累计 reward 前缀，hidden 穿 MCTS 树）
+    pub value_prefix: bool,
+    /// target network（EMA/hard 同步，配合 reanalyze）
+    pub target_net: bool,
+    /// SVE 权重（0.0 = 关；> 0 = search value blend 进 n-step target）
+    pub sve_weight: f32,
+    /// 使用 Gumbel 搜索替代 PUCT（连续/混合动作必需）
+    pub gumbel: bool,
+    /// 用 completedQ 改进策略替代 visit-count 作为策略训练目标
+    /// （Danihelka 2022 Eq.10-12；少模拟更稳）。
+    pub completed_q_target: bool,
+    /// completedQ 的 `σ(q)=(c_visit+max_b N(b))·c_scale·q` 中的 `c_visit`（默认 50.0）
+    pub cq_c_visit: f32,
+    /// completedQ 的 `c_scale`（默认 0.02；CartPole 实测 0.02 优于 0.1）
+    pub cq_c_scale: f32,
+}
+
+impl Default for ComponentConfig {
+    fn default() -> Self {
+        Self {
+            consistency: false,
+            value_prefix: false,
+            target_net: false,
+            sve_weight: 0.0,
+            gumbel: false,
+            completed_q_target: false,
+            cq_c_visit: 50.0,
+            cq_c_scale: 0.02,
+        }
+    }
+}
+
+impl ComponentConfig {
+    /// 全关（= canonical MuZero，base）
+    pub fn base() -> Self {
+        Self::default()
+    }
+
+    /// 是否启用了 SVE
+    pub fn sve_enabled(&self) -> bool {
+        self.sve_weight > 0.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_is_all_off() {
+        let c = ComponentConfig::default();
+        assert!(!c.consistency);
+        assert!(!c.value_prefix);
+        assert!(!c.target_net);
+        assert!(!c.sve_enabled());
+        assert!(!c.gumbel);
+        assert!(!c.completed_q_target);
+    }
+
+    #[test]
+    fn cq_defaults_match_cartpole() {
+        let c = ComponentConfig::default();
+        assert!((c.cq_c_visit - 50.0).abs() < 1e-6);
+        assert!((c.cq_c_scale - 0.02).abs() < 1e-6);
+    }
+}

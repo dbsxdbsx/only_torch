@@ -12,13 +12,13 @@
 cargo run --example my_zero_cartpole --release
 
 # +consistency（最优配置之一）
-EZ_CONS=1 cargo run --example my_zero_cartpole --release
+CONSISTENCY=1 cargo run --example my_zero_cartpole --release
 
 # +consistency +completedQ（低 sims 仍满分，最快路径，~40 秒）
-EZ_CONS=1 CQ=1 SIMS=16 cargo run --example my_zero_cartpole --release
+CONSISTENCY=1 CQ=1 SIMS=16 cargo run --example my_zero_cartpole --release
 
 # 多 seed 稳定基线（seed 42/43/44 取中位数，可复现回归锚点）
-SEEDS=3 EZ_CONS=1 cargo run --example my_zero_cartpole --release
+SEEDS=3 CONSISTENCY=1 cargo run --example my_zero_cartpole --release
 
 # SMOKE 管线验证（~30 秒）
 SMOKE=1 cargo run --example my_zero_cartpole

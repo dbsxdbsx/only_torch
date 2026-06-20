@@ -314,15 +314,15 @@ smoke-cartpole-ppo:
     @echo "=== Running CartPole PPO Smoke ==="
     SMOKE=1 cargo run --example ppo_cartpole
 
-# MuZero CartPole（需 Python + gymnasium）
-example-cartpole-muzero:
-    @echo "=== Running CartPole MuZero [{{_blas_name}}] (requires Python + gymnasium) ==="
-    cargo run --example muzero_cartpole --release
+# MyZero CartPole（需 Python + gymnasium；CartPole 回归哨兵）
+example-cartpole-my-zero:
+    @echo "=== Running CartPole MyZero [{{_blas_name}}] (requires Python + gymnasium) ==="
+    cargo run --example my_zero_cartpole --release
 
-# MuZero CartPole smoke（管线验证，不验收敛）
-smoke-cartpole-muzero:
-    @echo "=== Running CartPole MuZero Smoke ==="
-    SMOKE=1 cargo run --example muzero_cartpole
+# MyZero CartPole smoke（管线验证，不验收敛）
+smoke-my-zero-cartpole:
+    @echo "=== Running MyZero CartPole Smoke ==="
+    SMOKE=1 cargo run --example my_zero_cartpole
 
 # MyZero Pendulum smoke（管线验证，不验收敛；验证 env 旋钮 plumbing）
 smoke-my-zero-pendulum:
@@ -330,7 +330,7 @@ smoke-my-zero-pendulum:
     SMOKE=1 cargo run --example my_zero_pendulum
 
 # 运行所有 RL examples（需 Python + gymnasium + extras）
-examples-rl: example-cartpole-sac example-pendulum-sac example-platform-sac example-lunarlander-sac example-cartpole-ppo example-cartpole-muzero
+examples-rl: example-cartpole-sac example-pendulum-sac example-platform-sac example-lunarlander-sac example-cartpole-ppo example-cartpole-my-zero
 
 # 验证 Platform-v0 Python 环境可用
 py-gym-platform:

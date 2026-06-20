@@ -544,7 +544,7 @@ fn test_root_scheduler_hook_forces_root_child() {
 /// 本测试硬编码精确数值：**任何改动 select/backup/expand/recommend 逻辑导致输出变化都会被抓**——
 /// 这是接 Gumbel（改搜索循环）时护住默认 PUCT 路径不回归的真正护栏。
 ///
-/// 注：MuZero CartPole 端到端棋力（greedy ~199.5）的回归靠示例 SMOKE + 达标流程覆盖；
+/// 注：MyZero CartPole 端到端棋力的回归靠示例 SMOKE + 达标流程覆盖；
 /// 此处用确定性 mock 锁定**搜索内核本身**的逐位行为（不依赖 pyo3 / 示例网络）。
 #[test]
 fn test_search_golden_snapshot() {

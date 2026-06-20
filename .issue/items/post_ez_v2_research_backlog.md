@@ -6,6 +6,8 @@ updated: 2026-06-16
 
 # EZ-V2（v0.24）收口后：验收口径 + 后续研究方向 backlog
 
+> ⚠️ **历史背景（2026-06-18 重定向）**：本文写于 v0.24「每版一个算法」时代，以 EZ-V2 为项目终极算法。v0.25 起已统一为 **MyZero**（`src/rl/algo/my_zero/`，项目**唯一**的 `*Zero` 实现），独立的 `efficientzero/` + `muzero/` 模块与示例**均已删除**。下文出现的 `examples/efficientzero/*` 等路径已不存在；EZ-V2 / MuZero 等名字一律按**论文/变体溯源**理解，待办项则视为 **MyZero 的后续增量**。当前权威方向见 [rl_roadmap.md §8](../../.doc/design/rl_roadmap.md) 与 [MyZero 总览](../../examples/my_zero/README.md)。
+>
 > **用途**：v0.24 开工前/收口后的架构锚点——明确「EZ-V2 做完要验什么」、以及「做完还缺什么、以后往哪扩」。
 > **不是** v0.24 发版阻塞项；是 v0.25+ 规划与接缝设计的索引。
 > **权威计划**：[RL 主线实施计划](../../../c:/Users/Administrator/.cursor/plans/rl_主线实施计划_5966956a.plan.md) · [rl_roadmap.md §5.8](../../.doc/design/rl_roadmap.md)

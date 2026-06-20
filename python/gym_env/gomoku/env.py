@@ -2,7 +2,7 @@
 五子棋 Gymnasium 环境（薄包装层）
 
 两种变体：
-- GomokuSelfPlayEnv：双方外部落子，无内置对手（AlphaZero 训练）
+- GomokuSelfPlayEnv：双方外部落子，无内置对手（self-play 自对弈训练）
 - GomokuEnv：内置 naive 对手（评测 / 人机）
 
 职责：reset/step/obs + 持有 Board 实例。
@@ -18,7 +18,7 @@ from gym_env.gomoku.opponents import make_opponent
 
 
 class GomokuSelfPlayEnv(gym.Env):
-    """自对弈五子棋环境（AlphaZero 训练用）
+    """自对弈五子棋环境（self-play 自对弈训练用）
 
     step(action) 只执行当前方落子并切换 to_play，不自动触发对手。
     MCTS 搜索时直接操作 env.board（Board 实例），不经 step()。

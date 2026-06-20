@@ -1,9 +1,9 @@
 //! RL 算法 helper
 //!
 //! 函数式 helper，无状态、无副作用。`SacAgent` 等有状态对象留在示例中。
+//!
+//! `*Zero` 族只保留 [`my_zero`]——唯一的统一 model-based 实现。
 
-pub mod efficientzero;
-pub mod muzero;
 pub mod my_zero;
 pub mod ppo;
 pub mod sac;

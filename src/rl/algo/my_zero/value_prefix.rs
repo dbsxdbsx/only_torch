@@ -1,20 +1,15 @@
-//! Value prefix 目标（LSTM 累计 reward 前缀，忠实版）。
+//! MyZero value prefix 目标（LSTM 累计 reward 前缀，Ye et al. 2021）。
 //!
-//! Value prefix（EfficientZero V1 提出）把「逐步精确预测 reward」改为「预测从子根到第 k 步的
-//! 累计 reward 前缀和」，规避 reward 落点的 state-aliasing，使监督更稳。
-//!
-//! **忠实版**：LSTM hidden 穿过 MCTS 搜索树（见 `MctsModel::State` 不透明契约 +
-//! 契约测试 `rl::tests::mcts_recurrent_state`），搜索期每条边的 reward 取 prefix **增量**
-//! （`prefix_k − prefix_{k-1}`）。
+//! 把「逐步精确预测 reward」改为「预测从子根到第 k 步的累计 reward 前缀和」，规避 reward
+//! 落点的 state-aliasing，使监督更稳。
 //!
 //! 本模块提供**训练期累计前缀目标**的纯函数（[`reward_prefix_targets`]）+ 增量还原校验
-//! （[`prefix_to_delta`]）；LSTM value-prefix 头与搜索期 hidden 穿树属环境相关网络，在示例
-//! model 实现，且通过该 helper 计算逐步前缀目标，保证训练期与搜索期口径一致。
+//! （[`prefix_to_delta`]）；LSTM value-prefix 头与搜索期 hidden 穿树属网络结构，在
+//! [`super::network`] 实现。
 
 /// 计算 value prefix 训练目标：逐步累计 reward 前缀和。
 ///
-/// `prefix[k] = Σ_{i=0..=k} rewards[i]`（不带额外折扣——value prefix 替代的是 reward 序列
-/// 本身的预测；折扣在 value bootstrap 处单独施加）。返回与 `rewards` 等长的前缀序列。
+/// `prefix[k] = Σ_{i=0..=k} rewards[i]`（不带额外折扣）。返回与 `rewards` 等长的前缀序列。
 pub fn reward_prefix_targets(rewards: &[f32]) -> Vec<f32> {
     let mut out = Vec::with_capacity(rewards.len());
     let mut running = 0.0;
@@ -27,8 +22,7 @@ pub fn reward_prefix_targets(rewards: &[f32]) -> Vec<f32> {
 
 /// 从累计前缀序列还原单步增量：`delta[k] = prefix[k] − prefix[k-1]`（`prefix[-1] = 0`）。
 ///
-/// 用于校验「搜索期 reward 取 prefix 增量」与训练期累计前缀口径一致（呼应
-/// 契约测试 `rl::tests::mcts_recurrent_state`：prefix-delta reward ≡ 单步 reward）。
+/// 用于校验「搜索期 reward 取 prefix 增量」与训练期累计前缀口径一致。
 pub fn prefix_to_delta(prefix: &[f32]) -> Vec<f32> {
     let mut out = Vec::with_capacity(prefix.len());
     let mut prev = 0.0;
@@ -45,7 +39,6 @@ mod tests {
 
     #[test]
     fn prefix_accumulates_unit_rewards() {
-        // CartPole 每步 +1：前缀即步数计数
         let r = [1.0, 1.0, 1.0, 1.0];
         assert_eq!(reward_prefix_targets(&r), vec![1.0, 2.0, 3.0, 4.0]);
     }
@@ -64,18 +57,14 @@ mod tests {
         assert!(reward_prefix_targets(&[]).is_empty());
     }
 
-    /// 关键契约：prefix 的单步增量必须还原原始 reward
-    /// （即搜索期「reward = prefix 增量」与训练期「累计前缀」是同一口径）。
+    /// 关键契约：prefix 的单步增量必须还原原始 reward。
     #[test]
     fn delta_recovers_step_reward() {
         let r = [1.0, 2.0, -0.5, 3.0];
         let prefix = reward_prefix_targets(&r);
         let delta = prefix_to_delta(&prefix);
         for (a, b) in delta.iter().zip(r.iter()) {
-            assert!(
-                (a - b).abs() < 1e-6,
-                "prefix 增量应还原单步 reward：{a} vs {b}"
-            );
+            assert!((a - b).abs() < 1e-6, "prefix 增量应还原单步 reward：{a} vs {b}");
         }
     }
 }

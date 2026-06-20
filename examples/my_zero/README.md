@@ -21,10 +21,10 @@
 
 | 组件 | 开关 | [CartPole-v1](cartpole/README.md) | [Pendulum-v1](pendulum/README.md) | Platform-v0 |
 |------|------|:---:|:---:|:---:|
-| consistency¹ | `EZ_CONS=1` | ✅ | ⏳ ᶜ | — |
-| value_prefix² | `EZ_VP=1` | ❌ ᵃ | ⏳ | — |
-| target_net² | `EZ_TARGET=1` | ⏳ | ⏳ | — |
-| SVE² | `EZ_SVE=0.5` | ⏳ | ⏳ | — |
+| consistency¹ | `CONSISTENCY=1` | ✅ | ⏳ ᶜ | — |
+| value_prefix² | `VALUE_PREFIX=1` | ❌ ᵃ | ⏳ | — |
+| target_net² | `TARGET_NET=1` | ⏳ | ⏳ | — |
+| SVE² | `SVE=0.5` | ⏳ | ⏳ | — |
 | completedQ³ | `CQ=1` | ✅ | ⏳ ᶜ | — |
 | Gumbel-root⁴ | （待实现） | ⏳ ᵇ | ⏳ | — |
 
@@ -73,7 +73,7 @@
 
 ```bash
 # 最快达标路径（CartPole · +consistency +completedQ · sims=16 · ~40 秒）
-EZ_CONS=1 CQ=1 SIMS=16 cargo run --example my_zero_cartpole --release
+CONSISTENCY=1 CQ=1 SIMS=16 cargo run --example my_zero_cartpole --release
 
 # 管线自检（~30 秒）
 SMOKE=1 cargo run --example my_zero_cartpole
@@ -92,9 +92,9 @@ MyZero 采用 MuZero 的三网络架构：
 训练期 K 步 unroll + categorical value/reward 表示 + absorbing state 终止处理。
 搜索期 MCTS 在 learned latent 空间推演（不碰真环境）。
 
-## 与旧代码的关系
+## 代码组织
 
-- `examples/muzero/`：MuZero canonical 参考实现，保留为消融对照基线
-- `examples/efficientzero/`：EZ-V2 多模式示例，保留为组件参考
-- `src/rl/algo/my_zero/`：MyZero 库模块（配置 + 消融开关）
-- `src/rl/algo/muzero/`：MuZero helper（support / value_transform / n_step 等），MyZero 直接复用
+- `src/rl/algo/my_zero/`：**自包含**的 MyZero 库，也是项目**唯一**的 `*Zero` 实现——配置（5 层）+ 网络（`network.rs`）+ 训练循环（`runner.rs`）+ 全部算法组件（value_encoding / value_transform / n_step / reanalyze / loss / consistency / value_prefix / target_net / sve）。
+- `examples/my_zero/*/main.rs`：thin 示例（只填 config + 调 `run`，~40 行）。
+
+> 组件的论文出处（MuZero / EfficientZero / SimSiam / Gumbel 等）见上方矩阵脚注——那是**学术溯源**，与代码依赖无关。
