@@ -304,3 +304,15 @@ fn test_update_at_writes_back() {
     buf.update_at(999, make_transition(0, false, false));
     assert_eq!(buf.len(), 3);
 }
+
+#[test]
+fn test_get_at_reads_without_removing() {
+    let mut buf = ReplayBuffer::new(4);
+    for i in 0..3 {
+        buf.push(make_transition(i, false, false));
+    }
+    let got = buf.get_at(1).expect("下标 1 应存在");
+    assert_eq!(got.obs[0], 1.0);
+    assert_eq!(buf.len(), 3);
+    assert!(buf.get_at(99).is_none());
+}

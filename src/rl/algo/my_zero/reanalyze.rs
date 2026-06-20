@@ -1,17 +1,61 @@
 //! MyZero Reanalyze：用最新网络对旧轨迹重跑 MCTS，刷新 policy/value 目标。
 //!
-//! revisit 旧的 self-play 时间步，用**最新**模型参数重新执行 MCTS，得到更优质的 policy 与
-//! value 目标——旧数据被反复榨取出新鲜监督信号（样本效率的核心机制之一）。
+//! MuZero / EfficientZero 语义：**按训练 position**（unroll 窗口内各步）重搜，而非整局每步。
 //!
 //! - **只刷 policy / value**：`reward` / `terminated` 是环境事实，不变。
-//! - **算力换样本效率**：每个被 reanalyze 的位置 = 一整棵 MCTS；由调用方控制比例 / 频率。
+//! - **训练路径**（`Components.reanalyze = true`）：`sample_indexed` clone → unroll 窗口 reanalyze
+//!   → `train_batch` → [`writeback_reanalyzed_samples`](super::runner::writeback_reanalyzed_samples)。
+//! - **CartPole**：recipe 暂不 promote（实测学习失效，见 `.issue/items/my_zero_reanalyze_cartpole_regression.md`）。
 
 use rand::RngCore;
 
 use crate::rl::SelfPlayGame;
+use crate::rl::SelfPlayStep;
 use crate::rl::mcts::{MctsConfig, MctsModel, SearchPolicy, mcts_search};
 
-/// 用当前模型对一局 self-play **原地**刷新每步的 `policy_target` 与 `root_value`。
+/// 用当前模型对单步 **原地**刷新 `policy_target` 与 `root_value`。
+pub fn reanalyze_step<M, P>(
+    model: &M,
+    policy: &P,
+    step: &mut SelfPlayStep,
+    cfg: &MctsConfig,
+    rng: &mut dyn RngCore,
+) where
+    M: MctsModel,
+    P: SearchPolicy,
+{
+    let result = mcts_search(model, policy, &step.obs, cfg, rng);
+    if result.children.is_empty() {
+        return;
+    }
+    let root_value = result.root_value();
+    step.policy_target = result.learn_policy;
+    step.root_value = Some(root_value);
+}
+
+/// 刷新 unroll 窗口 `[start, start + unroll_k]` 内各步标签（position 级 reanalyze）。
+pub fn reanalyze_unroll_window<M, P>(
+    model: &M,
+    policy: &P,
+    steps: &mut [SelfPlayStep],
+    start: usize,
+    unroll_k: usize,
+    cfg: &MctsConfig,
+    rng: &mut dyn RngCore,
+) where
+    M: MctsModel,
+    P: SearchPolicy,
+{
+    if steps.is_empty() || start >= steps.len() {
+        return;
+    }
+    let end = (start + unroll_k).min(steps.len() - 1);
+    for step in &mut steps[start..=end] {
+        reanalyze_step(model, policy, step, cfg, rng);
+    }
+}
+
+/// 用当前模型对一局 self-play **整局**刷新（测试 / 调试；训练路径用 [`reanalyze_unroll_window`]）。
 pub fn reanalyze_game<M, P>(
     model: &M,
     policy: &P,
@@ -22,15 +66,11 @@ pub fn reanalyze_game<M, P>(
     M: MctsModel,
     P: SearchPolicy,
 {
-    for step in game.steps.iter_mut() {
-        let result = mcts_search(model, policy, &step.obs, cfg, rng);
-        if result.children.is_empty() {
-            continue; // 终局 / 空候选：保留原 target
-        }
-        let root_value = result.root_value();
-        step.policy_target = result.learn_policy;
-        step.root_value = Some(root_value);
+    let len = game.steps.len();
+    if len == 0 {
+        return;
     }
+    reanalyze_unroll_window(model, policy, &mut game.steps, 0, len - 1, cfg, rng);
 }
 
 #[cfg(test)]
@@ -116,5 +156,36 @@ mod tests {
             assert_eq!(step.reward, 1.0);
             assert!(!step.terminated);
         }
+    }
+
+    #[test]
+    fn unroll_window_only_touches_requested_range() {
+        let model = MockModel;
+        let policy = PuctPolicy::new();
+        let cfg = MctsConfig {
+            num_simulations: 8,
+            root_exploration_fraction: 0.0,
+            ..MctsConfig::default()
+        };
+        let mut steps = vec![
+            make_step(vec![0.0; 4]),
+            make_step(vec![1.0; 4]),
+            make_step(vec![2.0; 4]),
+        ];
+        steps[0].root_value = Some(99.0);
+        steps[2].root_value = Some(99.0);
+
+        let mut rng = StdRng::seed_from_u64(1);
+        reanalyze_unroll_window(&model, &policy, &mut steps, 1, 0, &cfg, &mut rng);
+
+        assert!(
+            steps[0].root_value == Some(99.0),
+            "窗口外 step 0 不应被刷新"
+        );
+        assert!(steps[1].root_value.expect("step 1") < 50.0);
+        assert!(
+            steps[2].root_value == Some(99.0),
+            "窗口外 step 2 不应被刷新"
+        );
     }
 }

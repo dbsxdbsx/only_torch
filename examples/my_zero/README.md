@@ -25,6 +25,7 @@
 | 组件         | [CartPole-v1](cartpole/README.md) | [Pendulum-v1](pendulum/README.md) | Platform-v0 | 备注                        |
 | ------------ | :-------------------------------: | :-------------------------------: | :---------: | --------------------------- |
 | consistency  |             ✅ recipe             |                 ⏳                 |      —      | SimSiam / EfficientZero     |
+| reanalyze    | ⏸ 已接写回，CartPole 未 promote（[issue](../../.issue/items/my_zero_reanalyze_cartpole_regression.md)） | ⏳ | — | position 级 MCTS 重搜 |
 | value_prefix |                ❌                 |                 ⏳                 |      —      | CartPole 有害（≠ 全局坏）   |
 | target_net   |                 ⏳                 |                 ⏳                 |      —      | 已入库，训练循环待接        |
 | SVE          |                 ⏳                 |                 ⏳                 |      —      | 已入库，训练循环待接        |
@@ -32,7 +33,7 @@
 | Gumbel-root  |                 ⏸                 |                 ⏳                 |      —      | 搜索侧，未实现              |
 | 连续采样候选 |                 ⏸                 |                 ⏳                 |      —      | Sampled MuZero，大/连续动作 |
 
-**当前 recipe**：CartPole = base + **consistency**；其余环境 = base。论文出处见 [`.doc/design/my_zero_algorithm_vision.md`](../../.doc/design/my_zero_algorithm_vision.md)。
+**当前 recipe**：CartPole = base + **consistency**；reanalyze 写回已实现，CartPole 暂不 promote（[issue](../../.issue/items/my_zero_reanalyze_cartpole_regression.md)）。
 
 ## 快速开始
 

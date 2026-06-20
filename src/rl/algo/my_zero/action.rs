@@ -78,6 +78,16 @@ impl ActionAdapter {
         }
     }
 
+    /// 测试 / 无 env 单元测：构造 `n` 档原生离散动作适配器。
+    #[cfg(test)]
+    pub(crate) fn discrete_for_test(n: usize) -> Self {
+        assert!(n >= 1, "discrete_for_test: n 必须 ≥ 1");
+        Self {
+            candidates: (0..n).map(ActionPayload::Discrete).collect(),
+            kind: AdapterKind::Discrete,
+        }
+    }
+
     /// MCTS / `DynamicsModel` 用的候选动作集。
     pub fn candidates(&self) -> &[ActionPayload] {
         &self.candidates

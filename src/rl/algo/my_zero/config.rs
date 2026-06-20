@@ -93,16 +93,14 @@ pub struct TrainSettings {
     pub num_simulations: u32,
     /// 学习率
     pub lr: f32,
-    /// 每次训练采样的整局数
-    pub batch_games: usize,
+    /// 每次 optimizer step 采样的训练 position 数（从 buffer 抽局 + 局内随机起点，对齐 MuZero minibatch）
+    pub train_batch_size: usize,
     /// 每个 episode 结束后的训练次数
     pub trains_per_episode: usize,
     /// replay buffer 容量（按整局计）
     pub buffer_capacity: usize,
     /// 开始训练前需累积的局数
     pub start_training_after: usize,
-    /// reanalyze 比例 ∈ [0,1]（0.0 = 关闭，CPU 友好）
-    pub reanalyze_fraction: f32,
 }
 
 impl Default for TrainSettings {
@@ -114,11 +112,10 @@ impl Default for TrainSettings {
             td_steps: 50,
             num_simulations: 50,
             lr: 0.02,
-            batch_games: 8,
+            train_batch_size: 8,
             trains_per_episode: 8,
             buffer_capacity: 1000,
             start_training_after: 10,
-            reanalyze_fraction: 0.0,
         }
     }
 }
@@ -236,7 +233,7 @@ mod tests {
         assert_eq!(t.num_simulations, 50);
         assert_eq!(t.k_unroll, 5);
         assert!((t.gamma - 0.997).abs() < 1e-6);
-        assert_eq!(t.reanalyze_fraction, 0.0);
+        assert_eq!(t.train_batch_size, 8);
     }
 
     #[test]
@@ -268,6 +265,7 @@ mod tests {
             .build()
             .unwrap();
         assert!(cfg.components.consistency);
+        assert!(!cfg.components.reanalyze);
         assert!(!cfg.components.completed_q_target);
     }
 }

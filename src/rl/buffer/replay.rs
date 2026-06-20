@@ -49,11 +49,8 @@ impl<T: BufferItem> ReplayBuffer<T> {
 
     /// 有放回随机抽样，额外返回每个样本在 buffer 中的**存储下标**。
     ///
-    /// 与 [`sample`](Self::sample) 的唯一区别是带回下标，使「完整 reanalyze 写回」
-    /// 「PER priority 更新」等未来能力能定位回原条目（配合 [`update_at`](Self::update_at)）。
-    ///
-    /// v0.24 主路径仍是 **batch-time reanalyze**（改采样副本、不写回），本方法的下标用于
-    /// 形状预留；完整回写式 reanalyze 推 v0.25。
+    /// 与 [`sample`](Self::sample) 的唯一区别是带回下标，供 MyZero reanalyze 写回
+    ///（配合 [`update_at`](Self::update_at)）及未来 PER priority 更新。
     pub fn sample_indexed(&self, batch_size: usize, rng: &mut impl Rng) -> Vec<(usize, T)> {
         if batch_size == 0 || self.buffer.is_empty() {
             return Vec::new();
@@ -67,15 +64,19 @@ impl<T: BufferItem> ReplayBuffer<T> {
             .collect()
     }
 
-    /// 按存储下标**原地回写**一个元素（完整 reanalyze 写回 / 原地刷新预留形状）。
+    /// 按存储下标**原地回写**一个元素（reanalyze 标签刷新 / PER 更新）。
     ///
     /// ⚠️ `ReplayBuffer` 是 FIFO：长时间运行后下标会随 `push` 淘汰而漂移。调用方须保证
-    /// `idx` 仍指向期望条目（如「采样→写回」之间未发生淘汰）。越界则忽略（no-op）。
-    /// v0.24 主路径不用本方法（batch-time reanalyze 只读副本）；完整 reanalyze（v0.25）启用。
+    /// `idx` 仍指向期望条目（如「采样→train→写回」之间未发生淘汰）。越界则忽略（no-op）。
     pub fn update_at(&mut self, idx: usize, item: T) {
         if idx < self.buffer.len() {
             self.buffer[idx] = item;
         }
+    }
+
+    /// 按存储下标读取一条（clone）；越界返回 `None`。
+    pub fn get_at(&self, idx: usize) -> Option<T> {
+        self.buffer.get(idx).cloned()
     }
 
     pub fn len(&self) -> usize {

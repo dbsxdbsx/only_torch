@@ -44,7 +44,7 @@
 //! 算法组件（**均为 MyZero 自身实现，自包含**；MyZero 是项目唯一的 `*Zero` 实现）：
 //! - [`value_encoding`] / [`value_transform`]：categorical value/reward 编解码 + h(x) 变换
 //! - [`n_step`]：n-step bootstrap value target（区分 terminated / truncated）
-//! - [`reanalyze`]：用最新网络重跑 MCTS 刷新旧轨迹目标
+//! - [`reanalyze`]：position 级 MCTS 重搜 + train 后写回（`Components.reanalyze`；CartPole 暂不 promote）
 //! - [`loss`]：loss 系数与梯度缩放常量
 //! - [`consistency`]：自监督 consistency loss（SimSiam）
 //! - [`value_prefix`]：value prefix 累计 reward 前缀目标
@@ -87,7 +87,7 @@ pub use consistency::negative_cosine_similarity;
 pub use my_zero::MyZero;
 pub use n_step::{compute_n_step_target, compute_n_step_target_with};
 pub use network::MyZeroModel;
-pub use reanalyze::reanalyze_game;
+pub use reanalyze::{reanalyze_game, reanalyze_step, reanalyze_unroll_window};
 pub use report::{EvalReport, RunReport, TrainReport};
 pub use sve::sve_blend;
 pub use target::completed_q_policy_target;

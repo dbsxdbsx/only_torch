@@ -87,8 +87,8 @@ impl MyZeroBuilder {
         self
     }
 
-    pub fn reanalyze_fraction(mut self, f: f32) -> Self {
-        self.cfg.train.reanalyze_fraction = f.clamp(0.0, 1.0);
+    pub fn train_batch_size(mut self, n: usize) -> Self {
+        self.cfg.train.train_batch_size = n.max(1);
         self
     }
 
@@ -192,13 +192,14 @@ mod tests {
     }
 
     #[test]
-    fn cartpole_recipe_has_consistency() {
+    fn cartpole_recipe_has_consistency_only() {
         let cfg = MyZero::new("CartPole-v1")
             .solved(475.0)
             .max_episodes(2000)
             .build()
             .unwrap();
         assert!(cfg.components.consistency);
+        assert!(!cfg.components.reanalyze);
         assert!(!cfg.components.completed_q_target);
     }
 

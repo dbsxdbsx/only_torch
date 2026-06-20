@@ -7,7 +7,7 @@ use super::config::{MyZeroConfig, greedy_episode_seed, self_play_episode_seed};
 use super::my_zero::MyZero;
 use super::n_step::compute_n_step_target;
 use super::network::MyZeroModel;
-use super::reanalyze::reanalyze_game;
+use super::reanalyze::reanalyze_unroll_window;
 use super::report::TrainReport;
 use super::target::completed_q_policy_target;
 use super::value_prefix::reward_prefix_targets;
@@ -19,7 +19,7 @@ use crate::rl::{GameOutcome, GymEnv, ReplayBuffer, SelfPlayGame, SelfPlayStep};
 use pyo3::Python;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 /// 打印已启用的消融组件（全关时不输出）。
 fn print_components(c: &Components) {
@@ -41,6 +41,9 @@ fn print_components(c: &Components) {
     }
     if c.completed_q_target {
         tags.push("completedQ");
+    }
+    if c.reanalyze {
+        tags.push("reanalyze");
     }
     if !tags.is_empty() {
         println!("[MyZero] {}", tags.join(" + "));
@@ -108,38 +111,140 @@ fn self_play_one_episode(
     steps
 }
 
+/// 给定起点 `start`，计算 K 步 unroll 实际步数（区分 terminated / truncated）。
+fn unroll_len_at(steps: &[SelfPlayStep], start: usize, k_unroll: usize) -> usize {
+    let len = steps.len();
+    if len == 0 || start >= len {
+        return 0;
+    }
+    if steps[len - 1].terminated {
+        k_unroll
+    } else {
+        k_unroll.min(len - 1 - start)
+    }
+}
+
+/// 一次训练 batch 中的单条样本：整局 clone + 随机 unroll 起点。
+///
+/// `buffer_idx = Some(_)` 表示该副本来自 [`ReplayBuffer::sample_indexed`]，
+/// train 结束后须 [`writeback_reanalyzed_samples`] 写回标签。
+pub(crate) struct TrainBatchItem {
+    pub buffer_idx: Option<usize>,
+    pub game: SelfPlayGame,
+    pub start: usize,
+}
+
+/// 从 buffer 抽样并（若开启 reanalyze）刷新 unroll 窗口内 policy/value 标签。
+///
+/// # 流程（reanalyze 开启时）
+/// 1. `sample_indexed` clone 出 owned 副本（不对 buffer 内引用原地改）
+/// 2. `reanalyze_unroll_window` 刷新 `[start, start+K]` 内各步
+/// 3. 交给 `train_batch` 消费同一副本
+/// 4. train 后 `writeback_reanalyzed_samples` move 写回 buffer
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn prepare_train_batch(
+    buffer: &ReplayBuffer<SelfPlayGame>,
+    train_batch_size: usize,
+    k_unroll: usize,
+    reanalyze: bool,
+    model: &MyZeroModel,
+    adapter: &ActionAdapter,
+    gamma: f32,
+    num_simulations: u32,
+    rng: &mut StdRng,
+) -> Vec<TrainBatchItem> {
+    let mut out = Vec::with_capacity(train_batch_size);
+    let re_cfg = MctsConfig {
+        num_simulations,
+        temperature: 1.0,
+        discount: gamma,
+        root_exploration_fraction: 0.0,
+        ..MctsConfig::default()
+    };
+    let re_policy = PuctPolicy::new();
+    let dyn_model = DynamicsModel::new(model, adapter.candidates().to_vec(), gamma);
+
+    if reanalyze {
+        for (idx, mut game) in buffer.sample_indexed(train_batch_size, rng) {
+            if game.steps.len() < 2 {
+                continue;
+            }
+            let start = rng.gen_range(0..game.steps.len());
+            let actual_k = unroll_len_at(&game.steps, start, k_unroll);
+            reanalyze_unroll_window(
+                &dyn_model,
+                &re_policy,
+                &mut game.steps,
+                start,
+                actual_k,
+                &re_cfg,
+                rng,
+            );
+            out.push(TrainBatchItem {
+                buffer_idx: Some(idx),
+                game,
+                start,
+            });
+        }
+    } else {
+        for game in buffer.sample(train_batch_size, rng) {
+            if game.steps.len() < 2 {
+                continue;
+            }
+            let start = rng.gen_range(0..game.steps.len());
+            out.push(TrainBatchItem {
+                buffer_idx: None,
+                game,
+                start,
+            });
+        }
+    }
+    out
+}
+
+/// reanalyze 路径：train 结束后把刷新过的整局写回 buffer（同 batch 重复 idx 后者覆盖）。
+/// 仅 `buffer_idx = Some(_)` 的样本写回；CartPole 现状见 `.issue/items/my_zero_reanalyze_cartpole_regression.md`。
+pub(crate) fn writeback_reanalyzed_samples(
+    buffer: &mut ReplayBuffer<SelfPlayGame>,
+    batch: Vec<TrainBatchItem>,
+) {
+    let mut by_idx: HashMap<usize, SelfPlayGame> = HashMap::new();
+    for item in batch {
+        if let Some(idx) = item.buffer_idx {
+            by_idx.insert(idx, item.game);
+        }
+    }
+    for (idx, game) in by_idx {
+        buffer.update_at(idx, game);
+    }
+}
+
 /// 真 batch 训练：一次 zero_grad + N 个 position 各自 backward（梯度累积）+ 一次 step
 #[allow(clippy::too_many_arguments)]
-fn train_batch(
+pub(crate) fn train_batch(
     model: &MyZeroModel,
     optimizer: &mut Adam,
-    games: &[SelfPlayGame],
+    samples: &[(&SelfPlayGame, usize)],
     k_unroll: usize,
     td_steps: usize,
     gamma: f32,
     components: &Components,
-    rng: &mut impl Rng,
+    _rng: &mut impl Rng,
 ) -> Result<f32, GraphError> {
-    let valid_games: Vec<&SelfPlayGame> = games.iter().filter(|g| g.steps.len() >= 2).collect();
-    if valid_games.is_empty() {
+    if samples.is_empty() {
         return Ok(0.0);
     }
 
-    let batch_size = valid_games.len() as f32;
+    let batch_size = samples.len() as f32;
     let mut total_loss_val = 0.0;
 
     optimizer.zero_grad()?;
 
-    for game in &valid_games {
+    for (game, start) in samples {
         let steps = &game.steps;
         let len = steps.len();
-        let ep_terminated = steps[len - 1].terminated;
-        let t = rng.gen_range(0..len);
-        let actual_k = if ep_terminated {
-            k_unroll
-        } else {
-            k_unroll.min(len - 1 - t)
-        };
+        let t = *start;
+        let actual_k = unroll_len_at(steps, t, k_unroll);
 
         let uniform_policy = vec![1.0 / model.action_dim as f32; model.action_dim];
 
@@ -603,34 +708,30 @@ fn train_one_seed(
             let mut loss_sum = 0.0;
             let n_trains = if smoke { 1 } else { t.trains_per_episode };
             for _ in 0..n_trains {
-                let mut games = buffer.sample(t.batch_games, &mut rng);
-                if t.reanalyze_fraction > 0.0 {
-                    let re_cfg = MctsConfig {
-                        num_simulations: t.num_simulations,
-                        temperature: 1.0,
-                        discount: gamma,
-                        root_exploration_fraction: 0.0,
-                        ..MctsConfig::default()
-                    };
-                    let re_policy = PuctPolicy::new();
-                    for g in games.iter_mut() {
-                        if rng.gen_range(0.0..1.0) < t.reanalyze_fraction {
-                            let dyn_model =
-                                DynamicsModel::new(&model, adapter.candidates().to_vec(), gamma);
-                            reanalyze_game(&dyn_model, &re_policy, g, &re_cfg, &mut rng);
-                        }
-                    }
-                }
+                let batch = prepare_train_batch(
+                    &buffer,
+                    t.train_batch_size,
+                    t.k_unroll,
+                    cfg.components.reanalyze,
+                    &model,
+                    &adapter,
+                    gamma,
+                    t.num_simulations,
+                    &mut rng,
+                );
+                let train_view: Vec<(&SelfPlayGame, usize)> =
+                    batch.iter().map(|item| (&item.game, item.start)).collect();
                 let l = train_batch(
                     &model,
                     &mut optimizer,
-                    &games,
+                    &train_view,
                     t.k_unroll,
                     t.td_steps,
                     gamma,
                     &cfg.components,
                     &mut rng,
                 )?;
+                writeback_reanalyzed_samples(&mut buffer, batch);
                 loss_sum += l;
             }
             avg_loss = loss_sum / n_trains as f32;

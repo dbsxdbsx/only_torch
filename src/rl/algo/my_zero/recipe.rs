@@ -10,6 +10,8 @@ pub(crate) fn components_for(env_id: &str) -> Components {
         "CartPole-v1" => {
             let mut c = Components::base();
             c.consistency = true;
+            // reanalyze 写回已实现；CartPole promote 暂缓 → .issue/items/my_zero_reanalyze_cartpole_regression.md
+            c.reanalyze = false;
             c
         }
         _ => Components::base(),
@@ -24,6 +26,7 @@ mod tests {
     fn cartpole_has_consistency_only() {
         let c = components_for("CartPole-v1");
         assert!(c.consistency);
+        assert!(!c.reanalyze);
         assert!(!c.value_prefix);
         assert!(!c.target_net);
         assert!(!c.sve_enabled());

@@ -13,6 +13,10 @@ pub(crate) struct Components {
     pub consistency: bool,
     /// value prefix（LSTM 累计 reward 前缀，hidden 穿 MCTS 树）
     pub value_prefix: bool,
+    /// 训练前对 sample 的 unroll 窗口重跑 MCTS 刷新标签（MuZero Reanalyze）
+    /// reanalyze：position 级 MCTS 重搜 + buffer 写回（`Components.reanalyze`）。
+    /// CartPole recipe 默认关；见 `.issue/items/my_zero_reanalyze_cartpole_regression.md`。
+    pub reanalyze: bool,
     /// target network（EMA/hard 同步，配合 reanalyze）
     pub target_net: bool,
     /// SVE 权重（0.0 = 关；> 0 = search value blend 进 n-step target）
@@ -33,6 +37,7 @@ impl Default for Components {
         Self {
             consistency: false,
             value_prefix: false,
+            reanalyze: false,
             target_net: false,
             sve_weight: 0.0,
             gumbel: false,
@@ -64,6 +69,7 @@ mod tests {
         let c = Components::default();
         assert!(!c.consistency);
         assert!(!c.value_prefix);
+        assert!(!c.reanalyze);
         assert!(!c.target_net);
         assert!(!c.sve_enabled());
         assert!(!c.gumbel);
