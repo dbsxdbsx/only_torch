@@ -24,6 +24,14 @@ SEEDS=3 CONSISTENCY=1 cargo run --example my_zero_cartpole --release
 SMOKE=1 cargo run --example my_zero_cartpole
 ```
 
+训练产物默认写入 `checkpoints/cartpole/seed_{seed}/best`（权重 + manifest + meta）；仅当 periodic greedy eval 创新高时覆盖写盘。加载：
+
+```bash
+# 须与训练时相同的 env 契约
+cargo run --example my_zero_cartpole --release
+# 或在代码中：MyZero::new("CartPole-v1").solved(475.0).max_episodes(2000).load("checkpoints/cartpole/seed_42/best")?
+```
+
 ## 关键超参（CartPole 默认）
 
 | 参数 | 值 | 说明 |

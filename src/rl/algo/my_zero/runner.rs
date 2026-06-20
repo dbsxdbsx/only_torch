@@ -1,17 +1,17 @@
-//! MyZero 统一运行入口：self-play + 训练 + greedy eval + 多 seed + SMOKE + 可选 DIAG。
-//!
-//! 一个 [`run`] 跑通所有环境，环境差异全由 [`MyZeroConfig`] 表达（动作方案由
-//! [`ActionAdapter`] 从 env 推断）。示例侧只需填 config + 调 `run`。
+//! MyZero 统一运行入口：self-play + 训练 + greedy eval + 多 seed + SMOKE + DIAG。
 
 use super::action::ActionAdapter;
-use super::component::ComponentConfig;
-use super::config::MyZeroConfig;
-use super::network::MyZeroModel;
-use super::target::completed_q_policy_target;
-use crate::nn::{Adam, Graph, GraphError, Optimizer};
+use super::checkpoint::BestTracker;
+use super::component::Components;
+use super::config::{MyZeroConfig, greedy_episode_seed, self_play_episode_seed};
+use super::my_zero::MyZero;
 use super::n_step::compute_n_step_target;
+use super::network::MyZeroModel;
 use super::reanalyze::reanalyze_game;
+use super::report::TrainReport;
+use super::target::completed_q_policy_target;
 use super::value_prefix::reward_prefix_targets;
+use crate::nn::{Adam, Graph, GraphError, Optimizer};
 use crate::rl::mcts::{
     ActionPayload, Dynamics, DynamicsModel, MctsConfig, PuctPolicy, mcts_search,
 };
@@ -21,8 +21,8 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::collections::VecDeque;
 
-/// 打印当前启用的消融组件
-fn print_components(c: &ComponentConfig) {
+/// 打印已启用的消融组件（全关时不输出）。
+fn print_components(c: &Components) {
     let mut tags = Vec::new();
     if c.consistency {
         tags.push("consistency");
@@ -40,12 +40,10 @@ fn print_components(c: &ComponentConfig) {
         tags.push("Gumbel");
     }
     if c.completed_q_target {
-        tags.push("completedQ-target");
+        tags.push("completedQ");
     }
-    if tags.is_empty() {
-        println!("[MyZero] components: base (all off)");
-    } else {
-        println!("[MyZero] components: {}", tags.join(" + "));
+    if !tags.is_empty() {
+        println!("[MyZero] {}", tags.join(" + "));
     }
 }
 
@@ -58,9 +56,10 @@ fn self_play_one_episode(
     gamma: f32,
     cq: Option<(f32, f32)>, // Some((c_visit, c_scale)) → completedQ 策略目标；None → visit-count
     reward_scale: f32,
+    reset_seed: u64,
     rng: &mut StdRng,
 ) -> Vec<SelfPlayStep> {
-    let obs_raw = env.reset(None);
+    let obs_raw = env.reset(Some(reset_seed));
     let mut obs = obs_raw[0].clone();
     let mut steps = Vec::new();
 
@@ -118,7 +117,7 @@ fn train_batch(
     k_unroll: usize,
     td_steps: usize,
     gamma: f32,
-    components: &ComponentConfig,
+    components: &Components,
     rng: &mut impl Rng,
 ) -> Result<f32, GraphError> {
     let valid_games: Vec<&SelfPlayGame> = games.iter().filter(|g| g.steps.len() >= 2).collect();
@@ -223,15 +222,15 @@ fn train_batch(
     Ok(total_loss_val)
 }
 
-/// 贪心 eval：temperature=0 跑若干局取均值（返回**原始未缩放** return）。
-fn eval_episodes(
+/// 贪心 rollout 单局（原始未缩放 return + 步数）。
+pub(crate) fn greedy_one_episode(
     env: &GymEnv,
     model: &MyZeroModel,
     adapter: &ActionAdapter,
     gamma: f32,
-    n_episodes: usize,
     num_simulations: u32,
-) -> f32 {
+    reset_seed: u64,
+) -> (f32, usize) {
     let eval_cfg = MctsConfig {
         num_simulations,
         temperature: 0.0,
@@ -239,40 +238,80 @@ fn eval_episodes(
         root_exploration_fraction: 0.0,
         ..MctsConfig::default()
     };
-
-    let mut eval_rng = StdRng::seed_from_u64(0xE7A1);
-    let mut total_reward = 0.0;
-    for i in 0..n_episodes {
-        let obs_raw = env.reset(Some(0xE7A1 + i as u64));
-        let mut obs = obs_raw[0].clone();
-
-        loop {
-            let dyn_model = DynamicsModel::new(model, adapter.candidates().to_vec(), gamma);
-            let result = mcts_search(
-                &dyn_model,
-                &PuctPolicy::new(),
-                &obs,
-                &eval_cfg,
-                &mut eval_rng,
-            );
-
-            let action_idx = match &result.recommended {
-                ActionPayload::Discrete(idx) => *idx,
-                _ => 0,
-            };
-
-            let env_action = adapter.to_env(action_idx);
-            let (next_obs_raw, reward, terminated, truncated) = env.step(&env_action);
-            total_reward += reward;
-
-            if terminated || truncated {
-                break;
-            }
-            obs = next_obs_raw[0].clone();
+    let mut rng = StdRng::seed_from_u64(reset_seed);
+    let mut obs = env.reset(Some(reset_seed))[0].clone();
+    let mut total_reward = 0.0f32;
+    let mut length = 0usize;
+    loop {
+        let dyn_model = DynamicsModel::new(model, adapter.candidates().to_vec(), gamma);
+        let result = mcts_search(&dyn_model, &PuctPolicy::new(), &obs, &eval_cfg, &mut rng);
+        let action_idx = match &result.recommended {
+            ActionPayload::Discrete(idx) => *idx,
+            _ => 0,
+        };
+        let env_action = adapter.to_env(action_idx);
+        let (next_obs_raw, reward, terminated, truncated) = env.step(&env_action);
+        total_reward += reward;
+        length += 1;
+        if terminated || truncated {
+            break;
         }
+        obs = next_obs_raw[0].clone();
     }
+    (total_reward, length)
+}
 
-    total_reward / n_episodes as f32
+/// 贪心 eval：跑 `n_episodes` 局，返回均值与各局 return（**原始未缩放**）。
+pub(crate) fn greedy_eval_episodes(
+    env: &GymEnv,
+    model: &MyZeroModel,
+    adapter: &ActionAdapter,
+    gamma: f32,
+    n_episodes: usize,
+    num_simulations: u32,
+    eval_seed: u64,
+) -> (f32, Vec<f32>) {
+    let mut returns = Vec::with_capacity(n_episodes);
+    for i in 0..n_episodes {
+        let (r, _) = greedy_one_episode(
+            env,
+            model,
+            adapter,
+            gamma,
+            num_simulations,
+            greedy_episode_seed(eval_seed, i as u64),
+        );
+        returns.push(r);
+    }
+    let mean = if n_episodes == 0 {
+        0.0
+    } else {
+        returns.iter().sum::<f32>() / n_episodes as f32
+    };
+    (mean, returns)
+}
+
+/// 贪心 eval：temperature=0 跑若干局取均值（返回**原始未缩放** return）。
+#[allow(dead_code)]
+fn eval_episodes(
+    env: &GymEnv,
+    model: &MyZeroModel,
+    adapter: &ActionAdapter,
+    gamma: f32,
+    n_episodes: usize,
+    num_simulations: u32,
+    eval_seed: u64,
+) -> f32 {
+    greedy_eval_episodes(
+        env,
+        model,
+        adapter,
+        gamma,
+        n_episodes,
+        num_simulations,
+        eval_seed,
+    )
+    .0
 }
 
 /// Dynamics 诊断：对比 learned model 的「想象」reward/value 与真实环境。
@@ -362,7 +401,9 @@ fn dynamics_diagnostic(
     let (vt_m, vt_s, vt_lo, vt_hi) = stats(&mc_return);
     let (vp_m, vp_s, vp_lo, vp_hi) = stats(&v_roots);
 
-    println!("\n========== Dynamics 诊断（greedy episode，n={n} 步；已反 scale 回原始空间）==========");
+    println!(
+        "\n========== Dynamics 诊断（greedy episode，n={n} 步；已反 scale 回原始空间）=========="
+    );
     println!("逐步样本（t | r_true vs r_pred | v_mc vs v_root_pred）：");
     for t in 0..n {
         if t < 5 || t % 40 == 0 || t == n - 1 {
@@ -374,14 +415,18 @@ fn dynamics_diagnostic(
     }
     println!("----------------------------------------------------------------------------------");
     println!("单步 reward：真实 mean={tr_m:.3} std={tr_s:.3} range=[{tr_lo:.3},{tr_hi:.3}]");
-    println!("            预测 mean={rp_m:.3} std={rp_s:.3} range=[{rp_lo:.3},{rp_hi:.3}] | MAE={reward_mae:.3}");
+    println!(
+        "            预测 mean={rp_m:.3} std={rp_s:.3} range=[{rp_lo:.3},{rp_hi:.3}] | MAE={reward_mae:.3}"
+    );
     println!("root value：真实(MC) mean={vt_m:.1} std={vt_s:.1} range=[{vt_lo:.1},{vt_hi:.1}]");
-    println!("            预测     mean={vp_m:.1} std={vp_s:.1} range=[{vp_lo:.1},{vp_hi:.1}] | MAE={value_mae:.1}");
+    println!(
+        "            预测     mean={vp_m:.1} std={vp_s:.1} range=[{vp_lo:.1},{vp_hi:.1}] | MAE={value_mae:.1}"
+    );
     println!("==================================================================================");
 }
 
 /// 单次训练运行的 benchmark 结果（多 seed 汇总用）
-struct RunResult {
+struct SeedSummary {
     seed: u64,
     wall_secs: f32,
     greedy_eval: f32,
@@ -404,7 +449,7 @@ fn median_f32(mut v: Vec<f32>) -> f32 {
 }
 
 /// 打印多 seed 汇总（中位数 = 稳定基线口径，排除单 seed 偶发 spike）
-fn print_multiseed_summary(results: &[RunResult], solved: f32) {
+fn print_multiseed_summary(results: &[SeedSummary], solved: f32) {
     let n = results.len();
     let greedy: Vec<f32> = results.iter().map(|r| r.greedy_eval).collect();
     let walls: Vec<f32> = results.iter().map(|r| r.wall_secs).collect();
@@ -414,14 +459,14 @@ fn print_multiseed_summary(results: &[RunResult], solved: f32) {
         .collect();
     let n_solved = solved_steps.len();
 
-    println!("\n========== 多 seed 汇总（{n} seeds, solved={solved}）==========");
+    println!("\n--- 多 seed 汇总 ({n} seeds, 门槛 {solved}) ---");
     for r in results {
         let eff = r
             .solved_at_steps
             .map(|s| s.to_string())
             .unwrap_or_else(|| "未达标".to_string());
         println!(
-            "  seed={:<3} greedy={:8.1} env_steps_to_solved={:>8} wall={:.1}s",
+            "  seed={:<3} greedy={:8.1} steps={:>8} wall={:.1}s",
             r.seed, r.greedy_eval, eff, r.wall_secs
         );
     }
@@ -431,7 +476,7 @@ fn print_multiseed_summary(results: &[RunResult], solved: f32) {
         "n/a".to_string()
     };
     println!(
-        "  中位数: greedy={:.1} | env_steps_to_solved={} ({}/{} 达标) | wall={:.1}s",
+        "  中位数 greedy={:.1} | steps={} ({}/{} 达标) | wall={:.1}s",
         median_f32(greedy),
         steps_med,
         n_solved,
@@ -440,41 +485,54 @@ fn print_multiseed_summary(results: &[RunResult], solved: f32) {
     );
 }
 
-/// 跑一次完整训练（固定 seed），返回 benchmark 结果
-fn run_one_training(
+/// 物化空权重实例（load 前须与 manifest 契约一致）。
+pub(crate) fn materialize(
+    py: Python<'_>,
+    cfg: &MyZeroConfig,
+    seed: u64,
+) -> Result<MyZero, GraphError> {
+    let env = GymEnv::new(py, cfg.env.env_id);
+    let adapter = ActionAdapter::resolve(&env, cfg.env.action);
+    let obs_dim = env.get_flatten_observation_len();
+    let action_dim = adapter.action_dim();
+    let graph = Graph::new_with_seed(seed);
+    let model = MyZeroModel::new(&graph, obs_dim, action_dim, cfg.model.latent_dim)?;
+    env.close();
+    Ok(MyZero::from_parts(cfg.clone(), model, adapter))
+}
+
+/// 跑一次完整训练（固定 seed），返回训练后的 [`MyZero`] 与报告。
+fn train_one_seed(
     py: Python<'_>,
     seed: u64,
     cfg: &MyZeroConfig,
     base_seed: u64,
-) -> Result<RunResult, GraphError> {
+) -> Result<(MyZero, TrainReport), GraphError> {
     let wall_t0 = std::time::Instant::now();
 
-    let t = &cfg.train_config;
+    let t = &cfg.train;
     let gamma = t.gamma;
-    let smoke = cfg.run_config.smoke;
-    let solved = cfg.run_config.solved;
-    let reward_scale = cfg.env_config.reward_scale;
+    let smoke = cfg.eval.smoke;
+    let solved = cfg.eval.solved;
+    let reward_scale = cfg.env.reward_scale;
 
     // completedQ 改进策略目标的超参（开启 completed_q_target 时生效）
-    let cq: Option<(f32, f32)> = if cfg.component_config.completed_q_target {
-        Some((
-            cfg.component_config.cq_c_visit,
-            cfg.component_config.cq_c_scale,
-        ))
+    let cq: Option<(f32, f32)> = if cfg.components.completed_q_target {
+        Some((cfg.components.cq_c_visit, cfg.components.cq_c_scale))
     } else {
         None
     };
 
-    let env = GymEnv::new(py, cfg.env_config.env_id);
-    let adapter = ActionAdapter::resolve(&env, cfg.env_config.action);
+    let env = GymEnv::new(py, cfg.env.env_id);
+    let adapter = ActionAdapter::resolve(&env, cfg.env.action);
     let obs_dim = env.get_flatten_observation_len();
     let action_dim = adapter.action_dim();
-    let latent_dim = cfg.model_config.latent_dim;
+    let latent_dim = cfg.model.latent_dim;
 
     if seed == base_seed {
         println!(
-            "[MyZero {}] obs_dim={obs_dim} action({}) gamma={gamma} sims={} reward_scale={reward_scale}",
-            cfg.env_config.env_id,
+            "[MyZero {}] obs={obs_dim} {} γ={gamma} sims={} r_scale={reward_scale}",
+            cfg.env.env_id,
             adapter.describe(),
             t.num_simulations,
         );
@@ -489,10 +547,13 @@ fn run_one_training(
     let mut ep_rewards: VecDeque<f32> = VecDeque::with_capacity(100);
     let mut total_steps: u64 = 0;
     let mut hit_solved: Option<(usize, u64)> = None;
+    let mut ckpt = BestTracker::new(&cfg.eval.checkpoint, seed, smoke);
 
-    let max_episodes = if smoke { 3 } else { cfg.run_config.max_episodes };
+    let max_episodes = if smoke { 3 } else { cfg.eval.max_episodes };
+    let mut last_ep = 0usize;
 
     for ep in 0..max_episodes {
+        last_ep = ep + 1;
         let t0 = std::time::Instant::now();
 
         // 温度退火：前 50% 局 t=1.0，后 50% 线性降到 0.25
@@ -518,6 +579,7 @@ fn run_one_training(
             gamma,
             cq,
             reward_scale,
+            self_play_episode_seed(cfg.eval.seed, ep),
             &mut rng,
         );
         // 原始 return（反缩放回报告）
@@ -560,7 +622,7 @@ fn run_one_training(
                     t.k_unroll,
                     t.td_steps,
                     gamma,
-                    &cfg.component_config,
+                    &cfg.components,
                     &mut rng,
                 )?;
                 loss_sum += l;
@@ -589,28 +651,31 @@ fn run_one_training(
             t0.elapsed().as_secs_f32()
         );
 
-        if !smoke && ep_rewards.len() >= 20 && (ep + 1) % cfg.run_config.eval_every == 0 {
+        if !smoke && ep_rewards.len() >= 20 && (ep + 1) % cfg.eval.eval_every == 0 {
             let eval_r = eval_episodes(
                 &env,
                 &model,
                 &adapter,
                 gamma,
-                cfg.run_config.eval_episodes,
+                cfg.eval.eval_episodes,
                 t.num_simulations,
+                cfg.eval.seed,
             );
             let recent: f32 = ep_rewards.iter().rev().take(20).sum::<f32>() / 20.0;
             println!(
-                "  贪心 eval {} 局均值={eval_r:.1}（self-play 近20均值={recent:.1} env_steps={total_steps}）",
-                cfg.run_config.eval_episodes
+                "  greedy eval {eval_r:.1} / {solved}（近20局 self-play {recent:.1}，steps={total_steps}）",
             );
+            ckpt.maybe_update(
+                &model.graph,
+                cfg,
+                eval_r,
+                ep + 1,
+                total_steps,
+                cfg.eval.eval_episodes,
+            )?;
             if eval_r >= solved {
                 hit_solved = Some((ep + 1, total_steps));
-                println!(
-                    "✅ MyZero {} 达标！greedy eval={eval_r:.1} ≥ {solved}（ep={} env_steps={}）",
-                    cfg.env_config.env_id,
-                    ep + 1,
-                    total_steps
-                );
+                println!("  ✅ 达标 ep={} steps={}", ep + 1, total_steps);
                 break;
             }
         }
@@ -619,73 +684,131 @@ fn run_one_training(
     let wall_secs = wall_t0.elapsed().as_secs_f32();
     let greedy_eval = if smoke {
         0.0
+    } else if ckpt.enabled() && ckpt.best_score().is_finite() {
+        ckpt.best_score()
     } else {
         eval_episodes(
             &env,
             &model,
             &adapter,
             gamma,
-            cfg.run_config.eval_episodes,
+            cfg.eval.eval_episodes,
             t.num_simulations,
+            cfg.eval.seed,
         )
     };
 
-    println!(
-        "[benchmark] seed={seed} env_steps={total_steps} wall_clock={wall_secs:.1}s greedy_eval={greedy_eval:.1}"
-    );
+    if !smoke {
+        let last_greedy = if ckpt.save_last_enabled() {
+            eval_episodes(
+                &env,
+                &model,
+                &adapter,
+                gamma,
+                cfg.eval.eval_episodes,
+                t.num_simulations,
+                cfg.eval.seed,
+            )
+        } else {
+            greedy_eval
+        };
+        ckpt.save_last(
+            &model.graph,
+            cfg,
+            last_ep,
+            total_steps,
+            last_greedy,
+            cfg.eval.eval_episodes,
+        )?;
+        ckpt.restore_best(&model.graph)?;
+    }
 
     if !smoke {
         let eff = hit_solved
-            .map(|(e, s)| format!("ep{e} / {s} env-steps"))
+            .map(|(e, s)| format!("ep{e}/{s} steps"))
             .unwrap_or_else(|| "未达标".to_string());
+        let final_greedy = if ckpt.enabled() && ckpt.best_score().is_finite() {
+            ckpt.best_score()
+        } else {
+            greedy_eval
+        };
         println!(
-            "📈 [样本效率] {} MyZero 到 {solved}: {eff}",
-            cfg.env_config.env_id
+            "📈 {} greedy={final_greedy:.1} | 门槛 {solved}: {eff} | {wall_secs:.1}s",
+            cfg.env.env_id,
         );
     }
 
     // Dynamics 诊断（DIAG=1）：对比 learned model 想象的 reward/value 与真实环境。
-    if !smoke && cfg.run_config.diagnose {
-        dynamics_diagnostic(&env, &model, &adapter, gamma, reward_scale, t.num_simulations);
+    if !smoke && cfg.eval.diagnose {
+        dynamics_diagnostic(
+            &env,
+            &model,
+            &adapter,
+            gamma,
+            reward_scale,
+            t.num_simulations,
+        );
     }
 
     env.close();
 
-    Ok(RunResult {
+    let final_greedy = if ckpt.enabled() && ckpt.best_score().is_finite() {
+        ckpt.best_score()
+    } else {
+        greedy_eval
+    };
+
+    let report = TrainReport {
         seed,
         wall_secs,
-        greedy_eval,
+        final_greedy,
         solved_at_steps: hit_solved.map(|(_, s)| s),
-    })
+        solved_threshold: solved,
+        best_greedy: if ckpt.best_score().is_finite() {
+            ckpt.best_score()
+        } else {
+            final_greedy
+        },
+        best_at_episode: ckpt.best_episode(),
+        checkpoint_path: ckpt.checkpoint_path(),
+    };
+    let mz = MyZero::from_parts(cfg.clone(), model, adapter).with_train_report(report.clone());
+    Ok((mz, report))
 }
 
-/// MyZero 统一入口：内部 `Python::attach` + 多 seed 训练 + 汇总。
-///
-/// 示例侧只需构造 [`MyZeroConfig`]（含 `apply_env_overrides`）后调用本函数。
-pub fn run(cfg: &MyZeroConfig) -> Result<(), GraphError> {
-    print_components(&cfg.component_config);
-    let smoke = cfg.run_config.smoke;
-    let n_seeds = cfg.run_config.seeds.max(1);
-    let base_seed: u64 = 42;
+/// 多 seed 训练；返回**最后一 seed** 的权重实例。
+pub(crate) fn train_all_seeds(mut cfg: MyZeroConfig) -> Result<MyZero, GraphError> {
+    cfg.merge_from_env();
+    print_components(&cfg.components);
+    let smoke = cfg.eval.smoke;
+    let n_runs = cfg.eval.seed_runs.max(1);
+    let base_seed = cfg.eval.seed;
 
     Python::attach(|py| {
-        let mut results = Vec::new();
-        for i in 0..n_seeds {
-            let seed = base_seed + i;
-            if n_seeds > 1 {
-                println!("\n===== seed {seed}（{}/{n_seeds}）=====", i + 1);
+        let mut summaries = Vec::new();
+        let mut last: Option<MyZero> = None;
+        for i in 0..n_runs {
+            let seed = base_seed.wrapping_add(i);
+            if n_runs > 1 {
+                println!("\n--- seed {seed} ({}/{n_runs}) ---", i + 1);
             }
-            let r = run_one_training(py, seed, cfg, base_seed)?;
-            results.push(r);
+            let (mz, report) = train_one_seed(py, seed, &cfg, base_seed)?;
+            summaries.push(SeedSummary {
+                seed: report.seed,
+                wall_secs: report.wall_secs,
+                greedy_eval: report.final_greedy,
+                solved_at_steps: report.solved_at_steps,
+            });
+            last = Some(mz);
         }
 
-        if n_seeds > 1 && !smoke {
-            print_multiseed_summary(&results, cfg.run_config.solved);
+        if n_runs > 1 && !smoke {
+            print_multiseed_summary(&summaries, cfg.eval.solved);
         }
 
         if smoke {
-            println!("[SMOKE] MyZero {} 管线验证通过", cfg.env_config.env_id);
+            println!("[SMOKE] {} 通过", cfg.env.env_id);
         }
-        Ok(())
+        last.ok_or_else(|| GraphError::InvalidOperation("MyZero: 无训练 seed".into()))
     })
 }

@@ -106,7 +106,10 @@ mod tests {
         let term = terminated(steps.clone());
         let t_term = compute_n_step_target(&term, 0, 5, gamma);
         let expected_term = 1.0 + 0.99 + 0.99_f32.powi(2);
-        assert!((t_term - expected_term).abs() < 1e-4, "terminated 不 bootstrap: {t_term}");
+        assert!(
+            (t_term - expected_term).abs() < 1e-4,
+            "terminated 不 bootstrap: {t_term}"
+        );
     }
 
     #[test]

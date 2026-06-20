@@ -9,13 +9,13 @@
 //! value/reward 采用 **categorical 表示**（canonical MuZero）：head 输出 support 上的
 //! logits，训练用 two-hot 目标 + 交叉熵，搜索期取 softmax 期望并 h⁻¹ 还原标量。
 
+use super::consistency::negative_cosine_similarity;
+use super::loss;
+use super::value_encoding::{SupportConfig, scalar_to_two_hot, two_hot_to_scalar};
 use crate::nn::{
     Graph, GraphError, IntoVar, Linear, Module, Var, VarActivationOps, VarLossOps, VarReduceOps,
     VarShapeOps,
 };
-use super::consistency::negative_cosine_similarity;
-use super::loss;
-use super::value_encoding::{SupportConfig, scalar_to_two_hot, two_hot_to_scalar};
 use crate::rl::mcts::{ActionPayload, Dynamics, DynamicsOutput};
 use crate::tensor::Tensor;
 

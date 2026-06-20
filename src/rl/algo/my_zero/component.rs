@@ -3,12 +3,12 @@
 //! 每个开关对应一个增量组件，用于 A/B 消融实验。
 //! 全关 = canonical MuZero（base）；逐个开启 = 消融序列。
 
-/// 组件开关集合（消融）
+/// 消融组件开关集合
 ///
 /// 全部 `false` / `0.0` 等价于 canonical MuZero（base）。
 /// 消融过程中逐个开启，验证每个组件的增量贡献。
 #[derive(Debug, Clone, PartialEq)]
-pub struct ComponentConfig {
+pub struct Components {
     /// 自监督 consistency loss（SimSiam stop-grad）
     pub consistency: bool,
     /// value prefix（LSTM 累计 reward 前缀，hidden 穿 MCTS 树）
@@ -28,7 +28,7 @@ pub struct ComponentConfig {
     pub cq_c_scale: f32,
 }
 
-impl Default for ComponentConfig {
+impl Default for Components {
     fn default() -> Self {
         Self {
             consistency: false,
@@ -43,7 +43,7 @@ impl Default for ComponentConfig {
     }
 }
 
-impl ComponentConfig {
+impl Components {
     /// 全关（= canonical MuZero，base）
     pub fn base() -> Self {
         Self::default()
@@ -61,7 +61,7 @@ mod tests {
 
     #[test]
     fn default_is_all_off() {
-        let c = ComponentConfig::default();
+        let c = Components::default();
         assert!(!c.consistency);
         assert!(!c.value_prefix);
         assert!(!c.target_net);
@@ -72,7 +72,7 @@ mod tests {
 
     #[test]
     fn cq_defaults_match_cartpole() {
-        let c = ComponentConfig::default();
+        let c = Components::default();
         assert!((c.cq_c_visit - 50.0).abs() < 1e-6);
         assert!((c.cq_c_scale - 0.02).abs() < 1e-6);
     }

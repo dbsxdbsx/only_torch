@@ -6,7 +6,7 @@
 //! 配置见 [`TargetConfig`]：`sync_interval > 0` 走 hard copy（每 interval 步），
 //! `== 0` 走 EMA（每步用 `tau`）。
 //!
-//! 注：目前作为可用组件入库（消融开关 `ComponentConfig::target_net`），尚未接入训练循环——
+//! 注：目前作为可用组件入库（消融开关 `Components::target_net`），尚未接入训练循环——
 //! 接线属后续消融工作。
 
 use crate::nn::Var;

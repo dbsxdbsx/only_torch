@@ -1,16 +1,36 @@
 //! MyZero 统一配置（5 层，按关注点分组）
 //!
 //! 一个 config 适配所有环境。分层原则：
-//! - [`EnvConfig`]：env I/O 适配（env_id / reward_scale / 动作方案）——**事实**让库问 env，
+//! - [`EnvSettings`]：env I/O 适配（env_id / reward_scale / 动作方案）——**事实**让库问 env，
 //!   **选择**才让用户填（动作的离散/连续/范围是 env 事实，库自动推断，见 [`crate::rl::algo::my_zero::action`]）。
-//! - [`ModelConfig`]：网络容量（latent_dim ...）。
-//! - [`TrainConfig`]：训练超参（gamma/lr/k_unroll/sims/buffer ...），MyZero 自有。
-//! - [`ComponentConfig`]：消融组件开关。
-//! - [`RunConfig`]：评测 / 跑法（solved/seeds/max_episodes/eval_every/smoke/diagnose）。
+//! - [`ModelSettings`]：网络容量（latent_dim ...）。
+//! - [`TrainSettings`]：训练超参（gamma/lr/k_unroll/sims/buffer ...），MyZero 自有。
+//! - [`Components`]：消融组件开关。
+//! - [`EvalSettings`]：评测 / 跑法（solved / seed / max_episodes / …）。
 //!
-//! 判据（字段归层）：**改了它训练出的 agent 会不会变？** 会变→`train`；不会变（只改这次怎么跑/怎么量）→`run`。
+//! 判据（字段归层）：**改了它训练出的 agent 会不会变？** 会变→`train`；不会变（只改这次怎么跑/怎么量）→`eval`。
 
-use super::component::ComponentConfig;
+use super::component::Components;
+
+/// 默认随机种子（训练 + eval + run + 环境 reset 派生自此）。
+pub const DEFAULT_SEED: u64 = 42;
+
+/// 与 [`DEFAULT_SEED`] 相同；保留别名以免外部引用断裂。
+pub const DEFAULT_TRAIN_SEED: u64 = DEFAULT_SEED;
+pub const DEFAULT_EVAL_SEED: u64 = DEFAULT_SEED;
+pub const DEFAULT_ROLLOUT_SEED: u64 = DEFAULT_SEED;
+
+/// greedy eval / run 第 `i` 局的 `env.reset` 种子。
+#[inline]
+pub(crate) fn greedy_episode_seed(base: u64, episode_index: u64) -> u64 {
+    base.wrapping_add(episode_index)
+}
+
+/// self-play 训练第 `ep` 局（从 0 计）的 `env.reset` 种子；与 greedy 序列错开命名空间。
+#[inline]
+pub(crate) fn self_play_episode_seed(base: u64, ep: usize) -> u64 {
+    base.wrapping_add(1_000_000 + ep as u64)
+}
 
 /// 连续 / 混合动作的处理方案（仅当 env 非纯离散时生效；纯离散 env 忽略）。
 ///
@@ -27,7 +47,7 @@ pub enum ActionPlan {
 
 /// env I/O 适配层
 #[derive(Debug, Clone, PartialEq)]
-pub struct EnvConfig {
+pub struct EnvSettings {
     /// Gymnasium 环境 ID（如 `"CartPole-v1"` / `"Pendulum-v1"`）
     pub env_id: &'static str,
     /// reward 缩放（1.0 = 原样；Pendulum 用 0.1 使累计 value 落入 categorical support 域）
@@ -36,7 +56,8 @@ pub struct EnvConfig {
     pub action: ActionPlan,
 }
 
-impl Default for EnvConfig {
+impl Default for EnvSettings {
+    /// 库内默认（测试 / `MyZeroConfig::default`）；公开 API 请用 [`crate::rl::algo::my_zero::MyZero::new`]。
     fn default() -> Self {
         Self {
             env_id: "CartPole-v1",
@@ -48,12 +69,12 @@ impl Default for EnvConfig {
 
 /// 网络容量层
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ModelConfig {
+pub struct ModelSettings {
     /// learned latent（隐状态）维度。低维 env 64 足够；图像 obs 需更大/带结构。
     pub latent_dim: usize,
 }
 
-impl Default for ModelConfig {
+impl Default for ModelSettings {
     fn default() -> Self {
         Self { latent_dim: 64 }
     }
@@ -61,7 +82,7 @@ impl Default for ModelConfig {
 
 /// 训练超参层（MyZero 自有）
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TrainConfig {
+pub struct TrainSettings {
     /// 折扣因子 γ
     pub gamma: f32,
     /// K 步 unroll 展开步数
@@ -84,7 +105,7 @@ pub struct TrainConfig {
     pub reanalyze_fraction: f32,
 }
 
-impl Default for TrainConfig {
+impl Default for TrainSettings {
     /// CartPole 级（低维向量 obs / CPU only）合理默认；换环境覆盖字段。
     fn default() -> Self {
         Self {
@@ -102,13 +123,36 @@ impl Default for TrainConfig {
     }
 }
 
+/// 训练期 best checkpoint（挂在 periodic greedy eval；`SMOKE` 时跳过）
+#[derive(Debug, Clone, PartialEq)]
+pub struct CheckpointSettings {
+    /// 根目录；`None` = 不写盘
+    pub dir: Option<std::path::PathBuf>,
+    /// greedy 均值至少提升这么多才覆盖 best（默认 0 = 创新高即存）
+    pub min_delta: f32,
+    /// 训练结束是否额外写 `last`（默认否）
+    pub save_last: bool,
+}
+
+impl Default for CheckpointSettings {
+    fn default() -> Self {
+        Self {
+            dir: None,
+            min_delta: 0.0,
+            save_last: false,
+        }
+    }
+}
+
 /// 评测 / 跑法层（改这里**不改算法**，只改这次怎么驱动/判定）
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct RunConfig {
+#[derive(Debug, Clone, PartialEq)]
+pub struct EvalSettings {
     /// greedy(temp=0) eval 达标门槛
     pub solved: f32,
-    /// 多 seed 数（取中位数；从 base_seed=42 起递增）
-    pub seeds: u64,
+    /// 随机种子：权重初始化、self-play / MCTS、greedy eval / run、环境 `reset` 均由此派生
+    pub seed: u64,
+    /// 多 seed 回归跑法重复次数（仅 `SEEDS` 环境变量；公开 API 不暴露）
+    pub(crate) seed_runs: u64,
     /// 最大训练局数（smoke 时强制为 3）
     pub max_episodes: usize,
     /// 每 N 局 greedy eval 一次
@@ -119,18 +163,22 @@ pub struct RunConfig {
     pub smoke: bool,
     /// dynamics 诊断（对比 model 想象 vs 真实 reward/value）
     pub diagnose: bool,
+    /// best-only checkpoint
+    pub checkpoint: CheckpointSettings,
 }
 
-impl Default for RunConfig {
+impl Default for EvalSettings {
     fn default() -> Self {
         Self {
             solved: 475.0,
-            seeds: 1,
+            seed: DEFAULT_SEED,
+            seed_runs: 1,
             max_episodes: 2000,
             eval_every: 25,
             eval_episodes: 10,
             smoke: false,
             diagnose: false,
+            checkpoint: CheckpointSettings::default(),
         }
     }
 }
@@ -139,123 +187,133 @@ impl Default for RunConfig {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MyZeroConfig {
     /// env I/O 适配
-    pub env_config: EnvConfig,
+    pub env: EnvSettings,
     /// 网络容量
-    pub model_config: ModelConfig,
+    pub model: ModelSettings,
     /// 训练超参
-    pub train_config: TrainConfig,
+    pub train: TrainSettings,
     /// 消融组件
-    pub component_config: ComponentConfig,
+    pub components: Components,
     /// 评测 / 跑法
-    pub run_config: RunConfig,
+    pub eval: EvalSettings,
 }
 
 impl Default for MyZeroConfig {
     /// CartPole-v1 级 CPU 友好起点（组件全关 = base）。
     fn default() -> Self {
         Self {
-            env_config: EnvConfig::default(),
-            model_config: ModelConfig::default(),
-            train_config: TrainConfig::default(),
-            component_config: ComponentConfig::default(),
-            run_config: RunConfig::default(),
+            env: EnvSettings::default(),
+            model: ModelSettings::default(),
+            train: TrainSettings::default(),
+            components: Components::default(),
+            eval: EvalSettings::default(),
         }
     }
 }
 
 impl MyZeroConfig {
-    /// 从环境变量统一覆盖（消融 / 调参 / 跑法旋钮集中在此一处）。
-    ///
-    /// 支持：
-    /// - 组件：`CONSISTENCY` / `VALUE_PREFIX` / `TARGET_NET` / `SVE=<f32>` / `CQ` / `CQ_SCALE=<f32>` / `CQ_VISIT=<f32>`
-    /// - 训练：`SIMS=<u32>` / `REANALYZE=<f32>` / `GAMMA=<f32>` / `LR=<f32>`
-    /// - 跑法：`MAX_EP=<usize>` / `SEEDS=<u64>` / `SMOKE` / `DIAG` / `SOLVED=<f32>`
-    /// - 动作 / env：`NUM_ACTIONS=<usize>`（仅 `Discretize`）/ `RSCALE=<f32>`
-    pub fn apply_env_overrides(&mut self) {
+    /// 合并 `CONSISTENCY` / `CQ` / `SIMS` / `SMOKE` 等环境变量（[`train_all_seeds`] 内自动调用）。
+    pub(crate) fn merge_from_env(&mut self) {
         use std::env::var;
 
+        let mut touched: Vec<&'static str> = Vec::new();
+
+        macro_rules! flag {
+            ($name:expr, $body:expr) => {
+                if var($name).is_ok() {
+                    touched.push($name);
+                    $body
+                }
+            };
+        }
+
         // ---- 组件 ----
-        if var("CONSISTENCY").is_ok() {
-            self.component_config.consistency = true;
-        }
-        if var("VALUE_PREFIX").is_ok() {
-            self.component_config.value_prefix = true;
-        }
-        if var("TARGET_NET").is_ok() {
-            self.component_config.target_net = true;
-        }
+        flag!("CONSISTENCY", self.components.consistency = true);
+        flag!("VALUE_PREFIX", self.components.value_prefix = true);
+        flag!("TARGET_NET", self.components.target_net = true);
         if let Ok(v) = var("SVE")
             && let Ok(w) = v.parse::<f32>()
         {
-            self.component_config.sve_weight = w;
+            touched.push("SVE");
+            self.components.sve_weight = w;
         }
-        if var("CQ").is_ok() {
-            self.component_config.completed_q_target = true;
-        }
+        flag!("CQ", self.components.completed_q_target = true);
         if let Ok(v) = var("CQ_SCALE")
             && let Ok(s) = v.parse::<f32>()
         {
-            self.component_config.cq_c_scale = s;
+            touched.push("CQ_SCALE");
+            self.components.cq_c_scale = s;
         }
         if let Ok(v) = var("CQ_VISIT")
             && let Ok(s) = v.parse::<f32>()
         {
-            self.component_config.cq_c_visit = s;
+            touched.push("CQ_VISIT");
+            self.components.cq_c_visit = s;
         }
 
         // ---- 训练 ----
         if let Ok(v) = var("SIMS")
             && let Ok(n) = v.parse::<u32>()
         {
-            self.train_config.num_simulations = n;
+            touched.push("SIMS");
+            self.train.num_simulations = n;
         }
         if let Ok(v) = var("REANALYZE")
             && let Ok(f) = v.parse::<f32>()
         {
-            self.train_config.reanalyze_fraction = f.clamp(0.0, 1.0);
+            touched.push("REANALYZE");
+            self.train.reanalyze_fraction = f.clamp(0.0, 1.0);
         }
         if let Ok(v) = var("GAMMA")
             && let Ok(g) = v.parse::<f32>()
         {
-            self.train_config.gamma = g;
+            touched.push("GAMMA");
+            self.train.gamma = g;
         }
         if let Ok(v) = var("LR")
             && let Ok(lr) = v.parse::<f32>()
             && lr.is_finite()
             && lr > 0.0
         {
-            self.train_config.lr = lr;
+            touched.push("LR");
+            self.train.lr = lr;
         }
 
-        // ---- 跑法 ----
+        // ---- 评测 / 跑法 ----
         if let Ok(v) = var("MAX_EP")
             && let Ok(n) = v.parse::<usize>()
         {
-            self.run_config.max_episodes = n;
+            touched.push("MAX_EP");
+            self.eval.max_episodes = n;
         }
         if let Ok(v) = var("SEEDS")
             && let Ok(n) = v.parse::<u64>()
         {
-            self.run_config.seeds = n.max(1);
+            touched.push("SEEDS");
+            self.eval.seed_runs = n.max(1);
         }
-        if var("SMOKE").is_ok() {
-            self.run_config.smoke = true;
+        if let Ok(v) = var("SEED")
+            && let Ok(s) = v.parse::<u64>()
+        {
+            touched.push("SEED");
+            self.eval.seed = s;
         }
-        if var("DIAG").is_ok() {
-            self.run_config.diagnose = true;
-        }
+        flag!("SMOKE", self.eval.smoke = true);
+        flag!("DIAG", self.eval.diagnose = true);
         if let Ok(v) = var("SOLVED")
             && let Ok(s) = v.parse::<f32>()
         {
-            self.run_config.solved = s;
+            touched.push("SOLVED");
+            self.eval.solved = s;
         }
 
         // ---- 动作 / env ----
         if let Ok(v) = var("NUM_ACTIONS")
             && let Ok(n) = v.parse::<usize>()
             && n >= 1
-            && let ActionPlan::Discretize { buckets } = &mut self.env_config.action
+            && let ActionPlan::Discretize { buckets } = &mut self.env.action
         {
+            touched.push("NUM_ACTIONS");
             *buckets = n;
         }
         if let Ok(v) = var("RSCALE")
@@ -263,7 +321,17 @@ impl MyZeroConfig {
             && s.is_finite()
             && s > 0.0
         {
-            self.env_config.reward_scale = s;
+            touched.push("RSCALE");
+            self.env.reward_scale = s;
+        }
+
+        let ablation: Vec<&str> = touched
+            .iter()
+            .copied()
+            .filter(|&k| k != "SMOKE" && k != "DIAG")
+            .collect();
+        if !ablation.is_empty() {
+            println!("[MyZero] 旋钮: {}", ablation.join(", "));
         }
     }
 }
@@ -275,17 +343,17 @@ mod tests {
     #[test]
     fn default_is_base() {
         let cfg = MyZeroConfig::default();
-        assert_eq!(cfg.component_config, ComponentConfig::base(), "默认组件全关 = base");
-        assert_eq!(cfg.train_config, TrainConfig::default());
-        assert_eq!(cfg.env_config.env_id, "CartPole-v1");
-        assert!((cfg.env_config.reward_scale - 1.0).abs() < 1e-6);
-        assert_eq!(cfg.env_config.action, ActionPlan::Auto);
-        assert_eq!(cfg.model_config.latent_dim, 64);
+        assert_eq!(cfg.components, Components::base(), "默认组件全关 = base");
+        assert_eq!(cfg.train, TrainSettings::default());
+        assert_eq!(cfg.env.env_id, "CartPole-v1");
+        assert!((cfg.env.reward_scale - 1.0).abs() < 1e-6);
+        assert_eq!(cfg.env.action, ActionPlan::Auto);
+        assert_eq!(cfg.model.latent_dim, 64);
     }
 
     #[test]
     fn train_default_is_cartpole_friendly() {
-        let t = TrainConfig::default();
+        let t = TrainSettings::default();
         assert_eq!(t.num_simulations, 50);
         assert_eq!(t.k_unroll, 5);
         assert!((t.gamma - 0.997).abs() < 1e-6);
@@ -293,15 +361,22 @@ mod tests {
     }
 
     #[test]
-    fn single_component_override() {
+    fn eval_default_seed() {
+        let e = EvalSettings::default();
+        assert_eq!(e.seed, DEFAULT_SEED);
+        assert_eq!(e.seed_runs, 1);
+    }
+
+    #[test]
+    fn component_toggle() {
         let cfg = MyZeroConfig {
-            component_config: ComponentConfig {
+            components: Components {
                 consistency: true,
-                ..ComponentConfig::default()
+                ..Components::default()
             },
             ..MyZeroConfig::default()
         };
-        assert!(cfg.component_config.consistency);
-        assert!(!cfg.component_config.value_prefix, "只开 consistency，其余不变");
+        assert!(cfg.components.consistency);
+        assert!(!cfg.components.value_prefix, "只开 consistency，其余不变");
     }
 }

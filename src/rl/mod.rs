@@ -15,7 +15,7 @@
 //! - [`GymEnv`] - Gymnasium 环境封装，支持离散/连续/混合动作空间
 //! - [`Transition`] - 单步交互数据（terminated + truncated 分离）
 //! - [`RolloutStep`] - 单步 on-policy 采集数据（PPO / A2C 族）
-//! - [`SelfPlayGame`] - 整局 self-play 样本（AlphaZero / MuZero / EZ-V2）
+//! - [`SelfPlayGame`] - 整局 self-play 样本（MyZero / MCTS）
 //! - [`ReplayBuffer`] - 泛型经验回放缓冲区（有放回采样）
 //! - [`RolloutBuffer`] - 固定 n_steps 的 on-policy 采集缓冲区
 //! - [`MinariDataset`] - Minari 离线 RL 数据集封装

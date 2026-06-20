@@ -64,7 +64,10 @@ mod tests {
         let prefix = reward_prefix_targets(&r);
         let delta = prefix_to_delta(&prefix);
         for (a, b) in delta.iter().zip(r.iter()) {
-            assert!((a - b).abs() < 1e-6, "prefix 增量应还原单步 reward：{a} vs {b}");
+            assert!(
+                (a - b).abs() < 1e-6,
+                "prefix 增量应还原单步 reward：{a} vs {b}"
+            );
         }
     }
 }

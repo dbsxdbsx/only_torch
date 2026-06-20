@@ -107,7 +107,10 @@ mod tests {
         for step in &game.steps {
             assert_eq!(step.policy_target.len(), 2);
             let sum: f32 = step.policy_target.iter().sum();
-            assert!((sum - 1.0).abs() < 1e-4, "policy_target 应为概率分布, sum={sum}");
+            assert!(
+                (sum - 1.0).abs() < 1e-4,
+                "policy_target 应为概率分布, sum={sum}"
+            );
             let rv = step.root_value.expect("root_value 应被刷新");
             assert!(rv < 50.0, "root_value 应被重算, got {rv}");
             assert_eq!(step.reward, 1.0);

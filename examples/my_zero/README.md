@@ -53,7 +53,7 @@
 | **稳（stable）** | 多 seed（≥3）都达标，取中位数 | 排除单 seed spike |
 | **快（fast）** | env-steps-to-solved 为主，wall-clock 为辅 | 同算法消融看 wall-clock；跨算法看 env-step（样本效率） |
 
-> **首要评价指标**：算法「更好」≜ **达到同一性能门槛所需的真实环境交互（env-steps）更少**。有取舍时以此为准（产品文档里常称 North Star /「北极星指标」，本项目统一用「首要评价指标」）。理由：真实交互往往昂贵 / 危险 / 慢，model-based 的全部价值就是把试错从真实世界搬进脑内模型。由此三条推论：
+> **首要评价指标**：算法「更好」≜ **达到同一性能门槛所需的真实环境交互（env-steps）更少**。有取舍时以此为准（产品文档里常称 North Star /「北极星指标」，本项目统一用「首要评价指标」）。理由：真实交互往往昂贵 / 危险 / 慢，model-based 的全部价值就是把试f错从真实世界搬进脑内模型。由此三条推论：
 >
 > 1. **env-steps 第一**：即使 wall-clock 增加，只要 env-steps 下降、且增量开销落在**模型侧**（搜索 / 训练），仍算有意义的更新——模型侧开销可经算法 / 并行 / 硬件优化压缩。
 > 2. **wall-clock 是约束、不是目标**：它是「研究迭代速度」的代理。本项目 **CPU-only**，模型侧并非无限可压，故口径里的「为辅」不可丢。
@@ -95,6 +95,6 @@ MyZero 采用 MuZero 的三网络架构：
 ## 代码组织
 
 - `src/rl/algo/my_zero/`：**自包含**的 MyZero 库，也是项目**唯一**的 `*Zero` 实现——配置（5 层）+ 网络（`network.rs`）+ 训练循环（`runner.rs`）+ 全部算法组件（value_encoding / value_transform / n_step / reanalyze / loss / consistency / value_prefix / target_net / sve）。
-- `examples/my_zero/*/main.rs`：thin 示例（只填 config + 调 `run`，~40 行）。
+- `examples/my_zero/*/main.rs`：声明 `env_id` + 必填项 + `.save_best(path).train()?`；链式 `.eval(n)?` / `.run(Some(1))?`（`None`=无限演示）/ `.load(path)?` 见 `MyZero` API。
 
 > 组件的论文出处（MuZero / EfficientZero / SimSiam / Gumbel 等）见上方矩阵脚注——那是**学术溯源**，与代码依赖无关。

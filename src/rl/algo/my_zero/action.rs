@@ -38,16 +38,16 @@ impl ActionAdapter {
     /// # Panics
     /// - `Auto` 用于连续 env（连续需指定 `Discretize`/未来 `Sampled`）。
     /// - `Discretize` 用于离散 env（离散无需离散化）。
-    /// - 混合（Tuple）动作空间（Phase 0 暂不支持）。
+    /// - 混合（Tuple）动作空间尚未支持。
     pub fn resolve(env: &GymEnv, plan: ActionPlan) -> Self {
         let ranges = env.get_all_action_valid_range();
         assert!(
             !ranges.is_empty(),
-            "MyZero: env 未暴露任何动作维度（混合 Tuple 动作 Phase 0 暂不支持）"
+            "MyZero: env 未暴露任何动作维度（混合 Tuple 动作尚未支持）"
         );
         assert!(
             ranges.len() == 1,
-            "MyZero: 多维 / 混合动作空间 Phase 0 暂不支持（仅单维离散或单维连续）"
+            "MyZero: 多维 / 混合动作空间尚未支持（仅单维离散或单维连续）"
         );
         let range = &ranges[0];
 
@@ -55,7 +55,7 @@ impl ActionAdapter {
             ActionPlan::Auto => {
                 assert!(
                     range.is_discrete_action(),
-                    "MyZero: 连续动作 env 需用 ActionPlan::Discretize{{buckets}}（Auto 仅用于离散 env）"
+                    "MyZero: 连续动作 env 须声明 .discretize(buckets)（默认 Auto 仅适用于离散 env）"
                 );
                 let n = range.get_discrete_action_selectable_num();
                 Self {
