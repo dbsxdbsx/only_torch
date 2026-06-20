@@ -1,7 +1,7 @@
 # MyZero 算法纲领与路线决策
 
 > **定位**：记录 MyZero 及 RL 母算法选型的**战略层**结论——我们讨论过什么、为什么可能做、为什么大概率不做。  
-> **不是**实施 checklist（见 [RL 路线图 §8](./rl_roadmap.md#8-v025-myzero-统一算法2026-06-16-方向定稿)）；**不是**消融实测表（见 [MyZero 示例总览](../../examples/my_zero/README.md)）。  
+> **不是**实施 checklist（见 [RL 路线图 §8](./rl_roadmap.md#8-v025-myzero-统一算法2026-06-16-方向定稿)）；**不是**消融实测表（见 [MyZero 示例总览](../../examples/my_zero/README.md) — 组件×环境矩阵）。**组件→论文**对照见本文 §4.1。  
 > **创建日期**：2026-06-20 · **状态**：讨论沉淀，条目可随新证据修订
 
 ---
@@ -10,10 +10,10 @@
 
 | 文档 | 回答什么 |
 |------|----------|
-| **本文** | 算法哲学、文献谱系、做/不做决策、环境选型 |
-| [rl_roadmap.md §8](./rl_roadmap.md#8-v025-myzero-统一算法2026-06-16-方向定稿) | v0.25 阶段、代码组织、消融顺序 |
+| **本文** | 算法哲学、文献谱系、做/不做决策、环境选型；**组件→论文**见 §4.1 |
+| [rl_roadmap.md §8](./rl_roadmap.md#8-v025-myzero-统一算法2026-06-16-方向定稿) | v0.25 阶段、代码组织、消融顺序、改动纪律 |
 | [examples/my_zero/README.md](../../examples/my_zero/README.md) | 组件×环境实测矩阵、命令、门禁 |
-| [rl.instructions.md](../../.github/instructions/rl.instructions.md) | 改 RL 代码时的 agent 约束 |
+| [rl.instructions.md](../../.github/instructions/rl.instructions.md) | 改 RL 代码时的 agent 约束（含搬运≠改进） |
 
 ---
 
@@ -81,6 +81,24 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 
 **ANTS 是不是「AZ + MaxEnt 最好结合」？** —— 在「MaxEnt-MCTS + 在线闭环 + Atari」窄口径里是里程碑；**不是** 2026 全问题终局。同线后继看 **DENTS**；官方 Zero 演进看 **Gumbel / Stochastic / BetaZero**。
 
+### 4.1 组件文献对照（单一事实源）
+
+> 组件×环境**实测状态**见 [MyZero 示例 README — 内部组件进展](../../examples/my_zero/README.md#内部组件进展团队--promote-时改-recipers)。本节只回答「每个库内组件对应哪篇论文」。
+
+| 组件 | 论文（英文原标题 · 年份 · arXiv） | 备注 |
+|------|-----------------------------------|------|
+| **base**（MuZero 三网络 + latent MCTS） | Schrittwieser et al., *Mastering Atari, Go, Chess and Shogi by Planning with a Learned Model* · 2020 · [1911.08265](https://arxiv.org/abs/1911.08265) | categorical value/reward、K 步 unroll、visit 蒸馏 |
+| **consistency** | Ye et al., *Mastering Atari Games with Limited Data*（EfficientZero）· 2021 · [2111.00176](https://arxiv.org/abs/2111.00176) | EZ 自监督一致性 |
+| | Chen & He, *Exploring Simple Siamese Representation Learning with SimSiam* · 2020 · [2011.10566](https://arxiv.org/abs/2011.10566) | 一致性 **loss 实现**参照（非 EZ 原文独有） |
+| **reconstruction** | Scholz et al., *Improving Model-Based Reinforcement Learning with Internal State Representations through Self-Supervision* · 2021 · [2102.05599](https://arxiv.org/abs/2102.05599) | 独立于 EZ 谱系 |
+| **reanalyze** | Ye et al., *Mastering Atari Games with Limited Data*（EfficientZero）· 2021 · [2111.00176](https://arxiv.org/abs/2111.00176) | position 级 MCTS 重搜 + buffer 写回；MuZero 系亦有同源机制 |
+| **value_prefix** | 同上（EfficientZero）· [2111.00176](https://arxiv.org/abs/2111.00176) | LSTM reward 前缀 + hidden 穿树 |
+| **target_net** | 同上（EfficientZero）· [2111.00176](https://arxiv.org/abs/2111.00176) | hard / EMA 同步 target network |
+| **SVE** | 同上（EfficientZero）· [2111.00176](https://arxiv.org/abs/2111.00176) | search value 修正 stale target；现实现为固定权重，自适应 mixed target 见 §5.1 |
+| **completedQ** | Danihelka et al., *Policy Improvement by Planning with Gumbel*（Gumbel MuZero）· 2022 · [2111.00301](https://arxiv.org/abs/2111.00301) | 训练侧策略 target（Eq.10–12） |
+| **Gumbel-root** | 同上（Gumbel MuZero）· [2111.00301](https://arxiv.org/abs/2111.00301) | 搜索侧序贯减半（训练循环未接） |
+| **连续采样候选**（Sampled MuZero） | Hubert et al., *Learning and Planning in Complex Action Spaces with Deep Neural Networks* · 2021 · [2010.08636](https://arxiv.org/abs/2010.08636) | 大/连续动作空间采样 K 候选 |
+
 ---
 
 ## 5. 决策表：可能做 / 暂缓 / 不做
@@ -93,7 +111,11 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 |----|------|------|
 | consistency | ✅ CartPole 已验收 | EfficientZero（Ye et al. 2021）+ SimSiam（Chen & He 2020） |
 | reconstruction | ✅ CartPole 已验收 | Scholz et al. 2021 *Improving Model-Based RL with Internal State Representations through Self-Supervision*（arXiv:2102.05599）；seed=42 ~11.7k env-steps |
-| value_prefix / target_net / SVE | ✅ 已在库，消融驱动 | EZ 谱系；CartPole value_prefix ❌ |
+| value_prefix / target_net | ✅ 已在库，消融驱动 | EZ 谱系；CartPole value_prefix ❌ |
+| SVE | ✅ 已在库，消融驱动 | 现固定权重 blend stale target；CartPole 训练循环待接 |
+| SVE 自适应 mixed target | 🔲 Phase 2 改进候选 | EZ 论文为自适应 mixed target，非固定权重；须单独消融 |
+| consistency 正规化（SimSiam target encoder + EMA） | 🔲 Phase 2 改进候选 | 现简化实现 CartPole 有效；见 [Pendulum 诊断 issue](../../.issue/items/pendulum_failure_diagnosis.md) §六 |
+| value head 上游 target（Pendulum 坍缩） | 🔲 Phase 2 改进候选 | head 容量已证伪；根因在上游 n-step / 搜索，见同上 issue |
 | completedQ / Gumbel-root | 🔲 Pendulum 起重点 | DM 官方 policy improvement 线 |
 | Sampled MuZero（高维连续候选） | ⏸ 离散化够用后再上 | CartPole/Pendulum 规模暂不需要 |
 | BTS/DENTS 式 backup | 🔲 仅当动 `SearchPolicy` | 避免 MENTS 式「max-entropy 最优 ≠ 回报最优」 |
@@ -153,3 +175,5 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 | 2026-06-20 | 初版：沉淀 SAC vs MyZero、MaxEnt 谱系、ANTS/BTS/Gumbel/BetaZero、POMDP/greedy 口径、Klein 论文评估、双轨决策 |
 | 2026-06-20 | §2 用语：「北极星」拆为 **核心原则** + **首要评价指标**（env-steps-to-solved） |
 | 2026-06-21 | §5.1 / §6：CartPole reconstruction 验收 ~11.7k env-steps（consistency + reconstruction） |
+| 2026-06-21 | §5.1：拆分 SVE / 补 Phase 2 改进候选（SVE 自适应、consistency 正规化、value 上游 target） |
+| 2026-06-21 | §4.1：组件文献对照迁入本文（单一事实源）；示例 README 改链入 |

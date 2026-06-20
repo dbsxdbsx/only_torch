@@ -603,7 +603,7 @@ cargo build --features blas-openblas
 
 ### 🟢 当前主线（v0.19.0 后）
 
-**强化学习** — 详见 [RL 路线图](.doc/design/rl_roadmap.md) 与 [AGENTS.md — 当前版本与焦点](AGENTS.md#当前版本与焦点)
+**强化学习** — 详见 [MyZero 算法纲领](.doc/design/my_zero_algorithm_vision.md)、[RL 路线图 §8](.doc/design/rl_roadmap.md#8-v025-myzero-统一算法2026-06-16-方向定稿)、[MyZero 示例总览](examples/my_zero/README.md) 与 [AGENTS.md — 当前版本与焦点](AGENTS.md#当前版本与焦点)
 
 | 优先级 | 任务 | 入口 |
 |--------|------|------|
@@ -666,7 +666,8 @@ cargo build --features blas-openblas
 - [API 分层与种子管理设计](.doc/design/api_layering_and_seed_design.md) - Graph seed 传播机制、Layer seed 确定性保证、演化系统 seed 管理
 - [优化器架构设计](.doc/design/optimizer_architecture_design.md) - SGD / Adam 优化器的内部实现和 API 设计
 - [概率分布模块设计](.doc/design/distributions_design.md) - Categorical / Normal / TanhNormal 三种分布的 API 设计原则（Var vs Tensor、构造时缓存、梯度追踪策略）
-- [强化学习路线图](.doc/design/rl_roadmap.md) - RL 模块当前状态、设计决策、SAC 统一公式技巧、未来方向
+- [MyZero 算法纲领](.doc/design/my_zero_algorithm_vision.md) - MyZero 战略层：做/不做、文献谱系、双轨架构、首要评价指标
+- [强化学习路线图](.doc/design/rl_roadmap.md) - RL 模块当前状态、设计决策、SAC 统一公式技巧、MyZero §8 实施顺序
 - [MatrixSlow 项目识别文档](.doc/reference/python_MatrixSlow_pid.md) - 基于 MatrixSlow 的 Python 深度学习框架分析，包含计算图、自动求导、静态图执行等核心概念的详细说明
 
 ## 参考资料

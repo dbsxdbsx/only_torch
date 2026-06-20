@@ -77,7 +77,7 @@ just example-cartpole-sac      # RL 示例，需 Python + gymnasium
 - Node 与 Layer 的边界：[节点与层边界设计](.doc/design/node_vs_layer_design.md)
 - 演化系统：[神经架构演化设计](.doc/design/neural_architecture_evolution_design.md)
 - 记忆 / RNN / Attention（含 Phase 进度与留坑表）：[记忆机制设计](.doc/design/memory_mechanism_design.md)
-- 强化学习（当前主线）：[RL 路线图](.doc/design/rl_roadmap.md)、[Python 环境配置](.doc/rl_python_env_setup.md)
+- 强化学习（当前主线）：[MyZero 算法纲领](.doc/design/my_zero_algorithm_vision.md)、[RL 路线图](.doc/design/rl_roadmap.md)、[MyZero 示例总览](examples/my_zero/README.md)、[Python 环境配置](.doc/rl_python_env_setup.md)
 - 空间视觉任务路线：[空间视觉任务路线图](.doc/design/spatial_vision_tasks_roadmap.md)
 - DataLoader / 变长序列：[数据加载设计](.doc/design/data_loader_design.md)
 - 开发环境 / rust-analyzer：[开发环境配置](.doc/dev_environment_setup.md)
