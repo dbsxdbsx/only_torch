@@ -324,6 +324,19 @@ impl MyZeroModel {
         .concat()
     }
 
+    /// 用于 `.otm` 拓扑序列化的代表输出 Var（dummy obs 前向，覆盖 h/g/f 子网）。
+    pub(crate) fn otm_output_vars(&self, obs_dim: usize) -> Result<Vec<Var>, GraphError> {
+        let obs = vec![0.0f32; obs_dim];
+        let obs_tensor = Tensor::new(&obs, &[1, obs_dim]);
+        let latent = self.repr.forward(&obs_tensor)?;
+        let (policy, value) = self.pred.forward(&latent);
+        let oh = self.action_to_onehot(0);
+        let oh_tensor = Tensor::new(&oh, &[1, self.action_dim]);
+        let oh_var = self.graph.input(&oh_tensor)?;
+        let (next_latent, reward_logits) = self.dyn_net.forward(&latent, &oh_var)?;
+        Ok(vec![policy, value, reward_logits, next_latent])
+    }
+
     fn action_to_onehot(&self, action_idx: usize) -> Vec<f32> {
         let mut oh = vec![0.0; self.action_dim];
         if action_idx < self.action_dim {

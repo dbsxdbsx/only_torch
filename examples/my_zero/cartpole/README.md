@@ -24,12 +24,15 @@ SEEDS=3 CONSISTENCY=1 cargo run --example my_zero_cartpole --release
 SMOKE=1 cargo run --example my_zero_cartpole
 ```
 
-训练产物默认写入 `checkpoints/cartpole/seed_{seed}/best`（权重 + manifest + meta）；仅当 periodic greedy eval 创新高时覆盖写盘。加载：
+训练完成后 best 模型默认写入 `models/my_zero/CartPole-v1/seed_{seed}/best.otm`（仅当 periodic greedy eval 创新高时覆盖；`SMOKE` 跳过）。`TrainReport.model_path` 会给出基名（不含 `.otm` 后缀）；`best_greedy` 为训练期历史最高 greedy 分。
 
-```bash
-# 须与训练时相同的 env 契约
-cargo run --example my_zero_cartpole --release
-# 或在代码中：MyZero::new("CartPole-v1").solved(475.0).max_episodes(2000).load("checkpoints/cartpole/seed_42/best")?
+**权重语义**：`.train()` 返回的**同一实例**持有 **latest** 训末权重；训后直接 `.eval()` / `.run()` 亦用 latest。`TrainReport.final_greedy` 即该权重上的 greedy 分。要用磁盘 **best** 须显式 `load_model`：
+
+
+```rust
+MyZero::new("CartPole-v1")
+    .load_model("models/my_zero/CartPole-v1/seed_42/best")?
+    .run(Some(10))?;
 ```
 
 ## 关键超参（CartPole 默认）

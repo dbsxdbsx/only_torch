@@ -8,31 +8,32 @@
 //! # 用法
 //!
 //! ```ignore
-//! use only_torch::rl::algo::my_zero::{ActionPlan, MyZero};
+//! use only_torch::rl::algo::my_zero::MyZero;
 //!
-//! MyZero::new("CartPole-v1")
+//! // 训练（返回实例持有 **latest** 训末权重）
+//! let mz = MyZero::new("CartPole-v1")
 //!     .solved(475.0)
 //!     .max_episodes(2000)
-//!     .train()?
-//!     .eval(10)?;
-//!
-//! MyZero::new("Pendulum-v1")
-//!     .discretize(9)
-//!     .reward_scale(0.1)
-//!     .solved(-200.0)
-//!     .max_episodes(600)
 //!     .train()?;
+//!
+//! // 同一实例训后直接 eval → latest；要看磁盘 best 须显式 load_model
+//! mz.eval(10)?;
+//!
+//! // 推理 best（path 不含 .otm 后缀）
+//! MyZero::new("CartPole-v1")
+//!     .load_model("models/my_zero/CartPole-v1/seed_42/best")?
+//!     .run(Some(10))?;
 //! ```
 //!
 //! # 代码组织
 //!
 //! 框架：
-//! - [`config`]：配置（env / model / train / components / eval + checkpoint）
+//! - [`config`]：配置（env / model / train / components / eval）
 //! - [`builder`]：链式 builder（`MyZero::new(env_id)` 为唯一入口）
-//! - [`my_zero`]：运行体（train 产出物；`eval` / `save` / `load` / `run` 尾缀）
+//! - [`my_zero`]：运行体（`train` 返回 **latest**；`load_model` 加载磁盘 best；`eval` / `run` 用当前实例权重）
+//! - [`model_io`]：`.otm` 持久化（内部契约校验）
+//! - [`checkpoint`]：训练期 best 模型落盘（挂在 periodic greedy eval）
 //! - [`report`]：train / eval / run 分数报告
-//! - [`manifest`]：checkpoint 契约校验 + meta
-//! - [`checkpoint`]：训练期 best-only 落盘（挂在 periodic greedy eval）
 //! - [`component`]：消融组件开关
 //! - [`network`]：三网络模型（repr / dyn / pred + value-prefix LSTM + SimSiam 分支）
 //! - [`action`]：动作适配（从 env 推断离散/连续 + idx→env 映射）
@@ -56,7 +57,7 @@ pub mod component;
 pub mod config;
 pub mod consistency;
 pub mod loss;
-pub mod manifest;
+pub mod model_io;
 pub mod my_zero;
 pub mod n_step;
 pub mod network;

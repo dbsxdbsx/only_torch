@@ -77,9 +77,32 @@ CONSISTENCY=1 CQ=1 SIMS=16 cargo run --example my_zero_cartpole --release
 
 # 管线自检（~30 秒）
 SMOKE=1 cargo run --example my_zero_cartpole
+just smoke-my-zero-cartpole   # 同上（just 封装）
+just smoke-my-zero-pendulum
 ```
 
 > 各环境完整命令、超参与实测，见上表「详情」链接。
+
+## 训练与推理生命周期
+
+| 时机 | 内存权重 | 说明 |
+|------|---------|------|
+| 训练中 self-play / 梯度更新 | **latest** | 每步都在变 |
+| `.train()` 返回的实例 | **latest** | 训末权重，不自动换回 best |
+| 训后直接 `.eval()` / `.run()` | **latest** | 与返回实例一致 |
+| 磁盘 `best.otm` | **best** | periodic greedy eval 创新高时写入 |
+| 显式 `.load_model(path)` | **best**（或任意已存 `.otm`） | path 不含 `.otm` 后缀 |
+
+`TrainReport`：`final_greedy` = latest 权重上的 greedy；`best_greedy` / `model_path` = 训练期历史 best 与落盘路径。
+
+```rust
+let mz = MyZero::new("CartPole-v1").solved(475.0).max_episodes(2000).train()?;
+mz.eval(10)?; // latest
+
+MyZero::new("CartPole-v1")
+    .load_model(mz.train_report().unwrap().model_path.unwrap())?
+    .run(Some(10))?; // best
+```
 
 ## 算法核心
 
@@ -95,6 +118,6 @@ MyZero 采用 MuZero 的三网络架构：
 ## 代码组织
 
 - `src/rl/algo/my_zero/`：**自包含**的 MyZero 库，也是项目**唯一**的 `*Zero` 实现——配置（5 层）+ 网络（`network.rs`）+ 训练循环（`runner.rs`）+ 全部算法组件（value_encoding / value_transform / n_step / reanalyze / loss / consistency / value_prefix / target_net / sve）。
-- `examples/my_zero/*/main.rs`：声明 `env_id` + 必填项 + `.save_best(path).train()?`；链式 `.eval(n)?` / `.run(Some(1))?`（`None`=无限演示）/ `.load(path)?` 见 `MyZero` API。
+- `examples/my_zero/*/main.rs`：声明 `env_id` + 训练契约 + `.train()?`；训后同一实例 `.eval(n)?` / `.run(Some(1))?` 用 **latest**；要看 **best** 用 `.load_model(path)?`（path 不含 `.otm` 后缀，见 `TrainReport.model_path`）。
 
 > 组件的论文出处（MuZero / EfficientZero / SimSiam / Gumbel 等）见上方矩阵脚注——那是**学术溯源**，与代码依赖无关。

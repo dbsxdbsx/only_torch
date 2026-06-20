@@ -123,10 +123,10 @@ impl Default for TrainSettings {
     }
 }
 
-/// 训练期 best checkpoint（挂在 periodic greedy eval；`SMOKE` 时跳过）
+/// 训练期 best 模型目录（挂在 periodic greedy eval；`SMOKE` 时跳过；`None` 时用默认 `models/my_zero/{env_id}`）
 #[derive(Debug, Clone, PartialEq)]
 pub struct CheckpointSettings {
-    /// 根目录；`None` = 不写盘
+    /// 根目录；`None` = 使用 [`crate::rl::algo::my_zero::model_io::default_model_dir`]
     pub dir: Option<std::path::PathBuf>,
     /// greedy 均值至少提升这么多才覆盖 best（默认 0 = 创新高即存）
     pub min_delta: f32,
@@ -163,7 +163,7 @@ pub struct EvalSettings {
     pub smoke: bool,
     /// dynamics 诊断（对比 model 想象 vs 真实 reward/value）
     pub diagnose: bool,
-    /// best-only checkpoint
+    /// best-only 模型落盘
     pub checkpoint: CheckpointSettings,
 }
 
@@ -323,6 +323,11 @@ impl MyZeroConfig {
         {
             touched.push("RSCALE");
             self.env.reward_scale = s;
+        }
+
+        if let Ok(v) = var("MODEL_DIR") {
+            touched.push("MODEL_DIR");
+            self.eval.checkpoint.dir = Some(std::path::PathBuf::from(v));
         }
 
         let ablation: Vec<&str> = touched

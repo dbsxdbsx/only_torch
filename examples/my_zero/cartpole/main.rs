@@ -14,16 +14,16 @@ fn main() -> Result<(), GraphError> {
     let mz = MyZero::new("CartPole-v1")
         .solved(475.0) // Gymnasium greedy eval solved
         .max_episodes(2000)
-        .save_best("checkpoints/cartpole")
         .train()?;
 
     if let Some(r) = mz.train_report() {
         println!(
-            "训练完成: best greedy={:.1} @ ep {:?}, ckpt={:?}",
-            r.best_greedy, r.best_at_episode, r.checkpoint_path,
+            "训练完成: best greedy={:.1} @ ep {:?}, model={:?}",
+            r.best_greedy, r.best_at_episode, r.model_path,
         );
     }
 
+    // 同一实例训后直接 eval：使用 latest 权重；要看 best 请先 load_model(model_path)
     mz.eval(10)?.run(Some(1))?;
     Ok(())
 }

@@ -183,6 +183,7 @@ impl EvolutionResult {
             model_name: "evolution".to_string(),
             graph: desc,
             evolution: Some(evolution_json),
+            myzero: None,
         };
 
         // 使用统一的写入逻辑（按参数名保存权重）

@@ -50,6 +50,9 @@ pub(crate) struct OtmMetadata {
     /// 演化元数据（仅演化模型存在）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub evolution: Option<serde_json::Value>,
+    /// MyZero 运行契约（仅 MyZero 模型存在）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) myzero: Option<serde_json::Value>,
 }
 
 // ==================== 通用二进制参数读写 ====================
@@ -288,6 +291,7 @@ impl Graph {
             model_name: "model".to_string(),
             graph: desc,
             evolution: None,
+            myzero: None,
         };
 
         let params = self.inner().get_all_parameters();

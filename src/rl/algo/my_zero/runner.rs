@@ -485,7 +485,7 @@ fn print_multiseed_summary(results: &[SeedSummary], solved: f32) {
     );
 }
 
-/// 物化空权重实例（load 前须与 manifest 契约一致）。
+/// 物化空权重实例（`load_model` 前内部使用）。
 pub(crate) fn materialize(
     py: Python<'_>,
     cfg: &MyZeroConfig,
@@ -547,7 +547,7 @@ fn train_one_seed(
     let mut ep_rewards: VecDeque<f32> = VecDeque::with_capacity(100);
     let mut total_steps: u64 = 0;
     let mut hit_solved: Option<(usize, u64)> = None;
-    let mut ckpt = BestTracker::new(&cfg.eval.checkpoint, seed, smoke);
+    let mut ckpt = BestTracker::new(&cfg.eval.checkpoint, cfg.env.env_id, seed, obs_dim, smoke);
 
     let max_episodes = if smoke { 3 } else { cfg.eval.max_episodes };
     let mut last_ep = 0usize;
@@ -665,14 +665,7 @@ fn train_one_seed(
             println!(
                 "  greedy eval {eval_r:.1} / {solved}（近20局 self-play {recent:.1}，steps={total_steps}）",
             );
-            ckpt.maybe_update(
-                &model.graph,
-                cfg,
-                eval_r,
-                ep + 1,
-                total_steps,
-                cfg.eval.eval_episodes,
-            )?;
+            ckpt.maybe_update(&model, cfg, eval_r, ep + 1, total_steps)?;
             if eval_r >= solved {
                 hit_solved = Some((ep + 1, total_steps));
                 println!("  ✅ 达标 ep={} steps={}", ep + 1, total_steps);
@@ -682,10 +675,8 @@ fn train_one_seed(
     }
 
     let wall_secs = wall_t0.elapsed().as_secs_f32();
-    let greedy_eval = if smoke {
+    let final_greedy = if smoke {
         0.0
-    } else if ckpt.enabled() && ckpt.best_score().is_finite() {
-        ckpt.best_score()
     } else {
         eval_episodes(
             &env,
@@ -699,39 +690,13 @@ fn train_one_seed(
     };
 
     if !smoke {
-        let last_greedy = if ckpt.save_last_enabled() {
-            eval_episodes(
-                &env,
-                &model,
-                &adapter,
-                gamma,
-                cfg.eval.eval_episodes,
-                t.num_simulations,
-                cfg.eval.seed,
-            )
-        } else {
-            greedy_eval
-        };
-        ckpt.save_last(
-            &model.graph,
-            cfg,
-            last_ep,
-            total_steps,
-            last_greedy,
-            cfg.eval.eval_episodes,
-        )?;
-        ckpt.restore_best(&model.graph)?;
+        ckpt.save_last(&model, cfg, last_ep, total_steps, final_greedy)?;
     }
 
     if !smoke {
         let eff = hit_solved
             .map(|(e, s)| format!("ep{e}/{s} steps"))
             .unwrap_or_else(|| "未达标".to_string());
-        let final_greedy = if ckpt.enabled() && ckpt.best_score().is_finite() {
-            ckpt.best_score()
-        } else {
-            greedy_eval
-        };
         println!(
             "📈 {} greedy={final_greedy:.1} | 门槛 {solved}: {eff} | {wall_secs:.1}s",
             cfg.env.env_id,
@@ -752,12 +717,6 @@ fn train_one_seed(
 
     env.close();
 
-    let final_greedy = if ckpt.enabled() && ckpt.best_score().is_finite() {
-        ckpt.best_score()
-    } else {
-        greedy_eval
-    };
-
     let report = TrainReport {
         seed,
         wall_secs,
@@ -770,7 +729,7 @@ fn train_one_seed(
             final_greedy
         },
         best_at_episode: ckpt.best_episode(),
-        checkpoint_path: ckpt.checkpoint_path(),
+        model_path: ckpt.model_path(),
     };
     let mz = MyZero::from_parts(cfg.clone(), model, adapter).with_train_report(report.clone());
     Ok((mz, report))

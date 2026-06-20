@@ -7,7 +7,7 @@ use std::path::PathBuf;
 pub struct TrainReport {
     pub seed: u64,
     pub wall_secs: f32,
-    /// 返回实例上的 greedy（启用 checkpoint 时为 best 权重对应分数）
+    /// 训末 latest 权重上的 greedy eval（与返回实例一致；磁盘 best 见 [`best_greedy`](Self::best_greedy)）
     pub final_greedy: f32,
     /// 训练内首次 periodic greedy ≥ solved 时的 env-step；未达标为 `None`。
     pub solved_at_steps: Option<u64>,
@@ -15,8 +15,8 @@ pub struct TrainReport {
     /// 训练过程 periodic greedy 最高分
     pub best_greedy: f32,
     pub best_at_episode: Option<usize>,
-    /// `save_best` 落盘路径（权重基名，无 `.bin` 后缀）
-    pub checkpoint_path: Option<PathBuf>,
+    /// best 模型基名（无 `.otm` 后缀），如 `models/my_zero/CartPole-v1/seed_42/best`
+    pub model_path: Option<PathBuf>,
 }
 
 /// [`MyZero::eval`](super::my_zero::MyZero::eval) 产出。

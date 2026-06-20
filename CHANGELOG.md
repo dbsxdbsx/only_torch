@@ -6,6 +6,17 @@
 
 ### Added
 
+- **feat(rl): MyZero `.otm` 统一持久化 + `model_io`**
+  - 删除 `manifest.rs` 与旁路 `.bin`；契约写入 `OtmMetadata.myzero`（`env_id` / action / `reward_scale` / `latent_dim`）
+  - `save_myzero_model` / `load_weights_into`；用户 API 仅 `load_model(path)`（path 不含 `.otm` 后缀）
+  - 训练期 `BestTracker` 在 periodic greedy eval 创新高时写 `models/my_zero/{env_id}/seed_{seed}/best.otm`
+
+### Changed
+
+- **refactor(rl): MyZero 用户侧 API 链式 builder + train/eval/run 生命周期**
+  - `MyZero::new(env_id)` 唯一入口；`.solved` / `.max_episodes` 仅绑 `.train()`
+  - 去掉 `restore_best`：`.train()` 返回实例持有 **latest** 训末权重；训后 `eval`/`run` 沿用 latest
+  - 要用磁盘 best → 显式 `load_model(TrainReport.model_path)`；`final_greedy` = latest 分，`best_greedy` = 训练期历史 best
 - **feat(rl): MyZero 统一进库 `src/rl/algo/my_zero/`（Phase 0，算法主体下沉）**
   - 5 层 `MyZeroConfig`（`EnvConfig` / `ModelConfig` / `TrainConfig` / `ComponentConfig` / `RunConfig`）+ `apply_env_overrides`（`EZ_CONS/CQ/SIMS/SEEDS/SMOKE/DIAG/GAMMA/LR/MAX_EP/NUM_ACTIONS/RSCALE/SOLVED` 旋钮集中一处）
   - `network.rs`：三网络模型（repr/dyn/pred + value-prefix LSTM + SimSiam 分支）从示例迁入

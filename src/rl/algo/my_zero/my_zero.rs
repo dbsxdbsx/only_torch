@@ -2,7 +2,7 @@
 
 use super::action::ActionAdapter;
 use super::config::{MyZeroConfig, greedy_episode_seed};
-use super::manifest::{verify_manifest, write_manifest};
+use super::model_io::load_weights_into;
 use super::network::MyZeroModel;
 use super::report::{EvalReport, RunReport, TrainReport};
 use super::runner::{greedy_eval_episodes, greedy_one_episode, materialize};
@@ -69,21 +69,11 @@ impl MyZero {
         self.run_report.as_ref()
     }
 
-    /// 从 checkpoint 加载权重（须先 `new` 定 env / action 契约）。
-    pub fn load(self, path: impl AsRef<Path>) -> Result<Self, GraphError> {
+    /// 从 `.otm` 加载模型（`path` 不含后缀；须先 `new` 声明 env / action 契约）。
+    pub fn load_model(self, path: impl AsRef<Path>) -> Result<Self, GraphError> {
         let path = path.as_ref();
-        verify_manifest(path, &self.cfg)?;
-        self.graph().load_weights(path)?;
-        println!("[MyZero] 已加载权重 {}", path.display());
-        Ok(self)
-    }
-
-    /// 保存权重 + manifest（`path` 为不含 `.bin` 的基名，与 [`Graph::save_weights`] 一致）。
-    pub fn save(self, path: impl AsRef<Path>) -> Result<Self, GraphError> {
-        let path = path.as_ref();
-        self.graph().save_weights(path)?;
-        write_manifest(path, &self.cfg)?;
-        println!("[MyZero] 已保存权重 {} + manifest", path.display());
+        load_weights_into(self.graph(), &self.cfg, path)?;
+        println!("[MyZero] 已加载模型 {}.otm", path.display());
         Ok(self)
     }
 
@@ -179,7 +169,7 @@ impl MyZero {
         })
     }
 
-    /// 从配置物化空权重实例（`load` 前内部使用）。
+    /// 从配置物化空权重实例（`load_model` 前内部使用）。
     pub(crate) fn materialize_from_cfg(cfg: &MyZeroConfig, seed: u64) -> Result<Self, GraphError> {
         Python::attach(|py| materialize(py, cfg, seed))
     }

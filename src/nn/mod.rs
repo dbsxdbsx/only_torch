@@ -52,5 +52,9 @@ pub use var::ops::{
 };
 pub use var::{Init, IntoVar, Var};
 
+pub(crate) use graph::model_save::{
+    OTM_FORMAT_VERSION, OtmMetadata, apply_params_to_graph, read_otm_file, write_otm_file,
+};
+
 #[cfg(test)]
 mod tests;

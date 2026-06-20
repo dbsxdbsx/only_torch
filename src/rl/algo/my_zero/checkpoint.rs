@@ -1,17 +1,18 @@
-//! 训练期 best-only checkpoint（挂在 periodic greedy eval 上）。
+//! 训练期 best 模型落盘（挂在 periodic greedy eval 上，写 `.otm`）。
 
 use super::config::{CheckpointSettings, MyZeroConfig};
-use super::manifest::{write_checkpoint_meta, write_manifest};
-use crate::nn::{Graph, GraphError};
+use super::model_io::save_myzero_model;
+use super::network::MyZeroModel;
+use crate::nn::GraphError;
 use std::fs;
 use std::path::PathBuf;
 
-/// 训练期追踪 greedy eval 最高分并按需落盘。
+/// 训练期追踪 greedy eval 最高分并按需写入 best `.otm`。
 pub(crate) struct BestTracker {
     enabled: bool,
     min_delta: f32,
     save_last: bool,
-    seed: u64,
+    obs_dim: usize,
     seed_dir: PathBuf,
     best_base: PathBuf,
     best_score: f32,
@@ -20,10 +21,22 @@ pub(crate) struct BestTracker {
 }
 
 impl BestTracker {
-    pub fn new(checkpoint: &CheckpointSettings, seed: u64, smoke: bool) -> Self {
-        let enabled = checkpoint.dir.is_some() && !smoke;
-        let seed_dir = checkpoint
-            .dir
+    pub fn new(
+        checkpoint: &CheckpointSettings,
+        env_id: &str,
+        seed: u64,
+        obs_dim: usize,
+        smoke: bool,
+    ) -> Self {
+        let dir = checkpoint.dir.clone().or_else(|| {
+            if smoke {
+                None
+            } else {
+                Some(super::model_io::default_model_dir(env_id))
+            }
+        });
+        let enabled = dir.is_some() && !smoke;
+        let seed_dir = dir
             .as_ref()
             .map(|d| d.join(format!("seed_{seed}")))
             .unwrap_or_default();
@@ -32,17 +45,13 @@ impl BestTracker {
             enabled,
             min_delta: checkpoint.min_delta,
             save_last: checkpoint.save_last,
-            seed,
+            obs_dim,
             seed_dir,
             best_base,
             best_score: f32::NEG_INFINITY,
             best_episode: 0,
             best_steps: 0,
         }
-    }
-
-    pub fn enabled(&self) -> bool {
-        self.enabled
     }
 
     pub fn best_score(&self) -> f32 {
@@ -57,16 +66,12 @@ impl BestTracker {
         }
     }
 
-    pub fn checkpoint_path(&self) -> Option<PathBuf> {
+    pub fn model_path(&self) -> Option<PathBuf> {
         if self.enabled && self.best_score.is_finite() {
             Some(self.best_base.clone())
         } else {
             None
         }
-    }
-
-    pub(crate) fn save_last_enabled(&self) -> bool {
-        self.enabled && self.save_last
     }
 
     /// 是否相对历史 best 有提升（`score >= best + min_delta`；首次 eval 恒为真）。
@@ -80,36 +85,25 @@ impl BestTracker {
         score >= self.best_score + self.min_delta
     }
 
-    /// periodic greedy eval 后调用；创新高则覆盖写入 `best`。
+    /// periodic greedy eval 后调用；创新高则覆盖写入 `best.otm`。
     pub fn maybe_update(
         &mut self,
-        graph: &Graph,
+        model: &MyZeroModel,
         cfg: &MyZeroConfig,
         score: f32,
         episode: usize,
         env_steps: u64,
-        eval_episodes: usize,
     ) -> Result<bool, GraphError> {
         if !self.should_update(score) {
             return Ok(false);
         }
         if let Some(parent) = self.best_base.parent() {
-            fs::create_dir_all(parent).map_err(|e| {
-                GraphError::ComputationError(format!("创建 checkpoint 目录失败: {e}"))
-            })?;
+            fs::create_dir_all(parent)
+                .map_err(|e| GraphError::ComputationError(format!("创建模型目录失败: {e}")))?;
         }
-        graph.save_weights(&self.best_base)?;
-        write_manifest(&self.best_base, cfg)?;
-        write_checkpoint_meta(
-            &self.best_base,
-            episode,
-            env_steps,
-            score,
-            eval_episodes,
-            self.seed,
-        )?;
+        save_myzero_model(model, cfg, self.obs_dim, &self.best_base)?;
         println!(
-            "[MyZero] checkpoint best greedy={score:.1} ep={episode} steps={env_steps} -> {}",
+            "[MyZero] best 模型 greedy={score:.1} ep={episode} steps={env_steps} -> {}.otm",
             self.best_base.display()
         );
         self.best_score = score;
@@ -118,47 +112,24 @@ impl BestTracker {
         Ok(true)
     }
 
-    /// 训练结束：将内存权重恢复为磁盘 best（若曾写入）。
-    pub fn restore_best(&self, graph: &Graph) -> Result<bool, GraphError> {
-        if !self.enabled || !self.best_score.is_finite() {
-            return Ok(false);
-        }
-        graph.load_weights(&self.best_base)?;
-        println!(
-            "[MyZero] 已恢复 best 权重 greedy={:.1} ep={}",
-            self.best_score, self.best_episode
-        );
-        Ok(true)
-    }
-
-    /// 可选：额外写入当前权重到 `last`（不参与 best 比较）。
+    /// 可选：额外写入当前权重到 `last.otm`（不参与 best 比较）。
     pub fn save_last(
         &self,
-        graph: &Graph,
+        model: &MyZeroModel,
         cfg: &MyZeroConfig,
         episode: usize,
-        env_steps: u64,
+        _env_steps: u64,
         score: f32,
-        eval_episodes: usize,
     ) -> Result<(), GraphError> {
         if !self.enabled || !self.save_last {
             return Ok(());
         }
         fs::create_dir_all(&self.seed_dir)
-            .map_err(|e| GraphError::ComputationError(format!("创建 checkpoint 目录失败: {e}")))?;
+            .map_err(|e| GraphError::ComputationError(format!("创建模型目录失败: {e}")))?;
         let last_base = self.seed_dir.join("last");
-        graph.save_weights(&last_base)?;
-        write_manifest(&last_base, cfg)?;
-        write_checkpoint_meta(
-            &last_base,
-            episode,
-            env_steps,
-            score,
-            eval_episodes,
-            self.seed,
-        )?;
+        save_myzero_model(model, cfg, self.obs_dim, &last_base)?;
         println!(
-            "[MyZero] checkpoint last greedy={score:.1} ep={episode} -> {}",
+            "[MyZero] last 模型 greedy={score:.1} ep={episode} -> {}.otm",
             last_base.display()
         );
         Ok(())
@@ -178,7 +149,9 @@ mod tests {
                 min_delta: 0.0,
                 save_last: false,
             },
+            "CartPole-v1",
             42,
+            4,
             false,
         );
         assert!(t.should_update(9.4));
@@ -192,7 +165,9 @@ mod tests {
                 min_delta: 0.0,
                 save_last: false,
             },
+            "CartPole-v1",
             42,
+            4,
             false,
         );
         t.best_score = 100.0;
@@ -209,7 +184,9 @@ mod tests {
                 min_delta: 1.0,
                 save_last: false,
             },
+            "CartPole-v1",
             42,
+            4,
             false,
         );
         t.best_score = 499.0;
@@ -225,10 +202,21 @@ mod tests {
                 min_delta: 0.0,
                 save_last: false,
             },
+            "CartPole-v1",
             42,
+            4,
             true,
         );
-        assert!(!t.enabled());
         assert!(!t.should_update(500.0));
+    }
+
+    #[test]
+    fn default_dir_when_not_smoke_and_dir_none() {
+        let t = BestTracker::new(&CheckpointSettings::default(), "CartPole-v1", 7, 4, false);
+        assert!(t.should_update(500.0));
+        assert_eq!(
+            t.best_base,
+            PathBuf::from("models/my_zero/CartPole-v1/seed_7/best")
+        );
     }
 }
