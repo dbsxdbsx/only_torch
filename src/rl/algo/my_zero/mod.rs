@@ -10,18 +10,19 @@
 //! ```ignore
 //! use only_torch::rl::algo::my_zero::MyZero;
 //!
-//! // 训练（返回实例持有 **latest** 训末权重）
+//! // 训练（返回 latest）；eval 创新高时落盘须 .save_model_when_eval(path)
+//! let best = "models/my_zero/CartPole-v1/seed_42/best";
 //! let mz = MyZero::new("CartPole-v1")
 //!     .solved(475.0)
 //!     .max_episodes(2000)
+//!     .save_model_when_eval(best)
 //!     .train()?;
 //!
-//! // 同一实例训后直接 eval → latest；要看磁盘 best 须显式 load_model
-//! mz.eval(10)?;
+//! mz.load_model_if_exists(best)?.eval(10)?;
 //!
-//! // 推理 best（path 不含 .otm 后缀）
+//! // 冷启动推理
 //! MyZero::new("CartPole-v1")
-//!     .load_model("models/my_zero/CartPole-v1/seed_42/best")?
+//!     .load_model_if_exists("models/my_zero/CartPole-v1/seed_42/best")?
 //!     .run(Some(10))?;
 //! ```
 //!
@@ -30,9 +31,9 @@
 //! 框架：
 //! - [`config`]：配置（env / model / train / components / eval）
 //! - [`builder`]：链式 builder（`MyZero::new(env_id)` 为唯一入口）
-//! - [`my_zero`]：运行体（`train` 返回 **latest**；`load_model` 加载磁盘 best；`eval` / `run` 用当前实例权重）
+//! - [`my_zero`]：运行体（`train` 返回 **latest**；`load_model_if_exists` 加载磁盘 best；`eval` / `run` 用当前实例权重）
 //! - [`model_io`]：`.otm` 持久化（内部契约校验）
-//! - [`checkpoint`]：训练期 best 模型落盘（挂在 periodic greedy eval）
+//! - [`checkpoint`]：eval 创新高时落盘（须显式 `.save_model_when_eval(path)`）
 //! - [`report`]：train / eval / run 分数报告
 //! - [`component`]：消融组件开关
 //! - [`network`]：三网络模型（repr / dyn / pred + value-prefix LSTM + SimSiam 分支）

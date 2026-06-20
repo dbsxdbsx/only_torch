@@ -485,7 +485,7 @@ fn print_multiseed_summary(results: &[SeedSummary], solved: f32) {
     );
 }
 
-/// 物化空权重实例（`load_model` 前内部使用）。
+/// 物化空权重实例（冷启动推理前内部使用）。
 pub(crate) fn materialize(
     py: Python<'_>,
     cfg: &MyZeroConfig,
@@ -547,7 +547,13 @@ fn train_one_seed(
     let mut ep_rewards: VecDeque<f32> = VecDeque::with_capacity(100);
     let mut total_steps: u64 = 0;
     let mut hit_solved: Option<(usize, u64)> = None;
-    let mut ckpt = BestTracker::new(&cfg.eval.checkpoint, cfg.env.env_id, seed, obs_dim, smoke);
+    let mut ckpt = BestTracker::new(
+        &cfg.eval.checkpoint,
+        seed,
+        cfg.eval.seed_runs.max(1),
+        obs_dim,
+        smoke,
+    );
 
     let max_episodes = if smoke { 3 } else { cfg.eval.max_episodes };
     let mut last_ep = 0usize;

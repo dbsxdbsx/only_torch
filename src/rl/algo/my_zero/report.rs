@@ -15,7 +15,7 @@ pub struct TrainReport {
     /// 训练过程 periodic greedy 最高分
     pub best_greedy: f32,
     pub best_at_episode: Option<usize>,
-    /// best 模型基名（无 `.otm` 后缀），如 `models/my_zero/CartPole-v1/seed_42/best`
+    /// 落盘 best 的基名（无 `.otm` 后缀）；仅当调用 [`.save_model_when_eval`](super::builder::MyZeroBuilder::save_model_when_eval) 且已有 eval 创新高时存在
     pub model_path: Option<PathBuf>,
 }
 

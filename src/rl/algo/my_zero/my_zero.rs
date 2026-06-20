@@ -69,11 +69,21 @@ impl MyZero {
         self.run_report.as_ref()
     }
 
-    /// 从 `.otm` 加载模型（`path` 不含后缀；须先 `new` 声明 env / action 契约）。
-    pub fn load_model(self, path: impl AsRef<Path>) -> Result<Self, GraphError> {
-        let path = path.as_ref();
-        load_weights_into(self.graph(), &self.cfg, path)?;
-        println!("[MyZero] 已加载模型 {}.otm", path.display());
+    /// 若 `path.otm` 存在则加载权重；否则保持当前权重不变。
+    ///
+    /// `path` 为基名（不含 `.otm` 后缀），**不能为空**。
+    pub fn load_model_if_exists(self, path: impl AsRef<Path>) -> Result<Self, GraphError> {
+        let base = path.as_ref();
+        if base.as_os_str().is_empty() {
+            return Err(GraphError::InvalidOperation(
+                "MyZero::load_model_if_exists: 路径不能为空".into(),
+            ));
+        }
+        let otm = base.with_extension("otm");
+        if otm.is_file() {
+            load_weights_into(self.graph(), &self.cfg, base)?;
+            println!("[MyZero] 已加载模型 {}", otm.display());
+        }
         Ok(self)
     }
 
@@ -169,7 +179,7 @@ impl MyZero {
         })
     }
 
-    /// 从配置物化空权重实例（`load_model` 前内部使用）。
+    /// 从配置物化空权重实例（冷启动推理前内部使用）。
     pub(crate) fn materialize_from_cfg(cfg: &MyZeroConfig, seed: u64) -> Result<Self, GraphError> {
         Python::attach(|py| materialize(py, cfg, seed))
     }

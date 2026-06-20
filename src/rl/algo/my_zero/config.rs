@@ -123,11 +123,13 @@ impl Default for TrainSettings {
     }
 }
 
-/// 训练期 best 模型目录（挂在 periodic greedy eval；`SMOKE` 时跳过；`None` 时用默认 `models/my_zero/{env_id}`）
+/// 训练期 best 模型落盘（须显式指定路径；仅在 periodic greedy eval 创新高时写入）
 #[derive(Debug, Clone, PartialEq)]
 pub struct CheckpointSettings {
-    /// 根目录；`None` = 使用 [`crate::rl::algo::my_zero::model_io::default_model_dir`]
-    pub dir: Option<std::path::PathBuf>,
+    /// 是否落盘（默认关；链式 [`.save_model_when_eval(path)`](super::builder::MyZeroBuilder::save_model_when_eval) 或 `SAVE_MODEL=path` 环境变量）
+    pub enabled: bool,
+    /// best `.otm` 基名（不含后缀）；须显式设定，无默认路径
+    pub best_base: Option<std::path::PathBuf>,
     /// greedy 均值至少提升这么多才覆盖 best（默认 0 = 创新高即存）
     pub min_delta: f32,
     /// 训练结束是否额外写 `last`（默认否）
@@ -137,7 +139,8 @@ pub struct CheckpointSettings {
 impl Default for CheckpointSettings {
     fn default() -> Self {
         Self {
-            dir: None,
+            enabled: false,
+            best_base: None,
             min_delta: 0.0,
             save_last: false,
         }
@@ -306,6 +309,13 @@ impl MyZeroConfig {
             touched.push("SOLVED");
             self.eval.solved = s;
         }
+        if let Ok(v) = var("SAVE_MODEL")
+            && !v.is_empty()
+        {
+            touched.push("SAVE_MODEL");
+            self.eval.checkpoint.enabled = true;
+            self.eval.checkpoint.best_base = Some(std::path::PathBuf::from(v));
+        }
 
         // ---- 动作 / env ----
         if let Ok(v) = var("NUM_ACTIONS")
@@ -323,11 +333,6 @@ impl MyZeroConfig {
         {
             touched.push("RSCALE");
             self.env.reward_scale = s;
-        }
-
-        if let Ok(v) = var("MODEL_DIR") {
-            touched.push("MODEL_DIR");
-            self.eval.checkpoint.dir = Some(std::path::PathBuf::from(v));
         }
 
         let ablation: Vec<&str> = touched
@@ -354,6 +359,7 @@ mod tests {
         assert!((cfg.env.reward_scale - 1.0).abs() < 1e-6);
         assert_eq!(cfg.env.action, ActionPlan::Auto);
         assert_eq!(cfg.model.latent_dim, 64);
+        assert!(!cfg.eval.checkpoint.enabled, "默认不落盘");
     }
 
     #[test]

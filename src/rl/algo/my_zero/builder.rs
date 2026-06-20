@@ -9,10 +9,11 @@
 //! | **必填（仅 train）** | [`.max_episodes`](MyZeroBuilder::max_episodes) | 训练局数上限 |
 //! | **特殊动作时才写** | [`.discretize`](MyZeroBuilder::discretize) 等 | 默认 [`ActionPlan::Auto`] |
 //! | **非默认时常写** | [`.reward_scale`](MyZeroBuilder::reward_scale) | 如 Pendulum 的 `0.1` |
-//! | **推理** | [`.load_model`](MyZeroBuilder::load_model) | 加载 `path.otm`（path 不含后缀） |
+//! | **eval 创新高时落盘** | [`.save_model_when_eval(path)`](MyZeroBuilder::save_model_when_eval) | 默认**不写**；path 为 `.otm` 基名（不含后缀） |
+//! | **推理** | [`.load_model_if_exists`](MyZeroBuilder::load_model_if_exists) | 必填 path（不含 `.otm` 后缀） |
 //!
-//! 训练期 best 模型默认写入 `models/my_zero/{env_id}/seed_{seed}/best.otm`（`SMOKE` 跳过；`MODEL_DIR` 可覆盖根目录）。
-//! **同一实例**训后直接 `eval` / `run` 使用 **latest** 训末权重；要用 best 须显式 [`load_model`](MyZeroBuilder::load_model)。
+//! **权重语义**：`.train()` 返回 **latest** 训末权重；eval 前若要用磁盘 best，须显式
+//! [`.load_model_if_exists(path)`](super::my_zero::MyZero::load_model_if_exists)（`path` 见 [`TrainReport::model_path`](super::report::TrainReport::model_path)）。
 
 use super::component::Components;
 use super::config::{ActionPlan, EvalSettings, MyZeroConfig, TrainSettings};
@@ -21,7 +22,7 @@ use super::runner::train_all_seeds;
 use crate::nn::GraphError;
 use std::path::Path;
 
-/// 链式配置；尾缀 [`train`](Self::train) / [`load_model`](Self::load_model) 物化 [`MyZero`]。
+/// 链式配置；尾缀 [`train`](Self::train) / [`load_model_if_exists`](Self::load_model_if_exists) 物化 [`MyZero`]。
 #[derive(Debug, Clone)]
 pub struct MyZeroBuilder {
     pub(crate) cfg: MyZeroConfig,
@@ -161,6 +162,16 @@ impl MyZeroBuilder {
         self
     }
 
+    /// periodic greedy eval 分数创新高时写入 `{path}.otm`。
+    ///
+    /// `path` 为完整基名（含目录与文件名，**不含** `.otm` 后缀），无默认路径。
+    /// 多 seed（`SEEDS`>1）时在 `path` 的父目录下自动插入 `seed_{seed}/` 子目录。
+    pub fn save_model_when_eval(mut self, path: impl Into<std::path::PathBuf>) -> Self {
+        self.cfg.eval.checkpoint.enabled = true;
+        self.cfg.eval.checkpoint.best_base = Some(path.into());
+        self
+    }
+
     pub fn eval_settings(mut self, eval: EvalSettings) -> Self {
         self.solved_set = true;
         self.max_episodes_set = true;
@@ -174,15 +185,15 @@ impl MyZeroBuilder {
         Ok(self.cfg)
     }
 
-    /// 完整训练 + 内置周期性 eval，返回训练后的 [`MyZero`]。
+    /// 完整训练 + 内置周期性 eval，返回训练后的 [`MyZero`]（**latest** 权重）。
     pub fn train(self) -> Result<MyZero, GraphError> {
         self.ensure_train_required()?;
         train_all_seeds(self.cfg)
     }
 
-    /// 从 `.otm` 加载模型（须先 `new` 声明 env / action 契约；不要求 `solved` / `max_episodes`）。
-    pub fn load_model(self, path: impl AsRef<Path>) -> Result<MyZero, GraphError> {
-        MyZero::materialize_from_cfg(&self.cfg, self.cfg.eval.seed)?.load_model(path)
+    /// 物化空权重实例并从磁盘加载（若 `path.otm` 存在）。
+    pub fn load_model_if_exists(self, path: impl AsRef<Path>) -> Result<MyZero, GraphError> {
+        MyZero::materialize_from_cfg(&self.cfg, self.cfg.eval.seed)?.load_model_if_exists(path)
     }
 }
 
@@ -198,6 +209,19 @@ mod tests {
             .build()
             .unwrap();
         assert_eq!(cfg.env.action, ActionPlan::Auto);
+    }
+
+    #[test]
+    fn save_model_when_eval_sets_path() {
+        let path = std::path::PathBuf::from("models/my_zero/CartPole-v1/seed_42/best");
+        let cfg = MyZero::new("CartPole-v1")
+            .solved(475.0)
+            .max_episodes(2000)
+            .save_model_when_eval(&path)
+            .build()
+            .unwrap();
+        assert!(cfg.eval.checkpoint.enabled);
+        assert_eq!(cfg.eval.checkpoint.best_base.as_ref(), Some(&path));
     }
 
     #[test]

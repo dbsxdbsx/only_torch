@@ -1,11 +1,11 @@
-//! 训练期 best 模型落盘（挂在 periodic greedy eval 上，写 `.otm`）。
+//! 训练期 best 模型落盘（仅在 periodic greedy eval 创新高时写入 `.otm`）。
 
 use super::config::{CheckpointSettings, MyZeroConfig};
 use super::model_io::save_myzero_model;
 use super::network::MyZeroModel;
 use crate::nn::GraphError;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// 训练期追踪 greedy eval 最高分并按需写入 best `.otm`。
 pub(crate) struct BestTracker {
@@ -20,27 +20,37 @@ pub(crate) struct BestTracker {
     best_steps: u64,
 }
 
+/// 多 seed 时在用户给定路径的父目录下插入 `seed_{seed}/`，单 seed 则原样使用。
+fn resolve_best_base(base: &Path, seed: u64, seed_runs: u64) -> PathBuf {
+    if seed_runs <= 1 {
+        return base.to_path_buf();
+    }
+    let parent = base.parent().unwrap_or_else(|| Path::new("."));
+    let name = base
+        .file_name()
+        .map(|s| s.to_owned())
+        .unwrap_or_else(|| std::ffi::OsString::from("best"));
+    parent.join(format!("seed_{seed}")).join(name)
+}
+
 impl BestTracker {
     pub fn new(
         checkpoint: &CheckpointSettings,
-        env_id: &str,
         seed: u64,
+        seed_runs: u64,
         obs_dim: usize,
         smoke: bool,
     ) -> Self {
-        let dir = checkpoint.dir.clone().or_else(|| {
-            if smoke {
-                None
-            } else {
-                Some(super::model_io::default_model_dir(env_id))
-            }
-        });
-        let enabled = dir.is_some() && !smoke;
-        let seed_dir = dir
+        let enabled = checkpoint.enabled && checkpoint.best_base.is_some() && !smoke;
+        let best_base = checkpoint
+            .best_base
             .as_ref()
-            .map(|d| d.join(format!("seed_{seed}")))
+            .map(|b| resolve_best_base(b, seed, seed_runs))
             .unwrap_or_default();
-        let best_base = seed_dir.join("best");
+        let seed_dir = best_base
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_default();
         Self {
             enabled,
             min_delta: checkpoint.min_delta,
@@ -141,16 +151,21 @@ mod tests {
     use super::super::config::CheckpointSettings;
     use super::*;
 
+    fn enabled_checkpoint(base: PathBuf) -> CheckpointSettings {
+        CheckpointSettings {
+            enabled: true,
+            best_base: Some(base),
+            min_delta: 0.0,
+            save_last: false,
+        }
+    }
+
     #[test]
     fn should_update_first_eval_always() {
         let t = BestTracker::new(
-            &CheckpointSettings {
-                dir: Some(PathBuf::from("/tmp/x")),
-                min_delta: 0.0,
-                save_last: false,
-            },
-            "CartPole-v1",
+            &enabled_checkpoint(PathBuf::from("/tmp/x/best")),
             42,
+            1,
             4,
             false,
         );
@@ -160,13 +175,9 @@ mod tests {
     #[test]
     fn min_delta_zero_requires_strict_improvement_or_equal() {
         let mut t = BestTracker::new(
-            &CheckpointSettings {
-                dir: Some(PathBuf::from("/tmp/x")),
-                min_delta: 0.0,
-                save_last: false,
-            },
-            "CartPole-v1",
+            &enabled_checkpoint(PathBuf::from("/tmp/x/best")),
             42,
+            1,
             4,
             false,
         );
@@ -180,12 +191,13 @@ mod tests {
     fn min_delta_one_uses_gte_threshold() {
         let mut t = BestTracker::new(
             &CheckpointSettings {
-                dir: Some(PathBuf::from("/tmp/x")),
+                enabled: true,
+                best_base: Some(PathBuf::from("/tmp/x/best")),
                 min_delta: 1.0,
                 save_last: false,
             },
-            "CartPole-v1",
             42,
+            1,
             4,
             false,
         );
@@ -197,13 +209,9 @@ mod tests {
     #[test]
     fn disabled_when_smoke() {
         let t = BestTracker::new(
-            &CheckpointSettings {
-                dir: Some(PathBuf::from("/tmp/x")),
-                min_delta: 0.0,
-                save_last: false,
-            },
-            "CartPole-v1",
+            &enabled_checkpoint(PathBuf::from("/tmp/x/best")),
             42,
+            1,
             4,
             true,
         );
@@ -211,12 +219,29 @@ mod tests {
     }
 
     #[test]
-    fn default_dir_when_not_smoke_and_dir_none() {
-        let t = BestTracker::new(&CheckpointSettings::default(), "CartPole-v1", 7, 4, false);
+    fn disabled_by_default() {
+        let t = BestTracker::new(&CheckpointSettings::default(), 7, 1, 4, false);
+        assert!(!t.should_update(500.0));
+        assert!(t.model_path().is_none());
+    }
+
+    #[test]
+    fn uses_explicit_path_single_seed() {
+        let base = PathBuf::from("/tmp/my_cartpole_best");
+        let t = BestTracker::new(&enabled_checkpoint(base.clone()), 42, 1, 4, false);
         assert!(t.should_update(500.0));
-        assert_eq!(
-            t.best_base,
-            PathBuf::from("models/my_zero/CartPole-v1/seed_7/best")
+        assert_eq!(t.best_base, base);
+    }
+
+    #[test]
+    fn multi_seed_inserts_seed_subdir() {
+        let t = BestTracker::new(
+            &enabled_checkpoint(PathBuf::from("models/foo/best")),
+            43,
+            3,
+            4,
+            false,
         );
+        assert_eq!(t.best_base, PathBuf::from("models/foo/seed_43/best"));
     }
 }

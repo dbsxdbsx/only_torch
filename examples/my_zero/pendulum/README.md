@@ -26,7 +26,7 @@ SEEDS=3 CONSISTENCY=1 CQ=1 SIMS=16 cargo run --example my_zero_pendulum --releas
 SMOKE=1 cargo run --example my_zero_pendulum
 ```
 
-> 支持：`CONSISTENCY / VALUE_PREFIX / TARGET_NET / SVE / CQ / CQ_SCALE / CQ_VISIT / SIMS / SEEDS / SMOKE / GAMMA / MAX_EP / LR / NUM_ACTIONS / RSCALE`
+> 支持：`CONSISTENCY / VALUE_PREFIX / TARGET_NET / SVE / CQ / CQ_SCALE / CQ_VISIT / SIMS / SEEDS / SAVE_MODEL=path / SMOKE / GAMMA / MAX_EP / LR / NUM_ACTIONS / RSCALE`
 
 ## 实测（seed=42，门禁 −200）
 

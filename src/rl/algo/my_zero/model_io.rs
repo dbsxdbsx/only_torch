@@ -1,4 +1,4 @@
-//! MyZero `.otm` 持久化（契约写入 metadata，用户只见 `load_model`）。
+//! MyZero `.otm` 持久化（契约写入 metadata；用户见 `save_model_when_eval` / `load_model_if_exists`）。
 
 use super::config::{ActionPlan, MyZeroConfig};
 use super::network::MyZeroModel;
@@ -20,10 +20,6 @@ pub(crate) struct MyZeroOtmContract {
 }
 
 const SCHEMA_VERSION: u32 = 1;
-
-pub(crate) fn default_model_dir(env_id: &str) -> std::path::PathBuf {
-    std::path::PathBuf::from("models/my_zero").join(env_id)
-}
 
 fn action_to_str(action: ActionPlan) -> String {
     match action {

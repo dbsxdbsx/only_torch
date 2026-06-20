@@ -319,9 +319,9 @@ example-cartpole-my-zero:
     @echo "=== Running CartPole MyZero [{{_blas_name}}] (requires Python + gymnasium) ==="
     cargo run --example my_zero_cartpole --release
 
-# MyZero CartPole smoke（管线验证，不验收敛）
+# MyZero CartPole smoke（3 局管线验证，不落盘、不验收敛）
 smoke-my-zero-cartpole:
-    @echo "=== Running MyZero CartPole Smoke ==="
+    @echo "=== Running MyZero CartPole Smoke (no checkpoint) ==="
     SMOKE=1 cargo run --example my_zero_cartpole
 
 # MyZero Pendulum smoke（管线验证，不验收敛；验证 env 旋钮 plumbing）
