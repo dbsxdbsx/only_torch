@@ -9,6 +9,7 @@ const BEST: &str = "models/my_zero/CartPole-v1/seed_42/best";
 
 fn main() -> Result<(), GraphError> {
     let mz = MyZero::new("CartPole-v1")
+        .consistency()
         .solved(475.0)
         .max_episodes(2000)
         .save_model_when_eval(BEST)

@@ -113,7 +113,7 @@ impl BestTracker {
         }
         save_myzero_model(model, cfg, self.obs_dim, &self.best_base)?;
         println!(
-            "[MyZero] best 模型 greedy={score:.1} ep={episode} steps={env_steps} -> {}.otm",
+            "[MyZero] best 模型 greedy={score:.1} ep={episode} total_env_steps={env_steps} -> {}.otm",
             self.best_base.display()
         );
         self.best_score = score;

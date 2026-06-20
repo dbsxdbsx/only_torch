@@ -466,7 +466,7 @@ fn print_multiseed_summary(results: &[SeedSummary], solved: f32) {
             .map(|s| s.to_string())
             .unwrap_or_else(|| "未达标".to_string());
         println!(
-            "  seed={:<3} greedy={:8.1} steps={:>8} wall={:.1}s",
+            "  seed={:<3} greedy={:8.1} total_env_steps={:>8} wall={:.1}s",
             r.seed, r.greedy_eval, eff, r.wall_secs
         );
     }
@@ -476,7 +476,7 @@ fn print_multiseed_summary(results: &[SeedSummary], solved: f32) {
         "n/a".to_string()
     };
     println!(
-        "  中位数 greedy={:.1} | steps={} ({}/{} 达标) | wall={:.1}s",
+        "  中位数 greedy={:.1} | total_env_steps={} ({}/{} 达标) | wall={:.1}s",
         median_f32(greedy),
         steps_med,
         n_solved,
@@ -647,13 +647,14 @@ fn train_one_seed(
         let avg_r = ep_rewards.iter().sum::<f32>() / ep_rewards.len() as f32;
 
         println!(
-            "Ep {:4}: R={:8.1} len={:3} avg_R={:8.1} loss={:.4} temp={:.2} t={:.2}s",
+            "Ep {:4}: R={:8.1} len={:3} avg_R={:8.1} loss={:.4} temp={:.2} total_env_steps={} t={:.2}s",
             ep + 1,
             ep_reward,
             ep_len,
             avg_r,
             avg_loss,
             temperature,
+            total_steps,
             t0.elapsed().as_secs_f32()
         );
 
@@ -669,12 +670,12 @@ fn train_one_seed(
             );
             let recent: f32 = ep_rewards.iter().rev().take(20).sum::<f32>() / 20.0;
             println!(
-                "  greedy eval {eval_r:.1} / {solved}（近20局 self-play {recent:.1}，steps={total_steps}）",
+                "  greedy eval {eval_r:.1} / {solved}（近20局 self-play {recent:.1}，total_env_steps={total_steps}）",
             );
             ckpt.maybe_update(&model, cfg, eval_r, ep + 1, total_steps)?;
             if eval_r >= solved {
                 hit_solved = Some((ep + 1, total_steps));
-                println!("  ✅ 达标 ep={} steps={}", ep + 1, total_steps);
+                println!("  ✅ 达标 ep={} total_env_steps={}", ep + 1, total_steps);
                 break;
             }
         }
@@ -701,7 +702,7 @@ fn train_one_seed(
 
     if !smoke {
         let eff = hit_solved
-            .map(|(e, s)| format!("ep{e}/{s} steps"))
+            .map(|(e, s)| format!("ep{e} total_env_steps={s}"))
             .unwrap_or_else(|| "未达标".to_string());
         println!(
             "📈 {} greedy={final_greedy:.1} | 门槛 {solved}: {eff} | {wall_secs:.1}s",

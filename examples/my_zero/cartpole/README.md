@@ -1,71 +1,47 @@
 # MyZero · CartPole-v1
 
-> [← 返回 MyZero 总览](../README.md)｜组件裁决见总览「组件 × 环境 效果矩阵」
+> [← 返回 MyZero 总览](../README.md)
 
-- **规格**：离散（2 动作）· 门禁 greedy eval ≥ 475 · 默认 `num_simulations=50`，`gamma=0.997`
-- **状态**：✅ +consistency +completedQ 回归哨兵（greedy 满分）；下一步 Gumbel-root（判别环境验证）
+离散 2 动作 · 门禁 **greedy eval ≥ 475** · seed=42 · sims=50 · γ=0.997
+
+**示例默认**：`main.rs` 已开 **+consistency**（库默认仍是 base，组件全关）。
 
 ## 运行
 
 ```bash
-# base（sim=50）
+# 当前示例（+consistency，sim=50）
 cargo run --example my_zero_cartpole --release
 
-# +consistency
-CONSISTENCY=1 cargo run --example my_zero_cartpole --release
-
-# +consistency +completedQ · sims=16（推荐回归命令）
-CONSISTENCY=1 CQ=1 SIMS=16 cargo run --example my_zero_cartpole --release
-
-# 多 seed（42/43/44 取中位数）
-SEEDS=3 CONSISTENCY=1 cargo run --example my_zero_cartpole --release
+# base 消融：临时去掉 main.rs 的 `.consistency()` 再跑
 ```
 
-落盘 opt-in：`.save_model_when_eval(path)` 或 `SAVE_MODEL=path`（示例 `main.rs` 已配置）。API 细节见 [总览 · 训练与推理](../README.md#训练与推理生命周期)。
+训练日志：**`len`** = 本局步数；**`total_env_steps`** = 累计真实环境交互（North Star 指标）。
 
-## 关键超参（默认）
+---
 
-| 参数 | 值 |
-|------|-----|
-| `num_simulations` | 50（+CQ 可降至 16） |
-| `gamma` | 0.997 |
-| `k_unroll` / `td_steps` | 5 / 50 |
-| `lr` | 0.02 |
-| `batch_games` / `trains_per_episode` | 8 / 8 |
+## 消融结论（2026-06-20，seed=42）
 
-## 跨算法 Benchmark（2026-06-16）
+**判据**：greedy(temp=0) eval 均值 ≥ 475；`avg_R` 仅作学习进度参考，不作成功判据。
 
-| 算法 | greedy | env-steps | wall | 备注 |
-|------|--------|-----------|------|------|
-| PPO | 484.6 | 81,920 | 107s | model-free |
-| SAC | 487.0 | 104,982 | 186s | model-free |
-| MyZero base（sim=50） | 500.0 | 17,260 | 287s | model-based，env-step 最少 |
+### consistency（主测项）
 
-## 组件消融（seed=42）
+| 配置 | avg_R @ep250 | greedy 终值 | 达标 total_env_steps | 备注 |
+|------|-------------|------------|---------------------|------|
+| base（组件全关） | 80.3 | — | 未在 ep250 达标 | 2026-06-16 |
+| **+consistency** | **111.6** | **500.0** | **28,996**（ep325，380s） | 2026-06-20 复测 ✅ |
 
-**Ep250 快照（sim=50）**
+**结论**：+consistency 明显加速早期学习（ep250：80 → 112），最终 greedy 打满 500。样本效率有 run 间方差（同 seed 历史报 ~18k steps），待多 seed 再定稿。
 
-| 配置 | avg_R @ep250 | 观察 |
-|------|-------------|------|
-| base | 80.3 | 未达标 |
-| **+consistency** | **97.1** | ✅ 显著加速 |
-| +consistency +value_prefix | 15.5 | ❌ CartPole 有害（≠ 组件全局坏，见总览脚注 ᵃ） |
+### 其他旋钮（仅粗测，未写入示例默认）
 
-**+consistency +completedQ · sims=16**
+在 **+consistency、SIMS=16、CQ 开** 下试过不同 `c_scale`（0.02 / 0.5 / 1.0），**均未在合理步数内稳定达标**（例如 0.5 超 8 万步、1.0 超 10 万步 best greedy 仍 <475）。CartPole 上 **consistency 单独已够**，其余组件待 clean A/B 后再写进文档。
 
-| 配置 | greedy | env-steps to 475 | wall | 结论 |
-|------|--------|------------------|------|------|
-| visit-count | 299.5 | 未达标 | 248s | ❌ |
-| CQ `c_scale=0.1` | 138.5 | 未达标 | 242s | ❌ 过锐 |
-| **CQ `c_scale=0.02`** | **500.0** | **57,420** | **257s** | ✅ 2026-06-20 单 seed 复测 |
-| visit-count @ sims=50 | 500.0 | ~17k | ~287s | 参照基线 |
+---
 
-> 2026-06-16 曾报 3-seed 中位 **5,141 steps / 39.6s**，与本机 2026-06-20 复测偏差大；**greedy 仍稳定 500**，样本效率待 `SEEDS=3` 重测后再定稿。
+## 默认超参
 
-**+consistency · sim=50 · 多 seed**
+`sims=50` · `gamma=0.997` · `k_unroll=5` · `td_steps=50` · `lr=0.02` · `batch_games=8` · `trains_per_episode=8`
 
-| seed | greedy | env-steps to 500 |
-|------|--------|------------------|
-| 42 | 500.0 | 18,159 |
-| 43 | 500.0 | 13,684 |
-| 中位 | **500.0** | **~16k** |
+## 参照（跨算法，2026-06-16）
+
+MyZero base ~17k env-steps 到 500；PPO ~82k、SAC ~105k（model-free）。CartPole 上 model-based 样本效率领先。
