@@ -37,7 +37,7 @@
 //! - [`report`]：train / eval / run 分数报告
 //! - [`component`]：内部组件开关（[`recipe`] 按 env 注入）
 //! - [`recipe`]：环境内置算法配方（团队维护，用户不可见）
-//! - [`network`]：三网络模型（repr / dyn / pred + value-prefix LSTM + SimSiam 分支）
+//! - [`network`]：三网络模型（repr / dyn / pred + value-prefix LSTM + SimSiam / reconstruction 分支）
 //! - [`action`]：动作适配（从 env 推断离散/连续 + idx→env 映射）
 //! - [`runner`]：训练循环 + greedy eval 内部实现
 //!
@@ -47,6 +47,7 @@
 //! - [`reanalyze`]：position 级 MCTS 重搜 + train 后写回（`Components.reanalyze`；CartPole 暂不 promote）
 //! - [`loss`]：loss 系数与梯度缩放常量
 //! - [`consistency`]：自监督 consistency loss（SimSiam）
+//! - [`reconstruction`]：自监督 reconstruction loss（Scholz et al. 2021 · arXiv:2102.05599）
 //! - [`value_prefix`]：value prefix 累计 reward 前缀目标
 //! - [`target`]：completedQ 改进策略目标
 //! - [`target_net`]：target network 同步（可用组件，接线属后续消融）
@@ -65,6 +66,7 @@ pub mod n_step;
 pub mod network;
 pub mod reanalyze;
 pub mod recipe;
+pub mod reconstruction;
 pub mod report;
 pub mod runner;
 pub mod sve;

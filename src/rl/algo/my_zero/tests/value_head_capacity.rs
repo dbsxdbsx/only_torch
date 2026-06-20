@@ -79,7 +79,17 @@ fn value_head_can_separate_high_low_targets() {
         let mut loss_sum = 0.0;
         for (obs, &t) in obses.iter().zip(&targets) {
             let loss = model
-                .train_unroll(obs, &[], &[uniform.clone()], &[t], &[], None, 0.0, false)
+                .train_unroll(
+                    obs,
+                    &[],
+                    &[uniform.clone()],
+                    &[t],
+                    &[],
+                    None,
+                    0.0,
+                    0.0,
+                    false,
+                )
                 .unwrap()
                 * (1.0 / N as f32);
             loss_sum += loss.backward().unwrap();

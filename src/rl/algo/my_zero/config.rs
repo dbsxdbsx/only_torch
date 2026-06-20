@@ -265,6 +265,7 @@ mod tests {
             .build()
             .unwrap();
         assert!(cfg.components.consistency);
+        assert!(cfg.components.reconstruction);
         assert!(!cfg.components.reanalyze);
         assert!(!cfg.components.completed_q_target);
     }

@@ -68,8 +68,10 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 
 | 工作 | 与 MyZero 关系 | 备注 |
 |------|----------------|------|
-| **MuZero / EZ** | 代码与组件已吸收进 `my_zero/` | 主栈 |
-| **Gumbel MuZero** | **计划**：Gumbel-root / completedQ | 少 sims 的 policy improvement；**非 MaxEnt** |
+| **MuZero** | 代码与组件已吸收进 `my_zero/` | Schrittwieser et al. 2020 · arXiv:1911.08265 |
+| **EfficientZero** | consistency / value_prefix / reanalyze / SVE 等 | Ye et al. 2021 · arXiv:2111.00176 |
+| **Scholz et al. 2021（reconstruction）** | CartPole ✅ reconstruction loss | *Improving Model-Based RL with Internal State Representations through Self-Supervision* · arXiv:2102.05599 |
+| **Gumbel MuZero** | **计划**：Gumbel-root / completedQ | Danihelka et al. 2022 · arXiv:2111.00301；少 sims 的 policy improvement；**非 MaxEnt** |
 | **Stochastic MuZero** | 远期：随机转移 | 学 \(p(s'\|s,a)\)，不要求策略随机 |
 | **BetaZero** | 远期：POMDP / belief MCTS | **非 MaxEnt**；长 horizon 部分可观测 |
 | **BTS/DENTS** | 若改 `SearchPolicy` backup 时**参考** | 比 MENTS/ANTS 理论更干净；未接 MuZero 全家桶 |
@@ -89,7 +91,9 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 
 | 项 | 裁决 | 理由 |
 |----|------|------|
-| consistency / value_prefix / target_net / SVE | ✅ 已在库，消融驱动 | EZ 谱系；见实测矩阵 |
+| consistency | ✅ CartPole 已验收 | EfficientZero（Ye et al. 2021）+ SimSiam（Chen & He 2020） |
+| reconstruction | ✅ CartPole 已验收 | Scholz et al. 2021 *Improving Model-Based RL with Internal State Representations through Self-Supervision*（arXiv:2102.05599）；seed=42 ~11.7k env-steps |
+| value_prefix / target_net / SVE | ✅ 已在库，消融驱动 | EZ 谱系；CartPole value_prefix ❌ |
 | completedQ / Gumbel-root | 🔲 Pendulum 起重点 | DM 官方 policy improvement 线 |
 | Sampled MuZero（高维连续候选） | ⏸ 离散化够用后再上 | CartPole/Pendulum 规模暂不需要 |
 | BTS/DENTS 式 backup | 🔲 仅当动 `SearchPolicy` | 避免 MENTS 式「max-entropy 最优 ≠ 回报最优」 |
@@ -120,7 +124,7 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 
 | 环境 | 观测 | 动作 | MyZero 状态 | 默认对照 | 远期插件位 |
 |------|------|------|-------------|----------|------------|
-| CartPole-v1 | 向量 | 离散 | ✅ 回归哨兵 ~17k steps | SAC ~82k | completedQ ✅；Gumbel 边际 |
+| CartPole-v1 | 向量 | 离散 | ✅ 回归哨兵 ~**11.7k** steps（cons+recon） | SAC ~82k | completedQ ✅；Gumbel 边际 |
 | Pendulum-v1 | 向量 | 连续 | ⏳ 失败区间，先诊断可学习性 | SAC | Gumbel-root、连续候选 |
 | Platform-v0 | 向量 | 混合 Tuple | — 未实现 | Hybrid SAC ✅ | `ActionAdapter` Tuple、混合 MCTS |
 | Gomoku | 离散棋盘 | 离散 |  backlog | — | self-play、legal_mask |
@@ -148,3 +152,4 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 |------|------|
 | 2026-06-20 | 初版：沉淀 SAC vs MyZero、MaxEnt 谱系、ANTS/BTS/Gumbel/BetaZero、POMDP/greedy 口径、Klein 论文评估、双轨决策 |
 | 2026-06-20 | §2 用语：「北极星」拆为 **核心原则** + **首要评价指标**（env-steps-to-solved） |
+| 2026-06-21 | §5.1 / §6：CartPole reconstruction 验收 ~11.7k env-steps（consistency + reconstruction） |

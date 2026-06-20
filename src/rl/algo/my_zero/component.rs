@@ -11,6 +11,8 @@
 pub(crate) struct Components {
     /// 自监督 consistency loss（SimSiam stop-grad）
     pub consistency: bool,
+    /// 自监督 reconstruction loss（latent → obs MSE；Scholz et al. 2021，见 examples/my_zero/README 文献对照表）
+    pub reconstruction: bool,
     /// value prefix（LSTM 累计 reward 前缀，hidden 穿 MCTS 树）
     pub value_prefix: bool,
     /// 训练前对 sample 的 unroll 窗口重跑 MCTS 刷新标签（MuZero Reanalyze）
@@ -36,6 +38,7 @@ impl Default for Components {
     fn default() -> Self {
         Self {
             consistency: false,
+            reconstruction: false,
             value_prefix: false,
             reanalyze: false,
             target_net: false,
@@ -68,6 +71,7 @@ mod tests {
     fn default_is_all_off() {
         let c = Components::default();
         assert!(!c.consistency);
+        assert!(!c.reconstruction);
         assert!(!c.value_prefix);
         assert!(!c.reanalyze);
         assert!(!c.target_net);

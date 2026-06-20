@@ -192,13 +192,14 @@ mod tests {
     }
 
     #[test]
-    fn cartpole_recipe_has_consistency_only() {
+    fn cartpole_recipe_has_consistency_and_reconstruction() {
         let cfg = MyZero::new("CartPole-v1")
             .solved(475.0)
             .max_episodes(2000)
             .build()
             .unwrap();
         assert!(cfg.components.consistency);
+        assert!(cfg.components.reconstruction);
         assert!(!cfg.components.reanalyze);
         assert!(!cfg.components.completed_q_target);
     }

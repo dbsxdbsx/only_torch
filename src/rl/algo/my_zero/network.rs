@@ -276,6 +276,37 @@ impl Module for PredictorNet {
 }
 
 // ============================================================================
+// Reconstruction 网络 h⁻¹: latent → obs（reconstruction 专用，不参与 MCTS）
+// ============================================================================
+
+pub struct ReconstructionNet {
+    fc1: Linear,
+    fc2: Linear,
+}
+
+impl ReconstructionNet {
+    pub fn new(graph: &Graph, latent_dim: usize, obs_dim: usize) -> Result<Self, GraphError> {
+        let graph = graph.with_model_name("Recon");
+        Ok(Self {
+            fc1: Linear::new(&graph, latent_dim, 128, true, "fc1")?,
+            fc2: Linear::new(&graph, 128, obs_dim, true, "fc2")?,
+        })
+    }
+
+    /// latent → 重建观测（线性输出，与 env obs 同尺度）
+    pub fn forward(&self, latent: &Var) -> Var {
+        let h = self.fc1.forward(latent).relu();
+        self.fc2.forward(&h)
+    }
+}
+
+impl Module for ReconstructionNet {
+    fn parameters(&self) -> Vec<Var> {
+        [self.fc1.parameters(), self.fc2.parameters()].concat()
+    }
+}
+
+// ============================================================================
 // MyZero 组合模型
 // ============================================================================
 
@@ -285,6 +316,7 @@ pub struct MyZeroModel {
     pub pred: PredictionNet,
     pub projector: ProjectorNet,
     pub predictor: PredictorNet,
+    pub recon: ReconstructionNet,
     pub lstm: ValuePrefixLstm, // value prefix LSTM
     pub graph: Graph,
     pub action_dim: usize,
@@ -305,6 +337,7 @@ impl MyZeroModel {
             pred: PredictionNet::new(graph, latent_dim, action_dim)?,
             projector: ProjectorNet::new(graph, latent_dim)?,
             predictor: PredictorNet::new(graph, latent_dim)?,
+            recon: ReconstructionNet::new(graph, latent_dim, obs_dim)?,
             lstm: ValuePrefixLstm::new(graph, latent_dim, lstm_hidden)?,
             graph: graph.clone(),
             action_dim,
@@ -319,6 +352,7 @@ impl MyZeroModel {
             self.pred.parameters(),
             self.projector.parameters(),
             self.predictor.parameters(),
+            self.recon.parameters(),
             self.lstm.parameters(),
         ]
         .concat()
@@ -386,6 +420,7 @@ impl MyZeroModel {
         target_rewards: &[f32], // value_prefix=true 时是前缀目标，false 时是单步 reward
         next_obs_list: Option<&[Vec<f32>]>,
         consistency_coef: f32,
+        reconstruction_coef: f32,
         use_value_prefix: bool,
     ) -> Result<Var, GraphError> {
         let k = actions.len();
@@ -399,6 +434,14 @@ impl MyZeroModel {
         let mut total_loss = pred_policy.cross_entropy(&target_p0)?;
         total_loss =
             &total_loss + &(&pred_value_logits.cross_entropy(&target_v0)? * loss::VALUE_LOSS_COEF);
+
+        // reconstruction k=0：h(obs_t) 重建 obs_t
+        if reconstruction_coef > 0.0 {
+            let recon0 = self.recon.forward(&latent);
+            let target_obs0 = Tensor::new(obs_t, &[1, obs_t.len()]);
+            let recon_loss0 = recon0.mse_loss(&target_obs0)?;
+            total_loss = &total_loss + &(&recon_loss0 * reconstruction_coef);
+        }
 
         // value prefix：LSTM hidden state 初始化为全零
         let (mut vp_h, mut vp_c) = if use_value_prefix {
@@ -454,6 +497,17 @@ impl MyZeroModel {
                 let pred_online = self.predictor.forward(&proj_online);
                 let cons_loss = negative_cosine_similarity(&pred_online, &proj_target)?;
                 step_loss = &step_loss + &(&cons_loss * consistency_coef);
+            }
+
+            // reconstruction k>0：dynamics latent 重建 next_obs
+            if reconstruction_coef > 0.0
+                && let Some(next_obs) = next_obs_list.and_then(|list| list.get(i))
+            {
+                let obs_len = obs_t.len();
+                let recon = self.recon.forward(&next_latent);
+                let target_obs = Tensor::new(next_obs, &[1, obs_len]);
+                let recon_loss = recon.mse_loss(&target_obs)?;
+                step_loss = &step_loss + &(&recon_loss * reconstruction_coef);
             }
 
             total_loss = &total_loss + &step_loss.scale_gradient(step_scale);

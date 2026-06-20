@@ -8,7 +8,7 @@ reviewers: []
 
 # MyZero · Reanalyze + 写回：CartPole 学习失效（暂缓 promote）
 
-> **状态**：active —— 写回闭环已实现并单测覆盖；CartPole recipe **已关** `reanalyze`，consistency-only 回归正常。
+> **状态**：active —— 写回闭环已实现并单测覆盖；CartPole recipe **已关** `reanalyze`，当前基线为 **consistency + reconstruction**（2026-06-21 验收 ~11.7k env-steps）。
 > **关联**：[CartPole README](../../examples/my_zero/cartpole/README.md) · [MyZero 总览](../../examples/my_zero/README.md) · [RL 路线图](../../.doc/design/rl_roadmap.md)
 > **代码**：`src/rl/algo/my_zero/reanalyze.rs` · `runner.rs`（`prepare_train_batch` / `writeback_reanalyzed_samples`）· `buffer/replay.rs`（`sample_indexed` / `update_at`）
 > **日志**：`.bench/my_zero_cartpole_cons_only.log` · `.bench/my_zero_cartpole_cons_reanalyze.log`
@@ -59,7 +59,7 @@ seed=42 · release · CartPole-v1 · recipe **consistency + reanalyze + 写回**
 
 ## 四、恢复条件（promote 前）
 
-- [ ] 至少一条：CartPole greedy ≥475 且 env-steps 不劣于 consistency-only 基线
+- [ ] 至少一条：CartPole greedy ≥475 且 env-steps **不劣于** 当前 recipe 基线（**~11,682**，consistency + reconstruction）
 - [ ] 或：Atari / 数据受限 env 上证明 reanalyze+写回有增益（CartPole 可永久 ⏸）
 - [ ] 若接 target net：训练循环接线 + 与 reanalyze 联调
 
@@ -67,6 +67,6 @@ seed=42 · release · CartPole-v1 · recipe **consistency + reanalyze + 写回**
 
 ## 五、当前决策
 
-- `recipe.rs`：`CartPole-v1` = **consistency only**，`reanalyze = false`
+- `recipe.rs`：`CartPole-v1` = **consistency + reconstruction**（内置），`reanalyze = false`
 - 写回路径保留；`Components.reanalyze` 仍可用于内部消融 / 其他 env
 - 不在此 issue 内改 train_batch 真 batched unroll 或 Rayon 并行（正交）

@@ -27,6 +27,9 @@ fn print_components(c: &Components) {
     if c.consistency {
         tags.push("consistency");
     }
+    if c.reconstruction {
+        tags.push("reconstruction");
+    }
     if c.value_prefix {
         tags.push("value_prefix");
     }
@@ -297,18 +300,24 @@ pub(crate) fn train_batch(
             target_rewards
         };
 
-        // consistency：收集 unroll 每步对应的真实 next_obs
+        // consistency / reconstruction：收集 unroll 每步对应的真实 next_obs
         let consistency_coef = if components.consistency { 2.0 } else { 0.0 };
-        let next_obs_list: Option<Vec<Vec<f32>>> = if components.consistency {
-            Some(
-                (0..actual_k)
-                    .take_while(|&i| t + i + 1 < len)
-                    .map(|i| steps[t + i + 1].obs.clone())
-                    .collect(),
-            )
+        let reconstruction_coef = if components.reconstruction {
+            super::loss::RECONSTRUCTION_LOSS_COEF
         } else {
-            None
+            0.0
         };
+        let next_obs_list: Option<Vec<Vec<f32>>> =
+            if components.consistency || components.reconstruction {
+                Some(
+                    (0..actual_k)
+                        .take_while(|&i| t + i + 1 < len)
+                        .map(|i| steps[t + i + 1].obs.clone())
+                        .collect(),
+                )
+            } else {
+                None
+            };
 
         let loss = model.train_unroll(
             obs_t,
@@ -318,6 +327,7 @@ pub(crate) fn train_batch(
             &final_rewards,
             next_obs_list.as_deref(),
             consistency_coef,
+            reconstruction_coef,
             components.value_prefix,
         )? * (1.0 / batch_size);
         total_loss_val += loss.backward()?;
