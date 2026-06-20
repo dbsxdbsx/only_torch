@@ -5,7 +5,7 @@
 //!   **选择**才让用户填（动作的离散/连续/范围是 env 事实，库自动推断，见 [`crate::rl::algo::my_zero::action`]）。
 //! - [`ModelSettings`]：网络容量（latent_dim ...）。
 //! - [`TrainSettings`]：训练超参（gamma/lr/k_unroll/sims/buffer ...），MyZero 自有。
-//! - [`Components`]：消融组件开关。
+//! - [`Components`]：内部组件开关（由 [`recipe`](super::recipe) 按 env 注入，用户 API 不暴露）。
 //! - [`EvalSettings`]：评测 / 跑法（solved / seed / max_episodes / …）。
 //!
 //! 判据（字段归层）：**改了它训练出的 agent 会不会变？** 会变→`train`；不会变（只改这次怎么跑/怎么量）→`eval`。
@@ -126,7 +126,7 @@ impl Default for TrainSettings {
 /// 训练期 best 模型落盘（须显式指定路径；仅在 periodic greedy eval 创新高时写入）
 #[derive(Debug, Clone, PartialEq)]
 pub struct CheckpointSettings {
-    /// 是否落盘（默认关；链式 [`.save_model_when_eval(path)`](super::builder::MyZeroBuilder::save_model_when_eval) 或 `SAVE_MODEL=path` 环境变量）
+    /// 是否落盘（默认关；链式 [`.save_model_when_eval(path)`](super::builder::MyZeroBuilder::save_model_when_eval)）
     pub enabled: bool,
     /// best `.otm` 基名（不含后缀）；须显式设定，无默认路径
     pub best_base: Option<std::path::PathBuf>,
@@ -154,7 +154,7 @@ pub struct EvalSettings {
     pub solved: f32,
     /// 随机种子：权重初始化、self-play / MCTS、greedy eval / run、环境 `reset` 均由此派生
     pub seed: u64,
-    /// 多 seed 回归跑法重复次数（仅 `SEEDS` 环境变量；公开 API 不暴露）
+    /// 多 seed 回归跑法重复次数（[`.seeds(n)`](super::builder::MyZeroBuilder::seeds)）
     pub(crate) seed_runs: u64,
     /// 最大训练局数（smoke 时强制为 3）
     pub max_episodes: usize,
@@ -195,8 +195,8 @@ pub struct MyZeroConfig {
     pub model: ModelSettings,
     /// 训练超参
     pub train: TrainSettings,
-    /// 消融组件
-    pub components: Components,
+    /// 消融组件（内部；[`MyZero::new`](super::my_zero::MyZero::new) 按 env 自动注入）
+    pub(crate) components: Components,
     /// 评测 / 跑法
     pub eval: EvalSettings,
 }
@@ -210,138 +210,6 @@ impl Default for MyZeroConfig {
             train: TrainSettings::default(),
             components: Components::default(),
             eval: EvalSettings::default(),
-        }
-    }
-}
-
-impl MyZeroConfig {
-    /// 合并 `CONSISTENCY` / `CQ` / `SIMS` / `SMOKE` 等环境变量（[`train_all_seeds`] 内自动调用）。
-    pub(crate) fn merge_from_env(&mut self) {
-        use std::env::var;
-
-        let mut touched: Vec<&'static str> = Vec::new();
-
-        macro_rules! flag {
-            ($name:expr, $body:expr) => {
-                if var($name).is_ok() {
-                    touched.push($name);
-                    $body
-                }
-            };
-        }
-
-        // ---- 组件 ----
-        flag!("CONSISTENCY", self.components.consistency = true);
-        flag!("VALUE_PREFIX", self.components.value_prefix = true);
-        flag!("TARGET_NET", self.components.target_net = true);
-        if let Ok(v) = var("SVE")
-            && let Ok(w) = v.parse::<f32>()
-        {
-            touched.push("SVE");
-            self.components.sve_weight = w;
-        }
-        flag!("CQ", self.components.completed_q_target = true);
-        if let Ok(v) = var("CQ_SCALE")
-            && let Ok(s) = v.parse::<f32>()
-        {
-            touched.push("CQ_SCALE");
-            self.components.cq_c_scale = s;
-        }
-        if let Ok(v) = var("CQ_VISIT")
-            && let Ok(s) = v.parse::<f32>()
-        {
-            touched.push("CQ_VISIT");
-            self.components.cq_c_visit = s;
-        }
-
-        // ---- 训练 ----
-        if let Ok(v) = var("SIMS")
-            && let Ok(n) = v.parse::<u32>()
-        {
-            touched.push("SIMS");
-            self.train.num_simulations = n;
-        }
-        if let Ok(v) = var("REANALYZE")
-            && let Ok(f) = v.parse::<f32>()
-        {
-            touched.push("REANALYZE");
-            self.train.reanalyze_fraction = f.clamp(0.0, 1.0);
-        }
-        if let Ok(v) = var("GAMMA")
-            && let Ok(g) = v.parse::<f32>()
-        {
-            touched.push("GAMMA");
-            self.train.gamma = g;
-        }
-        if let Ok(v) = var("LR")
-            && let Ok(lr) = v.parse::<f32>()
-            && lr.is_finite()
-            && lr > 0.0
-        {
-            touched.push("LR");
-            self.train.lr = lr;
-        }
-
-        // ---- 评测 / 跑法 ----
-        if let Ok(v) = var("MAX_EP")
-            && let Ok(n) = v.parse::<usize>()
-        {
-            touched.push("MAX_EP");
-            self.eval.max_episodes = n;
-        }
-        if let Ok(v) = var("SEEDS")
-            && let Ok(n) = v.parse::<u64>()
-        {
-            touched.push("SEEDS");
-            self.eval.seed_runs = n.max(1);
-        }
-        if let Ok(v) = var("SEED")
-            && let Ok(s) = v.parse::<u64>()
-        {
-            touched.push("SEED");
-            self.eval.seed = s;
-        }
-        flag!("SMOKE", self.eval.smoke = true);
-        flag!("DIAG", self.eval.diagnose = true);
-        if let Ok(v) = var("SOLVED")
-            && let Ok(s) = v.parse::<f32>()
-        {
-            touched.push("SOLVED");
-            self.eval.solved = s;
-        }
-        if let Ok(v) = var("SAVE_MODEL")
-            && !v.is_empty()
-        {
-            touched.push("SAVE_MODEL");
-            self.eval.checkpoint.enabled = true;
-            self.eval.checkpoint.best_base = Some(std::path::PathBuf::from(v));
-        }
-
-        // ---- 动作 / env ----
-        if let Ok(v) = var("NUM_ACTIONS")
-            && let Ok(n) = v.parse::<usize>()
-            && n >= 1
-            && let ActionPlan::Discretize { buckets } = &mut self.env.action
-        {
-            touched.push("NUM_ACTIONS");
-            *buckets = n;
-        }
-        if let Ok(v) = var("RSCALE")
-            && let Ok(s) = v.parse::<f32>()
-            && s.is_finite()
-            && s > 0.0
-        {
-            touched.push("RSCALE");
-            self.env.reward_scale = s;
-        }
-
-        let ablation: Vec<&str> = touched
-            .iter()
-            .copied()
-            .filter(|&k| k != "SMOKE" && k != "DIAG")
-            .collect();
-        if !ablation.is_empty() {
-            println!("[MyZero] 旋钮: {}", ablation.join(", "));
         }
     }
 }
@@ -389,5 +257,17 @@ mod tests {
         };
         assert!(cfg.components.consistency);
         assert!(!cfg.components.value_prefix, "只开 consistency，其余不变");
+    }
+
+    #[test]
+    fn new_cartpole_applies_recipe() {
+        use super::super::my_zero::MyZero;
+        let cfg = MyZero::new("CartPole-v1")
+            .solved(475.0)
+            .max_episodes(100)
+            .build()
+            .unwrap();
+        assert!(cfg.components.consistency);
+        assert!(!cfg.components.completed_q_target);
     }
 }

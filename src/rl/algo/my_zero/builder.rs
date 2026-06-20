@@ -4,7 +4,7 @@
 //!
 //! | 类别 | 字段 | 说明 |
 //! |------|------|------|
-//! | **必填** | [`MyZero::new`](super::my_zero::MyZero::new) 的 `env_id` | Gymnasium 环境 ID |
+//! | **必填** | [`MyZero::new`](super::my_zero::MyZero::new) 的 `env_id` | Gymnasium 环境 ID（内置算法配方） |
 //! | **必填（仅 train）** | [`.solved`](MyZeroBuilder::solved) | greedy eval 达标线 |
 //! | **必填（仅 train）** | [`.max_episodes`](MyZeroBuilder::max_episodes) | 训练局数上限 |
 //! | **特殊动作时才写** | [`.discretize`](MyZeroBuilder::discretize) 等 | 默认 [`ActionPlan::Auto`] |
@@ -15,7 +15,6 @@
 //! **权重语义**：`.train()` 返回 **latest** 训末权重；eval 前若要用磁盘 best，须显式
 //! [`.load_model_if_exists(path)`](super::my_zero::MyZero::load_model_if_exists)（`path` 见 [`TrainReport::model_path`](super::report::TrainReport::model_path)）。
 
-use super::component::Components;
 use super::config::{ActionPlan, EvalSettings, MyZeroConfig, TrainSettings};
 use super::my_zero::MyZero;
 use super::runner::train_all_seeds;
@@ -98,43 +97,6 @@ impl MyZeroBuilder {
         self
     }
 
-    // ---- components（可选）----
-
-    pub fn consistency(mut self) -> Self {
-        self.cfg.components.consistency = true;
-        self
-    }
-
-    pub fn value_prefix(mut self) -> Self {
-        self.cfg.components.value_prefix = true;
-        self
-    }
-
-    pub fn target_net(mut self) -> Self {
-        self.cfg.components.target_net = true;
-        self
-    }
-
-    pub fn completed_q(mut self) -> Self {
-        self.cfg.components.completed_q_target = true;
-        self
-    }
-
-    pub fn sve(mut self, weight: f32) -> Self {
-        self.cfg.components.sve_weight = weight;
-        self
-    }
-
-    pub fn gumbel(mut self) -> Self {
-        self.cfg.components.gumbel = true;
-        self
-    }
-
-    pub fn components(mut self, c: Components) -> Self {
-        self.cfg.components = c;
-        self
-    }
-
     // ---- eval ----
 
     /// greedy eval 达标门槛（**train 必填**）。
@@ -144,7 +106,7 @@ impl MyZeroBuilder {
         self
     }
 
-    /// 训练局数上限（**train 必填**；`SMOKE=1` 时运行期仍强制 3 局）。
+    /// 训练局数上限（**train 必填**；`.smoke()` 时运行期仍强制 3 局）。
     pub fn max_episodes(mut self, n: usize) -> Self {
         self.cfg.eval.max_episodes = n;
         self.max_episodes_set = true;
@@ -157,15 +119,33 @@ impl MyZeroBuilder {
         self
     }
 
+    /// 多 seed 回归（benchmark 用；默认 1）。
+    pub fn seeds(mut self, n: u64) -> Self {
+        self.cfg.eval.seed_runs = n.max(1);
+        self
+    }
+
     pub fn eval_every(mut self, n: usize) -> Self {
         self.cfg.eval.eval_every = n;
+        self
+    }
+
+    /// 管线自检（3 局 self-play + 1 次训练，不验收敛；通常由 example 在 `SMOKE=1` 时调用）。
+    pub fn smoke(mut self) -> Self {
+        self.cfg.eval.smoke = true;
+        self
+    }
+
+    /// dynamics 诊断（对比 model 想象 vs 真实 reward/value）。
+    pub fn diagnose(mut self) -> Self {
+        self.cfg.eval.diagnose = true;
         self
     }
 
     /// periodic greedy eval 分数创新高时写入 `{path}.otm`。
     ///
     /// `path` 为完整基名（含目录与文件名，**不含** `.otm` 后缀），无默认路径。
-    /// 多 seed（`SEEDS`>1）时在 `path` 的父目录下自动插入 `seed_{seed}/` 子目录。
+    /// 多 seed（`.seeds(n)`，`n>1`）时在 `path` 的父目录下自动插入 `seed_{seed}/` 子目录。
     pub fn save_model_when_eval(mut self, path: impl Into<std::path::PathBuf>) -> Self {
         self.cfg.eval.checkpoint.enabled = true;
         self.cfg.eval.checkpoint.best_base = Some(path.into());
@@ -209,6 +189,17 @@ mod tests {
             .build()
             .unwrap();
         assert_eq!(cfg.env.action, ActionPlan::Auto);
+    }
+
+    #[test]
+    fn cartpole_recipe_has_consistency() {
+        let cfg = MyZero::new("CartPole-v1")
+            .solved(475.0)
+            .max_episodes(2000)
+            .build()
+            .unwrap();
+        assert!(cfg.components.consistency);
+        assert!(!cfg.components.completed_q_target);
     }
 
     #[test]

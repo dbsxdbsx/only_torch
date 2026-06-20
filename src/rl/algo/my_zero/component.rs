@@ -8,7 +8,7 @@
 /// 全部 `false` / `0.0` 等价于 canonical MuZero（base）。
 /// 消融过程中逐个开启，验证每个组件的增量贡献。
 #[derive(Debug, Clone, PartialEq)]
-pub struct Components {
+pub(crate) struct Components {
     /// 自监督 consistency loss（SimSiam stop-grad）
     pub consistency: bool,
     /// value prefix（LSTM 累计 reward 前缀，hidden 穿 MCTS 树）

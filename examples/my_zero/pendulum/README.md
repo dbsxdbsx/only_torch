@@ -9,24 +9,13 @@
 ## 运行
 
 ```bash
-# +consistency（当前 Pendulum 基线栈）
-CONSISTENCY=1 cargo run --example my_zero_pendulum --release
-
-# +consistency +completedQ
-CONSISTENCY=1 CQ=1 cargo run --example my_zero_pendulum --release
-
-# 低 sims A/B（对齐 CartPole completedQ 判别点）
-CONSISTENCY=1 SIMS=16 cargo run --example my_zero_pendulum --release
-CONSISTENCY=1 CQ=1 SIMS=16 cargo run --example my_zero_pendulum --release
-
-# 多 seed（seed 42/43/44 取中位数）
-SEEDS=3 CONSISTENCY=1 CQ=1 SIMS=16 cargo run --example my_zero_pendulum --release
+cargo run --example my_zero_pendulum --release
 
 # SMOKE 管线验证
 SMOKE=1 cargo run --example my_zero_pendulum
 ```
 
-> 支持：`CONSISTENCY / VALUE_PREFIX / TARGET_NET / SVE / CQ / CQ_SCALE / CQ_VISIT / SIMS / SEEDS / SAVE_MODEL=path / SMOKE / GAMMA / MAX_EP / LR / NUM_ACTIONS / RSCALE`
+算法配方由库内 `recipe.rs` 注入（Pendulum 当前为 base）；组件消融在库内维护，示例只写 env 适配（`.discretize(9)` / `.reward_scale(0.1)`）。
 
 ## 实测（seed=42，门禁 −200）
 

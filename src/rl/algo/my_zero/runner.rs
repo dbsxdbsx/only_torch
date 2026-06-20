@@ -743,8 +743,7 @@ fn train_one_seed(
 }
 
 /// 多 seed 训练；返回**最后一 seed** 的权重实例。
-pub(crate) fn train_all_seeds(mut cfg: MyZeroConfig) -> Result<MyZero, GraphError> {
-    cfg.merge_from_env();
+pub(crate) fn train_all_seeds(cfg: MyZeroConfig) -> Result<MyZero, GraphError> {
     print_components(&cfg.components);
     let smoke = cfg.eval.smoke;
     let n_runs = cfg.eval.seed_runs.max(1);

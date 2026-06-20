@@ -26,6 +26,7 @@ impl MyZero {
         assert!(!env_id.is_empty(), "MyZero: env_id 不能为空");
         let mut cfg = MyZeroConfig::default();
         cfg.env.env_id = env_id;
+        cfg.components = super::recipe::components_for(env_id);
         super::builder::MyZeroBuilder {
             cfg,
             solved_set: false,

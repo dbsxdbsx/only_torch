@@ -35,7 +35,8 @@
 //! - [`model_io`]：`.otm` 持久化（内部契约校验）
 //! - [`checkpoint`]：eval 创新高时落盘（须显式 `.save_model_when_eval(path)`）
 //! - [`report`]：train / eval / run 分数报告
-//! - [`component`]：消融组件开关
+//! - [`component`]：内部组件开关（[`recipe`] 按 env 注入）
+//! - [`recipe`]：环境内置算法配方（团队维护，用户不可见）
 //! - [`network`]：三网络模型（repr / dyn / pred + value-prefix LSTM + SimSiam 分支）
 //! - [`action`]：动作适配（从 env 推断离散/连续 + idx→env 映射）
 //! - [`runner`]：训练循环 + greedy eval 内部实现
@@ -63,6 +64,7 @@ pub mod my_zero;
 pub mod n_step;
 pub mod network;
 pub mod reanalyze;
+pub mod recipe;
 pub mod report;
 pub mod runner;
 pub mod sve;
@@ -77,7 +79,6 @@ mod tests;
 
 pub use action::ActionAdapter;
 pub use builder::MyZeroBuilder;
-pub use component::Components;
 pub use config::{
     ActionPlan, CheckpointSettings, DEFAULT_EVAL_SEED, DEFAULT_ROLLOUT_SEED, DEFAULT_SEED,
     DEFAULT_TRAIN_SEED, EnvSettings, EvalSettings, ModelSettings, MyZeroConfig, TrainSettings,
