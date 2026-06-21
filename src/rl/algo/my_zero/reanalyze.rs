@@ -3,12 +3,14 @@
 //! MuZero / EfficientZero 语义：**按训练 position**（unroll 窗口内各步）重搜，而非整局每步。
 //!
 //! - **只刷 policy / value**：`reward` / `terminated` 是环境事实，不变。
+//! - **policy target** 与 self-play 共用 [`mcts_policy_target`](super::target::mcts_policy_target)（visit 或 completedQ）。
 //! - **训练路径**（`Components.reanalyze = true`）：`sample_indexed` clone → unroll 窗口 reanalyze
 //!   → `train_batch` → [`writeback_reanalyzed_samples`](super::runner::writeback_reanalyzed_samples)。
 //! - **CartPole**：recipe 暂不 promote（实测学习失效，见 `.issue/items/my_zero_reanalyze_cartpole_regression.md`）。
 
 use rand::RngCore;
 
+use super::target::mcts_policy_target;
 use crate::rl::SelfPlayGame;
 use crate::rl::SelfPlayStep;
 use crate::rl::mcts::{MctsConfig, MctsModel, SearchPolicy, mcts_search};
@@ -19,6 +21,7 @@ pub fn reanalyze_step<M, P>(
     policy: &P,
     step: &mut SelfPlayStep,
     cfg: &MctsConfig,
+    cq: Option<(f32, f32)>,
     rng: &mut dyn RngCore,
 ) where
     M: MctsModel,
@@ -28,9 +31,8 @@ pub fn reanalyze_step<M, P>(
     if result.children.is_empty() {
         return;
     }
-    let root_value = result.root_value();
-    step.policy_target = result.learn_policy;
-    step.root_value = Some(root_value);
+    step.policy_target = mcts_policy_target(&result, cq);
+    step.root_value = Some(result.root_value());
 }
 
 /// 刷新 unroll 窗口 `[start, start + unroll_k]` 内各步标签（position 级 reanalyze）。
@@ -41,6 +43,7 @@ pub fn reanalyze_unroll_window<M, P>(
     start: usize,
     unroll_k: usize,
     cfg: &MctsConfig,
+    cq: Option<(f32, f32)>,
     rng: &mut dyn RngCore,
 ) where
     M: MctsModel,
@@ -51,7 +54,7 @@ pub fn reanalyze_unroll_window<M, P>(
     }
     let end = (start + unroll_k).min(steps.len() - 1);
     for step in &mut steps[start..=end] {
-        reanalyze_step(model, policy, step, cfg, rng);
+        reanalyze_step(model, policy, step, cfg, cq, rng);
     }
 }
 
@@ -61,6 +64,7 @@ pub fn reanalyze_game<M, P>(
     policy: &P,
     game: &mut SelfPlayGame,
     cfg: &MctsConfig,
+    cq: Option<(f32, f32)>,
     rng: &mut dyn RngCore,
 ) where
     M: MctsModel,
@@ -70,13 +74,14 @@ pub fn reanalyze_game<M, P>(
     if len == 0 {
         return;
     }
-    reanalyze_unroll_window(model, policy, &mut game.steps, 0, len - 1, cfg, rng);
+    reanalyze_unroll_window(model, policy, &mut game.steps, 0, len - 1, cfg, cq, rng);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rl::mcts::{ActionPayload, PuctPolicy, RecurrentOut, RootOut};
+    use crate::rl::algo::my_zero::target::{completed_q_policy_target, mcts_policy_target};
+    use crate::rl::mcts::{ActionPayload, PuctPolicy, RecurrentOut, RootOut, mcts_search};
     use crate::rl::{GameOutcome, SelfPlayStep};
     use rand::SeedableRng;
     use rand::rngs::StdRng;
@@ -126,15 +131,19 @@ mod tests {
         }
     }
 
+    fn test_cfg(sims: u32) -> MctsConfig {
+        MctsConfig {
+            num_simulations: sims,
+            root_exploration_fraction: 0.0,
+            ..MctsConfig::default()
+        }
+    }
+
     #[test]
     fn reanalyze_refreshes_targets_preserves_facts() {
         let model = MockModel;
         let policy = PuctPolicy::new();
-        let cfg = MctsConfig {
-            num_simulations: 16,
-            root_exploration_fraction: 0.0,
-            ..MctsConfig::default()
-        };
+        let cfg = test_cfg(16);
 
         let mut game = SelfPlayGame {
             steps: vec![make_step(vec![0.0; 4]), make_step(vec![1.0; 4])],
@@ -142,7 +151,7 @@ mod tests {
         };
 
         let mut rng = StdRng::seed_from_u64(7);
-        reanalyze_game(&model, &policy, &mut game, &cfg, &mut rng);
+        reanalyze_game(&model, &policy, &mut game, &cfg, None, &mut rng);
 
         for step in &game.steps {
             assert_eq!(step.policy_target.len(), 2);
@@ -159,14 +168,47 @@ mod tests {
     }
 
     #[test]
+    fn reanalyze_visit_target_matches_search_learn_policy() {
+        let model = MockModel;
+        let policy = PuctPolicy::new();
+        let cfg = test_cfg(12);
+        let mut step = make_step(vec![3.0; 4]);
+        let mut rng = StdRng::seed_from_u64(11);
+
+        reanalyze_step(&model, &policy, &mut step, &cfg, None, &mut rng);
+
+        let mut rng2 = StdRng::seed_from_u64(11);
+        let result = mcts_search(&model, &policy, &step.obs, &cfg, &mut rng2);
+        assert_eq!(step.policy_target, result.learn_policy);
+    }
+
+    #[test]
+    fn reanalyze_completed_q_matches_mcts_policy_target() {
+        let model = MockModel;
+        let policy = PuctPolicy::new();
+        let cfg = test_cfg(12);
+        let cq = Some((50.0, 1.0));
+        let mut step = make_step(vec![3.0; 4]);
+        let mut rng = StdRng::seed_from_u64(13);
+
+        reanalyze_step(&model, &policy, &mut step, &cfg, cq, &mut rng);
+
+        let mut rng2 = StdRng::seed_from_u64(13);
+        let result = mcts_search(&model, &policy, &step.obs, &cfg, &mut rng2);
+        let expected = mcts_policy_target(&result, cq);
+        assert_eq!(step.policy_target, expected);
+        // 与 visit target 应不同（completedQ 在此 mock 下会放大 Q 差）
+        assert_ne!(step.policy_target, result.learn_policy);
+        let expected_direct =
+            completed_q_policy_target(&result.children, result.network_value, 50.0, 1.0);
+        assert_eq!(step.policy_target, expected_direct);
+    }
+
+    #[test]
     fn unroll_window_only_touches_requested_range() {
         let model = MockModel;
         let policy = PuctPolicy::new();
-        let cfg = MctsConfig {
-            num_simulations: 8,
-            root_exploration_fraction: 0.0,
-            ..MctsConfig::default()
-        };
+        let cfg = test_cfg(8);
         let mut steps = vec![
             make_step(vec![0.0; 4]),
             make_step(vec![1.0; 4]),
@@ -176,7 +218,7 @@ mod tests {
         steps[2].root_value = Some(99.0);
 
         let mut rng = StdRng::seed_from_u64(1);
-        reanalyze_unroll_window(&model, &policy, &mut steps, 1, 0, &cfg, &mut rng);
+        reanalyze_unroll_window(&model, &policy, &mut steps, 1, 0, &cfg, None, &mut rng);
 
         assert!(
             steps[0].root_value == Some(99.0),

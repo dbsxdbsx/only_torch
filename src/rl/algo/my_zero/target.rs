@@ -6,7 +6,17 @@
 //! π' 直接由 Q 值构造，少模拟下仍是一次有保证的策略提升（与 Grill 2020 的正则化策略优化同源，
 //! 但闭式、无需二分搜索 α）。
 
-use crate::rl::mcts::ChildStat;
+use crate::rl::mcts::{ChildStat, SearchResult};
+
+/// 从 MCTS 搜索结果构造策略训练目标（visit-count 或 completedQ，与 self-play / reanalyze 共用）。
+pub fn mcts_policy_target(result: &SearchResult, cq: Option<(f32, f32)>) -> Vec<f32> {
+    match cq {
+        Some((c_visit, c_scale)) => {
+            completed_q_policy_target(&result.children, result.network_value, c_visit, c_scale)
+        }
+        None => result.learn_policy.clone(),
+    }
+}
 
 /// completedQ 改进策略目标（闭式，返回与 `children` 平行的概率向量）。
 ///
@@ -124,10 +134,7 @@ mod tests {
     fn unvisited_baseline_is_v_pi_not_visit_weighted_q() {
         // 动作 0 已访问 Q≈0.8；动作 1 未访问。
         // 论文 Eq.10：未访问应补 vπ=0，而非 visit 加权 root Q≈0.8。
-        let children = vec![
-            child(0.5, 10, 8.0, 0.0),
-            child(0.5, 0, 0.0, 0.0),
-        ];
+        let children = vec![child(0.5, 10, 8.0, 0.0), child(0.5, 0, 0.0, 0.0)];
         let t_correct = completed_q_policy_target(&children, 0.0, 50.0, 1.0);
         let t_wrong = completed_q_policy_target(&children, 0.8, 50.0, 1.0);
         assert!(

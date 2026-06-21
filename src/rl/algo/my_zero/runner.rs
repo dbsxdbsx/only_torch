@@ -9,7 +9,7 @@ use super::n_step::compute_n_step_target;
 use super::network::MyZeroModel;
 use super::reanalyze::reanalyze_unroll_window;
 use super::report::TrainReport;
-use super::target::completed_q_policy_target;
+use super::target::mcts_policy_target;
 use super::value_prefix::reward_prefix_targets;
 use crate::nn::{Adam, Graph, GraphError, Optimizer};
 use crate::rl::mcts::{
@@ -79,17 +79,7 @@ fn self_play_one_episode(
         };
 
         let root_value = result.root_value();
-
-        // 策略目标：completedQ 改进策略 或 visit-count（A/B 开关）
-        let policy_target = match cq {
-            Some((c_visit, c_scale)) => completed_q_policy_target(
-                &result.children,
-                result.network_value,
-                c_visit,
-                c_scale,
-            ),
-            None => result.learn_policy,
-        };
+        let policy_target = mcts_policy_target(&result, cq);
 
         steps.push(SelfPlayStep {
             obs: obs.clone(),
@@ -157,6 +147,7 @@ pub(crate) fn prepare_train_batch(
     adapter: &ActionAdapter,
     gamma: f32,
     num_simulations: u32,
+    cq: Option<(f32, f32)>,
     rng: &mut StdRng,
 ) -> Vec<TrainBatchItem> {
     let mut out = Vec::with_capacity(train_batch_size);
@@ -184,6 +175,7 @@ pub(crate) fn prepare_train_batch(
                 start,
                 actual_k,
                 &re_cfg,
+                cq,
                 rng,
             );
             out.push(TrainBatchItem {
@@ -729,6 +721,7 @@ fn train_one_seed(
                     &adapter,
                     gamma,
                     t.num_simulations,
+                    cq,
                     &mut rng,
                 );
                 let train_view: Vec<(&SelfPlayGame, usize)> =
