@@ -82,9 +82,12 @@ fn self_play_one_episode(
 
         // 策略目标：completedQ 改进策略 或 visit-count（A/B 开关）
         let policy_target = match cq {
-            Some((c_visit, c_scale)) => {
-                completed_q_policy_target(&result.children, root_value, c_visit, c_scale)
-            }
+            Some((c_visit, c_scale)) => completed_q_policy_target(
+                &result.children,
+                result.network_value,
+                c_visit,
+                c_scale,
+            ),
             None => result.learn_policy,
         };
 

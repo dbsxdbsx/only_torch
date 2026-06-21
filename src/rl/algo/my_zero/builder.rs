@@ -87,6 +87,12 @@ impl MyZeroBuilder {
         self
     }
 
+    /// 开启 completedQ 策略训练目标（默认关；CartPole recipe 未 promote，供 A/B 用）。
+    pub fn completed_q_target(mut self, enabled: bool) -> Self {
+        self.cfg.components.completed_q_target = enabled;
+        self
+    }
+
     pub fn train_batch_size(mut self, n: usize) -> Self {
         self.cfg.train.train_batch_size = n.max(1);
         self

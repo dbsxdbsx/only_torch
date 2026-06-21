@@ -146,7 +146,7 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 
 | 环境 | 观测 | 动作 | MyZero 状态 | 默认对照 | 远期插件位 |
 |------|------|------|-------------|----------|------------|
-| CartPole-v1 | 向量 | 离散 | ✅ 回归哨兵 ~**11.7k** steps（cons+recon） | SAC ~82k | completedQ ✅；Gumbel 边际 |
+| CartPole-v1 | 向量 | 离散 | ✅ 回归哨兵 ~**11.7k** steps（cons+recon） | SAC ~82k | completedQ ❌ CartPole；Gumbel 边际 |
 | Pendulum-v1 | 向量 | 连续 | ⏳ 失败区间，先诊断可学习性 | SAC | Gumbel-root、连续候选 |
 | Platform-v0 | 向量 | 混合 Tuple | — 未实现 | Hybrid SAC ✅ | `ActionAdapter` Tuple、混合 MCTS |
 | Gomoku | 离散棋盘 | 离散 |  backlog | — | self-play、legal_mask |

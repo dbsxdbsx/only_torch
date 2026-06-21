@@ -11,9 +11,9 @@ use crate::rl::mcts::ChildStat;
 /// completedQ 改进策略目标（闭式，返回与 `children` 平行的概率向量）。
 ///
 /// `π'(a) ∝ prior(a) · exp(σ(completedQ(a)))`，其中：
-/// - `completedQ(a) = Q(a)`（已访问）或 `root_value`（未访问 → 零优势，Eq.10）
+/// - `completedQ(a) = Q(a)`（已访问）或 `vπ`（未访问 → 零优势，Eq.10；`vπ` = value network）
 /// - `Q(a) = reward(a) + discount(a) · value_sum(a)/visit_count(a)`
-/// - completedQ 经 min-max 归一化到 `[0,1]`（参考点含 `root_value`）
+/// - completedQ 经 min-max 归一化到 `[0,1]`（参考点含 `vπ`）
 /// - `σ(q) = (c_visit + max_b N(b)) · c_scale · q`（Eq.8）
 ///
 /// 由于 `softmax(logits + σ)` 中常数偏移相消，等价实现为 `prior·exp(σ·norm_q)` 归一化
@@ -22,7 +22,7 @@ use crate::rl::mcts::ChildStat;
 /// 论文默认 `c_visit=50`；`c_scale=1.0`（棋类）/ `0.1`（图像/向量，Q 噪声较大）。
 pub fn completed_q_policy_target(
     children: &[ChildStat],
-    root_value: f32,
+    v_pi: f32,
     c_visit: f32,
     c_scale: f32,
 ) -> Vec<f32> {
@@ -31,7 +31,7 @@ pub fn completed_q_policy_target(
         return Vec::new();
     }
 
-    // 每动作 completedQ：已访问用搜索 Q，未访问补 root_value（零优势）
+    // 每动作 completedQ：已访问用搜索 Q，未访问补 vπ（零优势，Eq.10）
     let completed: Vec<f32> = children
         .iter()
         .map(|c| {
@@ -39,14 +39,14 @@ pub fn completed_q_policy_target(
                 let child_v = c.value_sum / c.visit_count as f32;
                 c.reward + c.discount * child_v
             } else {
-                root_value
+                v_pi
             }
         })
         .collect();
 
-    // min-max 归一化到 [0,1]（参考点含 root_value，对齐 MuZero 树内归一化口径）
-    let mut lo = root_value;
-    let mut hi = root_value;
+    // min-max 归一化到 [0,1]（参考点含 vπ）
+    let mut lo = v_pi;
+    let mut hi = v_pi;
     for &q in &completed {
         lo = lo.min(q);
         hi = hi.max(q);
@@ -118,5 +118,25 @@ mod tests {
         let children = vec![child(0.5, 0, 0.0, 0.0), child(0.5, 0, 0.0, 0.0)];
         let t = completed_q_policy_target(&children, 0.0, 50.0, 0.1);
         assert!((t[0] - 0.5).abs() < 1e-5 && (t[1] - 0.5).abs() < 1e-5);
+    }
+
+    #[test]
+    fn unvisited_baseline_is_v_pi_not_visit_weighted_q() {
+        // 动作 0 已访问 Q≈0.8；动作 1 未访问。
+        // 论文 Eq.10：未访问应补 vπ=0，而非 visit 加权 root Q≈0.8。
+        let children = vec![
+            child(0.5, 10, 8.0, 0.0),
+            child(0.5, 0, 0.0, 0.0),
+        ];
+        let t_correct = completed_q_policy_target(&children, 0.0, 50.0, 1.0);
+        let t_wrong = completed_q_policy_target(&children, 0.8, 50.0, 1.0);
+        assert!(
+            t_correct[0] > t_correct[1],
+            "vπ=0 时应偏向已访问高 Q：{t_correct:?}"
+        );
+        assert!(
+            (t_wrong[0] - t_wrong[1]).abs() < 1e-5,
+            "错把未访问填成 visit 加权 Q 时两动作 completedQ 相同：{t_wrong:?}"
+        );
     }
 }

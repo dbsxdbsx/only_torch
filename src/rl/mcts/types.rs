@@ -75,6 +75,8 @@ pub struct SearchResult {
     pub recommended: ActionPayload,
     /// 学习用策略目标（visit count 归一化）
     pub learn_policy: Vec<f32>,
+    /// root 推理时 value network 对当前状态的估计 `vπ`（Gumbel MuZero completedQ 未访问动作回填）
+    pub network_value: f32,
 }
 
 impl SearchResult {

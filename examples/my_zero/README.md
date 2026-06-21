@@ -31,7 +31,7 @@
 | value_prefix |                ❌                 |                 ⏳                 |      —      | CartPole 有害（≠ 全局坏） |
 | target_net   |                 ⏳                 |                 ⏳                 |      —      | 已入库，训练循环待接 |
 | SVE          |                 ⏳                 |                 ⏳                 |      —      | 已入库，训练循环待接；🔲 改进：固定权重 → 自适应 mixed target |
-| completedQ   |            ⏳ 粗测未稳             |                 ⏳                 |      —      | 训练策略 target |
+| completedQ   | ❌ 2×2 无收益（visit ~12k vs CQ ~30–34k steps） |                 ⏳                 |      —      | 训练策略 target；CartPole 不 promote |
 | Gumbel-root  |                 ⏸                 |                 ⏳                 |      —      | 搜索侧，未实现 |
 | 连续采样候选 |                 ⏸                 |                 ⏳                 |      —      | 大/连续动作 |
 

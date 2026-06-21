@@ -423,6 +423,7 @@ fn test_search_result_exposes_raw_stats() {
 
     // learn_policy 长度 == children 数量
     assert_eq!(result.learn_policy.len(), result.children.len());
+    assert!(result.network_value.is_finite(), "network_value 应为有限数");
 }
 
 // ============================================================================
