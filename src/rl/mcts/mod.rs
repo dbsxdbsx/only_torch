@@ -24,6 +24,7 @@ pub mod gumbel;
 pub mod min_max;
 mod node;
 pub mod puct;
+pub mod sampled;
 pub mod search;
 pub mod traits;
 pub mod types;

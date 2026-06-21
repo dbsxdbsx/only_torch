@@ -25,6 +25,7 @@ cargo run --example my_zero_cartpole --release
 | base（组件全关） | 80.3 | 未在 ep250 达标 | — | — | 2026-06-16 |
 | +consistency | 111.6 | **500.0** @ ep325 | **28,996** | 541s | 2026-06-20 复测 ✅ |
 | **+consistency +reconstruction**（**当前内置 · sims=20**） | — | **500.0** @ ep250 | **12,186** | **80s** | 2026-06-21 ✅；默认 sim 自 v0.25 起为 20 |
+| **+cons+recon + Sampled** · sims=20 | — | **491.6** @ ep300 | **15,193** | **109s** | 2026-06-22 ✅；N=2、K_eff=2 退化全枚举；较上行 env-steps +~25%（实现路径差 + RL 方差，见 [issue](../../.issue/items/my_zero_action_space_sampled_policy.md) §4.1） |
 | +cons+recon · sims=10 | — | **500.0** @ ep875 | **16,152** | **~125s** | 2026-06-21；样本效率差于 sims=20，不 promote |
 | +cons+recon · sims=15 | — | **500.0** @ ep500 | **26,306** | **~167s** | 2026-06-21；比 sims=10/20 更差，不 promote |
 | +cons+recon · sims=50（旧默认） | **50.8** | **500.0** @ ep275 | **11,682** | **183.9s** | 2026-06-21；env-steps 略优，wall-clock 约 2.3× |
@@ -36,7 +37,7 @@ cargo run --example my_zero_cartpole --release
 
 **结论**：
 
-- CartPole 当前内置 **consistency + reconstruction**，**默认 sims=20**：env-steps ~**12.2k**（较 sims=50 多 ~4%），wall-clock **~80s**（约 **−56%**）；**sims=10/15** 扫参均明显差于 20（~16.2k / ~26.3k steps），仅作参考。
+- CartPole 当前内置 **consistency + reconstruction + Sampled**，**默认 sims=20**：无 Sampled 基线 env-steps ~**12.2k** @ ep250（2026-06-21）；加 Sampled 后 **15.2k** @ ep300、greedy **491.6**（2026-06-22，K_eff=2 全枚举退化，仍过 475 门禁）。
 - 相对仅 consistency：env-steps **28,996 → 12,186（−58%）**，greedy 仍满分。
 - **completedQ** 2×2 消融：visit ~12k steps；+completedQ ~30–34k steps → CartPole **不 promote**（[issue](../../.issue/items/my_zero_gumbel_completedq_cartpole_negative.md)）。
 - **Gumbel-root** @ sims=10/20：greedy 峰值 154/123，**远未达标**；CartPole **不 promote**（同上 issue）。论文主场景为 `|A| > n`，CartPole `n ≫ |A|` 不宜作 Gumbel headline。
@@ -54,7 +55,7 @@ cargo run --example my_zero_cartpole --release
 
 | 算法 | CartPole-v1 到 greedy 500 约需 env-steps |
 |------|------------------------------------------|
-| **MyZero**（consistency + reconstruction · sims=20） | **~12.2k** |
+| **MyZero**（consistency + reconstruction · sims=20） | **~12.2k**（无 Sampled） / **~15.2k**（+Sampled，2026-06-22） |
 | MyZero +consistency only | ~29k |
 | PPO | ~82k |
 | SAC | ~105k |

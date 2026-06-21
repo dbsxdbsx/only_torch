@@ -9,6 +9,9 @@ use super::n_step::compute_n_step_target;
 use super::network::MyZeroModel;
 use super::reanalyze::reanalyze_unroll_window;
 use super::report::TrainReport;
+use super::sampled_params::{
+    compute_sampled_k_cfg, format_sampled_log, resolve_sampled_params, sampled_k_effective,
+};
 use super::search_policy::MyZeroSearchPolicy;
 use super::target::mcts_policy_target;
 use super::value_prefix::reward_prefix_targets;
@@ -44,11 +47,40 @@ fn print_components(c: &Components) {
     if c.completed_q_target {
         tags.push("completedQ");
     }
+    if c.sampled {
+        tags.push("Sampled");
+    }
     if c.reanalyze {
         tags.push("reanalyze");
     }
     if !tags.is_empty() {
         println!("[MyZero] {}", tags.join(" + "));
+    }
+}
+
+/// 由训练超参 + 组件开关 + joint 候选数 N 构造 MCTS 配置（Sampled 时 K 按公式解析）。
+fn my_zero_mcts_config(
+    num_simulations: u32,
+    temperature: f32,
+    discount: f32,
+    components: &Components,
+    joint_n: usize,
+    root_exploration_fraction: f32,
+) -> MctsConfig {
+    MctsConfig {
+        num_simulations,
+        temperature,
+        discount,
+        root_exploration_fraction,
+        sampled_k: if components.sampled {
+            Some(sampled_k_effective(
+                compute_sampled_k_cfg(joint_n, num_simulations),
+                joint_n,
+            ))
+        } else {
+            None
+        },
+        ..MctsConfig::default()
     }
 }
 
@@ -153,13 +185,14 @@ pub(crate) fn prepare_train_batch(
     rng: &mut StdRng,
 ) -> Vec<TrainBatchItem> {
     let mut out = Vec::with_capacity(train_batch_size);
-    let re_cfg = MctsConfig {
+    let re_cfg = my_zero_mcts_config(
         num_simulations,
-        temperature: 1.0,
-        discount: gamma,
-        root_exploration_fraction: 0.0,
-        ..MctsConfig::default()
-    };
+        1.0,
+        gamma,
+        components,
+        adapter.action_dim(),
+        0.0,
+    );
     let re_policy = MyZeroSearchPolicy::from_components(components);
     let dyn_model = DynamicsModel::new(model, adapter.candidates().to_vec(), gamma);
 
@@ -343,13 +376,14 @@ pub(crate) fn greedy_one_episode(
     num_simulations: u32,
     reset_seed: u64,
 ) -> (f32, usize) {
-    let eval_cfg = MctsConfig {
+    let eval_cfg = my_zero_mcts_config(
         num_simulations,
-        temperature: 0.0,
-        discount: gamma,
-        root_exploration_fraction: 0.0,
-        ..MctsConfig::default()
-    };
+        0.0,
+        gamma,
+        components,
+        adapter.action_dim(),
+        0.0,
+    );
     let mut rng = StdRng::seed_from_u64(reset_seed);
     let mut obs = env.reset(Some(reset_seed))[0].clone();
     let mut total_reward = 0.0f32;
@@ -445,13 +479,14 @@ fn dynamics_diagnostic(
     reward_scale: f32,
     num_simulations: u32,
 ) {
-    let eval_cfg = MctsConfig {
+    let eval_cfg = my_zero_mcts_config(
         num_simulations,
-        temperature: 0.0,
-        discount: gamma,
-        root_exploration_fraction: 0.0,
-        ..MctsConfig::default()
-    };
+        0.0,
+        gamma,
+        components,
+        adapter.action_dim(),
+        0.0,
+    );
     let mut rng = StdRng::seed_from_u64(0xD1A6);
     let mut obs = env.reset(Some(0xD1A6))[0].clone();
 
@@ -655,6 +690,10 @@ fn train_one_seed(
             adapter.describe(),
             t.num_simulations,
         );
+        if cfg.components.sampled {
+            let p = resolve_sampled_params(cfg.env.action, action_dim, t.num_simulations);
+            println!("{}", format_sampled_log(&p, t.num_simulations));
+        }
     }
 
     let graph = Graph::new_with_seed(seed);
@@ -689,12 +728,14 @@ fn train_one_seed(
             1.0 - (progress - 0.5) * 2.0 * 0.75
         };
 
-        let mcts_cfg = MctsConfig {
-            num_simulations: t.num_simulations,
+        let mcts_cfg = my_zero_mcts_config(
+            t.num_simulations,
             temperature,
-            discount: gamma,
-            ..MctsConfig::default()
-        };
+            gamma,
+            &cfg.components,
+            action_dim,
+            MctsConfig::default().root_exploration_fraction,
+        );
 
         let steps = self_play_one_episode(
             &env,

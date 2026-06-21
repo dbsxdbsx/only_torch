@@ -11,6 +11,8 @@ pub(crate) fn components_for(env_id: &str) -> Components {
             let mut c = Components::base();
             c.consistency = true;
             c.reconstruction = true;
+            c.sampled = true;
+            // K 由 sampled_params 按 N=|A|、sims 自动算；CartPole N=2 → K_eff=2
             // reanalyze / completedQ / Gumbel：CartPole promote 暂缓 → .issue/items/
             c.reanalyze = false;
             c
@@ -28,6 +30,7 @@ mod tests {
         let c = components_for("CartPole-v1");
         assert!(c.consistency);
         assert!(c.reconstruction);
+        assert!(c.sampled);
         assert!(!c.reanalyze);
         assert!(!c.value_prefix);
         assert!(!c.target_net);

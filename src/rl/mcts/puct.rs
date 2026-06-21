@@ -23,16 +23,19 @@ impl SearchPolicy for PuctPolicy {
     ///
     /// 使用 Gamma(alpha, 1.0) 独立采样后归一化来合成 Dirichlet，
     /// 不引入 rand_distr 依赖。
+    ///
+    /// Sampled MuZero 在展开前已对 β/π 加噪，此处跳过（见 [`MctsConfig::sampled_k`]）。
     fn prepare_root(&self, children: &mut [ChildStat], cfg: &MctsConfig, rng: &mut dyn RngCore) {
+        if cfg.sampled_k.is_some() {
+            return;
+        }
         if children.is_empty() {
             return;
         }
-
-        let noise = sample_dirichlet(cfg.root_dirichlet_alpha, children.len(), rng);
-        let frac = cfg.root_exploration_fraction;
-
-        for (child, &n) in children.iter_mut().zip(noise.iter()) {
-            child.prior = child.prior * (1.0 - frac) + n * frac;
+        let mut priors: Vec<f32> = children.iter().map(|c| c.prior).collect();
+        mix_dirichlet_prior(&mut priors, cfg, rng);
+        for (child, p) in children.iter_mut().zip(priors) {
+            child.prior = p;
         }
     }
 
@@ -198,6 +201,18 @@ impl SearchPolicy for PuctPolicy {
             .collect();
         let sum: f32 = weights.iter().sum();
         weights.iter().map(|&w| w / sum).collect()
+    }
+}
+
+/// 将 Dirichlet 噪声混入 prior 向量（根探索；Sampled MuZero 根展开前亦调用）。
+pub(crate) fn mix_dirichlet_prior(prior: &mut [f32], cfg: &MctsConfig, rng: &mut dyn RngCore) {
+    if prior.is_empty() {
+        return;
+    }
+    let noise = sample_dirichlet(cfg.root_dirichlet_alpha, prior.len(), rng);
+    let frac = cfg.root_exploration_fraction;
+    for (p, &n) in prior.iter_mut().zip(noise.iter()) {
+        *p = *p * (1.0 - frac) + n * frac;
     }
 }
 

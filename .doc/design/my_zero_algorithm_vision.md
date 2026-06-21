@@ -98,7 +98,7 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 | **SVE** | 同上（EfficientZero）· [2111.00176](https://arxiv.org/abs/2111.00176) | search value 修正 stale target；现实现为固定权重，自适应 mixed target 见 §5.1 |
 | **completedQ** | Danihelka et al., *Policy Improvement by Planning with Gumbel*（Gumbel MuZero）· 2022 · [2111.00301](https://arxiv.org/abs/2111.00301) | 训练侧策略 target（Eq.10–12） |
 | **Gumbel-root** | 同上（Gumbel MuZero）· [2111.00301](https://arxiv.org/abs/2111.00301) | 搜索侧序贯减半（`GumbelPolicy` + `MyZeroSearchPolicy` 已接训练循环） |
-| **连续采样候选**（Sampled MuZero） | Hubert et al., *Learning and Planning in Complex Action Spaces with Deep Neural Networks* · 2021 · [2010.08636](https://arxiv.org/abs/2010.08636) | 大/连续动作空间采样 K 候选 |
+| **连续采样候选**（Sampled MuZero） | Hubert et al., *Learning and Planning in Complex Action Spaces with Deep Neural Networks* · 2021 · [2104.06303](https://arxiv.org/abs/2104.06303) | 大/连续动作空间：每节点采 K 候选 + PUCT 用 π̂_β；**B/K 选型**见 [issue](../../.issue/items/my_zero_action_space_sampled_policy.md) |
 
 ---
 
@@ -118,7 +118,7 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 | consistency 正规化（SimSiam target encoder + EMA） | 🔲 Phase 2 改进候选 | 现简化实现 CartPole 有效；见 [Pendulum 诊断 issue](../../.issue/items/pendulum_failure_diagnosis.md) §六 |
 | value head 上游 target（Pendulum 坍缩） | 🔲 Phase 2 改进候选 | head 容量已证伪；根因在上游 n-step / 搜索，见同上 issue |
 | completedQ / Gumbel-root | ❌ CartPole 实测失败；⏸ 复测留 `\|A\| > n` 环境 | 见 [issue](../../.issue/items/my_zero_gumbel_completedq_cartpole_negative.md)；库内已实现 |
-| Sampled MuZero（高维连续候选） | ⏸ 离散化够用后再上 | CartPole/Pendulum 规模暂不需要 |
+| Sampled MuZero（高维连续候选） | ✅ CartPole recipe 已开 + release 压测（2026-06-22）；⏸ factorized B=7 待 Pendulum | cons+recon+Sampled：greedy **491.6** @ ep300 · **15,193** env-steps（N=2 K_eff=2 退化全枚举，仍过 475）；**B/K/N 公式**见 [issue](../../.issue/items/my_zero_action_space_sampled_policy.md) |
 | BTS/DENTS 式 backup | 🔲 仅当动 `SearchPolicy` | 避免 MENTS 式「max-entropy 最优 ≠ 回报最优」 |
 | ANTS 自适应温度闭环 | ⏸ 借鉴思想，不搬整套 | 与 MuZero 训练循环结构不同 |
 | Stochastic dynamics 头 | ⏸ Platform / 随机 env 需要时 | Stochastic MuZero 路线 |

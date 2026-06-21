@@ -44,7 +44,7 @@ pub trait MctsModel {
 /// - GumbelPolicy：序贯减半根候选 + 改 recommend + make_targets（需改 prepare_root 和 recommend）
 /// - RegPolicy：ACT policy ≠ LEARN policy → make_targets 需区分
 /// - MENTS / RENTS / TENTS / ANT 选择变体（只改 select_child）
-/// - Sampled MuZero：连续动作空间，需 ActionSampler 在展开时生成 K 个候选
+/// - Sampled MuZero：连续 / 大离散动作空间，展开时采样 K 候选 + PUCT 用 π̂_β
 pub trait SearchPolicy {
     /// 对根节点子节点注入探索噪声
     fn prepare_root(&self, children: &mut [ChildStat], cfg: &MctsConfig, rng: &mut dyn RngCore);
@@ -160,7 +160,7 @@ pub struct ActionCandidates {
 /// 负责「给某节点生成 K 个候选动作 + proposal prior」，与 [`SearchPolicy`]（只消费
 /// [`ChildStat`]）**解耦**。这样同一接缝同时服务：
 /// - 离散：枚举固定 / 合法动作集（行为不变，见 [`DiscreteActionSampler`]）；
-/// - 纯连续（Gumbel）/ 混合 / 未来 Sampled MuZero：从策略分布采样 K 个候选。
+/// - 纯连续（Gumbel）/ 混合 / Sampled MuZero：从策略分布采样 K 个候选。
 ///
 /// 由 learned-model adapter 在产出 `RootOut/RecurrentOut.candidate_actions` 时调用。
 pub trait ActionSampler<S> {

@@ -32,6 +32,9 @@ pub(crate) struct Components {
     pub cq_c_visit: f32,
     /// completedQ 的 `c_scale`（默认 0.02；CartPole 实测 0.02 优于 0.1）
     pub cq_c_scale: f32,
+    /// Sampled MuZero：展开时采 K 个候选 + PUCT 用 π̂_β（Hubert et al. 2021）
+    /// K 由 [`sampled_params`](super::sampled_params) 按 N、sims 公式自动解析，非本字段配置。
+    pub sampled: bool,
 }
 
 impl Default for Components {
@@ -47,6 +50,7 @@ impl Default for Components {
             completed_q_target: false,
             cq_c_visit: 50.0,
             cq_c_scale: 0.02,
+            sampled: false,
         }
     }
 }
@@ -78,6 +82,7 @@ mod tests {
         assert!(!c.sve_enabled());
         assert!(!c.gumbel);
         assert!(!c.completed_q_target);
+        assert!(!c.sampled);
     }
 
     #[test]

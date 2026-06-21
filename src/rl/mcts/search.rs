@@ -4,6 +4,7 @@ use rand::RngCore;
 
 use super::min_max::MinMaxStats;
 use super::node::{Node, Tree};
+use super::sampled::{sample_for_expansion, sample_root_for_expansion};
 use super::traits::{MctsModel, SearchPolicy};
 use super::types::{ChildStat, MctsConfig, SearchResult};
 
@@ -38,11 +39,13 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
     }
 
     let mut tree = Tree::new(root_out.state.clone(), root_out.to_play);
+    let (root_actions, root_priors) =
+        expansion_candidates(&root_out.candidate_actions, &root_out.prior, cfg, true, rng);
     expand_root(
         &mut tree,
         model,
-        &root_out.candidate_actions,
-        &root_out.prior,
+        &root_actions,
+        &root_priors,
         &root_out.state,
         root_out.to_play,
         cfg.discount,
@@ -103,19 +106,14 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
         tree.states[leaf_id] = Some(rec_out.state.clone());
 
         if !rec_out.terminal && !rec_out.candidate_actions.is_empty() {
-            // 展开子节点
-            let n_children = rec_out.candidate_actions.len();
-            let priors = if rec_out.prior.len() == n_children {
-                rec_out.prior.clone()
-            } else {
-                vec![1.0 / n_children as f32; n_children]
-            };
+            let (actions, priors) =
+                expansion_candidates(&rec_out.candidate_actions, &rec_out.prior, cfg, false, rng);
 
             tree.expand(
                 leaf_id,
-                &rec_out.candidate_actions,
+                &actions,
                 &priors,
-                &vec![rec_out.state.clone(); n_children],
+                &vec![rec_out.state.clone(); actions.len()],
                 rec_out.to_play,
                 rec_out.discount,
             );
@@ -151,6 +149,29 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
         recommended,
         learn_policy,
         network_value: root_out.value,
+    }
+}
+
+/// 展开候选：标准 MuZero 全量，或 Sampled MuZero 采 K + π̂_β 先验。
+fn expansion_candidates(
+    actions: &[super::types::ActionPayload],
+    prior: &[f32],
+    cfg: &MctsConfig,
+    is_root: bool,
+    rng: &mut dyn RngCore,
+) -> (Vec<super::types::ActionPayload>, Vec<f32>) {
+    match cfg.sampled_k {
+        None => {
+            let n = actions.len();
+            let priors = if prior.len() == n {
+                prior.to_vec()
+            } else {
+                vec![1.0 / n as f32; n]
+            };
+            (actions.to_vec(), priors)
+        }
+        Some(k) if is_root => sample_root_for_expansion(actions, prior, cfg, k, rng),
+        Some(k) => sample_for_expansion(actions, prior, prior, k, rng),
     }
 }
 

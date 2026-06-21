@@ -6,6 +6,13 @@
 
 ### Added
 
+- **feat(mcts): Sampled MuZero 搜索路径**（Hubert et al. 2021 · arXiv:2104.06303）
+  - `src/rl/mcts/sampled.rs`：K 候选无放回采样 + π̂_β PUCT prior；根 Dirichlet 后采样
+  - `MctsConfig::sampled_k` + `Components::sampled`；CartPole recipe 默认开启
+  - `sampled_params.rs`：统一 `K = min(max(5, N/2), floor(sims×2/3))`；启动日志 `[Sampled] N/B/K_cfg/K_eff`
+  - 连续离散化改为 **bin 中点**（`action.rs`，对齐 Sampled Appendix）
+  - 决策备忘：`.issue/items/my_zero_action_space_sampled_policy.md`
+
 - **feat(mcts): 标准 Gumbel MuZero 根搜索**（`GumbelPolicy` + Sequential Halving + `RootScheduler::on_search_start`）；`MyZeroSearchPolicy` 接入 self-play / greedy eval / reanalyze；builder `.gumbel()` / `.gumbel_standard()`；CartPole 阶段 A/B bench 用例
 
 - **feat(rl): MyZero `.otm` 统一持久化 + `model_io`**

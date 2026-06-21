@@ -123,6 +123,8 @@ pub struct MctsConfig {
     pub temperature: f32,
     /// 折扣因子（单智能体使用）
     pub discount: f32,
+    /// Sampled MuZero：每节点展开采 K 个候选；`None` = 全量枚举（标准 MuZero）。
+    pub sampled_k: Option<usize>,
 }
 
 impl Default for MctsConfig {
@@ -135,6 +137,7 @@ impl Default for MctsConfig {
             root_exploration_fraction: 0.25,
             temperature: 1.0,
             discount: 1.0,
+            sampled_k: None,
         }
     }
 }
