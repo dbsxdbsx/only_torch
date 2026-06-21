@@ -63,6 +63,9 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
     let num_root_children = tree.nodes[tree.root].children.len();
     let mut scheduler = policy.make_root_scheduler(num_root_children, cfg);
     let use_scheduler = scheduler.is_active();
+    if use_scheduler {
+        scheduler.on_search_start(&root_child_stats, root_out.value, cfg, rng);
+    }
 
     for sim_idx in 0..cfg.num_simulations as usize {
         // 根调度：Gumbel 等可强制本次模拟的根起步子节点；默认 None=走 PUCT

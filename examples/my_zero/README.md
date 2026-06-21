@@ -13,7 +13,7 @@
 
 | 环境 | 动作类型 | 门禁 | 状态 |
 |------|---------|------|------|
-| [**CartPole-v1**](cartpole/README.md) | 离散（2） | greedy eval ≥ 475 | ✅ 回归哨兵（~**11.7k** env-steps；consistency + reconstruction） |
+| [**CartPole-v1**](cartpole/README.md) | 离散（2） | greedy eval ≥ 475 | ✅ 回归哨兵（~**12.2k** env-steps · sims=20；consistency + reconstruction） |
 | [**Pendulum-v1**](pendulum/README.md) | 纯连续（1） | return ≥ -200 | 诊断中 |
 | **Platform-v0** | 混合 Tuple | return 趋势上升 | 待实现 |
 
@@ -26,13 +26,13 @@
 | 组件         | [CartPole-v1](cartpole/README.md) | [Pendulum-v1](pendulum/README.md) | Platform-v0 | 备注 |
 | ------------ | :-------------------------------: | :-------------------------------: | :---------: | --------------------------- |
 | consistency  |                ✅                 |                 ⏳                 |      —      | SimSiam 一致性 loss |
-| reconstruction |              ✅                 |                 ⏳                 |      —      | CartPole ~11.7k steps（较仅 consistency −60%） |
+| reconstruction |              ✅                 |                 ⏳                 |      —      | CartPole ~12.2k steps @ sims=20 |
 | reanalyze    | ⏸ 已接写回，CartPole 未开启（[issue](../../.issue/items/my_zero_reanalyze_cartpole_regression.md)） | ⏳ | — | position 级 MCTS 重搜 |
 | value_prefix |                ❌                 |                 ⏳                 |      —      | CartPole 有害（≠ 全局坏） |
 | target_net   |                 ⏳                 |                 ⏳                 |      —      | 已入库，训练循环待接 |
 | SVE          |                 ⏳                 |                 ⏳                 |      —      | 已入库，训练循环待接；🔲 改进：固定权重 → 自适应 mixed target |
 | completedQ   | ❌ 2×2 无收益（visit ~12k vs CQ ~30–34k steps） |                 ⏳                 |      —      | 训练策略 target；CartPole 不 promote |
-| Gumbel-root  |                 ⏸                 |                 ⏳                 |      —      | 搜索侧，未实现 |
+| Gumbel-root  |                 ⏳                 |                 ⏳                 |      —      | 搜索侧已实现；CartPole 阶段 A/B bench 待跑 |
 | 连续采样候选 |                 ⏸                 |                 ⏳                 |      —      | 大/连续动作 |
 
 > 论文全称与 arXiv：[算法纲领 §4.1 — 组件文献对照](../../.doc/design/my_zero_algorithm_vision.md#41-组件文献对照单一事实源)

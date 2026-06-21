@@ -4,6 +4,8 @@
 //! |------|--------------|-------------|
 //! | 50   | 11,682 @ ep275 | 34,490 @ ep575 |
 //! | 20   | 12,186 @ ep250 | 30,409 @ ep450 |
+//! | 10   | 16,152 @ ep875 | （待测） |
+//! | 15   | 26,306 @ ep500 | （待测） |
 //!
 //! ```bash
 //! # sim=20 基线
@@ -16,9 +18,15 @@ use crate::nn::GraphError;
 use crate::rl::algo::my_zero::MyZero;
 use crate::rl::algo::my_zero::runner::train_all_seeds;
 
-fn run_cartpole_bench(sims: u32, completed_q: bool, save_suffix: &str) -> Result<(), GraphError> {
+fn run_cartpole_bench(
+    sims: u32,
+    gumbel: bool,
+    completed_q: bool,
+    save_suffix: &str,
+) -> Result<(), GraphError> {
     let tag = if completed_q { "completedQ" } else { "visit" };
-    println!("[bench] CartPole cons+recon sims={sims} target={tag}");
+    let gtag = if gumbel { "Gumbel" } else { "PUCT" };
+    println!("[bench] CartPole cons+recon sims={sims} search={gtag} target={tag}");
     let mut builder = MyZero::new("CartPole-v1")
         .solved(475.0)
         .max_episodes(2000)
@@ -26,38 +34,70 @@ fn run_cartpole_bench(sims: u32, completed_q: bool, save_suffix: &str) -> Result
         .save_model_when_eval(format!(
             "models/my_zero/CartPole-v1/seed_42/bench_s{sims}_{save_suffix}"
         ));
+    if gumbel {
+        builder = builder.gumbel(true);
+    }
     if completed_q {
         builder = builder.completed_q_target(true);
     }
     let cfg = builder.build()?;
     assert!(cfg.components.consistency);
     assert!(cfg.components.reconstruction);
+    assert_eq!(cfg.components.gumbel, gumbel);
     assert_eq!(cfg.components.completed_q_target, completed_q);
     assert_eq!(cfg.train.num_simulations, sims);
     train_all_seeds(cfg)?;
     Ok(())
 }
 
+fn run_cartpole_bench_visit(sims: u32, save_suffix: &str) -> Result<(), GraphError> {
+    run_cartpole_bench(sims, false, false, save_suffix)
+}
+
 #[test]
 #[ignore = "manual: sim=50 visit 基线；已有 ~11.7k steps 可跳过"]
 fn cartpole_bench_s50_visit() -> Result<(), GraphError> {
-    run_cartpole_bench(50, false, "visit")
+    run_cartpole_bench_visit(50, "visit")
 }
 
 #[test]
 #[ignore = "manual: sim=50 + completedQ；已有 ~34.5k steps 可跳过"]
 fn cartpole_bench_s50_completed_q() -> Result<(), GraphError> {
-    run_cartpole_bench(50, true, "completed_q")
+    run_cartpole_bench(50, false, true, "completed_q")
+}
+
+#[test]
+#[ignore = "manual: sim=10 visit 扫参"]
+fn cartpole_bench_s10_visit() -> Result<(), GraphError> {
+    run_cartpole_bench_visit(10, "visit")
+}
+
+#[test]
+#[ignore = "manual: sim=15 visit 扫参"]
+fn cartpole_bench_s15_visit() -> Result<(), GraphError> {
+    run_cartpole_bench_visit(15, "visit")
 }
 
 #[test]
 #[ignore = "manual: sim=20 visit 基线对照"]
 fn cartpole_bench_s20_visit() -> Result<(), GraphError> {
-    run_cartpole_bench(20, false, "visit")
+    run_cartpole_bench_visit(20, "visit")
 }
 
 #[test]
 #[ignore = "manual: sim=20 + completedQ 关键对照"]
 fn cartpole_bench_s20_completed_q() -> Result<(), GraphError> {
-    run_cartpole_bench(20, true, "completed_q")
+    run_cartpole_bench(20, false, true, "completed_q")
+}
+
+#[test]
+#[ignore = "manual: sim=20 Gumbel-root only（阶段 A）"]
+fn cartpole_bench_s20_gumbel_visit() -> Result<(), GraphError> {
+    run_cartpole_bench(20, true, false, "gumbel_visit")
+}
+
+#[test]
+#[ignore = "manual: sim=20 Gumbel 标准 bundle（阶段 B）"]
+fn cartpole_bench_s20_gumbel_standard() -> Result<(), GraphError> {
+    run_cartpole_bench(20, true, true, "gumbel_standard")
 }

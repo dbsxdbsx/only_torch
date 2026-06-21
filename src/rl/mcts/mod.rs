@@ -20,6 +20,7 @@
 //! ```
 
 pub mod dynamics;
+pub mod gumbel;
 pub mod min_max;
 mod node;
 pub mod puct;
@@ -29,6 +30,7 @@ pub mod types;
 
 // 重新导出核心公开 API
 pub use dynamics::{Dynamics, DynamicsModel, DynamicsOutput};
+pub use gumbel::GumbelPolicy;
 pub use min_max::MinMaxStats;
 pub use puct::PuctPolicy;
 pub use search::mcts_search;

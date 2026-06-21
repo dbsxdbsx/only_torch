@@ -96,7 +96,7 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 | **target_net** | 同上（EfficientZero）· [2111.00176](https://arxiv.org/abs/2111.00176) | hard / EMA 同步 target network |
 | **SVE** | 同上（EfficientZero）· [2111.00176](https://arxiv.org/abs/2111.00176) | search value 修正 stale target；现实现为固定权重，自适应 mixed target 见 §5.1 |
 | **completedQ** | Danihelka et al., *Policy Improvement by Planning with Gumbel*（Gumbel MuZero）· 2022 · [2111.00301](https://arxiv.org/abs/2111.00301) | 训练侧策略 target（Eq.10–12） |
-| **Gumbel-root** | 同上（Gumbel MuZero）· [2111.00301](https://arxiv.org/abs/2111.00301) | 搜索侧序贯减半（训练循环未接） |
+| **Gumbel-root** | 同上（Gumbel MuZero）· [2111.00301](https://arxiv.org/abs/2111.00301) | 搜索侧序贯减半（`GumbelPolicy` + `MyZeroSearchPolicy` 已接训练循环） |
 | **连续采样候选**（Sampled MuZero） | Hubert et al., *Learning and Planning in Complex Action Spaces with Deep Neural Networks* · 2021 · [2010.08636](https://arxiv.org/abs/2010.08636) | 大/连续动作空间采样 K 候选 |
 
 ---
@@ -110,7 +110,7 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 | 项 | 裁决 | 理由 |
 |----|------|------|
 | consistency | ✅ CartPole 已验收 | EfficientZero（Ye et al. 2021）+ SimSiam（Chen & He 2020） |
-| reconstruction | ✅ CartPole 已验收 | Scholz et al. 2021 *Improving Model-Based RL with Internal State Representations through Self-Supervision*（arXiv:2102.05599）；seed=42 ~11.7k env-steps |
+| reconstruction | ✅ CartPole 已验收 | Scholz et al. 2021 *Improving Model-Based RL with Internal State Representations through Self-Supervision*（arXiv:2102.05599）；seed=42 ~12.2k env-steps @ sims=20 |
 | value_prefix / target_net | ✅ 已在库，消融驱动 | EZ 谱系；CartPole value_prefix ❌ |
 | SVE | ✅ 已在库，消融驱动 | 现固定权重 blend stale target；CartPole 训练循环待接 |
 | SVE 自适应 mixed target | 🔲 Phase 2 改进候选 | EZ 论文为自适应 mixed target，非固定权重；须单独消融 |
@@ -146,7 +146,7 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 
 | 环境 | 观测 | 动作 | MyZero 状态 | 默认对照 | 远期插件位 |
 |------|------|------|-------------|----------|------------|
-| CartPole-v1 | 向量 | 离散 | ✅ 回归哨兵 ~**11.7k** steps（cons+recon） | SAC ~82k | completedQ ❌ CartPole；Gumbel 边际 |
+| CartPole-v1 | 向量 | 离散 | ✅ 回归哨兵 ~**12.2k** steps（cons+recon · sims=20） | SAC ~82k | completedQ ❌ CartPole；Gumbel 边际 |
 | Pendulum-v1 | 向量 | 连续 | ⏳ 失败区间，先诊断可学习性 | SAC | Gumbel-root、连续候选 |
 | Platform-v0 | 向量 | 混合 Tuple | — 未实现 | Hybrid SAC ✅ | `ActionAdapter` Tuple、混合 MCTS |
 | Gomoku | 离散棋盘 | 离散 |  backlog | — | self-play、legal_mask |

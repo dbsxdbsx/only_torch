@@ -6,6 +6,8 @@
 
 ### Added
 
+- **feat(mcts): 标准 Gumbel MuZero 根搜索**（`GumbelPolicy` + Sequential Halving + `RootScheduler::on_search_start`）；`MyZeroSearchPolicy` 接入 self-play / greedy eval / reanalyze；builder `.gumbel()` / `.gumbel_standard()`；CartPole 阶段 A/B bench 用例
+
 - **feat(rl): MyZero `.otm` 统一持久化 + `model_io`**
   - 删除 `manifest.rs` 与旁路 `.bin`；契约写入 `OtmMetadata.myzero`（`env_id` / action / `reward_scale` / `latent_dim`）
   - `save_myzero_model` / `load_weights_into`；用户 API 仅 `load_model(path)`（path 不含 `.otm` 后缀）
@@ -13,6 +15,7 @@
 
 ### Changed
 
+- **chore(rl): MyZero 默认 MCTS `num_simulations` 50→20**；CartPole cons+recon 基线 ~12.2k env-steps（seed=42）；sim=10/15 扫参见 `examples/my_zero/cartpole/README.md`
 - **refactor(rl): MyZero 用户侧 API 链式 builder + train/eval/run 生命周期**
   - `MyZero::new(env_id)` 唯一入口；`.solved` / `.max_episodes` 仅绑 `.train()`
   - 去掉 `restore_best`：`.train()` 返回实例持有 **latest** 训末权重；训后 `eval`/`run` 沿用 latest

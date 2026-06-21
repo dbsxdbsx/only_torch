@@ -69,6 +69,7 @@ pub mod recipe;
 pub mod reconstruction;
 pub mod report;
 pub mod runner;
+pub(crate) mod search_policy;
 pub mod sve;
 pub mod target;
 pub mod target_net;

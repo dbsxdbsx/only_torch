@@ -9,12 +9,11 @@ use super::n_step::compute_n_step_target;
 use super::network::MyZeroModel;
 use super::reanalyze::reanalyze_unroll_window;
 use super::report::TrainReport;
+use super::search_policy::MyZeroSearchPolicy;
 use super::target::mcts_policy_target;
 use super::value_prefix::reward_prefix_targets;
 use crate::nn::{Adam, Graph, GraphError, Optimizer};
-use crate::rl::mcts::{
-    ActionPayload, Dynamics, DynamicsModel, MctsConfig, PuctPolicy, mcts_search,
-};
+use crate::rl::mcts::{ActionPayload, Dynamics, DynamicsModel, MctsConfig, mcts_search};
 use crate::rl::{GameOutcome, GymEnv, ReplayBuffer, SelfPlayGame, SelfPlayStep};
 use pyo3::Python;
 use rand::rngs::StdRng;
@@ -59,6 +58,7 @@ fn self_play_one_episode(
     model: &MyZeroModel,
     adapter: &ActionAdapter,
     mcts_cfg: &MctsConfig,
+    components: &Components,
     gamma: f32,
     cq: Option<(f32, f32)>, // Some((c_visit, c_scale)) → completedQ 策略目标；None → visit-count
     reward_scale: f32,
@@ -71,7 +71,8 @@ fn self_play_one_episode(
 
     loop {
         let dyn_model = DynamicsModel::new(model, adapter.candidates().to_vec(), gamma);
-        let result = mcts_search(&dyn_model, &PuctPolicy::new(), &obs, mcts_cfg, rng);
+        let policy = MyZeroSearchPolicy::from_components(components);
+        let result = mcts_search(&dyn_model, &policy, &obs, mcts_cfg, rng);
 
         let action_idx = match &result.recommended {
             ActionPayload::Discrete(idx) => *idx,
@@ -143,6 +144,7 @@ pub(crate) fn prepare_train_batch(
     train_batch_size: usize,
     k_unroll: usize,
     reanalyze: bool,
+    components: &Components,
     model: &MyZeroModel,
     adapter: &ActionAdapter,
     gamma: f32,
@@ -158,7 +160,7 @@ pub(crate) fn prepare_train_batch(
         root_exploration_fraction: 0.0,
         ..MctsConfig::default()
     };
-    let re_policy = PuctPolicy::new();
+    let re_policy = MyZeroSearchPolicy::from_components(components);
     let dyn_model = DynamicsModel::new(model, adapter.candidates().to_vec(), gamma);
 
     if reanalyze {
@@ -336,6 +338,7 @@ pub(crate) fn greedy_one_episode(
     env: &GymEnv,
     model: &MyZeroModel,
     adapter: &ActionAdapter,
+    components: &Components,
     gamma: f32,
     num_simulations: u32,
     reset_seed: u64,
@@ -353,7 +356,8 @@ pub(crate) fn greedy_one_episode(
     let mut length = 0usize;
     loop {
         let dyn_model = DynamicsModel::new(model, adapter.candidates().to_vec(), gamma);
-        let result = mcts_search(&dyn_model, &PuctPolicy::new(), &obs, &eval_cfg, &mut rng);
+        let policy = MyZeroSearchPolicy::from_components(components);
+        let result = mcts_search(&dyn_model, &policy, &obs, &eval_cfg, &mut rng);
         let action_idx = match &result.recommended {
             ActionPayload::Discrete(idx) => *idx,
             _ => 0,
@@ -375,6 +379,7 @@ pub(crate) fn greedy_eval_episodes(
     env: &GymEnv,
     model: &MyZeroModel,
     adapter: &ActionAdapter,
+    components: &Components,
     gamma: f32,
     n_episodes: usize,
     num_simulations: u32,
@@ -386,6 +391,7 @@ pub(crate) fn greedy_eval_episodes(
             env,
             model,
             adapter,
+            components,
             gamma,
             num_simulations,
             greedy_episode_seed(eval_seed, i as u64),
@@ -406,6 +412,7 @@ fn eval_episodes(
     env: &GymEnv,
     model: &MyZeroModel,
     adapter: &ActionAdapter,
+    components: &Components,
     gamma: f32,
     n_episodes: usize,
     num_simulations: u32,
@@ -415,6 +422,7 @@ fn eval_episodes(
         env,
         model,
         adapter,
+        components,
         gamma,
         n_episodes,
         num_simulations,
@@ -432,6 +440,7 @@ fn dynamics_diagnostic(
     env: &GymEnv,
     model: &MyZeroModel,
     adapter: &ActionAdapter,
+    components: &Components,
     gamma: f32,
     reward_scale: f32,
     num_simulations: u32,
@@ -451,7 +460,8 @@ fn dynamics_diagnostic(
     let mut true_rewards: Vec<f32> = Vec::new();
     loop {
         let dyn_model = DynamicsModel::new(model, adapter.candidates().to_vec(), gamma);
-        let result = mcts_search(&dyn_model, &PuctPolicy::new(), &obs, &eval_cfg, &mut rng);
+        let policy = MyZeroSearchPolicy::from_components(components);
+        let result = mcts_search(&dyn_model, &policy, &obs, &eval_cfg, &mut rng);
         let action_idx = match &result.recommended {
             ActionPayload::Discrete(idx) => *idx,
             _ => 0,
@@ -691,6 +701,7 @@ fn train_one_seed(
             &model,
             &adapter,
             &mcts_cfg,
+            &cfg.components,
             gamma,
             cq,
             reward_scale,
@@ -717,6 +728,7 @@ fn train_one_seed(
                     t.train_batch_size,
                     t.k_unroll,
                     cfg.components.reanalyze,
+                    &cfg.components,
                     &model,
                     &adapter,
                     gamma,
@@ -768,6 +780,7 @@ fn train_one_seed(
                 &env,
                 &model,
                 &adapter,
+                &cfg.components,
                 gamma,
                 cfg.eval.eval_episodes,
                 t.num_simulations,
@@ -794,6 +807,7 @@ fn train_one_seed(
             &env,
             &model,
             &adapter,
+            &cfg.components,
             gamma,
             cfg.eval.eval_episodes,
             t.num_simulations,
@@ -821,6 +835,7 @@ fn train_one_seed(
             &env,
             &model,
             &adapter,
+            &cfg.components,
             gamma,
             reward_scale,
             t.num_simulations,

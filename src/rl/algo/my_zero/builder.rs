@@ -93,6 +93,19 @@ impl MyZeroBuilder {
         self
     }
 
+    /// 开启 Gumbel MuZero 标准根搜索（Sequential Halving + Gumbel-Top-k）。
+    pub fn gumbel(mut self, enabled: bool) -> Self {
+        self.cfg.components.gumbel = enabled;
+        self
+    }
+
+    /// 论文标准 bundle：Gumbel-root + completedQ 训练 target。
+    pub fn gumbel_standard(mut self) -> Self {
+        self.cfg.components.gumbel = true;
+        self.cfg.components.completed_q_target = true;
+        self
+    }
+
     pub fn train_batch_size(mut self, n: usize) -> Self {
         self.cfg.train.train_batch_size = n.max(1);
         self

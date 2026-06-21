@@ -94,6 +94,19 @@ pub trait RootScheduler {
         false
     }
 
+    /// 搜索循环开始前调用一次（`prepare_root` 之后、首次模拟之前）。
+    ///
+    /// Gumbel 在此采样 Gumbel 噪声并初始化 Sequential Halving 候选集。
+    fn on_search_start(
+        &mut self,
+        root_children: &[ChildStat],
+        network_value: f32,
+        cfg: &MctsConfig,
+        rng: &mut dyn RngCore,
+    ) {
+        let _ = (root_children, network_value, cfg, rng);
+    }
+
     /// 第 `sim_idx` 次模拟应**强制**从哪个根子节点起步（其下仍用 `select_child`）。
     ///
     /// 返回 `None` → 该次模拟从根用 `select_child` 正常选择。仅在 `is_active()` 为真时被调用。

@@ -2,6 +2,7 @@
 
 use crate::nn::{Adam, Graph};
 use crate::rl::algo::my_zero::action::ActionAdapter;
+use crate::rl::algo::my_zero::component::Components;
 use crate::rl::algo::my_zero::network::MyZeroModel;
 use crate::rl::algo::my_zero::runner::{
     TrainBatchItem, prepare_train_batch, writeback_reanalyzed_samples,
@@ -104,7 +105,20 @@ fn prepare_reanalyze_then_writeback_updates_buffer() {
     ]));
 
     let mut rng = StdRng::seed_from_u64(42);
-    let batch = prepare_train_batch(&buf, 1, 1, true, &model, &adapter, 0.99, 8, None, &mut rng);
+    let components = Components::default();
+    let batch = prepare_train_batch(
+        &buf,
+        1,
+        1,
+        true,
+        &components,
+        &model,
+        &adapter,
+        0.99,
+        8,
+        None,
+        &mut rng,
+    );
     assert_eq!(batch.len(), 1);
     let idx = batch[0]
         .buffer_idx
@@ -154,7 +168,20 @@ fn prepare_without_reanalyze_does_not_attach_buffer_idx() {
     buf.push(make_game(vec![make_step(0.0, 5.0), make_step(1.0, 5.0)]));
 
     let mut rng = StdRng::seed_from_u64(3);
-    let batch = prepare_train_batch(&buf, 1, 1, false, &model, &adapter, 0.99, 4, None, &mut rng);
+    let components = Components::default();
+    let batch = prepare_train_batch(
+        &buf,
+        1,
+        1,
+        false,
+        &components,
+        &model,
+        &adapter,
+        0.99,
+        4,
+        None,
+        &mut rng,
+    );
     assert_eq!(batch.len(), 1);
     assert!(batch[0].buffer_idx.is_none(), "未开 reanalyze 时不应写回");
 }
