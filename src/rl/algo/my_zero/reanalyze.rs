@@ -22,6 +22,7 @@ pub fn reanalyze_step<M, P>(
     step: &mut SelfPlayStep,
     cfg: &MctsConfig,
     cq: Option<(f32, f32)>,
+    action_dim: usize,
     rng: &mut dyn RngCore,
 ) where
     M: MctsModel,
@@ -31,7 +32,7 @@ pub fn reanalyze_step<M, P>(
     if result.children.is_empty() {
         return;
     }
-    step.policy_target = mcts_policy_target(&result, cq);
+    step.policy_target = mcts_policy_target(&result, cq, action_dim);
     step.root_value = Some(result.root_value());
 }
 
@@ -44,6 +45,7 @@ pub fn reanalyze_unroll_window<M, P>(
     unroll_k: usize,
     cfg: &MctsConfig,
     cq: Option<(f32, f32)>,
+    action_dim: usize,
     rng: &mut dyn RngCore,
 ) where
     M: MctsModel,
@@ -54,7 +56,7 @@ pub fn reanalyze_unroll_window<M, P>(
     }
     let end = (start + unroll_k).min(steps.len() - 1);
     for step in &mut steps[start..=end] {
-        reanalyze_step(model, policy, step, cfg, cq, rng);
+        reanalyze_step(model, policy, step, cfg, cq, action_dim, rng);
     }
 }
 
@@ -65,6 +67,7 @@ pub fn reanalyze_game<M, P>(
     game: &mut SelfPlayGame,
     cfg: &MctsConfig,
     cq: Option<(f32, f32)>,
+    action_dim: usize,
     rng: &mut dyn RngCore,
 ) where
     M: MctsModel,
@@ -74,7 +77,17 @@ pub fn reanalyze_game<M, P>(
     if len == 0 {
         return;
     }
-    reanalyze_unroll_window(model, policy, &mut game.steps, 0, len - 1, cfg, cq, rng);
+    reanalyze_unroll_window(
+        model,
+        policy,
+        &mut game.steps,
+        0,
+        len - 1,
+        cfg,
+        cq,
+        action_dim,
+        rng,
+    );
 }
 
 #[cfg(test)]
@@ -151,7 +164,7 @@ mod tests {
         };
 
         let mut rng = StdRng::seed_from_u64(7);
-        reanalyze_game(&model, &policy, &mut game, &cfg, None, &mut rng);
+        reanalyze_game(&model, &policy, &mut game, &cfg, None, 2, &mut rng);
 
         for step in &game.steps {
             assert_eq!(step.policy_target.len(), 2);
@@ -175,7 +188,7 @@ mod tests {
         let mut step = make_step(vec![3.0; 4]);
         let mut rng = StdRng::seed_from_u64(11);
 
-        reanalyze_step(&model, &policy, &mut step, &cfg, None, &mut rng);
+        reanalyze_step(&model, &policy, &mut step, &cfg, None, 2, &mut rng);
 
         let mut rng2 = StdRng::seed_from_u64(11);
         let result = mcts_search(&model, &policy, &step.obs, &cfg, &mut rng2);
@@ -191,11 +204,11 @@ mod tests {
         let mut step = make_step(vec![3.0; 4]);
         let mut rng = StdRng::seed_from_u64(13);
 
-        reanalyze_step(&model, &policy, &mut step, &cfg, cq, &mut rng);
+        reanalyze_step(&model, &policy, &mut step, &cfg, cq, 2, &mut rng);
 
         let mut rng2 = StdRng::seed_from_u64(13);
         let result = mcts_search(&model, &policy, &step.obs, &cfg, &mut rng2);
-        let expected = mcts_policy_target(&result, cq);
+        let expected = mcts_policy_target(&result, cq, 2);
         assert_eq!(step.policy_target, expected);
         // 与 visit target 应不同（completedQ 在此 mock 下会放大 Q 差）
         assert_ne!(step.policy_target, result.learn_policy);
@@ -218,7 +231,7 @@ mod tests {
         steps[2].root_value = Some(99.0);
 
         let mut rng = StdRng::seed_from_u64(1);
-        reanalyze_unroll_window(&model, &policy, &mut steps, 1, 0, &cfg, None, &mut rng);
+        reanalyze_unroll_window(&model, &policy, &mut steps, 1, 0, &cfg, None, 2, &mut rng);
 
         assert!(
             steps[0].root_value == Some(99.0),

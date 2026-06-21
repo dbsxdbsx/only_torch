@@ -4,6 +4,7 @@
 //! "连续怎么近似"是算法选择（由 [`ActionPlan`] 表达）。
 
 use super::config::ActionPlan;
+use super::sampled_params::DEFAULT_CONTINUOUS_BUCKETS;
 use crate::rl::GymEnv;
 use crate::rl::mcts::ActionPayload;
 
@@ -37,7 +38,7 @@ impl ActionAdapter {
     /// 从 env + 动作方案解析。动作空间事实从 env 读，方案决定连续如何近似。
     ///
     /// # Panics
-    /// - `Auto` 用于连续 env（连续需指定 `Discretize`/未来 `Sampled`）。
+    /// - `Auto` 用于离散 env；连续 env 亦可用（默认 B=7，见 [`DEFAULT_CONTINUOUS_BUCKETS`](super::sampled_params::DEFAULT_CONTINUOUS_BUCKETS)）。
     /// - `Discretize` 用于离散 env（离散无需离散化）。
     /// - 混合（Tuple）动作空间尚未支持。
     pub fn resolve(env: &GymEnv, plan: ActionPlan) -> Self {
@@ -54,14 +55,20 @@ impl ActionAdapter {
 
         match plan {
             ActionPlan::Auto => {
-                assert!(
-                    range.is_discrete_action(),
-                    "MyZero: 连续动作 env 须声明 .discretize(buckets)（默认 Auto 仅适用于离散 env）"
-                );
-                let n = range.get_discrete_action_selectable_num();
-                Self {
-                    candidates: (0..n).map(ActionPayload::Discrete).collect(),
-                    kind: AdapterKind::Discrete,
+                if range.is_discrete_action() {
+                    let n = range.get_discrete_action_selectable_num();
+                    Self {
+                        candidates: (0..n).map(ActionPayload::Discrete).collect(),
+                        kind: AdapterKind::Discrete,
+                    }
+                } else {
+                    // 连续 env：Sampled MuZero 默认 B=7（与 recipe / issue §2.3 一致）
+                    let (lo, hi) = range.get_continuous_action_low_high();
+                    let buckets = DEFAULT_CONTINUOUS_BUCKETS;
+                    Self {
+                        candidates: (0..buckets).map(ActionPayload::Discrete).collect(),
+                        kind: AdapterKind::Discretized { lo, hi, buckets },
+                    }
                 }
             }
             ActionPlan::Discretize { buckets } => {

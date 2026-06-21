@@ -6,16 +6,54 @@
 //! π' 直接由 Q 值构造，少模拟下仍是一次有保证的策略提升（与 Grill 2020 的正则化策略优化同源，
 //! 但闭式、无需二分搜索 α）。
 
-use crate::rl::mcts::{ChildStat, SearchResult};
+use crate::rl::mcts::{ActionPayload, ChildStat, SearchResult};
 
 /// 从 MCTS 搜索结果构造策略训练目标（visit-count 或 completedQ，与 self-play / reanalyze 共用）。
-pub fn mcts_policy_target(result: &SearchResult, cq: Option<(f32, f32)>) -> Vec<f32> {
-    match cq {
+///
+/// `action_dim` 为完整 joint 动作数；Sampled MuZero 搜索子集长度为 K 时，会投射回全长向量。
+pub fn mcts_policy_target(
+    result: &SearchResult,
+    cq: Option<(f32, f32)>,
+    action_dim: usize,
+) -> Vec<f32> {
+    let partial = match cq {
         Some((c_visit, c_scale)) => {
             completed_q_policy_target(&result.children, result.network_value, c_visit, c_scale)
         }
         None => result.learn_policy.clone(),
+    };
+    scatter_policy_target(&result.children, &partial, action_dim)
+}
+
+/// 把搜索子集（K 路）上的策略目标投射回完整动作空间 `[0, action_dim)`。
+///
+/// 未出现在 `children` 中的动作概率为 0，再对全长 renormalize（Sampled MuZero 训练蒸馏用）。
+pub fn scatter_policy_target(
+    children: &[ChildStat],
+    partial: &[f32],
+    action_dim: usize,
+) -> Vec<f32> {
+    assert!(action_dim > 0, "action_dim 必须 > 0");
+    if partial.len() == action_dim {
+        return partial.to_vec();
     }
+    let mut full = vec![0.0; action_dim];
+    for (child, &p) in children.iter().zip(partial.iter()) {
+        if let ActionPayload::Discrete(idx) = child.action {
+            if idx < action_dim {
+                full[idx] = p;
+            }
+        }
+    }
+    let sum: f32 = full.iter().sum();
+    if sum > 1e-8 {
+        for x in &mut full {
+            *x /= sum;
+        }
+    } else {
+        full.fill(1.0 / action_dim as f32);
+    }
+    full
 }
 
 /// completedQ 改进策略目标（闭式，返回与 `children` 平行的概率向量）。
@@ -97,6 +135,37 @@ mod tests {
             to_play: 0,
             discount: 1.0,
         }
+    }
+
+    #[test]
+    fn scatter_sampled_subset_to_full_action_dim() {
+        let children = vec![
+            ChildStat {
+                action: ActionPayload::Discrete(1),
+                visit_count: 3,
+                value_sum: 0.0,
+                prior: 0.2,
+                reward: 0.0,
+                to_play: 0,
+                discount: 1.0,
+            },
+            ChildStat {
+                action: ActionPayload::Discrete(4),
+                visit_count: 7,
+                value_sum: 0.0,
+                prior: 0.3,
+                reward: 0.0,
+                to_play: 0,
+                discount: 1.0,
+            },
+        ];
+        let partial = vec![0.3, 0.7];
+        let full = scatter_policy_target(&children, &partial, 7);
+        assert_eq!(full.len(), 7);
+        assert!((full[1] - 0.3).abs() < 1e-5);
+        assert!((full[4] - 0.7).abs() < 1e-5);
+        assert!((full.iter().sum::<f32>() - 1.0).abs() < 1e-5);
+        assert!((full[0] + full[2] + full[3] + full[5] + full[6]).abs() < 1e-5);
     }
 
     #[test]

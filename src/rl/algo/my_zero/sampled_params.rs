@@ -7,6 +7,9 @@
 
 use super::config::ActionPlan;
 
+/// Sampled MuZero 连续维默认档数 B（Hubert et al. 2021 · Appendix A）。
+pub const DEFAULT_CONTINUOUS_BUCKETS: usize = 7;
+
 /// 设计期 joint 空间与运行时 Sampled K（日志 / 测试用）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SampledParams {

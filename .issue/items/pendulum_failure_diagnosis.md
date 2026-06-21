@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-06-18
-updated: 2026-06-18
+updated: 2026-06-21
 owners: []
 reviewers: []
 ---
@@ -15,6 +15,7 @@ reviewers: []
 > **关联文档**：[MyZero 总览](../../examples/my_zero/README.md) · [Pendulum 详情](../../examples/my_zero/pendulum/README.md) · [RL 路线图](../../.doc/design/rl_roadmap.md)
 > **代码位置更新（2026-06-18，v0.25 Phase 0/1 重构）**：MyZero 已统一进库 `src/rl/algo/my_zero/`——模型在 `network.rs`（原 `examples/my_zero/cartpole/model.rs`，consistency 块在其 `train_unroll`），训练循环 / dynamics 诊断在 `runner.rs`，旋钮在 `config.rs::apply_env_overrides`（原 `pendulum/main.rs` 的 `Hyperparams` / env 解析），动作离散化在 `action.rs`。组件（consistency / value_prefix / n_step / support 等）已从 muzero/ez **吸收进 my_zero**。本 issue 下文旧的 `model.rs:NNN` / `main.rs:NNN` 行号据此失效，对应逻辑见上述新文件。
 > **value-head 容量诊断（2026-06-18，决定性新结果）**：库内单测 `my_zero::tests::value_head_capacity` 喂高方差、obs 可分的 value 目标，只训 repr+pred 的 value head——高/低价值组预测间隔从 1.77 训练到 **14.00**（真实间隔 14.0，**精确拟合**）→ §一 的分叉 **(b)「head 学不动」证伪**。坍缩来自**上游**（n-step target 构造 / 搜索），非 head 表达力。下一步探针：在 Pendulum 跑里实测 n-step target 的 std，与全程 MC std(≈175)、模型预测 std(≈26) 三者对比，定位是 target 截断（td_steps/gamma）还是搜索。
+> **压测更新（2026-06-21）**：已接入与 CartPole 相同的 **consistency + reconstruction + Sampled** 栈（B=7 · K_eff=5 · sims=20 · γ=0.997 · r_scale=0.1）；修复 Sampled `policy_target` 投射 full action_dim（ep10 训练崩溃）。600ep / 120k env-steps：**best greedy −942.2**（门禁 −200 未达标）。详见 §十。
 
 ---
 
@@ -202,3 +203,43 @@ if consistency_coef > 0.0 {
 - 当前数据**已倾向支持**"纯离散化 MCTS 在 Pendulum sims≤50 下走不通"这个分叉。
 - 但因单 seed + 只跑了 2 个臂，**证据尚不充分**，故 suspension 求审而非直接下结论。
 - 若专家认可方法论，最低成本的收尾是：补跑臂 B/C（确认无逃脱）+ 多 seed 复现 base，然后据此决定 Gumbel-root 是否升级为关键路径。
+
+---
+
+## 十、cons+recon+Sampled 压测（2026-06-21）
+
+> **配置**：与 CartPole promote 相同组件栈（consistency + reconstruction + Sampled）；`recipe.rs` 注入 B=7 bin 中点；`main.rs` 仅 `reward_scale(0.1)` + 门禁 −200。训练默认 **sims=20 · γ=0.997**（与 CartPole 对齐，非旧 README 的 sims=50/γ=0.99）。
+> **修复**：Sampled 子集 policy_target 须投射回完整 action_dim（`target.rs::scatter_policy_target`）；否则 ep10 训练起点 Tensor shape 崩溃。
+
+### 实测（seed=42 · release · 600 ep · 120k env-steps · wall ~495s）
+
+| 指标 | 值 |
+|------|-----|
+| best greedy eval | **−942.2** @ ep575 |
+| 训末 greedy | −1118.9 |
+| load best → eval×10 | **−942.2** |
+| run×1 | −867.4 |
+| loss 轨迹 | 48 → **~5–7**（较 §五 base ~17 卡死有进步） |
+| self-play avg_R | ~−1239 → ~−1032 |
+| 门禁 −200 | ❌ 未达标 |
+
+greedy eval 里程碑：ep25 **−1338** → ep50 **−1041** → ep100 **−1037** → ep200 **−1033** → ep500 **−994** → best **−942** @ ep575。
+
+### 与 §五 base 对照
+
+| 配置 | best greedy | loss | 备注 |
+|------|-------------|------|------|
+| §五 base（9 档 · 无 cons/recon · sims=50） | ~−929 @ 80k | ~17 不降 | 旧栈 |
+| **§十 cons+recon+Sampled（B=7 · sims=20）** | **−942** @ 115k | ~5–7 | 本次 |
+
+### 解读
+
+- **仍处失败区间**（远未触达 −800「质的飞跃」线），**不能**对 cons/recon/Sampled 下 ✅/➖/❌ 裁决。
+- cons+recon+Sampled **改变了训练动力学**（loss 降、单局 R 偶发 −660~−750），但 **greedy 策略未入门** → 与 §一 value 上游 / 搜索弱信号假设仍一致。
+- Sampled K=5<B=7 + sims=20 是否额外伤害，**未隔离**；待 P1：`sims=50` / `γ=0.99` A/B。
+
+### 下一步（P0→P2）
+
+1. **P0**：n-step target std 探针（`.diagnose()` 或 runner 日志），区分 target 截断 vs 搜索。
+2. **P1**：`main.rs` 只改 `sims=50`、`gamma=0.99`，MAX_EP=300 看 greedy 能否过 −800。
+3. **P2**：仍失败 → 评估 Gumbel-root 或加大 B；勿在失败区间叠 completedQ 等 CartPole ❌ 组件。

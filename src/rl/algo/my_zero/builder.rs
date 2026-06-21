@@ -219,8 +219,23 @@ mod tests {
             .unwrap();
         assert!(cfg.components.consistency);
         assert!(cfg.components.reconstruction);
+        assert!(cfg.components.sampled);
         assert!(!cfg.components.reanalyze);
         assert!(!cfg.components.completed_q_target);
+    }
+
+    #[test]
+    fn pendulum_recipe_matches_cartpole_stack() {
+        let cfg = MyZero::new("Pendulum-v1")
+            .reward_scale(0.1)
+            .solved(-200.0)
+            .max_episodes(600)
+            .build()
+            .unwrap();
+        assert!(cfg.components.consistency);
+        assert!(cfg.components.reconstruction);
+        assert!(cfg.components.sampled);
+        assert!((cfg.env.reward_scale - 0.1).abs() < 1e-6);
     }
 
     #[test]

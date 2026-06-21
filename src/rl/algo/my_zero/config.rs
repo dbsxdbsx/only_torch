@@ -42,7 +42,7 @@ pub enum ActionPlan {
     Auto,
     /// 连续 / 混合：每个连续维均匀离散成 `buckets` 档。
     Discretize { buckets: usize },
-    // 未来：Sampled { k } / Gumbel —— 新增 ActionSampler 实现即可，main.rs 不动。
+    // 连续 env 默认 B=7 由 recipe / ActionAdapter::Auto 注入；`.discretize(b)` 仅作 override。
 }
 
 /// env I/O 适配层
@@ -269,5 +269,26 @@ mod tests {
         assert!(cfg.components.sampled);
         assert!(!cfg.components.reanalyze);
         assert!(!cfg.components.completed_q_target);
+        assert_eq!(cfg.env.action, ActionPlan::Auto);
+    }
+
+    #[test]
+    fn new_pendulum_applies_recipe() {
+        use super::super::my_zero::MyZero;
+        use super::super::sampled_params::DEFAULT_CONTINUOUS_BUCKETS;
+        let cfg = MyZero::new("Pendulum-v1")
+            .solved(-200.0)
+            .max_episodes(100)
+            .build()
+            .unwrap();
+        assert!(cfg.components.consistency);
+        assert!(cfg.components.reconstruction);
+        assert!(cfg.components.sampled);
+        assert_eq!(
+            cfg.env.action,
+            ActionPlan::Discretize {
+                buckets: DEFAULT_CONTINUOUS_BUCKETS
+            }
+        );
     }
 }

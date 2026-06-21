@@ -27,6 +27,7 @@ impl MyZero {
         let mut cfg = MyZeroConfig::default();
         cfg.env.env_id = env_id;
         cfg.components = super::recipe::components_for(env_id);
+        cfg.env.action = super::recipe::action_plan_for(env_id);
         super::builder::MyZeroBuilder {
             cfg,
             solved_set: false,

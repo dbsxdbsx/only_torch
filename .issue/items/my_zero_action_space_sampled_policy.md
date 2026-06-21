@@ -7,7 +7,7 @@ updated: 2026-06-21
 # MyZero · 动作空间 / Sampled MuZero 决策备忘（B、K、连续、复合）
 
 > **用途**：接 Pendulum / Platform MyZero 前必读；避免把「论文 explicit」与「工程推断」混谈，避免 B/K 概念绑错。
-> **状态**：`suspended` —— 非阻塞 bug；CartPole 离散主线已跑通，连续/hybrid **策略已定、实现未闭环**。
+> **状态**：`suspended` —— 非阻塞 bug；CartPole + Pendulum 1D 搜索层已接；Pendulum **未过 −200 门禁**（见 [Pendulum 诊断 §十](./pendulum_failure_diagnosis.md#十consreconsampled-压测2026-06-21)）。
 > **论文本地副本**：`AI论文/Muzero复合action.pdf`（= Hubert et al. ICML 2021 · Sampled MuZero · arXiv:2104.06303）
 > **关联**：[MyZero 纲领 §5](../../.doc/design/my_zero_algorithm_vision.md) · [RL 路线图 §2.5 / §5.10](../../.doc/design/rl_roadmap.md) · [Pendulum 诊断](./pendulum_failure_diagnosis.md) · [post_ez_v2 backlog §Sampled](./post_ez_v2_research_backlog.md)
 
@@ -66,7 +66,7 @@ K = min( max(5, N / 2),  floor(sims × 2 / 3) )
 - **B 默认 7**（论文 Appendix）；Pendulum 首版跟论文；需要更细离散化再试 B=10。
 - **每档固定一个连续值**（执行 / MCTS 均 deterministic，**不在 bin 内 uniform 随机**）。
 - **对齐 Sampled MuZero**：`[low, high]` **等宽 B 段**，每档取 **区间中点**（bin center）。
-- **现状**：`action.rs` 的 `idx_to_continuous` 为 **linspace 含端点**；接 Pendulum factorized 时 **改为 bin 中点**，与论文一致。
+- **现状**：`action.rs` bin 中点 + `recipe.rs` 对 Pendulum 注入 B=7；`Auto` 连续 env 亦默认 B=7。
 
 ### 2.4 算法层心智模型（MCTS 不拆语义）
 
@@ -130,8 +130,10 @@ K = min( max(5, N / 2),  floor(sims × 2 / 3) )
 | `MctsConfig::sampled_k` + `Components::sampled` | ✅ runner 按 §2.1 公式从 N、sims 解析 K |
 | CartPole recipe `sampled` | ✅ 开；N=2 → K_eff=2（退化全枚举） |
 | `sampled_params.rs` | ✅ B/N/K 解析 + 单测 |
-| factorized categorical **policy head** | 🔲 未做（Pendulum 仍 adapter 离散化） |
-| 按 state 动态采 K（连续/hybrid） | 🔲 `DynamicsModel` 仍构造期固定离散表 |
+| `scatter_policy_target`（K→full action_dim） | ✅ 2026-06-21 | Pendulum B=7 K=5 训练必需 |
+| factorized categorical **policy head** | ⏸ 1D 可跳过 | D=1 flat softmax ≡ factorized；多维/Platform 待做 |
+| Pendulum cons+recon+Sampled | ❌ greedy **−942** @ 120k steps | 门禁 −200；见 [诊断 §十](./pendulum_failure_diagnosis.md#十consreconsampled-压测2026-06-21) |
+| 按 state 动态采 K（连续/hybrid） | 🔲 | `DynamicsModel` 仍构造期固定离散表 |
 | Platform MyZero 示例 | 🔲 仅 SAC 有 hybrid 参考 |
 
 ### 4.1 CartPole release 压测（seed=42 · sims=20 · 2026-06-22）

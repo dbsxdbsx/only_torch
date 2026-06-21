@@ -112,7 +112,7 @@ fn self_play_one_episode(
         };
 
         let root_value = result.root_value();
-        let policy_target = mcts_policy_target(&result, cq);
+        let policy_target = mcts_policy_target(&result, cq, adapter.action_dim());
 
         steps.push(SelfPlayStep {
             obs: obs.clone(),
@@ -211,6 +211,7 @@ pub(crate) fn prepare_train_batch(
                 actual_k,
                 &re_cfg,
                 cq,
+                adapter.action_dim(),
                 rng,
             );
             out.push(TrainBatchItem {

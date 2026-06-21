@@ -324,10 +324,15 @@ smoke-my-zero-cartpole:
     @echo "=== Running MyZero CartPole Smoke (no checkpoint) ==="
     SMOKE=1 cargo run --example my_zero_cartpole
 
-# MyZero Pendulum smoke（管线验证，不验收敛；验证 env 旋钮 plumbing）
+# MyZero Pendulum smoke（管线验证，不验收敛）
 smoke-my-zero-pendulum:
     @echo "=== Running MyZero Pendulum Smoke ==="
     SMOKE=1 cargo run --example my_zero_pendulum
+
+# MyZero Pendulum（需 Python + gymnasium；连续 + Sampled B=7）
+example-pendulum-my-zero:
+    @echo "=== Running Pendulum MyZero [{{_blas_name}}] (requires Python + gymnasium) ==="
+    cargo run --example my_zero_pendulum --release
 
 # 运行所有 RL examples（需 Python + gymnasium + extras）
 examples-rl: example-cartpole-sac example-pendulum-sac example-platform-sac example-lunarlander-sac example-cartpole-ppo example-cartpole-my-zero
