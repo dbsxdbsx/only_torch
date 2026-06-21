@@ -31,8 +31,8 @@
 | value_prefix |                ❌                 |                 ⏳                 |      —      | CartPole 有害（≠ 全局坏） |
 | target_net   |                 ⏳                 |                 ⏳                 |      —      | 已入库，训练循环待接 |
 | SVE          |                 ⏳                 |                 ⏳                 |      —      | 已入库，训练循环待接；🔲 改进：固定权重 → 自适应 mixed target |
-| completedQ   | ❌ 2×2 无收益（visit ~12k vs CQ ~30–34k steps） |                 ⏳                 |      —      | 训练策略 target；CartPole 不 promote |
-| Gumbel-root  |                 ⏳                 |                 ⏳                 |      —      | 搜索侧已实现；CartPole 阶段 A/B bench 待跑 |
+| completedQ   | ❌ 2×2 无收益（visit ~12k vs CQ ~30–34k steps） |                 ⏳                 |      —      | CartPole 不 promote · [issue](../../.issue/items/my_zero_gumbel_completedq_cartpole_negative.md) |
+| Gumbel-root  | ❌ sims=10/20 未收敛（greedy 峰值 154/123） |                 ⏳                 |      —      | 库内已实现；CartPole 暂缓 · 同上 issue |
 | 连续采样候选 |                 ⏸                 |                 ⏳                 |      —      | 大/连续动作 |
 
 > 论文全称与 arXiv：[算法纲领 §4.1 — 组件文献对照](../../.doc/design/my_zero_algorithm_vision.md#41-组件文献对照单一事实源)

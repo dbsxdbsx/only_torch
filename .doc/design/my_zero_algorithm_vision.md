@@ -116,7 +116,7 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 | SVE 自适应 mixed target | 🔲 Phase 2 改进候选 | EZ 论文为自适应 mixed target，非固定权重；须单独消融 |
 | consistency 正规化（SimSiam target encoder + EMA） | 🔲 Phase 2 改进候选 | 现简化实现 CartPole 有效；见 [Pendulum 诊断 issue](../../.issue/items/pendulum_failure_diagnosis.md) §六 |
 | value head 上游 target（Pendulum 坍缩） | 🔲 Phase 2 改进候选 | head 容量已证伪；根因在上游 n-step / 搜索，见同上 issue |
-| completedQ / Gumbel-root | 🔲 Pendulum 起重点 | DM 官方 policy improvement 线 |
+| completedQ / Gumbel-root | ❌ CartPole 实测失败；⏸ 复测留 `\|A\| > n` 环境 | 见 [issue](../../.issue/items/my_zero_gumbel_completedq_cartpole_negative.md)；库内已实现 |
 | Sampled MuZero（高维连续候选） | ⏸ 离散化够用后再上 | CartPole/Pendulum 规模暂不需要 |
 | BTS/DENTS 式 backup | 🔲 仅当动 `SearchPolicy` | 避免 MENTS 式「max-entropy 最优 ≠ 回报最优」 |
 | ANTS 自适应温度闭环 | ⏸ 借鉴思想，不搬整套 | 与 MuZero 训练循环结构不同 |
@@ -146,7 +146,7 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 
 | 环境 | 观测 | 动作 | MyZero 状态 | 默认对照 | 远期插件位 |
 |------|------|------|-------------|----------|------------|
-| CartPole-v1 | 向量 | 离散 | ✅ 回归哨兵 ~**12.2k** steps（cons+recon · sims=20） | SAC ~82k | completedQ ❌ CartPole；Gumbel 边际 |
+| CartPole-v1 | 向量 | 离散 | ✅ 回归哨兵 ~**12.2k** steps（cons+recon · PUCT · sims=20） | SAC ~82k | completedQ / Gumbel ❌ CartPole · [issue](../../.issue/items/my_zero_gumbel_completedq_cartpole_negative.md) |
 | Pendulum-v1 | 向量 | 连续 | ⏳ 失败区间，先诊断可学习性 | SAC | Gumbel-root、连续候选 |
 | Platform-v0 | 向量 | 混合 Tuple | — 未实现 | Hybrid SAC ✅ | `ActionAdapter` Tuple、混合 MCTS |
 | Gomoku | 离散棋盘 | 离散 |  backlog | — | self-play、legal_mask |

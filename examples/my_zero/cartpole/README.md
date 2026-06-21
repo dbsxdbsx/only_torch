@@ -29,14 +29,17 @@ cargo run --example my_zero_cartpole --release
 | +cons+recon · sims=15 | — | **500.0** @ ep500 | **26,306** | **~167s** | 2026-06-21；比 sims=10/20 更差，不 promote |
 | +cons+recon · sims=50（旧默认） | **50.8** | **500.0** @ ep275 | **11,682** | **183.9s** | 2026-06-21；env-steps 略优，wall-clock 约 2.3× |
 | +cons+recon · sims=50 · +completedQ | ~80 @ ep400 | **500.0** @ ep575 | **34,490** | 381s | CartPole ❌ promote |
-| +cons+recon · sims=20 · +completedQ | — | **500.0** @ ep450 | **30,409** | 180s | CartPole ❌ promote |
+| +cons+recon · sims=20 · +completedQ | — | **500.0** @ ep450 | **30,409** | 180s | CartPole ❌ promote · [issue](../../.issue/items/my_zero_gumbel_completedq_cartpole_negative.md) |
+| +cons+recon · sims=20 · Gumbel-root（visit target） | — | 峰值 **123** @ ep750+ | ~142k @ ep1725 手动停 | — | 2026-06-21 ❌ 未达标 · 同上 issue |
+| +cons+recon · sims=10 · Gumbel-root（visit target） | — | 峰值 **154** @ ep1800+ | ~101k+ 未达标 | — | 2026-06-21 ❌ · 同上 issue |
 | +consistency +reanalyze +写回 | ~12 | **9.4**（ep200 仍随机） | 未达标 | — | 2026-06-20 ❌ 见 [issue](../../.issue/items/my_zero_reanalyze_cartpole_regression.md) |
 
 **结论**：
 
 - CartPole 当前内置 **consistency + reconstruction**，**默认 sims=20**：env-steps ~**12.2k**（较 sims=50 多 ~4%），wall-clock **~80s**（约 **−56%**）；**sims=10/15** 扫参均明显差于 20（~16.2k / ~26.3k steps），仅作参考。
 - 相对仅 consistency：env-steps **28,996 → 12,186（−58%）**，greedy 仍满分。
-- **completedQ** 2×2 消融：visit ~12k steps；+completedQ ~30–34k steps → CartPole **不 promote**。
+- **completedQ** 2×2 消融：visit ~12k steps；+completedQ ~30–34k steps → CartPole **不 promote**（[issue](../../.issue/items/my_zero_gumbel_completedq_cartpole_negative.md)）。
+- **Gumbel-root** @ sims=10/20：greedy 峰值 154/123，**远未达标**；CartPole **不 promote**（同上 issue）。论文主场景为 `|A| > n`，CartPole `n ≫ |A|` 不宜作 Gumbel headline。
 - reanalyze 写回已入库但 **暂不开启**。
 
 ---

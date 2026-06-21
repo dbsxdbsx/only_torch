@@ -11,7 +11,7 @@ pub(crate) fn components_for(env_id: &str) -> Components {
             let mut c = Components::base();
             c.consistency = true;
             c.reconstruction = true;
-            // reanalyze 写回已实现；CartPole promote 暂缓 → .issue/items/my_zero_reanalyze_cartpole_regression.md
+            // reanalyze / completedQ / Gumbel：CartPole promote 暂缓 → .issue/items/
             c.reanalyze = false;
             c
         }

@@ -15,6 +15,7 @@
 
 ### Changed
 
+- **docs(rl): CartPole completedQ / Gumbel-root 消融失败记录**；recipe 保持 cons+recon · PUCT · sims=20；见 `.issue/items/my_zero_gumbel_completedq_cartpole_negative.md`
 - **chore(rl): MyZero 默认 MCTS `num_simulations` 50→20**；CartPole cons+recon 基线 ~12.2k env-steps（seed=42）；sim=10/15 扫参见 `examples/my_zero/cartpole/README.md`
 - **refactor(rl): MyZero 用户侧 API 链式 builder + train/eval/run 生命周期**
   - `MyZero::new(env_id)` 唯一入口；`.solved` / `.max_episodes` 仅绑 `.train()`
