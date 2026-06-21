@@ -128,7 +128,7 @@ pub struct MctsConfig {
 impl Default for MctsConfig {
     fn default() -> Self {
         Self {
-            num_simulations: 50,
+            num_simulations: 20,
             pb_c_base: 19652.0,
             pb_c_init: 1.25,
             root_dirichlet_alpha: 0.3,

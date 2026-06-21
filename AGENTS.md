@@ -18,8 +18,8 @@ only_torch 是一个纯 Rust 的 PyTorch 风格玩具框架，当前重点是：
 | 项 | 内容 |
 |----|------|
 | **版本** | `0.24.0`（2026-06-16；本地可能超前 `origin/master`，以 `git log` / `CHANGELOG.md` 为准） |
-| **刚闭环** | **MyZero 统一 + 旧 `*Zero` 清除**（v0.25 开发中）：MyZero 算法主体（模型 + 训练循环 + self-play）+ 全部组件统一进库 `src/rl/algo/my_zero/`（自包含）；**删除**旧 `muzero/` + `efficientzero/` 模块与示例，MyZero 成为项目**唯一**的 `*Zero` 实现。CartPole-v1 回归哨兵 greedy 500；样本效率实测（到满分 env-step，seed=42）：**consistency + reconstruction ~11.7k** / 仅 consistency ~29k / PPO ~82k / SAC ~105k |
-| **当前主线** | **强化学习** v0.25.0：**MyZero 统一算法**——项目**唯一**的 `*Zero` 实现，从 CartPole-v1 消融实验起步，逐增量叠加（consistency / reconstruction / value prefix / target net / SVE / Gumbel），最终覆盖全动作空间（离散/连续/混合）与全状态类型（确定/随机）。**Phase 0/1 已完成**：算法主体 + 组件（含 Scholz et al. 2021 reconstruction）统一进库 `src/rl/algo/my_zero/`；CartPole 已验收 **consistency + reconstruction**（~11.7k env-steps） |
+| **刚闭环** | **MyZero 统一 + 旧 `*Zero` 清除**（v0.25 开发中）：MyZero 算法主体（模型 + 训练循环 + self-play）+ 全部组件统一进库 `src/rl/algo/my_zero/`（自包含）；**删除**旧 `muzero/` + `efficientzero/` 模块与示例，MyZero 成为项目**唯一**的 `*Zero` 实现。CartPole-v1 回归哨兵 greedy 500；样本效率实测（到满分 env-step，seed=42）：**consistency + reconstruction ~12.2k @ sims=20** / 仅 consistency ~29k / PPO ~82k / SAC ~105k |
+| **当前主线** | **强化学习** v0.25.0：**MyZero 统一算法**——项目**唯一**的 `*Zero` 实现，从 CartPole-v1 消融实验起步，逐增量叠加（consistency / reconstruction / value prefix / target net / SVE / Gumbel），最终覆盖全动作空间（离散/连续/混合）与全状态类型（确定/随机）。**Phase 0/1 已完成**：算法主体 + 组件（含 Scholz et al. 2021 reconstruction）统一进库 `src/rl/algo/my_zero/`；CartPole 已验收 **consistency + reconstruction**（~12.2k env-steps · **默认 sims=20**） |
 | **刻意暂缓** | 演化 **阶段 D**（`CellAttention` ONNX、`Attention` Net2Net 函数保持、Conv2d Attention、3D batched MatMul）——与 RL 零耦合，见 [记忆机制设计 — Phase D](.doc/design/memory_mechanism_design.md#-后续-phase-d刻意未做) |
 | **路线展望** | v0.25 **MyZero**（`src/rl/algo/my_zero/`）：项目**唯一**的 `*Zero` 实现，消融驱动迭代。从 CartPole 最简 base 开始，每叠一个增量组件做 A/B 消融对比、记录 benchmark，逐步覆盖全动作/状态类型。详见 [RL 路线图](.doc/design/rl_roadmap.md) |
 

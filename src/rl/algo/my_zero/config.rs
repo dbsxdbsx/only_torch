@@ -89,7 +89,7 @@ pub struct TrainSettings {
     pub k_unroll: usize,
     /// n-step bootstrap 的步数（value target）
     pub td_steps: usize,
-    /// 每步 MCTS 模拟数（按环境调：棋类 ~800、向量/Atari ~50）
+    /// 每步 MCTS 模拟数（默认 20：CPU 友好；学不动时再按环境调大）
     pub num_simulations: u32,
     /// 学习率
     pub lr: f32,
@@ -110,7 +110,7 @@ impl Default for TrainSettings {
             gamma: 0.997,
             k_unroll: 5,
             td_steps: 50,
-            num_simulations: 50,
+            num_simulations: 20,
             lr: 0.02,
             train_batch_size: 8,
             trains_per_episode: 8,
@@ -230,7 +230,7 @@ mod tests {
     #[test]
     fn train_default_is_cartpole_friendly() {
         let t = TrainSettings::default();
-        assert_eq!(t.num_simulations, 50);
+        assert_eq!(t.num_simulations, 20);
         assert_eq!(t.k_unroll, 5);
         assert!((t.gamma - 0.997).abs() < 1e-6);
         assert_eq!(t.train_batch_size, 8);
