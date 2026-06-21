@@ -60,7 +60,8 @@
 
 ```text
 DeepMind Zero 系（回报最大化 + 部署 greedy）
-  MuZero → EfficientZero → Gumbel MuZero → Stochastic MuZero → BetaZero(POMDP belief)
+  MuZero → EfficientZero → Gumbel MuZero → Stochastic MuZero
+  （文献叙事常并列 BetaZero(POMDP belief)——**另一问题类、本项目 ❌ 不学**，见 §5.3）
 
 MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
   MENTS → TENTS/RENTS → ANTS → BTS/DENTS(NeurIPS 2023，修正 MENTS 目标错位)
@@ -73,13 +74,13 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 | **Scholz et al. 2021（reconstruction）** | CartPole ✅ reconstruction loss | *Improving Model-Based RL with Internal State Representations through Self-Supervision* · arXiv:2102.05599 |
 | **Gumbel MuZero** | **计划**：Gumbel-root / completedQ | Danihelka et al. 2022 · arXiv:2111.00301；少 sims 的 policy improvement；**非 MaxEnt** |
 | **Stochastic MuZero** | 远期：随机转移 | 学 \(p(s'\|s,a)\)，不要求策略随机 |
-| **BetaZero** | 远期：POMDP / belief MCTS | **非 MaxEnt**；长 horizon 部分可观测 |
+| **BetaZero** | **❌ 不学**（2026-06-21 定稿） | Moss et al. 2024 · [2306.00249](https://arxiv.org/abs/2306.00249)；belief 规划、**已知** \(T,O\)——与黑盒 MyZero 设定冲突，见 §5.3 |
 | **BTS/DENTS** | 若改 `SearchPolicy` backup 时**参考** | 比 MENTS/ANTS 理论更干净；未接 MuZero 全家桶 |
 | **ANTS / MENTS** | **不**作为 MuZero 替代品全盘复刻 | Atari planning + 预训练 Q 习惯；与 DM 棋类栈不同范式 |
 | **SAC / MaxEnt RL** | 卫星基线 | meta-POMDP 理论价值；**无 MCTS** |
 | **Klein 2021 A0C 硕士论文** | 局部参考 | 连续 AZ + 训练 loss 固定 α 熵正则 + tanh policy；**搜索阶段无 entropy**；非 SAC⊕AZ 有机统一 |
 
-**ANTS 是不是「AZ + MaxEnt 最好结合」？** —— 在「MaxEnt-MCTS + 在线闭环 + Atari」窄口径里是里程碑；**不是** 2026 全问题终局。同线后继看 **DENTS**；官方 Zero 演进看 **Gumbel / Stochastic / BetaZero**。
+**ANTS 是不是「AZ + MaxEnt 最好结合」？** —— 在「MaxEnt-MCTS + 在线闭环 + Atari」窄口径里是里程碑；**不是** 2026 全问题终局。同线后继看 **DENTS**；DeepMind Zero 演进我们跟 **Gumbel / Stochastic**；**BetaZero 不纳入**（§5.3）。
 
 ### 4.1 组件文献对照（单一事实源）
 
@@ -121,7 +122,8 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 | BTS/DENTS 式 backup | 🔲 仅当动 `SearchPolicy` | 避免 MENTS 式「max-entropy 最优 ≠ 回报最优」 |
 | ANTS 自适应温度闭环 | ⏸ 借鉴思想，不搬整套 | 与 MuZero 训练循环结构不同 |
 | Stochastic dynamics 头 | ⏸ Platform / 随机 env 需要时 | Stochastic MuZero 路线 |
-| Belief-space MCTS | ⏸ 明确 POMDP 需求时 | BetaZero 路线 |
+| Belief-space MCTS（BetaZero） | **❌ 不学** | 2026-06-21 定稿；需已知 \(T,O\)，与 Gymnasium 黑盒目标冲突，见 §5.3 |
+| POMDP / 部分可观测（MyZero 侧） | 🔲 默认 history / 帧堆叠 | 表征层扩展；**非** belief MCTS |
 | 训练侧 SAC 式 soft Bellman | ❌ 不并入 MyZero trainer | 换目标函数；保留 SAC 示例即可 |
 | MENTS/ANTS 替换 PUCT 为默认 | ❌ | 问题设定不同；非 EZ/MuZero 主栈 |
 | SAC 扩展棋类 self-play | ❌ | 需从零造搜索+蒸馏 |
@@ -137,6 +139,34 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 | POMDP 最优策略 | **未必** raw observation 上 greedy；information-gathering 问题里 **π\* 可本身随机** |
 | Zero 系「证明不要 MaxEnt」 | **无**此类定理；是**问题设定 + FOMDP 经典结果 + 工程传统** |
 | Klein A0C = AlphaZero + SAC 最佳统一 | **否**；熵正则只在训练 loss，MCTS 无 MaxEnt backup |
+| BetaZero = MyZero 的 POMDP 下一站 | **否**；已知 \(T,O\) 的 belief 规划，与学 latent 模型正交 |
+| 万金油 MyZero 应内置 BetaZero | **否**；黑盒 env 只有 `step(obs,a)`，见 §5.3 |
+
+### 5.3 BetaZero 裁决（2026-06-21 定稿）
+
+**结论**：论文已读（本地 `BetaZero_Belief-State_POMDP_2306.00249.pdf`），**明确不学习、不实现、不并入 MyZero**。
+
+| 维度 | BetaZero（Moss et al. 2024） | 本项目 MyZero |
+|------|------------------------------|---------------|
+| 问题设定 | POMDP **规划**；\(T,O,R\) **已知** | 黑盒交互；通常只知 obs / action 空间 |
+| 环境模型 | **不学**转移/观测；粒子滤波 + belief MCTS | **学** value-equivalent latent dynamics |
+| 规划对象 | belief \(b\) + \(\phi(b)\) 摘要 | latent state（+ 可选 history） |
+| 典型场景 | 地质勘探、CCS 等**自带仿真器** | Gymnasium `make` / `step` |
+
+**为何不学**：
+
+1. **与母算法哲学相反**：MuZero/MyZero 的价值是「无规则、从交互学模型」；BetaZero 假设模型已写在仿真器里。
+2. **与接口不匹配**：Gymnasium 不给 \(T(s'|s,a)\)、\(O(o|a,s')\)；硬接 belief MCTS 不现实。
+3. **与 Stochastic MuZero 正交**：后者管**完全可观测 + 结构随机**；BetaZero 管**部分可观测 + 已知模型**——不是「再叠一层就 universal」。
+
+**POMDP / 部分可观测时 MyZero 怎么办**（不引入 BetaZero）：
+
+- **默认**：表征吃 **history / 帧堆叠**（与 Atari 帧堆叠同理；[RL 路线图 §2.2.1b](./rl_roadmap.md)）。
+- **继续强化 latent**：consistency + reconstruction（已验收）帮表征保留观测信息。
+- **真·结构随机且可观测**：远期 **Stochastic MuZero**（chance node），不是 belief MCTS。
+- **不完全信息博弈**（扑克等）：仍 **❌ 不在路线**（information-set MCTS / CFR，另一算法族）。
+
+**可单独借鉴、不打包 BetaZero**：Q-weighted visit policy、prioritized action widening 等训练/搜索技巧——若未来有证据再单项 ablation，**不**引入 belief 树或已知 \(T,O\) 依赖。
 
 ---
 
@@ -151,7 +181,7 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 | Platform-v0 | 向量 | 混合 Tuple | — 未实现 | Hybrid SAC ✅ | `ActionAdapter` Tuple、混合 MCTS |
 | Gomoku | 离散棋盘 | 离散 |  backlog | — | self-play、legal_mask |
 | 随机转移 / 长 horizon | — | — | ⏸ | — | stochastic dynamics |
-| 部分可观测 | — | — | ⏸ | — | belief（BetaZero 类） |
+| 部分可观测 | — | — | 🔲 | — | history / 帧堆叠（**非** BetaZero） |
 
 **Platform 阻塞点（已知）**：MyZero `ActionAdapter` 仅 Auto/Discretize，Tuple 混合未支持——扩 Platform 前先扩动作适配层，而非换 SAC 母算法。
 
@@ -163,7 +193,7 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 2. [MyZero README 矩阵](../../examples/my_zero/README.md) + CartPole/Pendulum 子 README
 3. [rl_roadmap.md §8](./rl_roadmap.md#8-v025-myzero-统一算法2026-06-16-方向定稿) 实施顺序
 4. 若动搜索：**Gumbel MuZero (2022)** → 若考虑熵 backup：**DENTS (2023)**，**不是**先读 ANTS
-5. 若动 POMDP：**BetaZero (2024)** + 教科书 POMDP（Tiger 等反例）
+5. 若理解 POMDP 与 MyZero 边界：本文 **§5.3**（BetaZero **不学**）+ 教科书 POMDP（Tiger 等反例）
 6. 若理解为何要随机策略：**Eysenbach & Levine 2021**（meta-POMDP，与 MCTS 正交）
 
 ---
@@ -177,3 +207,4 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 | 2026-06-21 | §5.1 / §6：CartPole reconstruction 验收 ~11.7k env-steps（consistency + reconstruction） |
 | 2026-06-21 | §5.1：拆分 SVE / 补 Phase 2 改进候选（SVE 自适应、consistency 正规化、value 上游 target） |
 | 2026-06-21 | §4.1：组件文献对照迁入本文（单一事实源）；示例 README 改链入 |
+| 2026-06-21 | §5.3：BetaZero 论文已读，**❌ 不学**（已知 \(T,O\) belief 规划 vs 黑盒 MyZero）；POMDP 默认 history |

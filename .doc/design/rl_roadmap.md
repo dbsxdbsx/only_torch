@@ -133,7 +133,7 @@ examples/sac/
 | 完全信息·零和·双人棋类 | ✅ | `MctsModel` + negamax + `legal_mask` | AZ v0.22 → EZ v0.24 | 围棋 19×19 / 象棋是**算力**问题，非架构问题 |
 | 单智能体（Atari / MuJoCo） | ✅ | learned latent + γ backup + CNN 表征 | MZ v0.23 → EZ v0.24 | |
 | 离散 / 连续 / 混合 action | ✅ | legal_mask / 采样器 + Gumbel + 动作-keyed 节点 | 全程 | 混合 action 在 MCTS 线证据最薄（SAC 侧已稳） |
-| POMDP / 部分可观测 | ✅ | 表征层吃 history / 帧堆叠，MCTS 核心不改 | MZ/EZ | 与 Atari 帧堆叠同理 |
+| POMDP / 部分可观测 | ✅ | 表征层吃 history / 帧堆叠，MCTS 核心不改 | MZ/EZ | 与 Atari 帧堆叠同理；**不学 BetaZero**（belief MCTS + 已知 \(T,O\)），见 [算法纲领 §5.3](./my_zero_algorithm_vision.md#53-betazero-裁决2026-06-21-定稿) |
 | 轻度随机（Atari sticky action 等） | ✅ | learned 模型吸收成近似确定性 latent | MZ/EZ | MuZero 原文即如此 |
 | **真·结构随机（骰子 / 2048 / 随机生成）** | ⚠️ | 需 Stochastic MuZero chance node（afterstate + chance 两类节点交替） | **未排期 backlog** | **会动树核心**（节点类型 / backup / transition），非填缝；见 §5.10 |
 | **不完全信息（扑克 / 斗地主 / 麻将）** | ❌ | 需 information-set MCTS / CFR / DMC，属**另一算法家族** | 不在路线 | 完全信息 MCTS 无法处理隐藏手牌 |
