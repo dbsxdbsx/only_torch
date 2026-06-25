@@ -9,7 +9,7 @@ use rand::RngCore;
 
 use super::min_max::MinMaxStats;
 use super::puct::PuctPolicy;
-use super::traits::{RootScheduler, SearchPolicy};
+use super::traits::{RootScheduler, RootStrategy, SelectionRule, TargetRule};
 use super::types::{ChildStat, MctsConfig};
 
 /// Gumbel MuZero 搜索策略（标准版：仅改根，非根 PUCT）。
@@ -47,29 +47,9 @@ impl GumbelPolicy {
     }
 }
 
-impl SearchPolicy for GumbelPolicy {
+impl RootStrategy for GumbelPolicy {
     /// Gumbel 根不用 Dirichlet；探索由 Gumbel 噪声 + Sequential Halving 承担。
     fn prepare_root(&self, _children: &mut [ChildStat], _cfg: &MctsConfig, _rng: &mut dyn RngCore) {
-    }
-
-    fn select_child(
-        &self,
-        parent_visit: u32,
-        parent_to_play: u8,
-        children: &[ChildStat],
-        stats: &MinMaxStats,
-        cfg: &MctsConfig,
-    ) -> usize {
-        self.puct
-            .select_child(parent_visit, parent_to_play, children, stats, cfg)
-    }
-
-    fn recommend(&self, children: &[ChildStat], cfg: &MctsConfig, rng: &mut dyn RngCore) -> usize {
-        self.puct.recommend(children, cfg, rng)
-    }
-
-    fn make_targets(&self, children: &[ChildStat], cfg: &MctsConfig) -> Vec<f32> {
-        self.puct.make_targets(children, cfg)
     }
 
     fn make_root_scheduler(
@@ -82,6 +62,30 @@ impl SearchPolicy for GumbelPolicy {
             self.c_visit,
             self.c_scale,
         ))
+    }
+}
+
+impl SelectionRule for GumbelPolicy {
+    fn select_child(
+        &self,
+        parent_visit: u32,
+        parent_to_play: u8,
+        children: &[ChildStat],
+        stats: &MinMaxStats,
+        cfg: &MctsConfig,
+    ) -> usize {
+        self.puct
+            .select_child(parent_visit, parent_to_play, children, stats, cfg)
+    }
+}
+
+impl TargetRule for GumbelPolicy {
+    fn recommend(&self, children: &[ChildStat], cfg: &MctsConfig, rng: &mut dyn RngCore) -> usize {
+        self.puct.recommend(children, cfg, rng)
+    }
+
+    fn make_targets(&self, children: &[ChildStat], cfg: &MctsConfig) -> Vec<f32> {
+        self.puct.make_targets(children, cfg)
     }
 }
 
@@ -333,6 +337,7 @@ mod tests {
 
     fn child(prior: f32, visit: u32, value_sum: f32) -> ChildStat {
         ChildStat {
+            action_id: 0.into(),
             action: ActionPayload::Discrete(0),
             visit_count: visit,
             value_sum,
@@ -351,6 +356,7 @@ mod tests {
             .map(|_| child(0.2, 0, 0.0))
             .enumerate()
             .map(|(i, mut c)| {
+                c.action_id = i.into();
                 c.action = ActionPayload::Discrete(i);
                 c
             })

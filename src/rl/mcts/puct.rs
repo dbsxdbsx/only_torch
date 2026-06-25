@@ -3,7 +3,7 @@
 use rand::RngCore;
 
 use super::min_max::MinMaxStats;
-use super::traits::SearchPolicy;
+use super::traits::{RootStrategy, SelectionRule, TargetRule};
 use super::types::{ChildStat, MctsConfig};
 
 /// PUCT 搜索策略
@@ -18,7 +18,7 @@ impl PuctPolicy {
     }
 }
 
-impl SearchPolicy for PuctPolicy {
+impl RootStrategy for PuctPolicy {
     /// 向根子节点注入 Dirichlet 噪声以鼓励探索
     ///
     /// 使用 Gamma(alpha, 1.0) 独立采样后归一化来合成 Dirichlet，
@@ -38,7 +38,9 @@ impl SearchPolicy for PuctPolicy {
             child.prior = p;
         }
     }
+}
 
+impl SelectionRule for PuctPolicy {
     /// PUCT 公式选择子节点（父节点视角）
     ///
     /// `Q(a) = r(a) + γ · perspective · V(child(a))`
@@ -83,7 +85,9 @@ impl SearchPolicy for PuctPolicy {
 
         best_idx
     }
+}
 
+impl TargetRule for PuctPolicy {
     /// 按温度随机采样 visit count 推荐动作
     ///
     /// 训练时 temperature=1.0 → 按 visit count 比例采样（保证探索多样性）
@@ -321,6 +325,7 @@ mod tests {
         let cfg = MctsConfig::default();
         let children = vec![
             ChildStat {
+                action_id: 0.into(),
                 action: ActionPayload::Discrete(0),
                 visit_count: 10,
                 value_sum: 5.0,
@@ -330,6 +335,7 @@ mod tests {
                 discount: 1.0,
             },
             ChildStat {
+                action_id: 1.into(),
                 action: ActionPayload::Discrete(1),
                 visit_count: 0,
                 value_sum: 0.0,
@@ -349,6 +355,7 @@ mod tests {
         let cfg = MctsConfig::default();
         let children = vec![
             ChildStat {
+                action_id: 0.into(),
                 action: ActionPayload::Discrete(0),
                 visit_count: 3,
                 value_sum: 1.0,
@@ -358,6 +365,7 @@ mod tests {
                 discount: 1.0,
             },
             ChildStat {
+                action_id: 1.into(),
                 action: ActionPayload::Discrete(1),
                 visit_count: 7,
                 value_sum: 2.0,

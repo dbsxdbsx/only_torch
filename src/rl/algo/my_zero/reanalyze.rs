@@ -94,7 +94,9 @@ pub fn reanalyze_game<M, P>(
 mod tests {
     use super::*;
     use crate::rl::algo::my_zero::target::{completed_q_policy_target, mcts_policy_target};
-    use crate::rl::mcts::{ActionPayload, PuctPolicy, RecurrentOut, RootOut, mcts_search};
+    use crate::rl::mcts::{
+        ActionPayload, CandidateSet, PuctPolicy, RecurrentOut, RootOut, mcts_search,
+    };
     use crate::rl::{GameOutcome, SelfPlayStep};
     use rand::SeedableRng;
     use rand::rngs::StdRng;
@@ -107,9 +109,11 @@ mod tests {
         fn root(&self, obs: &[f32]) -> RootOut<Self::State> {
             RootOut {
                 state: obs.to_vec(),
-                prior: vec![0.5, 0.5],
                 value: 0.0,
-                candidate_actions: vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)],
+                candidates: CandidateSet::from_actions_and_priors(
+                    vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)],
+                    vec![0.5, 0.5],
+                ),
                 to_play: 0,
             }
         }
@@ -122,8 +126,10 @@ mod tests {
                 state: state.clone(),
                 reward: 1.0,
                 value: 0.5,
-                prior: vec![0.5, 0.5],
-                candidate_actions: vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)],
+                candidates: CandidateSet::from_actions_and_priors(
+                    vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)],
+                    vec![0.5, 0.5],
+                ),
                 terminal: false,
                 to_play: 0,
                 discount: 0.99,

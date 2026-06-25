@@ -5,8 +5,8 @@ use rand::RngCore;
 use super::min_max::MinMaxStats;
 use super::node::{Node, Tree};
 use super::sampled::{sample_for_expansion, sample_root_for_expansion};
-use super::traits::{MctsModel, SearchPolicy};
-use super::types::{ChildStat, MctsConfig, SearchResult};
+use super::traits::{CandidateProvider, MctsModel, SearchPolicy};
+use super::types::{ActionCandidate, CandidateSet, ChildStat, MctsConfig, SearchResult};
 
 /// 执行 MCTS 搜索
 ///
@@ -29,7 +29,7 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
     let root_out = model.root(obs);
 
     // 空候选 / 终局 root → 直接返回空结果
-    if root_out.candidate_actions.is_empty() {
+    if root_out.candidates.is_empty() {
         return SearchResult {
             children: Vec::new(),
             recommended: super::types::ActionPayload::Discrete(0),
@@ -39,13 +39,13 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
     }
 
     let mut tree = Tree::new(root_out.state.clone(), root_out.to_play);
-    let (root_actions, root_priors) =
-        expansion_candidates(&root_out.candidate_actions, &root_out.prior, cfg, true, rng);
+    let candidate_provider = ConfiguredCandidateProvider;
+    let root_candidates =
+        candidate_provider.expand_candidates(&root_out.candidates, cfg, true, rng);
     expand_root(
         &mut tree,
         model,
-        &root_actions,
-        &root_priors,
+        &root_candidates.candidates,
         &root_out.state,
         root_out.to_play,
         cfg.discount,
@@ -53,7 +53,6 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
 
     // 根节点 backup 初始价值
     tree.nodes[tree.root].visit_count = 1;
-    tree.nodes[tree.root].value_sum = root_out.value;
 
     // 2. 注入根节点 Dirichlet 噪声
     let root_id = tree.root;
@@ -99,21 +98,26 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
         let rec_out = model.recurrent(parent_state, &action);
 
         // 更新叶子节点信息
-        tree.nodes[leaf_id].reward = rec_out.reward;
+        if let Some(parent_id) = tree.nodes[leaf_id].parent {
+            let edge_idx = tree.nodes[leaf_id].action_from_parent.unwrap_or(0);
+            if edge_idx < tree.nodes[parent_id].children.len() {
+                let edge = &mut tree.nodes[parent_id].children[edge_idx];
+                edge.reward = rec_out.reward;
+                edge.discount = rec_out.discount;
+            }
+        }
         tree.nodes[leaf_id].terminal = rec_out.terminal;
         tree.nodes[leaf_id].to_play = rec_out.to_play;
-        tree.nodes[leaf_id].discount = rec_out.discount;
         tree.states[leaf_id] = Some(rec_out.state.clone());
 
-        if !rec_out.terminal && !rec_out.candidate_actions.is_empty() {
-            let (actions, priors) =
-                expansion_candidates(&rec_out.candidate_actions, &rec_out.prior, cfg, false, rng);
+        if !rec_out.terminal && !rec_out.candidates.is_empty() {
+            let candidates =
+                candidate_provider.expand_candidates(&rec_out.candidates, cfg, false, rng);
 
             tree.expand(
                 leaf_id,
-                &actions,
-                &priors,
-                &vec![rec_out.state.clone(); actions.len()],
+                &candidates.candidates,
+                &vec![rec_out.state.clone(); candidates.len()],
                 rec_out.to_play,
                 rec_out.discount,
             );
@@ -136,9 +140,10 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
         final_children[0].action.clone()
     } else {
         root_out
-            .candidate_actions
+            .candidates
+            .candidates
             .first()
-            .cloned()
+            .map(|c| c.payload.clone())
             .unwrap_or(super::types::ActionPayload::Discrete(0))
     };
 
@@ -152,26 +157,25 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
     }
 }
 
-/// 展开候选：标准 MuZero 全量，或 Sampled MuZero 采 K + π̂_β 先验。
-fn expansion_candidates(
-    actions: &[super::types::ActionPayload],
-    prior: &[f32],
-    cfg: &MctsConfig,
-    is_root: bool,
-    rng: &mut dyn RngCore,
-) -> (Vec<super::types::ActionPayload>, Vec<f32>) {
-    match cfg.sampled_k {
-        None => {
-            let n = actions.len();
-            let priors = if prior.len() == n {
-                prior.to_vec()
-            } else {
-                vec![1.0 / n as f32; n]
-            };
-            (actions.to_vec(), priors)
+/// 基于当前配置的候选展开策略。
+///
+/// 这是兼容层：后续 recipe 可直接装配不同 [`CandidateProvider`]。
+#[derive(Debug, Clone, Copy, Default)]
+struct ConfiguredCandidateProvider;
+
+impl CandidateProvider for ConfiguredCandidateProvider {
+    fn expand_candidates(
+        &self,
+        candidates: &CandidateSet,
+        cfg: &MctsConfig,
+        is_root: bool,
+        rng: &mut dyn RngCore,
+    ) -> CandidateSet {
+        match cfg.sampled() {
+            None => candidates.clone(),
+            Some(sampled) if is_root => sample_root_for_expansion(candidates, cfg, sampled.k, rng),
+            Some(sampled) => sample_for_expansion(candidates, sampled.k, rng),
         }
-        Some(k) if is_root => sample_root_for_expansion(actions, prior, cfg, k, rng),
-        Some(k) => sample_for_expansion(actions, prior, prior, k, rng),
     }
 }
 
@@ -179,39 +183,32 @@ fn expansion_candidates(
 fn expand_root<M: MctsModel>(
     tree: &mut Tree<M::State>,
     _model: &M,
-    actions: &[super::types::ActionPayload],
-    priors: &[f32],
+    candidates: &[ActionCandidate],
     _root_state: &M::State,
     to_play: u8,
     discount: f32,
 ) {
-    let n = actions.len();
-    let adjusted_priors = if priors.len() == n {
-        priors.to_vec()
-    } else {
-        vec![1.0 / n as f32; n]
-    };
-
-    let mut edges = Vec::with_capacity(n);
-    for (i, (action, &prior)) in actions.iter().zip(adjusted_priors.iter()).enumerate() {
+    let mut edges = Vec::with_capacity(candidates.len());
+    for (i, candidate) in candidates.iter().enumerate() {
         let child = Node {
             parent: Some(tree.root),
             action_from_parent: Some(i),
             children: Vec::new(),
             visit_count: 0,
-            value_sum: 0.0,
-            prior,
-            reward: 0.0,
             terminal: false,
             to_play,
-            discount,
             expanded: false,
         };
         let child_id = tree.add_node(child, None);
         edges.push(super::node::Edge {
-            action: action.clone(),
+            action_id: candidate.id,
+            action: candidate.payload.clone(),
             child: child_id,
-            prior,
+            prior: candidate.policy_prior,
+            visit_count: 0,
+            value_sum: 0.0,
+            reward: 0.0,
+            discount,
         });
     }
     tree.nodes[tree.root].children = edges;
@@ -247,13 +244,14 @@ fn select<S: Clone + 'static, P: SearchPolicy>(
             .map(|edge| {
                 let child_node = &tree.nodes[edge.child];
                 ChildStat {
+                    action_id: edge.action_id,
                     action: edge.action.clone(),
-                    visit_count: child_node.visit_count,
-                    value_sum: child_node.value_sum,
-                    prior: child_node.prior,
-                    reward: child_node.reward,
+                    visit_count: edge.visit_count,
+                    value_sum: edge.value_sum,
+                    prior: edge.prior,
+                    reward: edge.reward,
                     to_play: child_node.to_play,
-                    discount: child_node.discount,
+                    discount: edge.discount,
                 }
             })
             .collect();
@@ -282,18 +280,19 @@ fn backup<S: Clone + 'static>(
 
     // 从叶子往上回传
     loop {
-        let node = &tree.nodes[current];
-        let parent_id = node.parent;
-        let discount = node.discount;
-        let reward = node.reward;
-        let to_play = node.to_play;
-
         // 更新当前节点
         tree.nodes[current].visit_count += 1;
-        tree.nodes[current].value_sum += value;
 
-        match parent_id {
+        match tree.nodes[current].parent {
             Some(pid) => {
+                let edge_idx = tree.nodes[current].action_from_parent.unwrap_or(0);
+                let (reward, discount) = {
+                    let edge = &mut tree.nodes[pid].children[edge_idx];
+                    edge.visit_count += 1;
+                    edge.value_sum += value;
+                    (edge.reward, edge.discount)
+                };
+                let to_play = tree.nodes[current].to_play;
                 let parent_to_play = tree.nodes[pid].to_play;
                 let perspective = if to_play == parent_to_play { 1.0 } else { -1.0 };
                 value = reward + discount * value * perspective;
@@ -314,13 +313,14 @@ fn collect_child_stats<S>(tree: &Tree<S>, node_id: usize) -> Vec<ChildStat> {
         .map(|edge| {
             let child = &tree.nodes[edge.child];
             ChildStat {
+                action_id: edge.action_id,
                 action: edge.action.clone(),
-                visit_count: child.visit_count,
-                value_sum: child.value_sum,
-                prior: child.prior,
-                reward: child.reward,
+                visit_count: edge.visit_count,
+                value_sum: edge.value_sum,
+                prior: edge.prior,
+                reward: edge.reward,
                 to_play: child.to_play,
-                discount: child.discount,
+                discount: edge.discount,
             }
         })
         .collect()
@@ -330,12 +330,7 @@ fn collect_child_stats<S>(tree: &Tree<S>, node_id: usize) -> Vec<ChildStat> {
 fn apply_child_stats_to_tree<S>(tree: &mut Tree<S>, node_id: usize, stats: &[ChildStat]) {
     for (i, stat) in stats.iter().enumerate() {
         if i < tree.nodes[node_id].children.len() {
-            let child_id = {
-                let edge = &mut tree.nodes[node_id].children[i];
-                edge.prior = stat.prior;
-                edge.child
-            };
-            tree.nodes[child_id].prior = stat.prior;
+            tree.nodes[node_id].children[i].prior = stat.prior;
         }
     }
 }
@@ -343,25 +338,23 @@ fn apply_child_stats_to_tree<S>(tree: &mut Tree<S>, node_id: usize, stats: &[Chi
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rl::mcts::types::ActionPayload;
+    use crate::rl::mcts::types::{ActionCandidate, ActionId, ActionPayload};
 
     #[test]
-    fn apply_child_stats_syncs_node_and_edge_priors() {
+    fn apply_child_stats_updates_edge_prior_single_source() {
         let mut tree = Tree::new(0_u32, 0);
-        let actions = vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)];
-        let priors = vec![0.8, 0.2];
+        let candidates = vec![
+            ActionCandidate::new(ActionId(0), ActionPayload::Discrete(0), 0.8),
+            ActionCandidate::new(ActionId(1), ActionPayload::Discrete(1), 0.2),
+        ];
         let states = vec![1_u32, 2_u32];
-        tree.expand(tree.root, &actions, &priors, &states, 0, 1.0);
+        tree.expand(tree.root, &candidates, &states, 0, 1.0);
 
         let mut stats = collect_child_stats(&tree, tree.root);
         stats[0].prior = 0.3;
         stats[1].prior = 0.7;
         apply_child_stats_to_tree(&mut tree, 0, &stats);
 
-        let child0 = tree.nodes[tree.nodes[0].children[0].child].prior;
-        let child1 = tree.nodes[tree.nodes[0].children[1].child].prior;
-        assert!((child0 - 0.3).abs() < 1e-6);
-        assert!((child1 - 0.7).abs() < 1e-6);
         assert!((tree.nodes[0].children[0].prior - 0.3).abs() < 1e-6);
         assert!((tree.nodes[0].children[1].prior - 0.7).abs() < 1e-6);
     }

@@ -36,7 +36,12 @@ pub use min_max::MinMaxStats;
 pub use puct::PuctPolicy;
 pub use search::mcts_search;
 pub use traits::{
-    ActionCandidates, ActionSampleContext, ActionSampler, DiscreteActionSampler, MctsModel,
-    Predictor, PuctScheduler, RootScheduler, SearchPolicy,
+    ActionCandidates, ActionSampleContext, ActionSampler, CandidateProvider, DiscreteActionSampler,
+    MctsModel, Predictor, PuctScheduler, RootScheduler, RootStrategy, SearchPolicy, SelectionRule,
+    TargetRule,
 };
-pub use types::{ActionPayload, ChildStat, MctsConfig, RecurrentOut, RootOut, SearchResult};
+pub use types::{
+    ActionCandidate, ActionId, ActionPayload, CandidateSet, ChildStat, MctsConfig, MctsRecipe,
+    PuctConfig, RecurrentOut, RootDirichletConfig, RootOut, SampledConfig, SearchBudget,
+    SearchResult,
+};

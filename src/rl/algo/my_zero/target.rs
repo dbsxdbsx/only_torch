@@ -6,7 +6,7 @@
 //! π' 直接由 Q 值构造，少模拟下仍是一次有保证的策略提升（与 Grill 2020 的正则化策略优化同源，
 //! 但闭式、无需二分搜索 α）。
 
-use crate::rl::mcts::{ActionPayload, ChildStat, SearchResult};
+use crate::rl::mcts::{ChildStat, SearchResult};
 
 /// 从 MCTS 搜索结果构造策略训练目标（visit-count 或 completedQ，与 self-play / reanalyze 共用）。
 ///
@@ -44,21 +44,12 @@ pub fn scatter_policy_target(
     );
     let mut full = vec![0.0; action_dim];
     for (child, &p) in children.iter().zip(partial.iter()) {
-        match child.action {
-            ActionPayload::Discrete(idx) => {
-                assert!(
-                    idx < action_dim,
-                    "Sampled policy target 动作下标 {idx} 超出 action_dim={action_dim}"
-                );
-                full[idx] = p;
-            }
-            ActionPayload::Continuous(_) | ActionPayload::Hybrid { .. } => {
-                panic!(
-                    "Sampled policy target 目前只支持离散化后的 Discrete 动作；\
-                     Continuous/Hybrid 需先定义 joint action 下标映射"
-                );
-            }
-        }
+        let idx = child.action_id.index();
+        assert!(
+            idx < action_dim,
+            "Sampled policy target 动作 id {idx} 超出 action_dim={action_dim}"
+        );
+        full[idx] = p;
     }
     let sum: f32 = full.iter().sum();
     if sum > 1e-8 {
@@ -142,6 +133,7 @@ mod tests {
 
     fn child(prior: f32, visit: u32, value_sum: f32, reward: f32) -> ChildStat {
         ChildStat {
+            action_id: 0.into(),
             action: ActionPayload::Discrete(0),
             visit_count: visit,
             value_sum,
@@ -169,6 +161,7 @@ mod tests {
     fn scatter_sampled_subset_to_full_action_dim() {
         let children = vec![
             ChildStat {
+                action_id: 1.into(),
                 action: ActionPayload::Discrete(1),
                 visit_count: 3,
                 value_sum: 0.0,
@@ -178,6 +171,7 @@ mod tests {
                 discount: 1.0,
             },
             ChildStat {
+                action_id: 4.into(),
                 action: ActionPayload::Discrete(4),
                 visit_count: 7,
                 value_sum: 0.0,
@@ -197,9 +191,9 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Continuous/Hybrid")]
-    fn scatter_rejects_non_discrete_payload() {
+    fn scatter_uses_action_id_not_payload_shape() {
         let children = vec![ChildStat {
+            action_id: 1.into(),
             action: ActionPayload::Continuous(vec![0.0]),
             visit_count: 1,
             value_sum: 0.0,
@@ -208,14 +202,16 @@ mod tests {
             to_play: 0,
             discount: 1.0,
         }];
-        let _ = scatter_policy_target(&children, &[1.0], 2);
+        let full = scatter_policy_target(&children, &[1.0], 3);
+        assert_eq!(full, vec![0.0, 1.0, 0.0]);
     }
 
     #[test]
     #[should_panic(expected = "超出 action_dim")]
-    fn scatter_rejects_out_of_range_discrete_idx() {
+    fn scatter_rejects_out_of_range_action_id() {
         let children = vec![ChildStat {
-            action: ActionPayload::Discrete(3),
+            action_id: 3.into(),
+            action: ActionPayload::Discrete(0),
             visit_count: 1,
             value_sum: 0.0,
             prior: 1.0,
@@ -230,6 +226,7 @@ mod tests {
     #[should_panic(expected = "一一对应")]
     fn scatter_rejects_children_partial_len_mismatch() {
         let children = vec![ChildStat {
+            action_id: 0.into(),
             action: ActionPayload::Discrete(0),
             visit_count: 1,
             value_sum: 0.0,

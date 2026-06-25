@@ -3,7 +3,7 @@
 use rand::RngCore;
 
 use super::min_max::MinMaxStats;
-use super::types::{ActionPayload, ChildStat, MctsConfig, RecurrentOut, RootOut};
+use super::types::{ActionPayload, CandidateSet, ChildStat, MctsConfig, RecurrentOut, RootOut};
 
 /// MCTS 模型接口（root + recurrent，与 mctx 同构）
 ///
@@ -36,19 +36,8 @@ pub trait MctsModel {
     fn recurrent(&self, state: &Self::State, action: &ActionPayload) -> RecurrentOut<Self::State>;
 }
 
-/// 搜索策略 hook（非整套替换，只注入关键决策点）
-///
-/// v0.22 实现：PuctPolicy（PUCT + Dirichlet + 温度采样）
-///
-/// # v0.23+ TODO
-/// - GumbelPolicy：序贯减半根候选 + 改 recommend + make_targets（需改 prepare_root 和 recommend）
-/// - RegPolicy：ACT policy ≠ LEARN policy → make_targets 需区分
-/// - MENTS / RENTS / TENTS / ANT 选择变体（只改 select_child）
-/// - Sampled MuZero：连续 / 大离散动作空间，展开时采样 K 候选 + PUCT 用 π̂_β
-pub trait SearchPolicy {
-    /// 对根节点子节点注入探索噪声
-    fn prepare_root(&self, children: &mut [ChildStat], cfg: &MctsConfig, rng: &mut dyn RngCore);
-
+/// 子节点选择规则（PUCT / MENTS / RENTS / ANT 等）。
+pub trait SelectionRule {
     /// 选择要展开的子节点索引（从父节点视角计算 Q 值）
     fn select_child(
         &self,
@@ -58,12 +47,12 @@ pub trait SearchPolicy {
         stats: &MinMaxStats,
         cfg: &MctsConfig,
     ) -> usize;
+}
 
-    /// 搜索结束后推荐最终动作索引（训练时随机采样，评测时可贪心）
-    fn recommend(&self, children: &[ChildStat], cfg: &MctsConfig, rng: &mut dyn RngCore) -> usize;
-
-    /// 生成学习用策略目标（visit count → 概率分布）
-    fn make_targets(&self, children: &[ChildStat], cfg: &MctsConfig) -> Vec<f32>;
+/// 根节点策略（Dirichlet / Gumbel sequential halving / no-op）。
+pub trait RootStrategy {
+    /// 对根节点子节点注入探索噪声
+    fn prepare_root(&self, children: &mut [ChildStat], cfg: &MctsConfig, rng: &mut dyn RngCore);
 
     /// 创建本次搜索的根调度器（搜索生命周期 hook）。
     ///
@@ -79,6 +68,22 @@ pub trait SearchPolicy {
         Box::new(PuctScheduler)
     }
 }
+
+/// 搜索输出规则（最终推荐动作 + 学习 target）。
+pub trait TargetRule {
+    /// 搜索结束后推荐最终动作索引（训练时随机采样，评测时可贪心）
+    fn recommend(&self, children: &[ChildStat], cfg: &MctsConfig, rng: &mut dyn RngCore) -> usize;
+
+    /// 生成学习用策略目标（visit count → 概率分布）
+    fn make_targets(&self, children: &[ChildStat], cfg: &MctsConfig) -> Vec<f32>;
+}
+
+/// 搜索策略组合：选择规则 + 根策略 + 输出规则。
+///
+/// 这是兼容层；后续 recipe 可以按三个小 trait 分别装配。
+pub trait SearchPolicy: SelectionRule + RootStrategy + TargetRule {}
+
+impl<T> SearchPolicy for T where T: SelectionRule + RootStrategy + TargetRule {}
 
 /// 根部模拟预算调度器（搜索生命周期 hook）
 ///
@@ -162,10 +167,21 @@ pub struct ActionCandidates {
 /// - 离散：枚举固定 / 合法动作集（行为不变，见 [`DiscreteActionSampler`]）；
 /// - 纯连续（Gumbel）/ 混合 / Sampled MuZero：从策略分布采样 K 个候选。
 ///
-/// 由 learned-model adapter 在产出 `RootOut/RecurrentOut.candidate_actions` 时调用。
+/// 由 learned-model adapter 在产出候选动作时调用。
 pub trait ActionSampler<S> {
     /// 为某节点生成候选动作（+ 可选 proposal prior）。
     fn sample(&self, ctx: ActionSampleContext<'_, S>, rng: &mut dyn RngCore) -> ActionCandidates;
+}
+
+/// 候选展开策略（全量枚举 / Sampled MuZero / legal mask / future proposal）。
+pub trait CandidateProvider {
+    fn expand_candidates(
+        &self,
+        candidates: &CandidateSet,
+        cfg: &MctsConfig,
+        is_root: bool,
+        rng: &mut dyn RngCore,
+    ) -> CandidateSet;
 }
 
 /// 离散动作采样器：枚举固定离散动作集（行为等价现有「全量离散候选」）。

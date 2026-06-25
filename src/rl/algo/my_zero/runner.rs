@@ -16,7 +16,10 @@ use super::search_policy::MyZeroSearchPolicy;
 use super::target::mcts_policy_target;
 use super::value_prefix::reward_prefix_targets;
 use crate::nn::{Adam, Graph, GraphError, Optimizer};
-use crate::rl::mcts::{ActionPayload, Dynamics, DynamicsModel, MctsConfig, mcts_search};
+use crate::rl::mcts::{
+    ActionPayload, Dynamics, DynamicsModel, MctsConfig, MctsRecipe, PuctConfig,
+    RootDirichletConfig, SampledConfig, SearchBudget, mcts_search,
+};
 use crate::rl::{GameOutcome, GymEnv, ReplayBuffer, SelfPlayGame, SelfPlayStep};
 use pyo3::Python;
 use rand::rngs::StdRng;
@@ -67,21 +70,29 @@ fn my_zero_mcts_config(
     joint_n: usize,
     root_exploration_fraction: f32,
 ) -> MctsConfig {
-    MctsConfig {
-        num_simulations,
-        temperature,
-        discount,
-        root_exploration_fraction,
-        sampled_k: if components.sampled {
-            Some(sampled_k_effective(
-                compute_sampled_k_cfg(joint_n, num_simulations),
-                joint_n,
-            ))
+    let recipe = MctsRecipe {
+        budget: SearchBudget {
+            num_simulations,
+            temperature,
+            discount,
+        },
+        puct: PuctConfig {
+            pb_c_base: MctsConfig::default().pb_c_base,
+            pb_c_init: MctsConfig::default().pb_c_init,
+        },
+        root_dirichlet: RootDirichletConfig {
+            alpha: MctsConfig::default().root_dirichlet_alpha,
+            exploration_fraction: root_exploration_fraction,
+        },
+        sampled: if components.sampled {
+            Some(SampledConfig {
+                k: sampled_k_effective(compute_sampled_k_cfg(joint_n, num_simulations), joint_n),
+            })
         } else {
             None
         },
-        ..MctsConfig::default()
-    }
+    };
+    MctsConfig::from_recipe(recipe)
 }
 
 #[allow(clippy::too_many_arguments)]

@@ -12,7 +12,8 @@ use pyo3::types::PyDict;
 use serial_test::serial;
 
 use crate::rl::mcts::{
-    ActionPayload, MctsConfig, MctsModel, PuctPolicy, RecurrentOut, RootOut, mcts_search,
+    ActionPayload, CandidateSet, MctsConfig, MctsModel, PuctPolicy, RecurrentOut, RootOut,
+    mcts_search,
 };
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -52,9 +53,11 @@ impl MctsModel for CartPoleEnvModel {
 
             RootOut {
                 state,
-                prior: vec![0.5, 0.5],
                 value: 0.0,
-                candidate_actions: vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)],
+                candidates: CandidateSet::from_actions_and_priors(
+                    vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)],
+                    vec![0.5, 0.5],
+                ),
                 to_play: 0,
             }
         })
@@ -99,11 +102,13 @@ impl MctsModel for CartPoleEnvModel {
                 state: new_state,
                 reward,
                 value: reward,
-                prior: vec![0.5, 0.5],
-                candidate_actions: if terminal {
-                    vec![]
+                candidates: if terminal {
+                    CandidateSet::empty()
                 } else {
-                    vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)]
+                    CandidateSet::from_actions_and_priors(
+                        vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)],
+                        vec![0.5, 0.5],
+                    )
                 },
                 terminal,
                 to_play: 0,

@@ -6,53 +6,72 @@
 use rand::RngCore;
 
 use super::puct::mix_dirichlet_prior;
-use super::types::{ActionPayload, MctsConfig};
+use super::types::{CandidateSet, MctsConfig};
 
-/// 从完整动作集 + prior 采样展开候选，返回 (动作, PUCT 用 prior)。
+/// 从完整候选集采样展开候选，返回带 PUCT prior 的候选子集。
 ///
 /// `beta` 与 `pi` 通常相同（β = π）；根节点可在调用前对二者注入 Dirichlet 噪声。
 pub fn sample_for_expansion(
-    actions: &[ActionPayload],
-    beta: &[f32],
-    pi: &[f32],
+    candidates: &CandidateSet,
     k: usize,
     rng: &mut dyn RngCore,
-) -> (Vec<ActionPayload>, Vec<f32>) {
-    let n = actions.len();
+) -> CandidateSet {
+    let n = candidates.len();
     if n == 0 {
-        return (Vec::new(), Vec::new());
+        return CandidateSet::empty();
     }
 
-    let aligned_beta = align_probs(beta, n);
-    let aligned_pi = align_probs(pi, n);
+    let aligned_beta = align_probs(
+        &candidates
+            .candidates
+            .iter()
+            .map(|c| c.proposal_prior.unwrap_or(c.policy_prior))
+            .collect::<Vec<_>>(),
+        n,
+    );
+    let aligned_pi = align_probs(&candidates.policy_priors(), n);
     let k = k.max(1).min(n);
 
     // K 覆盖全动作集 → 与标准 MuZero 一致，不做 sample-based 修正。
     if k >= n {
-        return (actions.to_vec(), aligned_pi.clone());
+        let mut out = candidates.clone();
+        for (candidate, prior) in out.candidates.iter_mut().zip(aligned_pi) {
+            candidate.policy_prior = prior;
+        }
+        return out;
     }
 
     let indices = sample_indices_without_replacement(&aligned_beta, k, rng);
     let puct_priors = sampled_puct_priors(&aligned_beta, &aligned_pi, &indices);
-    let sampled_actions: Vec<_> = indices.iter().map(|&i| actions[i].clone()).collect();
-    (sampled_actions, puct_priors)
+    let sampled = indices
+        .iter()
+        .zip(puct_priors)
+        .map(|(&i, prior)| candidates.candidates[i].clone().with_policy_prior(prior))
+        .collect();
+    CandidateSet {
+        candidates: sampled,
+    }
 }
 
 /// 根节点：Dirichlet 噪声后采样（论文 §5.5：β 与 π 均加噪再采）。
 pub fn sample_root_for_expansion(
-    actions: &[ActionPayload],
-    pi: &[f32],
+    candidates: &CandidateSet,
     cfg: &MctsConfig,
     k: usize,
     rng: &mut dyn RngCore,
-) -> (Vec<ActionPayload>, Vec<f32>) {
-    let n = actions.len();
+) -> CandidateSet {
+    let n = candidates.len();
     if n == 0 {
-        return (Vec::new(), Vec::new());
+        return CandidateSet::empty();
     }
-    let mut noisy = align_probs(pi, n);
+    let mut noisy = align_probs(&candidates.policy_priors(), n);
     mix_dirichlet_prior(&mut noisy, cfg, rng);
-    sample_for_expansion(actions, &noisy, &noisy, k, rng)
+    let mut noisy_candidates = candidates.clone();
+    for (candidate, prior) in noisy_candidates.candidates.iter_mut().zip(noisy) {
+        candidate.policy_prior = prior;
+        candidate.proposal_prior = Some(prior);
+    }
+    sample_for_expansion(&noisy_candidates, k, rng)
 }
 
 /// π̂_β(a) ∝ (β̂ / β)(a) · π(a)，β̂ 为采样子集上的经验分布（无放回 → 各 1/K）。
@@ -131,37 +150,49 @@ fn sample_indices_without_replacement(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rl::mcts::{ActionCandidate, ActionId, ActionPayload};
     use rand::SeedableRng;
     use rand::rngs::StdRng;
 
+    fn candidate_set(priors: Vec<f32>) -> CandidateSet {
+        CandidateSet {
+            candidates: priors
+                .into_iter()
+                .enumerate()
+                .map(|(idx, prior)| {
+                    ActionCandidate::new(ActionId(idx), ActionPayload::Discrete(idx), prior)
+                })
+                .collect(),
+        }
+    }
+
     #[test]
     fn full_coverage_returns_original_prior() {
-        let actions = vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)];
-        let pi = vec![0.7, 0.3];
+        let candidates = candidate_set(vec![0.7, 0.3]);
         let mut rng = StdRng::seed_from_u64(0);
-        let (acts, priors) = sample_for_expansion(&actions, &pi, &pi, 2, &mut rng);
-        assert_eq!(acts.len(), 2);
+        let out = sample_for_expansion(&candidates, 2, &mut rng);
+        let priors = out.policy_priors();
+        assert_eq!(out.len(), 2);
         assert!((priors[0] - 0.7).abs() < 1e-5);
         assert!((priors[1] - 0.3).abs() < 1e-5);
     }
 
     #[test]
     fn subsample_k1_has_valid_prior() {
-        let actions: Vec<_> = (0..5).map(ActionPayload::Discrete).collect();
-        let pi = vec![0.1, 0.1, 0.2, 0.3, 0.3];
+        let candidates = candidate_set(vec![0.1, 0.1, 0.2, 0.3, 0.3]);
         let mut rng = StdRng::seed_from_u64(42);
-        let (_acts, priors) = sample_for_expansion(&actions, &pi, &pi, 1, &mut rng);
+        let priors = sample_for_expansion(&candidates, 1, &mut rng).policy_priors();
         assert_eq!(priors.len(), 1);
         assert!((priors[0] - 1.0).abs() < 1e-5);
     }
 
     #[test]
     fn subsample_k3_prior_sums_to_one() {
-        let actions: Vec<_> = (0..6).map(ActionPayload::Discrete).collect();
-        let pi = vec![0.05; 6];
+        let candidates = candidate_set(vec![0.05; 6]);
         let mut rng = StdRng::seed_from_u64(7);
-        let (acts, priors) = sample_for_expansion(&actions, &pi, &pi, 3, &mut rng);
-        assert_eq!(acts.len(), 3);
+        let out = sample_for_expansion(&candidates, 3, &mut rng);
+        let priors = out.policy_priors();
+        assert_eq!(out.len(), 3);
         assert_eq!(priors.len(), 3);
         let s: f32 = priors.iter().sum();
         assert!((s - 1.0).abs() < 1e-5);
@@ -192,12 +223,12 @@ mod tests {
 
     #[test]
     fn sample_root_applies_dirichlet_then_expands() {
-        let actions = vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)];
-        let pi = vec![0.5, 0.5];
+        let candidates = candidate_set(vec![0.5, 0.5]);
         let cfg = MctsConfig::default();
         let mut rng = StdRng::seed_from_u64(99);
-        let (acts, priors) = sample_root_for_expansion(&actions, &pi, &cfg, 2, &mut rng);
-        assert_eq!(acts.len(), 2);
+        let out = sample_root_for_expansion(&candidates, &cfg, 2, &mut rng);
+        let priors = out.policy_priors();
+        assert_eq!(out.len(), 2);
         let s: f32 = priors.iter().sum();
         assert!((s - 1.0).abs() < 1e-5);
     }

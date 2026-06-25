@@ -6,7 +6,7 @@
 //! - Stochastic MuZero：`NodeKind::{Decision, Chance}` 两类节点交替（核心扩展级）
 //! - 连续动作：Edge 的 ActionPayload::Continuous 不能做 map key，保持 Vec 存储
 
-use super::types::ActionPayload;
+use super::types::{ActionCandidate, ActionId, ActionPayload};
 
 /// 节点索引（arena 模式下即 Vec 下标）
 pub(crate) type NodeId = usize;
@@ -15,12 +15,22 @@ pub(crate) type NodeId = usize;
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub(crate) struct Edge {
+    /// 策略 / target 使用的稳定动作 id
+    pub action_id: ActionId,
     /// 对应动作
     pub action: ActionPayload,
     /// 子节点 ID
     pub child: NodeId,
     /// 先验概率
     pub prior: f32,
+    /// 访问计数
+    pub visit_count: u32,
+    /// 累计价值（子节点视角）
+    pub value_sum: f32,
+    /// 从父到此子的即时奖励
+    pub reward: f32,
+    /// 子边 transition discount
+    pub discount: f32,
 }
 
 /// 搜索树节点
@@ -32,34 +42,14 @@ pub(crate) struct Node {
     pub action_from_parent: Option<usize>,
     /// 子边列表
     pub children: Vec<Edge>,
-    /// 访问计数
+    /// 状态访问计数
     pub visit_count: u32,
-    /// 累计价值
-    pub value_sum: f32,
-    /// 先验概率
-    pub prior: f32,
-    /// 从父到此节点的即时奖励
-    pub reward: f32,
     /// 是否终止态
     pub terminal: bool,
     /// 当前玩家
     pub to_play: u8,
-    /// 折扣因子
-    pub discount: f32,
     /// 是否已展开
     pub expanded: bool,
-}
-
-impl Node {
-    /// 节点平均价值 Q(s)
-    #[allow(dead_code)]
-    pub fn q_value(&self) -> f32 {
-        if self.visit_count == 0 {
-            0.0
-        } else {
-            self.value_sum / self.visit_count as f32
-        }
-    }
 }
 
 /// Arena-based 搜索树
@@ -81,12 +71,8 @@ impl<S: Clone + 'static> Tree<S> {
             action_from_parent: None,
             children: Vec::new(),
             visit_count: 0,
-            value_sum: 0.0,
-            prior: 0.0,
-            reward: 0.0,
             terminal: false,
             to_play,
-            discount: 1.0,
             expanded: false,
         };
         Self {
@@ -108,35 +94,33 @@ impl<S: Clone + 'static> Tree<S> {
     pub fn expand(
         &mut self,
         node_id: NodeId,
-        actions: &[ActionPayload],
-        priors: &[f32],
+        candidates: &[ActionCandidate],
         states: &[S],
         to_play: u8,
         discount: f32,
     ) {
-        debug_assert_eq!(actions.len(), priors.len());
-
-        let mut edges = Vec::with_capacity(actions.len());
-        for (i, (action, &prior)) in actions.iter().zip(priors.iter()).enumerate() {
+        let mut edges = Vec::with_capacity(candidates.len());
+        for (i, candidate) in candidates.iter().enumerate() {
             let child = Node {
                 parent: Some(node_id),
                 action_from_parent: Some(i),
                 children: Vec::new(),
                 visit_count: 0,
-                value_sum: 0.0,
-                prior,
-                reward: 0.0,
                 terminal: false,
                 to_play,
-                discount,
                 expanded: false,
             };
             let state = states.get(i).cloned();
             let child_id = self.add_node(child, state);
             edges.push(Edge {
-                action: action.clone(),
+                action_id: candidate.id,
+                action: candidate.payload.clone(),
                 child: child_id,
-                prior,
+                prior: candidate.policy_prior,
+                visit_count: 0,
+                value_sum: 0.0,
+                reward: 0.0,
+                discount,
             });
         }
         self.nodes[node_id].children = edges;

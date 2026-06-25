@@ -9,7 +9,7 @@ use rand::SeedableRng;
 use rand::rngs::StdRng;
 
 use super::traits::{ActionSampleContext, ActionSampler, DiscreteActionSampler, MctsModel};
-use super::types::{ActionPayload, RecurrentOut, RootOut};
+use super::types::{ActionPayload, CandidateSet, RecurrentOut, RootOut};
 
 /// MuZero learned dynamics 接口
 ///
@@ -91,9 +91,8 @@ impl<D: Dynamics> MctsModel for DynamicsModel<D> {
         let (latent, prior, value) = self.inner.initial_state(obs);
         RootOut {
             state: latent,
-            prior,
             value,
-            candidate_actions: self.actions.clone(),
+            candidates: CandidateSet::from_actions_and_priors(self.actions.clone(), prior),
             to_play: 0,
         }
     }
@@ -104,11 +103,10 @@ impl<D: Dynamics> MctsModel for DynamicsModel<D> {
             state: out.next_state,
             reward: out.reward,
             value: out.value,
-            prior: out.prior,
-            candidate_actions: if out.terminal {
-                vec![]
+            candidates: if out.terminal {
+                CandidateSet::empty()
             } else {
-                self.actions.clone()
+                CandidateSet::from_actions_and_priors(self.actions.clone(), out.prior)
             },
             terminal: out.terminal,
             to_play: 0,

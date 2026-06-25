@@ -5,7 +5,8 @@
 //! 增量）**无需改动 MCTS 内核**——现有泛型 `State` + backup 已足以承载。
 
 use crate::rl::mcts::{
-    ActionPayload, MctsConfig, MctsModel, PuctPolicy, RecurrentOut, RootOut, mcts_search,
+    ActionPayload, CandidateSet, MctsConfig, MctsModel, PuctPolicy, RecurrentOut, RootOut,
+    mcts_search,
 };
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -37,9 +38,11 @@ impl MctsModel for ValuePrefixMock {
                 hidden: 0.0,
                 prefix: 0.0,
             },
-            prior: vec![0.5, 0.5],
             value: 0.0,
-            candidate_actions: vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)],
+            candidates: CandidateSet::from_actions_and_priors(
+                vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)],
+                vec![0.5, 0.5],
+            ),
             to_play: 0,
         }
     }
@@ -61,11 +64,13 @@ impl MctsModel for ValuePrefixMock {
             },
             reward,
             value: if terminal { 0.0 } else { 0.5 },
-            prior: vec![0.5, 0.5],
-            candidate_actions: if terminal {
-                vec![]
+            candidates: if terminal {
+                CandidateSet::empty()
             } else {
-                vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)]
+                CandidateSet::from_actions_and_priors(
+                    vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)],
+                    vec![0.5, 0.5],
+                )
             },
             terminal,
             to_play: 0,
@@ -84,9 +89,11 @@ impl MctsModel for SingleStepMock {
     fn root(&self, _obs: &[f32]) -> RootOut<Self::State> {
         RootOut {
             state: 0,
-            prior: vec![0.5, 0.5],
             value: 0.0,
-            candidate_actions: vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)],
+            candidates: CandidateSet::from_actions_and_priors(
+                vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)],
+                vec![0.5, 0.5],
+            ),
             to_play: 0,
         }
     }
@@ -98,11 +105,13 @@ impl MctsModel for SingleStepMock {
             state: depth,
             reward: STEP_REWARD,
             value: if terminal { 0.0 } else { 0.5 },
-            prior: vec![0.5, 0.5],
-            candidate_actions: if terminal {
-                vec![]
+            candidates: if terminal {
+                CandidateSet::empty()
             } else {
-                vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)]
+                CandidateSet::from_actions_and_priors(
+                    vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)],
+                    vec![0.5, 0.5],
+                )
             },
             terminal,
             to_play: 0,

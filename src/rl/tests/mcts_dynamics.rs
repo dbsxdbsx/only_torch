@@ -54,9 +54,9 @@ fn test_dynamics_model_root() {
     let out: RootOut<Vec<f32>> = model.root(&[0.0; 4]);
 
     assert_eq!(out.state, vec![1.0, 2.0, 3.0]);
-    assert_eq!(out.prior, vec![0.4, 0.3, 0.3]);
+    assert_eq!(out.candidates.policy_priors(), vec![0.4, 0.3, 0.3]);
     assert!((out.value - 0.5).abs() < 1e-6);
-    assert_eq!(out.candidate_actions.len(), 3);
+    assert_eq!(out.candidates.len(), 3);
     assert_eq!(out.to_play, 0);
 }
 
@@ -73,8 +73,8 @@ fn test_dynamics_model_recurrent() {
     assert_eq!(out.state, vec![2.0, 3.0, 4.0]);
     assert!((out.reward - 0.1).abs() < 1e-6);
     assert!((out.value - 0.4).abs() < 1e-6);
-    assert_eq!(out.prior, vec![0.33, 0.34, 0.33]);
-    assert_eq!(out.candidate_actions.len(), 3);
+    assert_eq!(out.candidates.policy_priors(), vec![0.33, 0.34, 0.33]);
+    assert_eq!(out.candidates.len(), 3);
     assert!(!out.terminal);
     assert_eq!(out.to_play, 0);
     assert!((out.discount - 0.99 * 0.5).abs() < 1e-6);

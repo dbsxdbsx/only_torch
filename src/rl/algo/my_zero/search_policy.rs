@@ -2,7 +2,9 @@
 
 use super::component::Components;
 use crate::rl::mcts::{ChildStat, MctsConfig};
-use crate::rl::mcts::{GumbelPolicy, PuctPolicy, RootScheduler, SearchPolicy};
+use crate::rl::mcts::{
+    GumbelPolicy, PuctPolicy, RootScheduler, RootStrategy, SelectionRule, TargetRule,
+};
 use rand::RngCore;
 
 /// 按组件开关构造搜索策略（Gumbel 开启时用 [`GumbelPolicy`]，否则 [`PuctPolicy`]）。
@@ -21,7 +23,7 @@ impl MyZeroSearchPolicy {
     }
 }
 
-impl SearchPolicy for MyZeroSearchPolicy {
+impl RootStrategy for MyZeroSearchPolicy {
     fn prepare_root(&self, children: &mut [ChildStat], cfg: &MctsConfig, rng: &mut dyn RngCore) {
         match self {
             Self::Puct(p) => p.prepare_root(children, cfg, rng),
@@ -29,6 +31,19 @@ impl SearchPolicy for MyZeroSearchPolicy {
         }
     }
 
+    fn make_root_scheduler(
+        &self,
+        num_root_children: usize,
+        cfg: &MctsConfig,
+    ) -> Box<dyn RootScheduler> {
+        match self {
+            Self::Puct(p) => p.make_root_scheduler(num_root_children, cfg),
+            Self::Gumbel(p) => p.make_root_scheduler(num_root_children, cfg),
+        }
+    }
+}
+
+impl SelectionRule for MyZeroSearchPolicy {
     fn select_child(
         &self,
         parent_visit: u32,
@@ -42,7 +57,9 @@ impl SearchPolicy for MyZeroSearchPolicy {
             Self::Gumbel(p) => p.select_child(parent_visit, parent_to_play, children, stats, cfg),
         }
     }
+}
 
+impl TargetRule for MyZeroSearchPolicy {
     fn recommend(&self, children: &[ChildStat], cfg: &MctsConfig, rng: &mut dyn RngCore) -> usize {
         match self {
             Self::Puct(p) => p.recommend(children, cfg, rng),
@@ -54,17 +71,6 @@ impl SearchPolicy for MyZeroSearchPolicy {
         match self {
             Self::Puct(p) => p.make_targets(children, cfg),
             Self::Gumbel(p) => p.make_targets(children, cfg),
-        }
-    }
-
-    fn make_root_scheduler(
-        &self,
-        num_root_children: usize,
-        cfg: &MctsConfig,
-    ) -> Box<dyn RootScheduler> {
-        match self {
-            Self::Puct(p) => p.make_root_scheduler(num_root_children, cfg),
-            Self::Gumbel(p) => p.make_root_scheduler(num_root_children, cfg),
         }
     }
 }

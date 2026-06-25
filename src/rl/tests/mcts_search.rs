@@ -4,8 +4,8 @@
 //! 纯 Rust，不依赖 pyo3。
 
 use crate::rl::mcts::{
-    ActionPayload, ChildStat, MctsConfig, MctsModel, MinMaxStats, PuctPolicy, RecurrentOut,
-    RootOut, RootScheduler, SearchPolicy, mcts_search,
+    ActionPayload, CandidateSet, ChildStat, MctsConfig, MctsModel, MinMaxStats, PuctPolicy,
+    RecurrentOut, RootOut, RootScheduler, RootStrategy, SelectionRule, TargetRule, mcts_search,
 };
 use rand::RngCore;
 use rand::SeedableRng;
@@ -25,13 +25,15 @@ impl MctsModel for SingleAgentMock {
     fn root(&self, _obs: &[f32]) -> RootOut<Self::State> {
         RootOut {
             state: 0,
-            prior: vec![0.6, 0.3, 0.1],
             value: 0.5,
-            candidate_actions: vec![
-                ActionPayload::Discrete(0),
-                ActionPayload::Discrete(1),
-                ActionPayload::Discrete(2),
-            ],
+            candidates: CandidateSet::from_actions_and_priors(
+                vec![
+                    ActionPayload::Discrete(0),
+                    ActionPayload::Discrete(1),
+                    ActionPayload::Discrete(2),
+                ],
+                vec![0.6, 0.3, 0.1],
+            ),
             to_play: 0,
         }
     }
@@ -43,15 +45,17 @@ impl MctsModel for SingleAgentMock {
             state: depth,
             reward: if terminal { 1.0 } else { 0.0 },
             value: if terminal { 0.0 } else { 0.5 },
-            prior: vec![0.33, 0.34, 0.33],
-            candidate_actions: if terminal {
-                vec![]
+            candidates: if terminal {
+                CandidateSet::empty()
             } else {
-                vec![
-                    ActionPayload::Discrete(0),
-                    ActionPayload::Discrete(1),
-                    ActionPayload::Discrete(2),
-                ]
+                CandidateSet::from_actions_and_priors(
+                    vec![
+                        ActionPayload::Discrete(0),
+                        ActionPayload::Discrete(1),
+                        ActionPayload::Discrete(2),
+                    ],
+                    vec![0.33, 0.34, 0.33],
+                )
             },
             terminal,
             to_play: 0,
@@ -74,9 +78,11 @@ impl MctsModel for TwoPlayerMock {
     fn root(&self, _obs: &[f32]) -> RootOut<Self::State> {
         RootOut {
             state: (0, 0),
-            prior: vec![0.5, 0.5],
             value: 0.3,
-            candidate_actions: vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)],
+            candidates: CandidateSet::from_actions_and_priors(
+                vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)],
+                vec![0.5, 0.5],
+            ),
             to_play: 0, // 黑方
         }
     }
@@ -91,11 +97,13 @@ impl MctsModel for TwoPlayerMock {
             reward: 0.0,
             // 终止时返回"对 next_player 的价值"——黑胜=1 对黑有利
             value: if terminal { 1.0 } else { 0.3 },
-            prior: vec![0.5, 0.5],
-            candidate_actions: if terminal {
-                vec![]
+            candidates: if terminal {
+                CandidateSet::empty()
             } else {
-                vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)]
+                CandidateSet::from_actions_and_priors(
+                    vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)],
+                    vec![0.5, 0.5],
+                )
             },
             terminal,
             to_play: next_player,
@@ -153,6 +161,7 @@ fn test_temperature_affects_make_targets() {
     // 模拟一组 visit counts：动作 0 明显多
     let children = vec![
         ChildStat {
+            action_id: 0.into(),
             action: ActionPayload::Discrete(0),
             visit_count: 60,
             value_sum: 30.0,
@@ -162,6 +171,7 @@ fn test_temperature_affects_make_targets() {
             discount: 1.0,
         },
         ChildStat {
+            action_id: 1.into(),
             action: ActionPayload::Discrete(1),
             visit_count: 30,
             value_sum: 15.0,
@@ -171,6 +181,7 @@ fn test_temperature_affects_make_targets() {
             discount: 1.0,
         },
         ChildStat {
+            action_id: 2.into(),
             action: ActionPayload::Discrete(2),
             visit_count: 10,
             value_sum: 5.0,
@@ -301,9 +312,11 @@ impl MctsModel for PerEdgeDiscountMock {
     fn root(&self, _obs: &[f32]) -> RootOut<Self::State> {
         RootOut {
             state: 0,
-            prior: vec![0.5, 0.5],
             value: 0.0,
-            candidate_actions: vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)],
+            candidates: CandidateSet::from_actions_and_priors(
+                vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)],
+                vec![0.5, 0.5],
+            ),
             to_play: 0,
         }
     }
@@ -317,8 +330,7 @@ impl MctsModel for PerEdgeDiscountMock {
             state: 1,
             reward: 1.0,
             value: 10.0,
-            prior: vec![],
-            candidate_actions: vec![],
+            candidates: CandidateSet::empty(),
             terminal: false,
             to_play: 0,
             discount,
@@ -375,9 +387,11 @@ impl MctsModel for AllTerminalMock {
     fn root(&self, _obs: &[f32]) -> RootOut<Self::State> {
         RootOut {
             state: 0,
-            prior: vec![0.5, 0.5],
             value: 0.0,
-            candidate_actions: vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)],
+            candidates: CandidateSet::from_actions_and_priors(
+                vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)],
+                vec![0.5, 0.5],
+            ),
             to_play: 0,
         }
     }
@@ -391,8 +405,7 @@ impl MctsModel for AllTerminalMock {
             state: 1,
             reward,
             value: 0.0,
-            prior: vec![],
-            candidate_actions: vec![],
+            candidates: CandidateSet::empty(),
             terminal: true,
             to_play: 0,
             discount: 1.0,
@@ -550,10 +563,21 @@ impl RootScheduler for ForceChild0Scheduler {
 /// 包装 PuctPolicy，仅覆盖 make_root_scheduler 返回强制调度器。
 struct ForceChild0Policy(PuctPolicy);
 
-impl SearchPolicy for ForceChild0Policy {
+impl RootStrategy for ForceChild0Policy {
     fn prepare_root(&self, children: &mut [ChildStat], cfg: &MctsConfig, rng: &mut dyn RngCore) {
         self.0.prepare_root(children, cfg, rng);
     }
+
+    fn make_root_scheduler(
+        &self,
+        _num_root_children: usize,
+        _cfg: &MctsConfig,
+    ) -> Box<dyn RootScheduler> {
+        Box::new(ForceChild0Scheduler)
+    }
+}
+
+impl SelectionRule for ForceChild0Policy {
     fn select_child(
         &self,
         parent_visit: u32,
@@ -565,18 +589,15 @@ impl SearchPolicy for ForceChild0Policy {
         self.0
             .select_child(parent_visit, parent_to_play, children, stats, cfg)
     }
+}
+
+impl TargetRule for ForceChild0Policy {
     fn recommend(&self, children: &[ChildStat], cfg: &MctsConfig, rng: &mut dyn RngCore) -> usize {
         self.0.recommend(children, cfg, rng)
     }
+
     fn make_targets(&self, children: &[ChildStat], cfg: &MctsConfig) -> Vec<f32> {
         self.0.make_targets(children, cfg)
-    }
-    fn make_root_scheduler(
-        &self,
-        _num_root_children: usize,
-        _cfg: &MctsConfig,
-    ) -> Box<dyn RootScheduler> {
-        Box::new(ForceChild0Scheduler)
     }
 }
 
