@@ -33,9 +33,13 @@ pub struct DynamicsOutput {
     pub prior: Vec<f32>,
     pub value: f32,
     pub terminal: bool,
-    /// transition continuation `c_t`，取值建议在 `[0,1]`。
+    /// transition continuation `c_t`，取值建议在 `[0,1]`，语义是「这条 transition 之后是否继续」。
     ///
-    /// `DynamicsModel` 会把它和全局 `gamma` 相乘，作为 MCTS backup 的 per-edge discount。
+    /// `DynamicsModel` 把它当**二值终止 gate**用：per-edge discount = `γ·(1−done)`，`done`
+    /// 即 `terminal`（由实现按 `c_t ≤ 阈值` 判定），终止边记 0、其余记 γ。**不**做 `γ·c_t`
+    /// 的分数式连续衰减——那只在「随机终止」MDP 下才有 aleatoric 语义，且会和 n-step value
+    /// target 的二值 continuation 口径不一致（target 内连乘的是观测到的 0/1 continuation）。
+    /// 软 `c_t` 仅经 `terminal` 阈值参与硬截断，head 仍训练、为未来随机终止 env 预留。
     pub continuation: f32,
 }
 
@@ -110,7 +114,10 @@ impl<D: Dynamics> MctsModel for DynamicsModel<D> {
             },
             terminal: out.terminal,
             to_play: 0,
-            discount: self.discount * out.continuation.clamp(0.0, 1.0),
+            // per-edge discount = γ·(1−done)：终止边 0、其余 γ（canonical MuZero）。
+            // 与 n-step value target 的二值 continuation 口径一致；软 c_t 只经 out.terminal
+            // 阈值参与硬截断，不连续衰减健康边的 value（避免 head 未校准时系统性压低好状态）。
+            discount: if out.terminal { 0.0 } else { self.discount },
         }
     }
 }

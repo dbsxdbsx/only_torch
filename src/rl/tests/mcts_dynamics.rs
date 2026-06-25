@@ -77,7 +77,42 @@ fn test_dynamics_model_recurrent() {
     assert_eq!(out.candidates.len(), 3);
     assert!(!out.terminal);
     assert_eq!(out.to_play, 0);
-    assert!((out.discount - 0.99 * 0.5).abs() < 1e-6);
+    // 非终止边用二值 gate → 恒为 γ（不再 γ·continuation），与 n-step target 口径一致。
+    assert!((out.discount - 0.99).abs() < 1e-6);
+}
+
+// 终止边：discount 应为 0（γ·(1−done)），且不再产出候选。
+struct TerminalDynamics;
+
+impl Dynamics for TerminalDynamics {
+    fn initial_state(&self, _obs: &[f32]) -> (Vec<f32>, Vec<f32>, f32) {
+        (vec![0.0], vec![1.0], 0.0)
+    }
+
+    fn recurrent(&self, _state: &[f32], _action: &ActionPayload) -> DynamicsOutput {
+        DynamicsOutput {
+            next_state: vec![0.0],
+            reward: 1.0,
+            prior: vec![1.0],
+            value: 5.0,
+            terminal: true,
+            continuation: 0.0,
+        }
+    }
+}
+
+#[test]
+fn test_terminal_edge_zeroes_discount() {
+    let model = DynamicsModel::new(TerminalDynamics, vec![ActionPayload::Discrete(0)], 0.99);
+    let state = vec![0.0];
+    let out: RecurrentOut<Vec<f32>> = model.recurrent(&state, &ActionPayload::Discrete(0));
+    assert!(out.terminal, "终止边 terminal 应为 true");
+    assert!(
+        out.discount.abs() < 1e-6,
+        "终止边 discount 应为 0，实际 {}",
+        out.discount
+    );
+    assert!(out.candidates.is_empty(), "终止边不应再产出候选");
 }
 
 // ============================================================================

@@ -29,10 +29,11 @@ pub struct SelfPlayStep {
     /// `truncated=true` 表示这一局需要 reset，但 value target 仍应 bootstrap；这对应
     /// Gymnasium 的 `truncated`，也是避免把 Pendulum 的 200-step time-limit 误当死亡的关键。
     pub truncated: bool,
-    /// 这一步 transition 之后是否还应继续传播未来 value。
+    /// 这一步 transition 之后是否还应继续传播未来 value（**环境真值**，喂给 n-step target）。
     ///
-    /// 语义上是 continuation `c_t`，不是完整折扣；实际 MCTS / n-step 乘子为
-    /// `gamma * continuation`。真终止填 `0.0`，普通步与 truncation 填 `1.0`。
+    /// 语义上是 continuation `c_t`，不是完整折扣；[`n_step`](crate::rl::algo::my_zero) 的 value
+    /// target 内连乘 `gamma * continuation`。真终止填 `0.0`，普通步与 truncation 填 `1.0`。
+    /// 注意：MCTS 搜索期用的是**网络预测的** continuation（经阈值化成二值终止 gate），不是此真值字段。
     pub continuation: f32,
     /// 可扩展附加字段（EZ value prefix 等，v0.24 引入）。
     ///
