@@ -44,6 +44,18 @@ impl MyZeroBuilder {
         Ok(())
     }
 
+    fn ensure_component_compatibility(&self) -> Result<(), GraphError> {
+        let c = &self.cfg.components;
+        if c.gumbel && c.sampled {
+            return Err(GraphError::InvalidOperation(
+                "MyZero: Gumbel root 与 Sampled root Dirichlet 语义暂不兼容；\
+                 请关闭 Sampled 或不要开启 Gumbel"
+                    .into(),
+            ));
+        }
+        Ok(())
+    }
+
     // ---- env ----
 
     pub fn reward_scale(mut self, v: f32) -> Self {
@@ -102,6 +114,11 @@ impl MyZeroBuilder {
     /// 开启 Gumbel MuZero 标准根搜索（Sequential Halving + Gumbel-Top-k）。
     pub fn gumbel(mut self, enabled: bool) -> Self {
         self.cfg.components.gumbel = enabled;
+        if enabled {
+            // Gumbel root 自带探索噪声；当前 Sampled root 会在采样前注入 Dirichlet，
+            // 两者组合语义尚未定义，开启 Gumbel 时默认退出 Sampled 路径。
+            self.cfg.components.sampled = false;
+        }
         self
     }
 
@@ -109,6 +126,16 @@ impl MyZeroBuilder {
     pub fn gumbel_standard(mut self) -> Self {
         self.cfg.components.gumbel = true;
         self.cfg.components.completed_q_target = true;
+        self.cfg.components.sampled = false;
+        self
+    }
+
+    /// 高级消融开关：覆盖 recipe 中的 Sampled MuZero 搜索路径。
+    ///
+    /// Gumbel root 与 Sampled root Dirichlet 组合暂未定义；若手动把二者同时打开，
+    /// [`build`](Self::build) / [`train`](Self::train) 会显式报错。
+    pub fn sampled(mut self, enabled: bool) -> Self {
+        self.cfg.components.sampled = enabled;
         self
     }
 
@@ -187,17 +214,20 @@ impl MyZeroBuilder {
     /// 仅构建配置（测试 / 高级用法；须已填 train 契约项）。
     pub fn build(self) -> Result<MyZeroConfig, GraphError> {
         self.ensure_train_required()?;
+        self.ensure_component_compatibility()?;
         Ok(self.cfg)
     }
 
     /// 完整训练 + 内置周期性 eval，返回训练后的 [`MyZero`]（**latest** 权重）。
     pub fn train(self) -> Result<MyZero, GraphError> {
         self.ensure_train_required()?;
+        self.ensure_component_compatibility()?;
         train_all_seeds(self.cfg)
     }
 
     /// 物化空权重实例并从磁盘加载（若 `path.otm` 存在）。
     pub fn load_model_if_exists(self, path: impl AsRef<Path>) -> Result<MyZero, GraphError> {
+        self.ensure_component_compatibility()?;
         MyZero::materialize_from_cfg(&self.cfg, self.cfg.eval.seed)?.load_model_if_exists(path)
     }
 }
@@ -289,5 +319,28 @@ mod tests {
     fn missing_max_episodes_is_error_on_train() {
         let r = MyZero::new("CartPole-v1").solved(475.0).train();
         assert!(matches!(r, Err(GraphError::InvalidOperation(_))));
+    }
+
+    #[test]
+    fn gumbel_disables_sampled_by_default() {
+        let cfg = MyZero::new("CartPole-v1")
+            .gumbel(true)
+            .solved(475.0)
+            .max_episodes(2000)
+            .build()
+            .unwrap();
+        assert!(cfg.components.gumbel);
+        assert!(!cfg.components.sampled);
+    }
+
+    #[test]
+    fn gumbel_and_sampled_conflict_is_error() {
+        let r = MyZero::new("CartPole-v1")
+            .gumbel(true)
+            .sampled(true)
+            .solved(475.0)
+            .max_episodes(2000)
+            .build();
+        assert!(matches!(r, Err(GraphError::InvalidOperation(msg)) if msg.contains("Gumbel root")));
     }
 }

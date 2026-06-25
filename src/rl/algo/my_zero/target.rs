@@ -37,11 +37,26 @@ pub fn scatter_policy_target(
     if partial.len() == action_dim {
         return partial.to_vec();
     }
+    assert_eq!(
+        children.len(),
+        partial.len(),
+        "Sampled policy target 要求 children 与 partial 一一对应"
+    );
     let mut full = vec![0.0; action_dim];
     for (child, &p) in children.iter().zip(partial.iter()) {
-        if let ActionPayload::Discrete(idx) = child.action {
-            if idx < action_dim {
+        match child.action {
+            ActionPayload::Discrete(idx) => {
+                assert!(
+                    idx < action_dim,
+                    "Sampled policy target 动作下标 {idx} 超出 action_dim={action_dim}"
+                );
                 full[idx] = p;
+            }
+            ActionPayload::Continuous(_) | ActionPayload::Hybrid { .. } => {
+                panic!(
+                    "Sampled policy target 目前只支持离散化后的 Discrete 动作；\
+                     Continuous/Hybrid 需先定义 joint action 下标映射"
+                );
             }
         }
     }
@@ -179,6 +194,51 @@ mod tests {
         assert!((full[4] - 0.7).abs() < 1e-5);
         assert!((full.iter().sum::<f32>() - 1.0).abs() < 1e-5);
         assert!((full[0] + full[2] + full[3] + full[5] + full[6]).abs() < 1e-5);
+    }
+
+    #[test]
+    #[should_panic(expected = "Continuous/Hybrid")]
+    fn scatter_rejects_non_discrete_payload() {
+        let children = vec![ChildStat {
+            action: ActionPayload::Continuous(vec![0.0]),
+            visit_count: 1,
+            value_sum: 0.0,
+            prior: 1.0,
+            reward: 0.0,
+            to_play: 0,
+            discount: 1.0,
+        }];
+        let _ = scatter_policy_target(&children, &[1.0], 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "超出 action_dim")]
+    fn scatter_rejects_out_of_range_discrete_idx() {
+        let children = vec![ChildStat {
+            action: ActionPayload::Discrete(3),
+            visit_count: 1,
+            value_sum: 0.0,
+            prior: 1.0,
+            reward: 0.0,
+            to_play: 0,
+            discount: 1.0,
+        }];
+        let _ = scatter_policy_target(&children, &[1.0], 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "一一对应")]
+    fn scatter_rejects_children_partial_len_mismatch() {
+        let children = vec![ChildStat {
+            action: ActionPayload::Discrete(0),
+            visit_count: 1,
+            value_sum: 0.0,
+            prior: 1.0,
+            reward: 0.0,
+            to_play: 0,
+            discount: 1.0,
+        }];
+        let _ = scatter_policy_target(&children, &[0.5, 0.5], 3);
     }
 
     #[test]

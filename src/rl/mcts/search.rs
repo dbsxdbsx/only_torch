@@ -328,14 +328,41 @@ fn collect_child_stats<S>(tree: &Tree<S>, node_id: usize) -> Vec<ChildStat> {
 
 /// 将修改后的 ChildStat（如噪声注入后的 prior）写回树
 fn apply_child_stats_to_tree<S>(tree: &mut Tree<S>, node_id: usize, stats: &[ChildStat]) {
-    let child_ids: Vec<usize> = tree.nodes[node_id]
-        .children
-        .iter()
-        .map(|e| e.child)
-        .collect();
     for (i, stat) in stats.iter().enumerate() {
-        if i < child_ids.len() {
-            tree.nodes[child_ids[i]].prior = stat.prior;
+        if i < tree.nodes[node_id].children.len() {
+            let child_id = {
+                let edge = &mut tree.nodes[node_id].children[i];
+                edge.prior = stat.prior;
+                edge.child
+            };
+            tree.nodes[child_id].prior = stat.prior;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rl::mcts::types::ActionPayload;
+
+    #[test]
+    fn apply_child_stats_syncs_node_and_edge_priors() {
+        let mut tree = Tree::new(0_u32, 0);
+        let actions = vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)];
+        let priors = vec![0.8, 0.2];
+        let states = vec![1_u32, 2_u32];
+        tree.expand(tree.root, &actions, &priors, &states, 0, 1.0);
+
+        let mut stats = collect_child_stats(&tree, tree.root);
+        stats[0].prior = 0.3;
+        stats[1].prior = 0.7;
+        apply_child_stats_to_tree(&mut tree, 0, &stats);
+
+        let child0 = tree.nodes[tree.nodes[0].children[0].child].prior;
+        let child1 = tree.nodes[tree.nodes[0].children[1].child].prior;
+        assert!((child0 - 0.3).abs() < 1e-6);
+        assert!((child1 - 0.7).abs() < 1e-6);
+        assert!((tree.nodes[0].children[0].prior - 0.3).abs() < 1e-6);
+        assert!((tree.nodes[0].children[1].prior - 0.7).abs() < 1e-6);
     }
 }
