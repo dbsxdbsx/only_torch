@@ -79,6 +79,41 @@ K = min( max(5, N / 2),  floor(sims × 2 / 3) )
 
 **K 与 sims**：K 来自上式；sims 是 simulation 次数，在 K 条边上分 visit，不是 K×sims 条边各走一次。
 
+### 2.5 ActionId vs ActionPayload（slot 与执行内容）
+
+为了避免把“训练槽位”和“环境动作”混成一个概念，MCTS 内核现在显式区分：
+
+| 概念 | 负责什么 | 例子 |
+|------|----------|------|
+| `ActionId` | policy head / target 向量里的槽位号；MCTS visit 蒸馏写回第几格 | `ActionId(3)` |
+| `ActionPayload` | 选中该候选后，交给 env / learned dynamics 执行的动作内容 | `Discrete(3)` / `Continuous([0.37])` / `Hybrid { ... }` |
+
+当前 CartPole 与 Pendulum 桶化路径里，二者通常一一对应：
+
+```text
+ActionId(3) + ActionPayload::Discrete(3)
+```
+
+对 CartPole，这就是原生第 3 个离散动作（若存在）。  
+对 Pendulum，这里的 `Discrete(3)` 表示**第 3 个离散化桶**，不是原生离散力矩；执行前由 `ActionAdapter`
+把它还原成连续动作值：
+
+```text
+width = (high - low) / B
+torque = low + (idx + 0.5) * width
+```
+
+也就是说，Pendulum 仍然取等宽桶的**区间中点**交给环境，当前行为不变。
+
+区分二者的目的不是改变当前 B=7 桶化路线，而是为后续 continuous / hybrid 留出空间：
+
+```text
+ActionId(37) + ActionPayload::Hybrid { discrete: leap, continuous: [p1_mid, p2_mid] }
+```
+
+MCTS / target 只看 `ActionId(37)`，环境执行只看 `ActionPayload`。这样未来即使 payload 不再是
+`Discrete(idx)`，也不需要重写策略 target 投射逻辑。
+
 ### FAQ：1D 连续里 B=7 时还要 K 吗？能只调一个吗？
 
 **不能混成一个数**——B 管 **策略/执行精度**，K 管 **搜索每节点看几岔**（不同层）：

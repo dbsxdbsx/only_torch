@@ -1,6 +1,16 @@
 //! MCTS 核心数据类型定义
 
-/// 动作载荷：支持离散、连续及混合动作空间
+/// 动作载荷：这条候选边最终交给环境或 learned dynamics 执行的“真实动作内容”。
+///
+/// 和 [`ActionId`] 的分工：
+/// - `ActionId` 是策略 head / target 向量里的**槽位号**，回答“概率写到第几格”；
+/// - `ActionPayload` 是执行内容，回答“选中这条边后实际执行什么动作”。
+///
+/// 当前 CartPole 和 Pendulum 桶化路径里二者一一对应：`ActionId(3)` 通常配
+/// `ActionPayload::Discrete(3)`。Pendulum 的 `Discrete(3)` 不是原生离散力矩，
+/// 而是“第 3 个离散化桶”；执行前由 action adapter 还原成该桶的连续中点。
+/// 未来连续 / 混合动作可保持同一个 slot 语义，同时让 payload 直接携带
+/// `Continuous([..])` 或 `Hybrid { .. }`。
 #[derive(Debug, Clone, PartialEq)]
 pub enum ActionPayload {
     Discrete(usize),
@@ -11,10 +21,15 @@ pub enum ActionPayload {
     },
 }
 
-/// 搜索 / 训练目标使用的稳定动作身份。
+/// 搜索 / 训练目标使用的稳定动作身份，也就是 policy target 的槽位号。
 ///
-/// `ActionPayload` 描述如何执行动作，`ActionId` 描述它在策略 head / target 向量里的槽位。
-/// 对离散动作与当前 Pendulum 离散桶，二者数值相同；后续连续 / 混合动作可保持 payload
+/// 不要把它理解成环境动作本身。它只负责在这些地方保持稳定索引：
+/// - MCTS 根节点 visit 分布蒸馏回完整 policy target；
+/// - replay / reanalyze 保存和刷新策略目标；
+/// - sampled 子集重新投射回完整动作空间。
+///
+/// 对离散动作与当前 Pendulum 离散桶，`ActionId(idx)` 与
+/// `ActionPayload::Discrete(idx)` 数值相同；后续连续 / 混合动作可以让 payload
 /// 任意复杂，但仍用稳定 id 做蒸馏与回放。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ActionId(pub usize);
@@ -32,6 +47,13 @@ impl From<usize> for ActionId {
 }
 
 /// 单个候选动作及其策略先验。
+///
+/// 一个候选同时有两层身份：
+/// - `id`：训练槽位，决定 target scatter 到哪里；
+/// - `payload`：执行载荷，决定选中后给 env / dynamics 什么动作。
+///
+/// 例如 Pendulum B=7 时，`id=ActionId(3)`、`payload=Discrete(3)` 表示第 3 桶；
+/// adapter 会把第 3 桶转成 `[low, high]` 等宽分段的中点再交给环境。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ActionCandidate {
     pub id: ActionId,
