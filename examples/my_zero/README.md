@@ -13,15 +13,15 @@
 
 | 环境 | 动作类型 | 门禁 | 状态 |
 |------|---------|------|------|
-| [**CartPole-v1**](cartpole/README.md) | 离散（2） | greedy eval ≥ 475 | ✅ 回归哨兵（~**12.2k** env-steps · sims=20；consistency + reconstruction） |
-| [**Pendulum-v1**](pendulum/README.md) | 纯连续（1） | return ≥ -200 | 诊断中 |
+| [**CartPole-v1**](cartpole/README.md) | 离散（2） | greedy eval ≥ 475 | ✅ 回归哨兵（~**12.2k** env-steps · sims=20；consistency + reconstruction；+Sampled 仍过门禁） |
+| [**Pendulum-v1**](pendulum/README.md) | 纯连续（1） | return ≥ -200 | 诊断中（当前 recipe 复用 CartPole 栈作诊断，不代表组件已裁决） |
 | **Platform-v0** | 混合 Tuple | return 趋势上升 | 待实现 |
 
 ## 内部组件进展（团队 · promote 时改 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)）
 
 > **单一事实源 / 待办地图**：一行一个组件、一列一个环境。满屏 ⏳ 即下一步可测项。
 > 图例：`✅ 已验收` · `❌ 实测有害` · `⏳ 待测` · `⏸ 此环境不适用` · `— 未实现`
-> 用户 API **不暴露**组件开关；验收后在 `recipe.rs` 按环境开启，未测的保持关。
+> 用户 API **不暴露**组件开关；`recipe.rs` 记录当前内置栈。矩阵表示“该组件在该环境是否已完成效果裁决”，不等同于“当前诊断栈是否临时启用”。
 
 | 组件         | [CartPole-v1](cartpole/README.md) | [Pendulum-v1](pendulum/README.md) | Platform-v0 | 备注 |
 | ------------ | :-------------------------------: | :-------------------------------: | :---------: | --------------------------- |
@@ -33,11 +33,13 @@
 | SVE          |                 ⏳                 |                 ⏳                 |      —      | 已入库，训练循环待接；🔲 改进：固定权重 → 自适应 mixed target |
 | completedQ   | ❌ 2×2 无收益（visit ~12k vs CQ ~30–34k steps） |                 ⏳                 |      —      | CartPole 不 promote · [issue](../../.issue/items/my_zero_gumbel_completedq_cartpole_negative.md) |
 | Gumbel-root  | ❌ sims=10/20 未收敛（greedy 峰值 154/123） |                 ⏳                 |      —      | 库内已实现；CartPole 暂缓 · 同上 issue |
-| 连续采样候选 |                 ⏸                 |                 ⏳                 |      —      | 大/连续动作 |
+| 连续采样候选 |              ✅ 接入不回归           |                 ⏳                 |      —      | CartPole N=2 退化全枚举；Pendulum B=7 首次真实子采样诊断 |
 
 > 论文全称与 arXiv：[算法纲领 §4.1 — 组件文献对照](../../.doc/design/my_zero_algorithm_vision.md#41-组件文献对照单一事实源)
 
-**CartPole-v1 当前内置**：base + **consistency + reconstruction**；reanalyze 写回已实现，CartPole 暂不开启（[issue](../../.issue/items/my_zero_reanalyze_cartpole_regression.md)）。
+**CartPole-v1 当前内置**：base + **consistency + reconstruction + Sampled**；reanalyze 写回已实现，CartPole 暂不开启（[issue](../../.issue/items/my_zero_reanalyze_cartpole_regression.md)）。
+
+**Pendulum-v1 当前内置**：复用 **consistency + reconstruction + Sampled** 做诊断栈（B=7 · sims=20 · γ=0.997 · `reward_scale(0.1)`），但仍在失败区间；不要据此给这些组件下 ✅/❌ 裁决。
 
 ## 快速开始
 

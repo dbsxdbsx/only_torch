@@ -2,8 +2,8 @@
 
 > [← 返回 MyZero 总览](../README.md)｜组件裁决见总览「组件 × 环境 效果矩阵」
 
-- **规格**：纯连续（1 维）· 门禁 greedy return ≥ -200 · 9 档离散化 ∈[-2, 2] · 默认 `gamma=0.99`，`sims=50`
-- **状态**：**诊断中**——所有配置 greedy eval 全在 −900 ~ −1700（失败区间，门禁 −200），属「还没学会」。先查可学习性，暂不对组件下裁决
+- **规格**：纯连续（1 维）· 门禁 greedy return ≥ -200 · 当前诊断栈 B=7 连续候选 · 默认 `gamma=0.997`，`sims=20`
+- **状态**：**诊断中**——当前 best greedy 约 −942，仍在失败区间（门禁 −200），属「还没学会」。先查可学习性，暂不对组件下裁决
 - **定位**：**判别环境**——CartPole 分辨不出的组件（value_prefix / completedQ / Gumbel-root）在此见真章
 
 ## 运行
@@ -13,9 +13,18 @@ cargo run --example my_zero_pendulum --release
 
 # SMOKE 管线验证
 SMOKE=1 cargo run --example my_zero_pendulum
+
+# P0 value / target / search 诊断（训练结束后追加诊断输出）
+DIAG=1 cargo run --example my_zero_pendulum --release
+
+# 阶段耗时汇总（self-play / batch prepare / train step / eval）
+PROFILE=1 cargo run --example my_zero_pendulum --release
+
+# 临时覆盖 n-step bootstrap（诊断用）
+TD_STEPS=5 cargo run --example my_zero_pendulum --release
 ```
 
-算法配方由库内 `recipe.rs` 注入（Pendulum 当前为 base）；组件消融在库内维护，示例只写 env 适配（`.discretize(9)` / `.reward_scale(0.1)`）。
+算法配方由库内 `recipe.rs` 注入。Pendulum 当前复用 CartPole 的 `consistency + reconstruction + Sampled` 作为**诊断栈**（不是已验收裁决）；示例只显式写 Pendulum 的 `reward_scale(0.1)` 与训练契约，连续动作 B=7 由库内默认动作方案注入。
 
 ## 实测（seed=42，门禁 −200）
 
@@ -36,6 +45,14 @@ SMOKE=1 cargo run --example my_zero_pendulum
 | +consistency +completedQ | −1440.5 | 120k | 710s | 失败区间 |
 
 > **解读**：四组都在失败区间，**不能据此给 consistency / completedQ 下中性裁决**（那是无信号，不是中性）。CartPole 的 ✅ 不受影响。下一步先做可学习性诊断（见下方 sweep），确认能不能把分数拉出失败区间，再决定是继续离散调参还是提前上 Gumbel-root / 连续候选。
+
+### 当前诊断栈（consistency + reconstruction + Sampled，B=7，sims=20）
+
+| 配置 | best greedy eval | env-steps | wall | 观察（非裁决） |
+|------|------------------|-----------|------|------|
+| +cons+recon+Sampled | **−942.2** @ ep575 | 120k | ~495s | loss 能降到 ~5–7，但 greedy 策略仍未入门 |
+
+这组与 CartPole 已验收栈保持一致，用于确认 Sampled 机制在连续动作路径上的 plumbing；它仍在失败区间，不能裁决 consistency / reconstruction / Sampled 对 Pendulum 是否有效。
 
 value_prefix 也将在此**重测**：CartPole 上 ❌ 是因 reward 恒 +1 退化为步数计数器，
 而 Pendulum 的连续 reward 才是它的判别场（见 [CartPole 详情](../cartpole/README.md)）。

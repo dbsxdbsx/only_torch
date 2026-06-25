@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-06-18
-updated: 2026-06-21
+updated: 2026-06-25
 owners: []
 reviewers: []
 ---
@@ -16,6 +16,8 @@ reviewers: []
 > **代码位置更新（2026-06-18，v0.25 Phase 0/1 重构）**：MyZero 已统一进库 `src/rl/algo/my_zero/`——模型在 `network.rs`（原 `examples/my_zero/cartpole/model.rs`，consistency 块在其 `train_unroll`），训练循环 / dynamics 诊断在 `runner.rs`，旋钮在 `config.rs::apply_env_overrides`（原 `pendulum/main.rs` 的 `Hyperparams` / env 解析），动作离散化在 `action.rs`。组件（consistency / value_prefix / n_step / support 等）已从 muzero/ez **吸收进 my_zero**。本 issue 下文旧的 `model.rs:NNN` / `main.rs:NNN` 行号据此失效，对应逻辑见上述新文件。
 > **value-head 容量诊断（2026-06-18，决定性新结果）**：库内单测 `my_zero::tests::value_head_capacity` 喂高方差、obs 可分的 value 目标，只训 repr+pred 的 value head——高/低价值组预测间隔从 1.77 训练到 **14.00**（真实间隔 14.0，**精确拟合**）→ §一 的分叉 **(b)「head 学不动」证伪**。坍缩来自**上游**（n-step target 构造 / 搜索），非 head 表达力。下一步探针：在 Pendulum 跑里实测 n-step target 的 std，与全程 MC std(≈175)、模型预测 std(≈26) 三者对比，定位是 target 截断（td_steps/gamma）还是搜索。
 > **压测更新（2026-06-21）**：已接入与 CartPole 相同的 **consistency + reconstruction + Sampled** 栈（B=7 · K_eff=5 · sims=20 · γ=0.997 · r_scale=0.1）；修复 Sampled `policy_target` 投射 full action_dim（ep10 训练崩溃）。600ep / 120k env-steps：**best greedy −942.2**（门禁 −200 未达标）。详见 §十。
+> **事实源锁定（2026-06-24）**：`recipe.rs` 中 Pendulum 仍复用 `consistency + reconstruction + Sampled`，但代码命名与文档口径统一为**诊断栈**，不是已验收 promote；`DIAG=1` 诊断将输出 MC return / n-step target / search root / predicted value 的分布，作为下一步 P0 证据。
+> **论文口径审计（2026-06-25）**：修复 Sampled MuZero `π̂_β` 公式错误：应为 `(β̂/β)·π`，不是 `β̂/(β·π)`。复核 consistency 后确认 `negative_cosine_similarity()` 内部已对 target branch `detach()`，原实现已有 stop-gradient；剩余差距是没有独立 EMA target encoder / target projector。旧 §十 压测结果基于修复前 Sampled 公式，后续需重跑。
 
 ---
 
@@ -170,7 +172,7 @@ if consistency_coef > 0.0 {
 **与 SimSiam（Chen & He 2021）/ EfficientZero 标准实现的差异**：
 
 1. **`proj_target` 与 `proj_online` 走同一个 `self.projector`**。标准 SimSiam 是 online encoder + online predictor vs **target encoder（stop-gradient，且 target encoder 是 online 的 EMA）**。这里 target 路径没有独立的 target projector / EMA。
-2. **`repr_target` 对 `next_obs` 正常前向、无 `stop_gradient`**。`pred_online` 与 `proj_target` 在同一参数空间，存在表征塌缩（representation collapse）的理论风险。
+2. **target branch 已有 stop-gradient**：`negative_cosine_similarity()` 内部会对 `proj_target` 调用 `detach()`；因此这里不是“无 stop-gradient” bug，而是“无 EMA / 独立 target encoder”的简化实现。
 
 **但**：CartPole 上开 `CONSISTENCY` 反而学得显著更好（loss 9.6→0.7，一个数量级；avg_R 80→97），说明它**不是致命 bug**，而是**环境敏感**。
 

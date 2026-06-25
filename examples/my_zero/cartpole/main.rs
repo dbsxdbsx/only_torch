@@ -14,13 +14,20 @@ const BEST: &str = "models/my_zero/CartPole-v1/seed_42/best";
 
 fn main() -> Result<(), GraphError> {
     let smoke = std::env::var("SMOKE").is_ok();
+    let diagnose = std::env::var("DIAG").is_ok();
 
     let mut builder = MyZero::new("CartPole-v1")
         .solved(475.0)
         .max_episodes(if smoke { 3 } else { 2000 })
         .save_model_when_eval(BEST);
+    if let Ok(v) = std::env::var("TD_STEPS") {
+        builder = builder.td_steps(v.parse().expect("TD_STEPS 必须是正整数"));
+    }
     if smoke {
         builder = builder.smoke();
+    }
+    if diagnose {
+        builder = builder.diagnose();
     }
 
     let mz = builder.train()?;

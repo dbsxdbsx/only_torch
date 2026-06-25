@@ -6,8 +6,8 @@ use super::component::Components;
 use super::config::ActionPlan;
 use super::sampled_params::DEFAULT_CONTINUOUS_BUCKETS;
 
-/// 已 promote 环境共用的 MyZero 组件栈（consistency + reconstruction + Sampled）。
-fn promoted_stack() -> Components {
+/// CartPole 已验收的 MyZero 组件栈（consistency + reconstruction + Sampled）。
+fn cartpole_stack() -> Components {
     let mut c = Components::base();
     c.consistency = true;
     c.reconstruction = true;
@@ -18,10 +18,16 @@ fn promoted_stack() -> Components {
     c
 }
 
-/// 给定 Gymnasium `env_id` 返回已验收的组件组合（未 promote 的组件保持关）。
+/// Pendulum 当前诊断栈：先复用 CartPole 已验收组件，但不把 Pendulum 裁决标记为已通过。
+fn pendulum_diagnostic_stack() -> Components {
+    cartpole_stack()
+}
+
+/// 给定 Gymnasium `env_id` 返回当前内置组件组合。
 pub(crate) fn components_for(env_id: &str) -> Components {
     match env_id {
-        "CartPole-v1" | "Pendulum-v1" => promoted_stack(),
+        "CartPole-v1" => cartpole_stack(),
+        "Pendulum-v1" => pendulum_diagnostic_stack(),
         _ => Components::base(),
     }
 }

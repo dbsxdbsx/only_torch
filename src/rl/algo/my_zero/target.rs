@@ -137,6 +137,19 @@ mod tests {
         }
     }
 
+    fn child_with_discount(
+        prior: f32,
+        visit: u32,
+        value_sum: f32,
+        reward: f32,
+        discount: f32,
+    ) -> ChildStat {
+        ChildStat {
+            discount,
+            ..child(prior, visit, value_sum, reward)
+        }
+    }
+
     #[test]
     fn scatter_sampled_subset_to_full_action_dim() {
         let children = vec![
@@ -183,6 +196,20 @@ mod tests {
         let t = completed_q_policy_target(&children, 0.5, 50.0, 1.0);
         assert!((t.iter().sum::<f32>() - 1.0).abs() < 1e-5);
         assert!(t[1] > t[0], "高 Q 动作应获更高概率：{t:?}");
+    }
+
+    #[test]
+    fn completed_q_includes_reward_and_discount() {
+        // 两动作 child value 相同，但动作 1 即时 reward 更高、discount 更低后总 Q 仍更高。
+        let children = vec![
+            child_with_discount(0.5, 5, 10.0, 0.0, 1.0), // Q = 2.0
+            child_with_discount(0.5, 5, 10.0, 2.0, 0.5), // Q = 3.0
+        ];
+        let t = completed_q_policy_target(&children, 0.0, 50.0, 1.0);
+        assert!(
+            t[1] > t[0],
+            "completedQ 应按 reward + discount * value 排序：{t:?}"
+        );
     }
 
     #[test]

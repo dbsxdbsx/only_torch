@@ -468,7 +468,8 @@ fn eval_episodes(
 
 /// Dynamics 诊断：对比 learned model 的「想象」reward/value 与真实环境。
 ///
-/// 用 greedy 策略跑一个 episode，逐步比较模型预测（反 scale 回原始空间）与真实值。
+/// 用 greedy 策略跑一个 episode，逐步比较模型预测、搜索 root value、n-step target
+/// （均反 scale 回原始空间）与真实值。
 /// 若 reward/value 预测**坍缩成常数**或与真实严重不符，说明 learned model 没学准，
 /// 瓶颈在训练/表示/目标，而非搜索分辨率。仅诊断、不改训练。
 fn dynamics_diagnostic(
@@ -479,6 +480,7 @@ fn dynamics_diagnostic(
     gamma: f32,
     reward_scale: f32,
     num_simulations: u32,
+    td_steps: usize,
 ) {
     let eval_cfg = my_zero_mcts_config(
         num_simulations,
@@ -494,6 +496,10 @@ fn dynamics_diagnostic(
     let mut obses: Vec<Vec<f32>> = Vec::new();
     let mut act_idxs: Vec<usize> = Vec::new();
     let mut true_rewards: Vec<f32> = Vec::new();
+    let mut terminated_flags: Vec<bool> = Vec::new();
+    let mut search_roots_scaled: Vec<f32> = Vec::new();
+    let mut network_roots_scaled: Vec<f32> = Vec::new();
+    let mut policy_entropies: Vec<f32> = Vec::new();
     loop {
         let dyn_model = DynamicsModel::new(model, adapter.candidates().to_vec(), gamma);
         let policy = MyZeroSearchPolicy::from_components(components);
@@ -507,6 +513,10 @@ fn dynamics_diagnostic(
         obses.push(obs.clone());
         act_idxs.push(action_idx);
         true_rewards.push(reward);
+        terminated_flags.push(terminated);
+        search_roots_scaled.push(result.root_value());
+        network_roots_scaled.push(result.network_value);
+        policy_entropies.push(entropy(&result.learn_policy));
         if terminated || truncated {
             break;
         }
@@ -527,6 +537,46 @@ fn dynamics_diagnostic(
         mc_return[t] = acc;
     }
 
+    let inv_scale = if reward_scale.abs() > 1e-8 {
+        1.0 / reward_scale
+    } else {
+        1.0
+    };
+    let target_steps: Vec<SelfPlayStep> = (0..n)
+        .map(|t| SelfPlayStep {
+            obs: obses[t].clone(),
+            action: vec![act_idxs[t] as f32],
+            policy_target: Vec::new(),
+            player: 0,
+            reward: true_rewards[t] * reward_scale,
+            root_value: Some(search_roots_scaled[t]),
+            terminated: terminated_flags[t],
+            extras: Default::default(),
+        })
+        .collect();
+    let no_bootstrap_steps: Vec<SelfPlayStep> = target_steps
+        .iter()
+        .cloned()
+        .map(|mut step| {
+            step.root_value = Some(0.0);
+            step
+        })
+        .collect();
+    let n_step_targets: Vec<f32> = (0..n)
+        .map(|t| compute_n_step_target(&target_steps, t, td_steps, gamma) * inv_scale)
+        .collect();
+    let n_step_5: Vec<f32> = (0..n)
+        .map(|t| compute_n_step_target(&target_steps, t, 5, gamma) * inv_scale)
+        .collect();
+    let n_step_10: Vec<f32> = (0..n)
+        .map(|t| compute_n_step_target(&target_steps, t, 10, gamma) * inv_scale)
+        .collect();
+    let n_step_50_no_bootstrap: Vec<f32> = (0..n)
+        .map(|t| compute_n_step_target(&no_bootstrap_steps, t, 50, gamma) * inv_scale)
+        .collect();
+    let search_roots: Vec<f32> = search_roots_scaled.iter().map(|v| v * inv_scale).collect();
+    let network_roots: Vec<f32> = network_roots_scaled.iter().map(|v| v * inv_scale).collect();
+
     let mut r_preds = Vec::with_capacity(n);
     let mut v_roots = Vec::with_capacity(n);
     let mut reward_mae = 0.0f32;
@@ -534,8 +584,8 @@ fn dynamics_diagnostic(
     for t in 0..n {
         let (latent, _prior, rv_scaled) = Dynamics::initial_state(&model, &obses[t]);
         let out = Dynamics::recurrent(&model, &latent, &ActionPayload::Discrete(act_idxs[t]));
-        let r_pred = out.reward / reward_scale;
-        let v_root = rv_scaled / reward_scale;
+        let r_pred = out.reward * inv_scale;
+        let v_root = rv_scaled * inv_scale;
         reward_mae += (r_pred - true_rewards[t]).abs();
         value_mae += (v_root - mc_return[t]).abs();
         r_preds.push(r_pred);
@@ -555,16 +605,28 @@ fn dynamics_diagnostic(
     let (rp_m, rp_s, rp_lo, rp_hi) = stats(&r_preds);
     let (vt_m, vt_s, vt_lo, vt_hi) = stats(&mc_return);
     let (vp_m, vp_s, vp_lo, vp_hi) = stats(&v_roots);
+    let (ns_m, ns_s, ns_lo, ns_hi) = stats(&n_step_targets);
+    let (n5_m, n5_s, n5_lo, n5_hi) = stats(&n_step_5);
+    let (n10_m, n10_s, n10_lo, n10_hi) = stats(&n_step_10);
+    let (n50_nb_m, n50_nb_s, n50_nb_lo, n50_nb_hi) = stats(&n_step_50_no_bootstrap);
+    let (sr_m, sr_s, sr_lo, sr_hi) = stats(&search_roots);
+    let (nv_m, nv_s, nv_lo, nv_hi) = stats(&network_roots);
+    let (pe_m, pe_s, pe_lo, pe_hi) = stats(&policy_entropies);
 
     println!(
         "\n========== Dynamics 诊断（greedy episode，n={n} 步；已反 scale 回原始空间）=========="
     );
-    println!("逐步样本（t | r_true vs r_pred | v_mc vs v_root_pred）：");
+    println!("逐步样本（t | r_true vs r_pred | v_mc vs n_step vs search_root vs pred_root）：");
     for t in 0..n {
         if t < 5 || t % 40 == 0 || t == n - 1 {
             println!(
-                "  t={t:3} | r {:8.3} vs {:8.3} | v {:9.1} vs {:9.1}",
-                true_rewards[t], r_preds[t], mc_return[t], v_roots[t]
+                "  t={t:3} | r {:8.3} vs {:8.3} | v {:9.1} vs {:9.1} vs {:9.1} vs {:9.1}",
+                true_rewards[t],
+                r_preds[t],
+                mc_return[t],
+                n_step_targets[t],
+                search_roots[t],
+                v_roots[t]
             );
         }
     }
@@ -575,9 +637,30 @@ fn dynamics_diagnostic(
     );
     println!("root value：真实(MC) mean={vt_m:.1} std={vt_s:.1} range=[{vt_lo:.1},{vt_hi:.1}]");
     println!(
+        "            n-step(td={td_steps}) mean={ns_m:.1} std={ns_s:.1} range=[{ns_lo:.1},{ns_hi:.1}]"
+    );
+    println!("            n-step(td=5) mean={n5_m:.1} std={n5_s:.1} range=[{n5_lo:.1},{n5_hi:.1}]");
+    println!(
+        "            n-step(td=10) mean={n10_m:.1} std={n10_s:.1} range=[{n10_lo:.1},{n10_hi:.1}]"
+    );
+    println!(
+        "            td=50 no-bootstrap mean={n50_nb_m:.1} std={n50_nb_s:.1} range=[{n50_nb_lo:.1},{n50_nb_hi:.1}]"
+    );
+    println!("            搜索root mean={sr_m:.1} std={sr_s:.1} range=[{sr_lo:.1},{sr_hi:.1}]");
+    println!("            网络root mean={nv_m:.1} std={nv_s:.1} range=[{nv_lo:.1},{nv_hi:.1}]");
+    println!(
         "            预测     mean={vp_m:.1} std={vp_s:.1} range=[{vp_lo:.1},{vp_hi:.1}] | MAE={value_mae:.1}"
     );
+    println!("policy target entropy：mean={pe_m:.3} std={pe_s:.3} range=[{pe_lo:.3},{pe_hi:.3}]");
     println!("==================================================================================");
+}
+
+fn entropy(probs: &[f32]) -> f32 {
+    probs
+        .iter()
+        .filter(|&&p| p > 1e-12)
+        .map(|&p| -p * p.ln())
+        .sum()
 }
 
 /// 单次训练运行的 benchmark 结果（多 seed 汇总用）
@@ -670,6 +753,12 @@ fn train_one_seed(
     let smoke = cfg.eval.smoke;
     let solved = cfg.eval.solved;
     let reward_scale = cfg.env.reward_scale;
+    let profile = std::env::var("PROFILE").is_ok();
+    let mut prof_self_play = 0.0f32;
+    let mut prof_batch_prepare = 0.0f32;
+    let mut prof_train_step = 0.0f32;
+    let mut prof_writeback = 0.0f32;
+    let mut prof_eval = 0.0f32;
 
     // completedQ 改进策略目标的超参（开启 completed_q_target 时生效）
     let cq: Option<(f32, f32)> = if cfg.components.completed_q_target {
@@ -738,6 +827,7 @@ fn train_one_seed(
             MctsConfig::default().root_exploration_fraction,
         );
 
+        let sp_t0 = std::time::Instant::now();
         let steps = self_play_one_episode(
             &env,
             &model,
@@ -750,6 +840,7 @@ fn train_one_seed(
             self_play_episode_seed(cfg.eval.seed, ep),
             &mut rng,
         );
+        prof_self_play += sp_t0.elapsed().as_secs_f32();
         // 原始 return（反缩放回报告）
         let ep_reward: f32 = steps.iter().map(|s| s.reward).sum::<f32>() / reward_scale;
         let ep_len = steps.len();
@@ -765,6 +856,7 @@ fn train_one_seed(
             let mut loss_sum = 0.0;
             let n_trains = if smoke { 1 } else { t.trains_per_episode };
             for _ in 0..n_trains {
+                let prep_t0 = std::time::Instant::now();
                 let batch = prepare_train_batch(
                     &buffer,
                     t.train_batch_size,
@@ -778,8 +870,10 @@ fn train_one_seed(
                     cq,
                     &mut rng,
                 );
+                prof_batch_prepare += prep_t0.elapsed().as_secs_f32();
                 let train_view: Vec<(&SelfPlayGame, usize)> =
                     batch.iter().map(|item| (&item.game, item.start)).collect();
+                let train_t0 = std::time::Instant::now();
                 let l = train_batch(
                     &model,
                     &mut optimizer,
@@ -789,7 +883,10 @@ fn train_one_seed(
                     gamma,
                     &cfg.components,
                 )?;
+                prof_train_step += train_t0.elapsed().as_secs_f32();
+                let write_t0 = std::time::Instant::now();
                 writeback_reanalyzed_samples(&mut buffer, batch);
+                prof_writeback += write_t0.elapsed().as_secs_f32();
                 loss_sum += l;
             }
             avg_loss = loss_sum / n_trains as f32;
@@ -818,6 +915,7 @@ fn train_one_seed(
         );
 
         if !smoke && ep_rewards.len() >= 20 && (ep + 1) % cfg.eval.eval_every == 0 {
+            let eval_t0 = std::time::Instant::now();
             let eval_r = eval_episodes(
                 &env,
                 &model,
@@ -828,6 +926,7 @@ fn train_one_seed(
                 t.num_simulations,
                 cfg.eval.seed,
             );
+            prof_eval += eval_t0.elapsed().as_secs_f32();
             let recent: f32 = ep_rewards.iter().rev().take(20).sum::<f32>() / 20.0;
             println!(
                 "  greedy eval {eval_r:.1} / {solved}（近20局 self-play {recent:.1}，total_env_steps={total_steps}）",
@@ -845,7 +944,8 @@ fn train_one_seed(
     let final_greedy = if smoke {
         0.0
     } else {
-        eval_episodes(
+        let eval_t0 = std::time::Instant::now();
+        let r = eval_episodes(
             &env,
             &model,
             &adapter,
@@ -854,8 +954,25 @@ fn train_one_seed(
             cfg.eval.eval_episodes,
             t.num_simulations,
             cfg.eval.seed,
-        )
+        );
+        prof_eval += eval_t0.elapsed().as_secs_f32();
+        r
     };
+
+    if profile {
+        let measured =
+            prof_self_play + prof_batch_prepare + prof_train_step + prof_writeback + prof_eval;
+        println!(
+            "[PROFILE] self_play={:.2}s batch_prepare={:.2}s train_step={:.2}s writeback={:.2}s eval={:.2}s measured={:.2}s wall={:.2}s",
+            prof_self_play,
+            prof_batch_prepare,
+            prof_train_step,
+            prof_writeback,
+            prof_eval,
+            measured,
+            wall_secs,
+        );
+    }
 
     if !smoke {
         ckpt.save_last(&model, cfg, last_ep, total_steps, final_greedy)?;
@@ -881,6 +998,7 @@ fn train_one_seed(
             gamma,
             reward_scale,
             t.num_simulations,
+            t.td_steps,
         );
     }
 

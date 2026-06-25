@@ -1,13 +1,13 @@
 ---
-status: suspended
+status: active
 created: 2026-06-21
-updated: 2026-06-21
+updated: 2026-06-25
 ---
 
 # MyZero · 动作空间 / Sampled MuZero 决策备忘（B、K、连续、复合）
 
 > **用途**：接 Pendulum / Platform MyZero 前必读；避免把「论文 explicit」与「工程推断」混谈，避免 B/K 概念绑错。
-> **状态**：`suspended` —— 非阻塞 bug；CartPole + Pendulum 1D 搜索层已接；Pendulum **未过 −200 门禁**（见 [Pendulum 诊断 §十](./pendulum_failure_diagnosis.md#十consreconsampled-压测2026-06-21)）。
+> **状态**：`active` —— 2026-06-24 审计发现并修复 `π̂_β` 实现公式错误；CartPole 因 K=N 退化全枚举未暴露，Pendulum B=7/K=5 会真实受影响。修复后须重跑 Pendulum P0/P1。
 > **论文本地副本**：`AI论文/Muzero复合action.pdf`（= Hubert et al. ICML 2021 · Sampled MuZero · arXiv:2104.06303）
 > **关联**：[MyZero 纲领 §5](../../.doc/design/my_zero_algorithm_vision.md) · [RL 路线图 §2.5 / §5.10](../../.doc/design/rl_roadmap.md) · [Pendulum 诊断](./pendulum_failure_diagnosis.md) · [post_ez_v2 backlog §Sampled](./post_ez_v2_research_backlog.md)
 
@@ -135,6 +135,22 @@ K = min( max(5, N / 2),  floor(sims × 2 / 3) )
 | Pendulum cons+recon+Sampled | ❌ greedy **−942** @ 120k steps | 门禁 −200；见 [诊断 §十](./pendulum_failure_diagnosis.md#十consreconsampled-压测2026-06-21) |
 | 按 state 动态采 K（连续/hybrid） | 🔲 | `DynamicsModel` 仍构造期固定离散表 |
 | Platform MyZero 示例 | 🔲 仅 SAC 有 hybrid 参考 |
+
+### 4.0 公式修复（2026-06-24）
+
+`src/rl/mcts/sampled.rs` 原实现把 `π̂_β` 写成了：
+
+```text
+π̂_β(a) ∝ β̂(a) / (β(a) · π(a))
+```
+
+这会在 K<N 时**反向放大低 prior 动作**。论文口径应为：
+
+```text
+π̂_β(a) ∝ (β̂(a) / β(a)) · π(a)
+```
+
+当 `β=π` 且 τ=1 时，子集内 `π̂_β = β̂`，即近似 uniform；网络 prior 的作用体现在“更容易采到高 prior 动作”，而不是采到后再在 PUCT prior 中重复偏置。CartPole N=2/K_eff=2 走全覆盖分支，因此不会暴露该 bug；Pendulum B=7/K=5 是首个真实受影响路径。
 
 ### 4.1 CartPole release 压测（seed=42 · sims=20 · 2026-06-22）
 

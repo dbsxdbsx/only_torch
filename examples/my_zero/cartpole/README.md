@@ -10,6 +10,9 @@
 
 ```bash
 cargo run --example my_zero_cartpole --release
+
+# 临时覆盖 n-step bootstrap（诊断用；默认见下方超参表）
+TD_STEPS=5 cargo run --example my_zero_cartpole --release
 ```
 
 训练日志：**`len`** = 本局步数；**`total_env_steps`** = 累计真实环境交互（首要评价指标）。

@@ -1,7 +1,7 @@
 //! Sampled MuZero 动作采样与 PUCT 先验修正（Hubert et al. ICML 2021）。
 //!
 //! - 展开时从 proposal β（默认 = 网络 prior π）无放回采 K 个候选；
-//! - PUCT 探索项用 π̂_β ∝ (β̂/βπ)，K ≥ |A| 时退化为标准 MuZero prior（无回归）。
+//! - PUCT 探索项用 π̂_β ∝ (β̂ / β) · π，K ≥ |A| 时退化为标准 MuZero prior（无回归）。
 
 use rand::RngCore;
 
@@ -55,7 +55,7 @@ pub fn sample_root_for_expansion(
     sample_for_expansion(actions, &noisy, &noisy, k, rng)
 }
 
-/// π̂_β(a) ∝ (β̂/βπ)(a)，β̂ 为采样子集上的经验分布（无放回 → 各 1/K）。
+/// π̂_β(a) ∝ (β̂ / β)(a) · π(a)，β̂ 为采样子集上的经验分布（无放回 → 各 1/K）。
 fn sampled_puct_priors(beta: &[f32], pi: &[f32], indices: &[usize]) -> Vec<f32> {
     let k = indices.len().max(1) as f32;
     let mut raw: Vec<f32> = indices
@@ -63,7 +63,7 @@ fn sampled_puct_priors(beta: &[f32], pi: &[f32], indices: &[usize]) -> Vec<f32> 
         .map(|&i| {
             let b = beta[i].max(1e-8);
             let p = pi[i].max(1e-8);
-            (1.0 / k) / (b * p)
+            (1.0 / k) * p / b
         })
         .collect();
     normalize_probs(&mut raw);
@@ -165,6 +165,29 @@ mod tests {
         assert_eq!(priors.len(), 3);
         let s: f32 = priors.iter().sum();
         assert!((s - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn beta_equals_pi_gives_uniform_prior_on_sampled_subset() {
+        // 论文 remark：β=π（τ=1）时 π̂_β = β̂，即子集内近似 uniform；
+        // 网络 prior 只影响“采到谁”，不应在采到后再重复偏置一次。
+        let beta = vec![0.1, 0.2, 0.7];
+        let pi = beta.clone();
+        let priors = sampled_puct_priors(&beta, &pi, &[0, 2]);
+        assert_eq!(priors.len(), 2);
+        assert!((priors[0] - 0.5).abs() < 1e-5, "got {priors:?}");
+        assert!((priors[1] - 0.5).abs() < 1e-5, "got {priors:?}");
+    }
+
+    #[test]
+    fn uniform_beta_preserves_network_prior_within_subset() {
+        let beta = vec![1.0 / 3.0; 3];
+        let pi = vec![0.1, 0.2, 0.7];
+        let priors = sampled_puct_priors(&beta, &pi, &[0, 2]);
+        let expected0 = 0.1 / (0.1 + 0.7);
+        let expected1 = 0.7 / (0.1 + 0.7);
+        assert!((priors[0] - expected0).abs() < 1e-5, "got {priors:?}");
+        assert!((priors[1] - expected1).abs() < 1e-5, "got {priors:?}");
     }
 
     #[test]

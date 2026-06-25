@@ -87,6 +87,12 @@ impl MyZeroBuilder {
         self
     }
 
+    /// 覆盖 n-step bootstrap 步数（默认见 [`TrainSettings::td_steps`]）。
+    pub fn td_steps(mut self, n: usize) -> Self {
+        self.cfg.train.td_steps = n.max(1);
+        self
+    }
+
     /// 开启 completedQ 策略训练目标（默认关；CartPole recipe 未 promote，供 A/B 用）。
     pub fn completed_q_target(mut self, enabled: bool) -> Self {
         self.cfg.components.completed_q_target = enabled;
@@ -236,6 +242,17 @@ mod tests {
         assert!(cfg.components.reconstruction);
         assert!(cfg.components.sampled);
         assert!((cfg.env.reward_scale - 0.1).abs() < 1e-6);
+    }
+
+    #[test]
+    fn td_steps_override_clamps_to_at_least_one() {
+        let cfg = MyZero::new("CartPole-v1")
+            .td_steps(0)
+            .solved(475.0)
+            .max_episodes(2000)
+            .build()
+            .unwrap();
+        assert_eq!(cfg.train.td_steps, 1);
     }
 
     #[test]
