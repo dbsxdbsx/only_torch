@@ -18,6 +18,8 @@ reviewers: []
 > **压测更新（2026-06-21）**：已接入与 CartPole 相同的 **consistency + reconstruction + Sampled** 栈（B=7 · K_eff=5 · sims=20 · γ=0.997 · r_scale=0.1）；修复 Sampled `policy_target` 投射 full action_dim（ep10 训练崩溃）。600ep / 120k env-steps：**best greedy −942.2**（门禁 −200 未达标）。详见 §十。
 > **事实源锁定（2026-06-24）**：`recipe.rs` 中 Pendulum 仍复用 `consistency + reconstruction + Sampled`，但代码命名与文档口径统一为**诊断栈**，不是已验收 promote；`DIAG=1` 诊断将输出 MC return / n-step target / search root / predicted value 的分布，作为下一步 P0 证据。
 > **论文口径审计（2026-06-25）**：修复 Sampled MuZero `π̂_β` 公式错误：应为 `(β̂/β)·π`，不是 `β̂/(β·π)`。复核 consistency 后确认 `negative_cosine_similarity()` 内部已对 target branch `detach()`，原实现已有 stop-gradient；剩余差距是没有独立 EMA target encoder / target projector。旧 §十 压测结果基于修复前 Sampled 公式，后续需重跑。
+> **transition discount 语义重构（2026-06-25）**：MyZero 将 `terminated / truncated / continuation` 作为基础 backbone 语义接入：真终止 `continuation=0`，time-limit truncation 仍 `continuation=1` 并 bootstrap；Dynamics 学习 continuation，MCTS imagined edge 使用 `gamma * predicted_continuation` backup。该改动修正 terminal/truncation 闭环，但不宣称 Pendulum 已解决，仍需以 TD=5 诊断和 greedy eval 判读。
+> **TD=5 + continuation 实测（2026-06-25）**：600ep / 120k env-steps 仍未达标；best greedy **−1085.2 @ ep200**，final greedy **−1252.2**。DIAG：MC return std **232.1**，n-step(td=5) std **28.1**，search root std **23.7**，network root std **21.7**；value 链路仍被压扁，continuation 语义闭环不是 Pendulum 的充分修复。
 
 ---
 

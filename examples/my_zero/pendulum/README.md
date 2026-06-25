@@ -26,6 +26,8 @@ TD_STEPS=5 cargo run --example my_zero_pendulum --release
 
 算法配方由库内 `recipe.rs` 注入。Pendulum 当前复用 CartPole 的 `consistency + reconstruction + Sampled` 作为**诊断栈**（不是已验收裁决）；示例只显式写 Pendulum 的 `reward_scale(0.1)` 与训练契约，连续动作 B=7 由库内默认动作方案注入。
 
+基础 transition 语义：Pendulum-v1 通常以 time-limit truncation 结束，当前不会把 200 步截断误当 terminal；truncation 仍 `continuation=1` 并 bootstrap，只有 MDP 真终止才 `continuation=0`。
+
 ## 实测（seed=42，门禁 −200）
 
 > ⚠️ 下列数字都落在**失败区间**（远未达 −200），所以「观察」列只是诊断记录，**不是对组件的 ✅/➖/❌ 裁决**——在还没学会的任务上比组件好坏没有判别力。
@@ -51,6 +53,7 @@ TD_STEPS=5 cargo run --example my_zero_pendulum --release
 | 配置 | best greedy eval | env-steps | wall | 观察（非裁决） |
 |------|------------------|-----------|------|------|
 | +cons+recon+Sampled | **−942.2** @ ep575 | 120k | ~495s | loss 能降到 ~5–7，但 greedy 策略仍未入门 |
+| +cons+recon+Sampled · `TD_STEPS=5` · continuation backbone | **−1085.2** @ ep200 | 120k | 496.5s | 仍失败；final greedy −1252.2，DIAG 显示 value 链路继续压扁 |
 
 这组与 CartPole 已验收栈保持一致，用于确认 Sampled 机制在连续动作路径上的 plumbing；它仍在失败区间，不能裁决 consistency / reconstruction / Sampled 对 Pendulum 是否有效。
 

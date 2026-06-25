@@ -1,6 +1,9 @@
 //! MyZero n-step value target 计算（区分 terminated / truncated）
 //!
-//! `V_target(t) = Σ_{k=0..n-1} γ^k · r_{t+k} + γ^n · root_value_{t+n}`
+//! `V_target(t) = Σ_{k=0..n-1} (∏_{i=0}^{k-1} d_{t+i}) · r_{t+k}
+//!              + (∏_{i=0}^{n-1} d_{t+i}) · root_value_{t+n}`
+//!
+//! 其中 `d_t = γ · continuation_t`。
 //!
 //! # terminated vs truncated（关键正确性）
 //! - **terminated**（杆倒）：终止后无后续回报，边界不 bootstrap（`V(s_end)=0`）。
@@ -33,18 +36,23 @@ where
         return 0.0;
     }
 
-    let truncated_end = !steps[len - 1].terminated;
+    let truncated_end = steps[len - 1].truncated && !steps[len - 1].terminated;
     let max_bootstrap = if truncated_end { len - 1 } else { len };
 
     let bootstrap = (start + n).min(max_bootstrap);
 
     let mut target = 0.0;
-    for (offset, step) in steps[start..bootstrap].iter().enumerate() {
-        target += gamma.powi(offset as i32) * step.reward;
+    let mut discount_prod = 1.0;
+    for step in &steps[start..bootstrap] {
+        target += discount_prod * step.reward;
+        discount_prod *= gamma * step.continuation.clamp(0.0, 1.0);
+        if discount_prod <= 0.0 {
+            return target;
+        }
     }
 
     if bootstrap < len {
-        target += gamma.powi((bootstrap - start) as i32) * bootstrap_value(&steps[bootstrap]);
+        target += discount_prod * bootstrap_value(&steps[bootstrap]);
     }
 
     target
@@ -64,12 +72,20 @@ mod tests {
             reward,
             root_value,
             terminated: false,
+            truncated: false,
+            continuation: 1.0,
             extras: Default::default(),
         }
     }
 
     fn terminated(mut steps: Vec<SelfPlayStep>) -> Vec<SelfPlayStep> {
         steps.last_mut().unwrap().terminated = true;
+        steps.last_mut().unwrap().continuation = 0.0;
+        steps
+    }
+
+    fn truncated(mut steps: Vec<SelfPlayStep>) -> Vec<SelfPlayStep> {
+        steps.last_mut().unwrap().truncated = true;
         steps
     }
 
@@ -92,11 +108,11 @@ mod tests {
 
     #[test]
     fn truncation_bootstraps_at_last_value() {
-        let steps = vec![
+        let steps = truncated(vec![
             step(1.0, Some(10.0)),
             step(1.0, Some(20.0)),
             step(1.0, Some(30.0)),
-        ];
+        ]);
         let gamma = 0.99;
 
         let t = compute_n_step_target(&steps, 0, 5, gamma);
@@ -117,5 +133,38 @@ mod tests {
         let steps = terminated(vec![step(2.0, None), step(3.0, None)]);
         let t = compute_n_step_target(&steps, 0, 1, 0.99);
         assert!((t - 2.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn continuation_zero_stops_future_value() {
+        let mut steps = vec![
+            step(2.0, Some(10.0)),
+            step(3.0, Some(20.0)),
+            step(4.0, Some(30.0)),
+        ];
+        steps[1].continuation = 0.0;
+        let t = compute_n_step_target(&steps, 0, 3, 0.5);
+        let expected = 2.0 + 0.5 * 3.0;
+        assert!(
+            (t - expected).abs() < 1e-5,
+            "continuation=0 后不应再累积 reward/bootstrap: {t}"
+        );
+    }
+
+    #[test]
+    fn variable_continuation_discount_product() {
+        let mut steps = truncated(vec![
+            step(1.0, Some(10.0)),
+            step(2.0, Some(20.0)),
+            step(3.0, Some(30.0)),
+        ]);
+        steps[0].continuation = 0.5;
+        steps[1].continuation = 0.25;
+        let t = compute_n_step_target(&steps, 0, 5, 0.8);
+        let expected = 1.0 + (0.8 * 0.5) * 2.0 + (0.8 * 0.5) * (0.8 * 0.25) * 30.0;
+        assert!(
+            (t - expected).abs() < 1e-5,
+            "应按每步 transition discount 连乘: {t}"
+        );
     }
 }

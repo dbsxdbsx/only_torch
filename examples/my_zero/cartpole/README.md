@@ -29,6 +29,7 @@ TD_STEPS=5 cargo run --example my_zero_cartpole --release
 | +consistency | 111.6 | **500.0** @ ep325 | **28,996** | 541s | 2026-06-20 复测 ✅ |
 | **+consistency +reconstruction**（**当前内置 · sims=20**） | — | **500.0** @ ep250 | **12,186** | **80s** | 2026-06-21 ✅；默认 sim 自 v0.25 起为 20 |
 | **+cons+recon + Sampled** · sims=20 | — | **491.6** @ ep300 | **15,193** | **109s** | 2026-06-22 ✅；N=2、K_eff=2 退化全枚举；较上行 env-steps +~25%（实现路径差 + RL 方差，见 [issue](../../.issue/items/my_zero_action_space_sampled_policy.md) §4.1） |
+| +cons+recon+Sampled · `TD_STEPS=5` · continuation backbone | — | **500.0** @ ep375 | **30,158** | **185.6s** | 2026-06-25；逻辑正确但样本效率较未接 continuation 的 TD=5 约 10.1k 明显回退，作为 continuation 校准项 |
 | +cons+recon · sims=10 | — | **500.0** @ ep875 | **16,152** | **~125s** | 2026-06-21；样本效率差于 sims=20，不 promote |
 | +cons+recon · sims=15 | — | **500.0** @ ep500 | **26,306** | **~167s** | 2026-06-21；比 sims=10/20 更差，不 promote |
 | +cons+recon · sims=50（旧默认） | **50.8** | **500.0** @ ep275 | **11,682** | **183.9s** | 2026-06-21；env-steps 略优，wall-clock 约 2.3× |
@@ -45,12 +46,15 @@ TD_STEPS=5 cargo run --example my_zero_cartpole --release
 - **completedQ** 2×2 消融：visit ~12k steps；+completedQ ~30–34k steps → CartPole **不 promote**（[issue](../../.issue/items/my_zero_gumbel_completedq_cartpole_negative.md)）。
 - **Gumbel-root** @ sims=10/20：greedy 峰值 154/123，**远未达标**；CartPole **不 promote**（同上 issue）。论文主场景为 `|A| > n`，CartPole `n ≫ |A|` 不宜作 Gumbel headline。
 - reanalyze 写回已入库但 **暂不开启**。
+- continuation backbone 是基础语义修正，不作为组件消融；当前 `TD_STEPS=5` 单 seed 仍满分，但样本效率从未接 continuation 时约 **10.1k** 回退到 **30.2k**，后续应继续查 continuation 校准 / effective discount，而不是把它从架构上移除。
 
 ---
 
 ## 默认超参
 
 `sims=20` · `gamma=0.997` · `k_unroll=5` · `td_steps=50` · `lr=0.02` · `train_batch_size=8` · `trains_per_episode=8`
+
+基础 transition 语义：真终止（杆倒）后 `continuation=0`，time-limit truncation 仍 `continuation=1` 并 bootstrap；MCTS 使用 `gamma * predicted_continuation` 作为每条 imagined edge 的 discount。
 
 组件 loss 权重（写死在 `loss.rs` / `runner.rs`，非用户可调）：consistency coef **2.0** · reconstruction coef **1.0**（Scholz et al. 2021 默认 \(l_g\) 权重）。
 

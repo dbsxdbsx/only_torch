@@ -292,6 +292,75 @@ fn test_search_single_agent_discount() {
     assert!(total_v_no.is_finite());
 }
 
+#[derive(Clone)]
+struct PerEdgeDiscountMock;
+
+impl MctsModel for PerEdgeDiscountMock {
+    type State = u32;
+
+    fn root(&self, _obs: &[f32]) -> RootOut<Self::State> {
+        RootOut {
+            state: 0,
+            prior: vec![0.5, 0.5],
+            value: 0.0,
+            candidate_actions: vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)],
+            to_play: 0,
+        }
+    }
+
+    fn recurrent(&self, _state: &Self::State, action: &ActionPayload) -> RecurrentOut<Self::State> {
+        let discount = match action {
+            ActionPayload::Discrete(0) => 0.0,
+            _ => 1.0,
+        };
+        RecurrentOut {
+            state: 1,
+            reward: 1.0,
+            value: 10.0,
+            prior: vec![],
+            candidate_actions: vec![],
+            terminal: false,
+            to_play: 0,
+            discount,
+        }
+    }
+}
+
+#[test]
+fn test_search_root_value_uses_per_edge_discount() {
+    let model = PerEdgeDiscountMock;
+    let policy = PuctPolicy::new();
+    let cfg = MctsConfig {
+        num_simulations: 20,
+        temperature: 1.0,
+        ..MctsConfig::default()
+    };
+
+    let mut rng = StdRng::seed_from_u64(7);
+    let result = mcts_search(&model, &policy, &[0.0], &cfg, &mut rng);
+    assert_eq!(result.children.len(), 2);
+
+    for child in &result.children {
+        let expected_discount = match child.action {
+            ActionPayload::Discrete(0) => 0.0,
+            _ => 1.0,
+        };
+        assert!(
+            (child.discount - expected_discount).abs() < 1e-6,
+            "子边 discount 应来自 recurrent 输出"
+        );
+        if child.visit_count > 0 {
+            let child_v = child.value_sum / child.visit_count as f32;
+            let q = child.reward + child.discount * child_v;
+            let expected_q = 1.0 + expected_discount * 10.0;
+            assert!(
+                (q - expected_q).abs() < 1e-4,
+                "root Q 应使用 per-edge discount: got {q}, expected {expected_q}"
+            );
+        }
+    }
+}
+
 // ============================================================================
 // 测试：终止节点不展开
 // ============================================================================

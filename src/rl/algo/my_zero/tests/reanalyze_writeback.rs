@@ -20,6 +20,8 @@ fn make_step(obs_tag: f32, root_value: f32) -> SelfPlayStep {
         reward: 1.0,
         root_value: Some(root_value),
         terminated: false,
+        truncated: false,
+        continuation: 1.0,
         extras: Default::default(),
     }
 }

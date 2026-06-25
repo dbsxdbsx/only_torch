@@ -140,6 +140,8 @@ mod tests {
             reward: 1.0,
             root_value: Some(99.0),
             terminated: false,
+            truncated: false,
+            continuation: 1.0,
             extras: Default::default(),
         }
     }

@@ -24,6 +24,16 @@ pub struct SelfPlayStep {
     /// bootstrap；**truncation（如 CartPole 撞 200 步）仍需 bootstrap**，否则会系统性
     /// 低估满分局末端的 value（见 `compute_n_step_target`）。非终止步与 AlphaZero 填 `false`。
     pub terminated: bool,
+    /// 该步是否为外部截断（通常是 time-limit），区别于 MDP 真终止。
+    ///
+    /// `truncated=true` 表示这一局需要 reset，但 value target 仍应 bootstrap；这对应
+    /// Gymnasium 的 `truncated`，也是避免把 Pendulum 的 200-step time-limit 误当死亡的关键。
+    pub truncated: bool,
+    /// 这一步 transition 之后是否还应继续传播未来 value。
+    ///
+    /// 语义上是 continuation `c_t`，不是完整折扣；实际 MCTS / n-step 乘子为
+    /// `gamma * continuation`。真终止填 `0.0`，普通步与 truncation 填 `1.0`。
+    pub continuation: f32,
     /// 可扩展附加字段（EZ value prefix 等，v0.24 引入）。
     ///
     /// 既有 MuZero / AlphaZero 路径填 [`SelfPlayStepExtras::default()`]。后续算法增量的字段一律

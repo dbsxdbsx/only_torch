@@ -19,7 +19,7 @@ pub trait Dynamics {
     /// obs → (latent, policy_prior, value)
     fn initial_state(&self, obs: &[f32]) -> (Vec<f32>, Vec<f32>, f32);
 
-    /// (latent, action) → (next_latent, reward, policy_prior, value, terminal)
+    /// (latent, action) → (next_latent, reward, policy_prior, value, terminal, continuation)
     ///
     /// `terminal`：是否为终止状态。简化版可始终返回 false（靠 reward head 学习终止信号）；
     /// 精确版可训练一个终止头或用 reward 阈值判定。
@@ -33,6 +33,10 @@ pub struct DynamicsOutput {
     pub prior: Vec<f32>,
     pub value: f32,
     pub terminal: bool,
+    /// transition continuation `c_t`，取值建议在 `[0,1]`。
+    ///
+    /// `DynamicsModel` 会把它和全局 `gamma` 相乘，作为 MCTS backup 的 per-edge discount。
+    pub continuation: f32,
 }
 
 /// 将 `Dynamics` 适配为 `MctsModel`
@@ -108,7 +112,7 @@ impl<D: Dynamics> MctsModel for DynamicsModel<D> {
             },
             terminal: out.terminal,
             to_play: 0,
-            discount: self.discount,
+            discount: self.discount * out.continuation.clamp(0.0, 1.0),
         }
     }
 }

@@ -85,6 +85,7 @@ fn value_head_can_separate_high_low_targets() {
                     &[uniform.clone()],
                     &[t],
                     &[],
+                    &[],
                     None,
                     0.0,
                     0.0,

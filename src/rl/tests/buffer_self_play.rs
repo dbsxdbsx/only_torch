@@ -16,6 +16,8 @@ fn make_step(id: usize, player: u8) -> SelfPlayStep {
         reward: 0.0,
         root_value: None,
         terminated: false,
+        truncated: false,
+        continuation: 1.0,
         extras: Default::default(),
     }
 }

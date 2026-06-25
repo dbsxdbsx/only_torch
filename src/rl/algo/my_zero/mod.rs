@@ -37,13 +37,13 @@
 //! - [`report`]：train / eval / run 分数报告
 //! - [`component`]：内部组件开关（[`recipe`] 按 env 注入）
 //! - [`recipe`]：环境内置算法配方（团队维护，用户不可见）
-//! - [`network`]：三网络模型（repr / dyn / pred + value-prefix LSTM + SimSiam / reconstruction 分支）
+//! - [`network`]：三网络模型（repr / dyn / pred + continuation head + value-prefix LSTM + SimSiam / reconstruction 分支）
 //! - [`action`]：动作适配（从 env 推断离散/连续 + idx→env 映射）
 //! - [`runner`]：训练循环 + greedy eval 内部实现
 //!
 //! 算法组件（**均为 MyZero 自身实现，自包含**；MyZero 是项目唯一的 `*Zero` 实现）：
 //! - [`value_encoding`] / [`value_transform`]：categorical value/reward 编解码 + h(x) 变换
-//! - [`n_step`]：n-step bootstrap value target（区分 terminated / truncated）
+//! - [`n_step`]：n-step bootstrap value target（区分 terminated / truncated，并使用 transition continuation）
 //! - [`reanalyze`]：position 级 MCTS 重搜 + train 后写回（`Components.reanalyze`；CartPole 暂不 promote）
 //! - [`loss`]：loss 系数与梯度缩放常量
 //! - [`consistency`]：自监督 consistency loss（SimSiam）

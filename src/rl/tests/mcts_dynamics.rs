@@ -30,6 +30,7 @@ impl Dynamics for DummyDynamics {
             prior: vec![0.33, 0.34, 0.33],
             value: 0.4,
             terminal: false,
+            continuation: 0.5,
         }
     }
 }
@@ -76,7 +77,7 @@ fn test_dynamics_model_recurrent() {
     assert_eq!(out.candidate_actions.len(), 3);
     assert!(!out.terminal);
     assert_eq!(out.to_play, 0);
-    assert!((out.discount - 0.99).abs() < 1e-6);
+    assert!((out.discount - 0.99 * 0.5).abs() < 1e-6);
 }
 
 // ============================================================================

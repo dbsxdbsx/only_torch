@@ -122,6 +122,8 @@ fn self_play_one_episode(
             reward: 0.0,
             root_value: Some(root_value),
             terminated: false,
+            truncated: false,
+            continuation: 1.0,
             extras: Default::default(),
         });
 
@@ -130,6 +132,8 @@ fn self_play_one_episode(
         let last = steps.last_mut().unwrap();
         last.reward = reward * reward_scale;
         last.terminated = terminated;
+        last.truncated = truncated;
+        last.continuation = if terminated { 0.0 } else { 1.0 };
 
         if terminated || truncated {
             break;
@@ -310,6 +314,15 @@ pub(crate) fn train_batch(
                 }
             })
             .collect();
+        let target_continuations: Vec<f32> = (0..actual_k)
+            .map(|i| {
+                if t + i < len {
+                    steps[t + i].continuation
+                } else {
+                    0.0
+                }
+            })
+            .collect();
 
         let actions: Vec<usize> = (0..actual_k)
             .map(|i| {
@@ -355,6 +368,7 @@ pub(crate) fn train_batch(
             &target_policies,
             &target_values,
             &final_rewards,
+            &target_continuations,
             next_obs_list.as_deref(),
             consistency_coef,
             reconstruction_coef,
@@ -497,6 +511,7 @@ fn dynamics_diagnostic(
     let mut act_idxs: Vec<usize> = Vec::new();
     let mut true_rewards: Vec<f32> = Vec::new();
     let mut terminated_flags: Vec<bool> = Vec::new();
+    let mut truncated_flags: Vec<bool> = Vec::new();
     let mut search_roots_scaled: Vec<f32> = Vec::new();
     let mut network_roots_scaled: Vec<f32> = Vec::new();
     let mut policy_entropies: Vec<f32> = Vec::new();
@@ -514,6 +529,7 @@ fn dynamics_diagnostic(
         act_idxs.push(action_idx);
         true_rewards.push(reward);
         terminated_flags.push(terminated);
+        truncated_flags.push(truncated);
         search_roots_scaled.push(result.root_value());
         network_roots_scaled.push(result.network_value);
         policy_entropies.push(entropy(&result.learn_policy));
@@ -551,6 +567,8 @@ fn dynamics_diagnostic(
             reward: true_rewards[t] * reward_scale,
             root_value: Some(search_roots_scaled[t]),
             terminated: terminated_flags[t],
+            truncated: truncated_flags[t],
+            continuation: if terminated_flags[t] { 0.0 } else { 1.0 },
             extras: Default::default(),
         })
         .collect();

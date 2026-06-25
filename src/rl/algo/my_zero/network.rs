@@ -2,7 +2,7 @@
 //!
 //! 三网络架构：
 //! - Representation h: obs → latent，输出经 **min-max 归一化到 [0,1]**
-//! - Dynamics g: (latent, action_onehot) → (next_latent, reward_logits)
+//! - Dynamics g: (latent, action_onehot) → (next_latent, reward_logits, continuation_logit)
 //!   next_latent 同样 min-max 归一化
 //! - Prediction f: latent → (policy_logits, value_logits)
 //!
@@ -92,6 +92,16 @@ pub const SUPPORT_HALF: usize = 20;
 /// 全局 support 配置（value 与 reward 共用，对齐 canonical MuZero）。
 pub const SUPPORT: SupportConfig = SupportConfig::new(SUPPORT_HALF);
 
+/// continuation head 的解码偏置：随机初始化时默认接近「继续」，避免早期搜索过度截断。
+const CONTINUATION_LOGIT_BIAS: f32 = 5.0;
+
+/// 搜索期 hard terminal 阈值；低于该 continuation 才停止展开。
+const TERMINAL_CONTINUATION_THRESHOLD: f32 = 0.05;
+
+fn sigmoid_scalar(x: f32) -> f32 {
+    1.0 / (1.0 + (-x).exp())
+}
+
 /// latent min-max 归一化到 [0,1]（canonical MuZero，逐样本沿特征维）
 ///
 /// `s_norm = (s - min(s)) / (max(s) - min(s) + eps)`。本示例 train/search 均 batch=1，
@@ -149,6 +159,7 @@ pub struct DynamicsNet {
     fc1: Linear,
     fc_latent: Linear,
     fc_reward: Linear,
+    fc_continuation: Linear,
     latent_dim: usize,
 }
 
@@ -160,17 +171,23 @@ impl DynamicsNet {
             fc1: Linear::new(&graph, input_dim, 128, true, "fc1")?,
             fc_latent: Linear::new(&graph, 128, latent_dim, true, "fc_latent")?,
             fc_reward: Linear::new(&graph, 128, SUPPORT.size(), true, "fc_reward")?,
+            fc_continuation: Linear::new(&graph, 128, 1, true, "fc_continuation")?,
             latent_dim,
         })
     }
 
-    /// (latent, action_onehot) → (next_latent[min-max], reward_logits)
-    pub fn forward(&self, latent: &Var, action_onehot: &Var) -> Result<(Var, Var), GraphError> {
+    /// (latent, action_onehot) → (next_latent[min-max], reward_logits, continuation_logit)
+    pub fn forward(
+        &self,
+        latent: &Var,
+        action_onehot: &Var,
+    ) -> Result<(Var, Var, Var), GraphError> {
         let input = Var::concat(&[latent, action_onehot], 1)?;
         let h = self.fc1.forward(&input).relu();
         let next_latent = min_max_normalize(&self.fc_latent.forward(&h), self.latent_dim)?;
         let reward_logits = self.fc_reward.forward(&h);
-        Ok((next_latent, reward_logits))
+        let continuation_logit = self.fc_continuation.forward(&h);
+        Ok((next_latent, reward_logits, continuation_logit))
     }
 }
 
@@ -180,6 +197,7 @@ impl Module for DynamicsNet {
             self.fc1.parameters(),
             self.fc_latent.parameters(),
             self.fc_reward.parameters(),
+            self.fc_continuation.parameters(),
         ]
         .concat()
     }
@@ -367,8 +385,15 @@ impl MyZeroModel {
         let oh = self.action_to_onehot(0);
         let oh_tensor = Tensor::new(&oh, &[1, self.action_dim]);
         let oh_var = self.graph.input(&oh_tensor)?;
-        let (next_latent, reward_logits) = self.dyn_net.forward(&latent, &oh_var)?;
-        Ok(vec![policy, value, reward_logits, next_latent])
+        let (next_latent, reward_logits, continuation_logit) =
+            self.dyn_net.forward(&latent, &oh_var)?;
+        Ok(vec![
+            policy,
+            value,
+            reward_logits,
+            continuation_logit,
+            next_latent,
+        ])
     }
 
     fn action_to_onehot(&self, action_idx: usize) -> Vec<f32> {
@@ -408,8 +433,8 @@ impl MyZeroModel {
     ///
     /// # absorbing state（终止处理，canonical MuZero）
     /// 终止后的 unroll 位置由调用方填入 **absorbing 目标**：
-    /// `reward=0 / value=0 / policy=uniform`。模型据此学到「终局之后回报恒 0」，
-    /// 使搜索推演越过终局时 reward→0 自然刹车，掐断 no-terminal 价值膨胀。
+    /// `reward=0 / value=0 / policy=uniform / continuation=0`。模型据此学到「终局之后
+    /// 回报恒 0 且不再传播未来 value」，掐断 no-terminal 价值膨胀。
     #[allow(clippy::too_many_arguments)]
     pub fn train_unroll(
         &self,
@@ -418,6 +443,7 @@ impl MyZeroModel {
         target_policies: &[Vec<f32>],
         target_values: &[f32],
         target_rewards: &[f32], // value_prefix=true 时是前缀目标，false 时是单步 reward
+        target_continuations: &[f32],
         next_obs_list: Option<&[Vec<f32>]>,
         consistency_coef: f32,
         reconstruction_coef: f32,
@@ -461,12 +487,14 @@ impl MyZeroModel {
             let oh_tensor = Tensor::new(&oh, &[1, self.action_dim]);
             let oh_var = self.graph.input(&oh_tensor)?;
 
-            let (next_latent, pred_reward_logits) = self.dyn_net.forward(&latent, &oh_var)?;
+            let (next_latent, pred_reward_logits, pred_continuation_logit) =
+                self.dyn_net.forward(&latent, &oh_var)?;
             let (pred_p, pred_v_logits) = self.pred.forward(&next_latent);
 
             let tp = Tensor::new(&target_policies[i + 1], &[1, self.action_dim]);
             let tv = self.two_hot_target(target_values[i + 1]);
             let tr = self.two_hot_target(target_rewards[i]);
+            let tc = Tensor::new(&[target_continuations[i].clamp(0.0, 1.0)], &[1, 1]);
 
             let step_policy_loss = pred_p.cross_entropy(&tp)?;
             let step_value_loss = pred_v_logits.cross_entropy(&tv)?;
@@ -481,10 +509,13 @@ impl MyZeroModel {
             } else {
                 pred_reward_logits.cross_entropy(&tr)?
             };
+            let pred_continuation = (&pred_continuation_logit + CONTINUATION_LOGIT_BIAS).sigmoid();
+            let step_continuation_loss = pred_continuation.mse_loss(&tc)?;
 
             let mut step_loss = &step_policy_loss
                 + &(&step_value_loss * loss::VALUE_LOSS_COEF)
-                + &(&step_reward_loss * loss::REWARD_LOSS_COEF);
+                + &(&step_reward_loss * loss::REWARD_LOSS_COEF)
+                + &(&step_continuation_loss * loss::CONTINUATION_LOSS_COEF);
 
             // consistency：dynamics 预测的 next_latent 与 repr 编码的真实 next_obs 对齐
             if consistency_coef > 0.0
@@ -568,10 +599,11 @@ impl MyZeroModel {
         let oh_tensor = Tensor::new(&oh, &[1, self.action_dim]);
         let oh_var = self.graph.input(&oh_tensor).unwrap();
 
-        let (next_latent_var, reward_logits_var) =
+        let (next_latent_var, reward_logits_var, continuation_logit_var) =
             self.dyn_net.forward(&latent_var, &oh_var).unwrap();
         let next_latent_tensor = next_latent_var.value().unwrap().unwrap();
         let reward_logits = reward_logits_var.value().unwrap().unwrap();
+        let continuation_logit = continuation_logit_var.value().unwrap().unwrap();
 
         let (policy_var, value_logits_var) = self.pred.forward(&next_latent_var);
         let policy_tensor = policy_var.value().unwrap().unwrap();
@@ -581,13 +613,23 @@ impl MyZeroModel {
 
         let reward = Self::decode_categorical(&reward_logits);
         let value = Self::decode_categorical(&value_logits);
+        let continuation = sigmoid_scalar(
+            continuation_logit
+                .data_as_slice()
+                .first()
+                .copied()
+                .unwrap_or(0.0)
+                + CONTINUATION_LOGIT_BIAS,
+        )
+        .clamp(0.0, 1.0);
 
         DynamicsOutput {
             next_state: next_latent_tensor.data_as_slice().to_vec(),
             reward,
             prior: policy_probs.data_as_slice().to_vec(),
             value,
-            terminal: false,
+            terminal: continuation <= TERMINAL_CONTINUATION_THRESHOLD,
+            continuation,
         }
     }
 }
