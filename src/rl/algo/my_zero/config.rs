@@ -85,9 +85,15 @@ impl Default for ModelSettings {
 pub struct TrainSettings {
     /// 折扣因子 γ
     pub gamma: f32,
-    /// K 步 unroll 展开步数
+    /// K 步 unroll 展开步数（**dynamics 想象空间**的深度，训练 loss 用）
     pub k_unroll: usize,
-    /// n-step bootstrap 的步数（value target）
+    /// n-step bootstrap 步数（value target 在**真实环境轨迹**上累计多少步 reward 再 bootstrap）。
+    ///
+    /// 与 `k_unroll`（想象深度）正交：这里只是从 replay 多累加几个已存的真实 reward，计算近乎免费，
+    /// 但**统计上**大 n → 高方差（经典 n-step bias-variance）。默认 **5**：对齐 canonical
+    /// MuZero / EfficientZero（且与 `k_unroll=5` 对齐），低方差、对随机环境稳健。
+    /// 早期曾设 50 以压「no-terminal 价值膨胀」，该终止处理现已由 continuation/absorbing 正确接管，
+    /// 大 n 的历史理由消失（CartPole 确定性 reward 下 50 仍可用，但不是稳健的通用默认）。
     pub td_steps: usize,
     /// 每步 MCTS 模拟数（默认 20：CPU 友好；学不动时再按环境调大）
     pub num_simulations: u32,
@@ -109,7 +115,7 @@ impl Default for TrainSettings {
         Self {
             gamma: 0.997,
             k_unroll: 5,
-            td_steps: 50,
+            td_steps: 5,
             num_simulations: 20,
             lr: 0.02,
             train_batch_size: 8,

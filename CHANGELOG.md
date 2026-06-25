@@ -22,6 +22,9 @@
 
 ### Changed
 
+- **fix(my_zero): continuation 搜索折扣改 binary gate + `td_steps` 默认 50→5**
+  - `dynamics.rs`：MCTS imagined edge 的 discount 由 soft `γ·predicted_continuation` 改为 binary `γ·(1−done)`（`done` 由 continuation 头阈值化）。理由独立于跑分：与 n-step value target 的**二值** continuation 口径一致；CartPole 确定性终止 / Pendulum 无终止并无「分数式终止概率」，软折扣只注方差并系统性压低好状态 value。CartPole 样本效率从 **30.2k**（td=5）修回 **~13.1k**（seed=42 单 seed）；Pendulum best greedy −1085→−959（仍在失败区间，主瓶颈在上游 value 头）
+  - `config.rs`：`td_steps` 默认 **50→5**，对齐 canonical MuZero/EfficientZero（与 `k_unroll=5` 一致）、低方差、对随机环境稳健。50 是旧 muzero 压「no-terminal 价值膨胀」的遗留，终止已由 continuation/absorbing 正确接管后无需大 n（CartPole 确定性 reward 下 td=50 略快 10.3k，但非稳健通用默认）
 - **docs(rl): CartPole completedQ / Gumbel-root 消融失败记录**；recipe 保持 cons+recon · PUCT · sims=20；见 `.issue/items/my_zero_gumbel_completedq_cartpole_negative.md`
 - **chore(rl): MyZero 默认 MCTS `num_simulations` 50→20**；CartPole cons+recon 基线 ~12.2k env-steps（seed=42）；sim=10/15 扫参见 `examples/my_zero/cartpole/README.md`
 - **refactor(rl): MyZero 用户侧 API 链式 builder + train/eval/run 生命周期**

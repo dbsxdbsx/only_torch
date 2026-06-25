@@ -13,7 +13,7 @@
 
 | 环境 | 动作类型 | 门禁 | 状态 |
 |------|---------|------|------|
-| [**CartPole-v1**](cartpole/README.md) | 离散（2） | greedy eval ≥ 475 | ✅ 回归哨兵（continuation backbone 后 `TD_STEPS=5`：**30.2k** env-steps；历史 cons+recon 无 continuation：~**12.2k**） |
+| [**CartPole-v1**](cartpole/README.md) | 离散（2） | greedy eval ≥ 475 | ✅ 回归哨兵（continuation 二值门修复 · 默认 td=5：**~13.1k** env-steps；soft `γ·c` 旧实现曾退化到 30.2k，见 cartpole/README） |
 | [**Pendulum-v1**](pendulum/README.md) | 纯连续（1） | return ≥ -200 | 诊断中（当前 recipe 复用 CartPole 栈作诊断，不代表组件已裁决） |
 | **Platform-v0** | 混合 Tuple | return 趋势上升 | 待实现 |
 
@@ -78,7 +78,7 @@ mz.load_model_if_exists("models/my_zero/CartPole-v1/seed_42/best")?.eval(10)?;
 
 ## 算法核心
 
-MuZero 三网络（Representation / Dynamics / Prediction）+ latent MCTS + K 步 unroll + categorical value/reward。Replay / n-step 显式区分 `terminated / truncated / continuation`：真终止 `continuation=0`，普通步与 time-limit truncation `continuation=1`。Dynamics 同时学习 continuation；MCTS backup 使用 `reward + gamma * predicted_continuation * value`。该基础语义不列入上方消融组件矩阵。母论文见 [算法纲领 §4.1 — base](../../.doc/design/my_zero_algorithm_vision.md#41-组件文献对照单一事实源)。
+MuZero 三网络（Representation / Dynamics / Prediction）+ latent MCTS + K 步 unroll + categorical value/reward。Replay / n-step 显式区分 `terminated / truncated / continuation`：真终止 `continuation=0`，普通步与 time-limit truncation `continuation=1`。Dynamics 同时学习 continuation；MCTS imagined edge 的 discount 用 **binary gate `gamma * (1 - done)`**（`done` 由 continuation 头阈值化），与 n-step value target 的二值 continuation 口径一致——**不**用 soft `gamma * predicted_continuation` 对每条健康边连续衰减（确定性/无终止环境下软折扣只注方差，见 cartpole/README 结论）。该基础语义不列入上方消融组件矩阵。母论文见 [算法纲领 §4.1 — base](../../.doc/design/my_zero_algorithm_vision.md#41-组件文献对照单一事实源)。
 
 ## 代码组织
 
