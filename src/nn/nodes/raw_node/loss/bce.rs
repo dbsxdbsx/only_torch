@@ -165,13 +165,15 @@ impl TraitNode for BCE {
     /// BCE 的 VJP 梯度计算
     ///
     /// 对于 logits: [batch, features]，target: [batch, features]：
-    /// - Mean: `dL/d_logits = (sigmoid(logits) - target) / N`
-    /// - Sum: `dL/d_logits = sigmoid(logits) - target`
+    /// - Mean: `dL/d_logits = (sigmoid(logits) - target) / N * upstream`
+    /// - Sum: `dL/d_logits = (sigmoid(logits) - target) * upstream`
+    ///
+    /// **必须乘上游梯度 `upstream`**（同 MSE）：作为中间 loss 项时省略会丢链式法则缩放因子。
     fn calc_grad_to_parent(
         &self,
         target_parent_index: usize,
         _parent_values: &[&Tensor],
-        _upstream_grad: &Tensor,
+        upstream_grad: &Tensor,
     ) -> Result<GradResult, GraphError> {
         let sigmoid = self.sigmoid_cache.as_ref().ok_or_else(|| {
             GraphError::ComputationError("sigmoid 缓存为空，需先执行前向传播".to_string())
@@ -179,11 +181,12 @@ impl TraitNode for BCE {
         let target = _parent_values[1];
 
         if target_parent_index == 0 {
-            // 对 logits 的梯度: sigmoid - target
+            // 对 logits 的梯度: (sigmoid - target) / N * upstream 或 (sigmoid - target) * upstream
+            let upstream = upstream_grad[[0, 0]];
             let diff = sigmoid - target;
             let grad = match self.reduction {
-                Reduction::Mean => &diff * (1.0 / self.numel_cache as f32),
-                Reduction::Sum => diff,
+                Reduction::Mean => &diff * (upstream / self.numel_cache as f32),
+                Reduction::Sum => &diff * upstream,
             };
             Ok(GradResult::Computed(grad))
         } else {

@@ -183,13 +183,15 @@ impl TraitNode for Huber {
     /// Huber Loss 的 VJP 梯度计算
     ///
     /// 对于 input: [batch, features]，target: [batch, features]：
-    /// - |a| ≤ δ: `dL/d_input` = a / N（Mean）或 a（Sum）
-    /// - |a| > δ: `dL/d_input` = δ * sign(a) / N（Mean）或 δ * sign(a)（Sum）
+    /// - |a| ≤ δ: `dL/d_input` = a / N（Mean）或 a（Sum），再乘 upstream
+    /// - |a| > δ: `dL/d_input` = δ * sign(a) / N（Mean）或 δ * sign(a)（Sum），再乘 upstream
+    ///
+    /// **必须乘上游梯度 `upstream`**（同 MSE）：作为中间 loss 项时省略会丢链式法则缩放因子。
     fn calc_grad_to_parent(
         &self,
         target_parent_index: usize,
         _parent_values: &[&Tensor],
-        _upstream_grad: &Tensor,
+        upstream_grad: &Tensor,
     ) -> Result<GradResult, GraphError> {
         let diff = self.diff_cache.as_ref().ok_or_else(|| {
             GraphError::ComputationError("diff 缓存为空，需先执行前向传播".to_string())
@@ -215,10 +217,11 @@ impl TraitNode for Huber {
 
             let grad = Tensor::new(&grad_data, diff.shape());
 
-            // 应用 reduction
+            // 应用 reduction + 上游梯度
+            let upstream = upstream_grad[[0, 0]];
             let grad = match self.reduction {
-                Reduction::Mean => &grad * (1.0 / self.numel_cache as f32),
-                Reduction::Sum => grad,
+                Reduction::Mean => &grad * (upstream / self.numel_cache as f32),
+                Reduction::Sum => &grad * upstream,
             };
 
             Ok(GradResult::Computed(grad))

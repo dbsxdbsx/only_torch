@@ -147,23 +147,29 @@ impl TraitNode for MSE {
     /// MSE 的 VJP 梯度计算
     ///
     /// 对于 input: [batch, features]，target: [batch, features]：
-    /// - Mean: `dL/d_input` = 2 * (input - target) / N（N 是总元素数）
-    /// - Sum: `dL/d_input` = 2 * (input - target)
+    /// - Mean: `dL/d_input` = 2 * (input - target) / N * upstream（N 是总元素数）
+    /// - Sum: `dL/d_input` = 2 * (input - target) * upstream
+    ///
+    /// **必须乘上游梯度 `upstream`**：MSE 常作终端 loss（upstream=1）故历史上可省略，
+    /// 但一旦作为中间 loss 项（如 MyZero 把 continuation/reconstruction MSE 与其它 loss
+    /// 组合、再经 `scale_gradient` / `* coef` 缩放），省略 upstream 会丢失链式法则的缩放因子，
+    /// 导致梯度量级错误（尤其 batch 化后 `numel` 随 batch 变化，逐样本/批量结果发散）。
     fn calc_grad_to_parent(
         &self,
         target_parent_index: usize,
         _parent_values: &[&Tensor],
-        _upstream_grad: &Tensor,
+        upstream_grad: &Tensor,
     ) -> Result<GradResult, GraphError> {
         let diff = self.diff_cache.as_ref().ok_or_else(|| {
             GraphError::ComputationError("diff 缓存为空，需先执行前向传播".to_string())
         })?;
 
         if target_parent_index == 0 {
-            // 对 input 的梯度
+            // 对 input 的梯度（loss 为标量 [1,1]，upstream 也是标量）
+            let upstream = upstream_grad[[0, 0]];
             let grad = match self.reduction {
-                Reduction::Mean => diff * (2.0 / self.numel_cache as f32),
-                Reduction::Sum => diff * 2.0,
+                Reduction::Mean => diff * (2.0 * upstream / self.numel_cache as f32),
+                Reduction::Sum => diff * (2.0 * upstream),
             };
             Ok(GradResult::Computed(grad))
         } else {

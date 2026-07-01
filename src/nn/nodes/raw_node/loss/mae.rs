@@ -140,24 +140,27 @@ impl TraitNode for MAE {
     /// MAE 的 VJP 梯度计算
     ///
     /// 对于 input: [batch, features]，target: [batch, features]：
-    /// - Mean: `dL/d_input` = sign(input - target) / N（N 是总元素数）
-    /// - Sum: `dL/d_input` = sign(input - target)
+    /// - Mean: `dL/d_input` = sign(input - target) / N * upstream（N 是总元素数）
+    /// - Sum: `dL/d_input` = sign(input - target) * upstream
+    ///
+    /// **必须乘上游梯度 `upstream`**（同 MSE）：作为中间 loss 项时省略会丢链式法则缩放因子。
     fn calc_grad_to_parent(
         &self,
         target_parent_index: usize,
         _parent_values: &[&Tensor],
-        _upstream_grad: &Tensor,
+        upstream_grad: &Tensor,
     ) -> Result<GradResult, GraphError> {
         let diff = self.diff_cache.as_ref().ok_or_else(|| {
             GraphError::ComputationError("diff 缓存为空，需先执行前向传播".to_string())
         })?;
 
         if target_parent_index == 0 {
-            // 对 input 的梯度: sign(diff) / N 或 sign(diff)
+            // 对 input 的梯度: sign(diff) / N * upstream 或 sign(diff) * upstream
+            let upstream = upstream_grad[[0, 0]];
             let sign_diff = diff.sign();
             let grad = match self.reduction {
-                Reduction::Mean => &sign_diff * (1.0 / self.numel_cache as f32),
-                Reduction::Sum => sign_diff,
+                Reduction::Mean => &sign_diff * (upstream / self.numel_cache as f32),
+                Reduction::Sum => &sign_diff * upstream,
             };
             Ok(GradResult::Computed(grad))
         } else {

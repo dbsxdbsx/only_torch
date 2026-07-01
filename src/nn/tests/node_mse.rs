@@ -781,3 +781,39 @@ fn test_create_mse_node_drop_releases() {
     assert!(weak_input.upgrade().is_none());
     assert!(weak_target.upgrade().is_none());
 }
+
+// ==================== 上游梯度（非终端 loss）回归测试 ====================
+
+/// **回归测试**：MSE 作为**中间 loss 项**（非终端）时，梯度必须随上游梯度线性缩放。
+///
+/// 历史 bug：MSE 反向忽略 `upstream_grad`，把自己当终端 loss（upstream=1），
+/// 导致组合/缩放（如 `loss * SCALE`、`scale_gradient`）失效，且 batch 化后梯度量级发散。
+/// 构造 `loss * SCALE` 再 backward，input 梯度应恰为「终端梯度 × SCALE」。
+#[test]
+fn test_mse_respects_upstream_grad_when_non_terminal() -> Result<(), GraphError> {
+    const SCALE: f32 = 3.0;
+    let input_data = Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]);
+    let target_data = Tensor::new(&[1.5, 2.5, 3.5], &[1, 3]);
+
+    // 终端：loss.backward()（梯度只保留在 parameter 上，故 x 用 parameter）
+    let g1 = Graph::new();
+    let x1 = g1.parameter(&[1, 3], Init::Zeros, "x")?;
+    x1.set_value(&input_data)?;
+    let t1 = g1.input(&target_data)?;
+    let loss1 = x1.mse_loss(&t1)?;
+    loss1.backward()?;
+    let grad_terminal = x1.grad()?.expect("终端应有 grad");
+
+    // 非终端：(loss * SCALE).backward()
+    let g2 = Graph::new();
+    let x2 = g2.parameter(&[1, 3], Init::Zeros, "x")?;
+    x2.set_value(&input_data)?;
+    let t2 = g2.input(&target_data)?;
+    let scaled = &x2.mse_loss(&t2)? * SCALE;
+    scaled.backward()?;
+    let grad_scaled = x2.grad()?.expect("非终端应有 grad");
+
+    let expected = &grad_terminal * SCALE;
+    assert_abs_diff_eq!(&grad_scaled, &expected, epsilon = 1e-6);
+    Ok(())
+}

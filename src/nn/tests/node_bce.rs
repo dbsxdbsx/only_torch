@@ -658,3 +658,34 @@ fn test_create_bce_node_drop_releases() {
     assert!(weak_logits.upgrade().is_none());
     assert!(weak_target.upgrade().is_none());
 }
+
+// ==================== 上游梯度（非终端 loss）回归测试 ====================
+
+/// **回归测试**：BCE 作为中间 loss 项（非终端）时梯度必须随上游梯度线性缩放
+/// （历史 bug：反向忽略 `upstream_grad`）。`loss * SCALE` 的 logits 梯度应 = 终端梯度 × SCALE。
+#[test]
+fn test_bce_respects_upstream_grad_when_non_terminal() -> Result<(), GraphError> {
+    const SCALE: f32 = 3.0;
+    let logits_data = Tensor::new(&[0.5, -0.5, 1.0, -1.0], &[1, 4]);
+    let target_data = Tensor::new(&[1.0, 0.0, 0.0, 1.0], &[1, 4]);
+
+    let g1 = Graph::new();
+    let x1 = g1.parameter(&[1, 4], Init::Zeros, "x")?;
+    x1.set_value(&logits_data)?;
+    let t1 = g1.input(&target_data)?;
+    let loss1 = x1.bce_loss(&t1)?;
+    loss1.backward()?;
+    let grad_terminal = x1.grad()?.expect("终端应有 grad");
+
+    let g2 = Graph::new();
+    let x2 = g2.parameter(&[1, 4], Init::Zeros, "x")?;
+    x2.set_value(&logits_data)?;
+    let t2 = g2.input(&target_data)?;
+    let scaled = &x2.bce_loss(&t2)? * SCALE;
+    scaled.backward()?;
+    let grad_scaled = x2.grad()?.expect("非终端应有 grad");
+
+    let expected = &grad_terminal * SCALE;
+    assert_abs_diff_eq!(&grad_scaled, &expected, epsilon = 1e-6);
+    Ok(())
+}
