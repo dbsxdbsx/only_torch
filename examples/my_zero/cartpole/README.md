@@ -13,9 +13,16 @@ cargo run --example my_zero_cartpole --release
 
 # 临时覆盖 n-step bootstrap（默认 td_steps=5；如需复现旧大-n 行为用 50）
 TD_STEPS=50 cargo run --example my_zero_cartpole --release
+
+# 多 seed 统计哨兵（batch-native 训练后的验收口径；打印中位 env-steps 与达标率）
+SEEDS=3 cargo run --example my_zero_cartpole --release
 ```
 
 训练日志：**`len`** = 本局步数；**`total_env_steps`** = 累计真实环境交互（首要评价指标）。
+
+> **哨兵口径变更（batch-native + autograd 修复后）**：训练已改为 batch-native（`train_unroll_batch`，与逐样本数学等价），且修复了 MSE/MAE/BCE/Huber 反向忽略 `upstream_grad` 的框架 bug。梯度归约顺序改变 → env-steps 不再逐 bit 复现，验收改**统计口径**：`SEEDS=3` 下 **3/3 达标、median greedy 495.4、中位 env-steps ~21.9k**（seed 42/43/44 = 21928 / 9770 / 29614）。
+>
+> **下方消融表为历史数据**（逐样本 + 未修复 autograd，seed=42 单点）：旧的 ~10–13k env-steps 部分依赖 MSE bug 使 continuation/reconstruction 辅助 loss 偏强；修复后辅助 loss 回到正确量级，采样效率是诚实值。若要恢复更高样本效率，正道是显式调大 `RECONSTRUCTION_LOSS_COEF` / `CONTINUATION_LOSS_COEF`（后续调参）。
 
 ---
 

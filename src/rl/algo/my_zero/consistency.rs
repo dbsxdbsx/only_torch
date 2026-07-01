@@ -9,22 +9,24 @@
 
 use crate::nn::{GraphError, Var, VarActivationOps, VarReduceOps};
 
-/// SimSiam 负余弦相似度：`-cos(p, stop_grad(z))`。
+/// SimSiam 负余弦相似度：`-cos(p, stop_grad(z))`（**逐样本**，再对 batch 取均值）。
 ///
 /// - `p`：online 分支输出（dynamics 预测 next_latent 经 projector + predictor）。
 /// - `z`：target 分支输出（repr(next_obs) 经 projector），内部对其 `detach()` 做 stop-gradient。
 ///
-/// 两者形状须一致。返回**标量** loss `Var`（值域 [-1, 1]，越小越对齐）。
+/// 两者形状须一致（`[B, dim]`）。沿特征维（axis=1）逐样本算余弦，再对 batch 取均值，
+/// 返回**标量** loss `Var`（值域 [-1, 1]，越小越对齐）。
+/// B=1 时 `sum_axis(1)` 等价旧的全局 `sum()`、`mean()` 恒等，故逐 bit 一致。
 pub fn negative_cosine_similarity(p: &Var, z: &Var) -> Result<Var, GraphError> {
     // stop-gradient：target 分支不回传梯度（SimSiam 防坍缩的关键）
     let z_sg = z.detach();
 
-    let dot = (p * &z_sg).sum(); // Σ p_i z_i
-    let p_norm = p.square().sum().sqrt(); // ‖p‖
-    let z_norm = z_sg.square().sum().sqrt(); // ‖z‖
-    let denom = &(&p_norm * &z_norm) + 1e-8_f32; // 防除零
-    let cos = &dot / &denom;
-    Ok(cos * -1.0_f32)
+    let dot = (p * &z_sg).sum_axis(1); // [B,1] 逐样本 Σ_dim p_i z_i
+    let p_norm = p.square().sum_axis(1).sqrt(); // [B,1] ‖p‖
+    let z_norm = z_sg.square().sum_axis(1).sqrt(); // [B,1] ‖z‖
+    let denom = &(&p_norm * &z_norm) + 1e-8_f32; // [B,1] 防除零
+    let cos = &dot / &denom; // [B,1]
+    Ok((cos * -1.0_f32).mean()) // 标量：对 batch 取均值
 }
 
 #[cfg(test)]

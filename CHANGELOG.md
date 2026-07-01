@@ -6,6 +6,11 @@
 
 ### Added
 
+- **feat(rl): MyZero 训练改 batch-native（`train_unroll_batch`）**
+  - `train_batch` 按 `(actual_k, next_obs 步数)` 分组（`BTreeMap` 确定性），每组一次 `[G,X]` 前向+backward、组 loss × `G/batch_size`，替代逐样本梯度累积；`min_max_normalize` / `negative_cosine_similarity` 改 batch-general（逐样本沿特征维），新增 `two_hot_batch`
+  - 与逐样本**数学等价**（`tests/batch_train_equivalence`：G=1 forward + 每参数梯度逐 bit 一致；G=2 全栈 max_abs_diff≈2e-7）；micro-bench `benches/my_zero_train_batch` 实测 train step **batch=8 快 2.2×、batch=32 快 8×**（batch 耗时近乎与 batch size 无关 → `batch_size` 成为一处旋钮）
+  - `examples/my_zero/cartpole` 新增 `SEEDS=N` 多 seed 统计哨兵
+
 - **feat(mcts): Sampled MuZero 搜索路径**（Hubert et al. 2021 · arXiv:2104.06303）
   - `src/rl/mcts/sampled.rs`：K 候选无放回采样 + π̂_β PUCT prior；根 Dirichlet 后采样
   - `MctsConfig::sampled_k` + `Components::sampled`；CartPole recipe 默认开启
@@ -22,6 +27,11 @@
 
 ### Changed
 
+- **fix(nn): MSE/MAE/BCE/Huber 反向忽略 `upstream_grad` 的 autograd bug**（框架级）
+  - 四个 loss 节点历史上把自己当**终端 loss**（upstream=1）、反向省略上游梯度；只有 `SoftmaxCrossEntropy` 正确处理。作为**中间 loss 项**（组合 + `scale_gradient` + 系数缩放，如 MyZero 的 continuation / reconstruction MSE）时会丢链式法则缩放因子，且 batch 化后 `numel` 随 batch 变化 → 逐样本 / 批量梯度发散
+  - 修复：`calc_grad_to_parent` 乘 `upstream_grad[[0,0]]`（对齐 `SoftmaxCrossEntropy`）
+  - 补齐回归测试 `node_{mse,mae,bce,huber}::*_respects_upstream_grad_when_non_terminal`（非终端 loss × SCALE 后梯度应线性缩放）
+  - 影响：MyZero 辅助 loss 梯度回到正确量级；CartPole 哨兵改**统计口径**（seed 42 solved 10553→21928；3 seed 中位 env-steps 21928、**3/3 达标**、median greedy 495.4）。旧 10553 部分依赖该 bug 使辅助 loss 偏强
 - **fix(my_zero): continuation 搜索折扣改 binary gate + `td_steps` 默认 50→5**
   - `dynamics.rs`：MCTS imagined edge 的 discount 由 soft `γ·predicted_continuation` 改为 binary `γ·(1−done)`（`done` 由 continuation 头阈值化）。理由独立于跑分：与 n-step value target 的**二值** continuation 口径一致；CartPole 确定性终止 / Pendulum 无终止并无「分数式终止概率」，软折扣只注方差并系统性压低好状态 value。CartPole 样本效率从 **30.2k**（td=5）修回 **~13.1k**（seed=42 单 seed）；Pendulum best greedy −1085→−959（仍在失败区间，主瓶颈在上游 value 头）
   - `config.rs`：`td_steps` 默认 **50→5**，对齐 canonical MuZero/EfficientZero（与 `k_unroll=5` 一致）、低方差、对随机环境稳健。50 是旧 muzero 压「no-terminal 价值膨胀」的遗留，终止已由 continuation/absorbing 正确接管后无需大 n（CartPole 确定性 reward 下 td=50 略快 10.3k，但非稳健通用默认）

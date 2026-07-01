@@ -102,18 +102,20 @@ fn sigmoid_scalar(x: f32) -> f32 {
     1.0 / (1.0 + (-x).exp())
 }
 
-/// latent min-max 归一化到 [0,1]（canonical MuZero，逐样本沿特征维）
+/// latent min-max 归一化到 [0,1]（canonical MuZero，**逐样本**沿特征维）
 ///
-/// `s_norm = (s - min(s)) / (max(s) - min(s) + eps)`。本示例 train/search 均 batch=1，
-/// 故按 `[1, dim]` 处理；用 `repeat` 显式对齐形状（不依赖隐式广播）。
+/// `s_norm = (s - min(s)) / (max(s) - min(s) + eps)`，每行（样本）独立取 min/max。
+/// batch 从 `latent` 的静态期望形状推断（`[B, dim]`），故同一份代码 batch=1（搜索/推理）
+/// 与 batch>1（训练）通用；B=1 时 `reshape(&[1,1])` + `repeat(&[1,dim])` 与旧实现逐 bit 一致。
 ///
 /// 梯度经 `amin`/`amax`（梯度只流向极值位置）+ `repeat`（梯度求和回传）正确反传。
 fn min_max_normalize(latent: &Var, dim: usize) -> Result<Var, GraphError> {
-    let min_v = latent.amin(1).reshape(&[1, 1])?; // [1,1]
-    let max_v = latent.amax(1).reshape(&[1, 1])?; // [1,1]
-    let range = (&max_v - &min_v) + 1e-5_f32; // [1,1]，加 eps 防除零
-    let min_b = min_v.repeat(&[1, dim])?; // [1, dim]
-    let range_b = range.repeat(&[1, dim])?; // [1, dim]
+    let batch = latent.value_expected_shape()[0]; // [B, dim] → B
+    let min_v = latent.amin(1).reshape(&[batch, 1])?; // [B,1]，逐样本最小
+    let max_v = latent.amax(1).reshape(&[batch, 1])?; // [B,1]，逐样本最大
+    let range = (&max_v - &min_v) + 1e-5_f32; // [B,1]，加 eps 防除零
+    let min_b = min_v.repeat(&[1, dim])?; // [B, dim]
+    let range_b = range.repeat(&[1, dim])?; // [B, dim]
     Ok(&(latent - &min_b) / &range_b)
 }
 
@@ -489,6 +491,16 @@ impl MyZeroModel {
         Tensor::new(&scalar_to_two_hot(x, &SUPPORT), &[1, SUPPORT.size()])
     }
 
+    /// 一批标量 value/reward → two-hot 目标张量 `[G, support_size]`（逐行 two-hot）。
+    fn two_hot_batch(xs: &[f32]) -> Tensor {
+        let size = SUPPORT.size();
+        let mut flat = Vec::with_capacity(xs.len() * size);
+        for &x in xs {
+            flat.extend_from_slice(&scalar_to_two_hot(x, &SUPPORT));
+        }
+        Tensor::new(&flat, &[xs.len(), size])
+    }
+
     /// value/reward logits Tensor → 标量（softmax 期望 + h⁻¹）
     fn decode_categorical(logits: &Tensor) -> f32 {
         let probs = logits.softmax(1);
@@ -628,6 +640,177 @@ impl MyZeroModel {
 
         Ok(total_loss)
     }
+
+    /// batch-native K 步 unroll 训练：一次 `[G, X]` 前向 + 一次 backward，覆盖 `G` 条 position。
+    ///
+    /// 与逐样本 [`train_unroll`] **数学等价**（实数域），仅浮点归约顺序不同：
+    /// 组内所有样本共享同一 `actual_k`（`items[*].actions.len()`）与同一 `next_obs` 步数
+    /// （`items[*].next_obs.len()`），故无需 padding/mask，结构逐样本一致。
+    ///
+    /// CE / MSE / consistency 均按 batch 取**均值**，故返回的组 loss = `(1/G) Σ_g L_g`；
+    /// 调用方须再乘 `G / batch_size` 才与逐样本累积（各 `L_g × 1/batch_size`）的梯度一致。
+    ///
+    /// # 前置条件
+    /// `items` 非空，且所有元素 `actions.len()`、`next_obs.len()`、`obs_t.len()` 一致。
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn train_unroll_batch(
+        &self,
+        items: &[UnrollItem],
+        consistency_coef: f32,
+        reconstruction_coef: f32,
+        use_value_prefix: bool,
+    ) -> Result<Var, GraphError> {
+        let g = items.len();
+        debug_assert!(g > 0, "train_unroll_batch: 空组");
+        let k = items[0].actions.len();
+        let n_next = items[0].next_obs.len();
+        let obs_dim = items[0].obs_t.len();
+
+        // ---- 逐 slot 把 G 条样本堆叠成 [G, dim] 张量 ----
+        let stack = |rows: &[&[f32]], dim: usize| -> Tensor {
+            let mut flat = Vec::with_capacity(g * dim);
+            for r in rows {
+                flat.extend_from_slice(r);
+            }
+            Tensor::new(&flat, &[g, dim])
+        };
+        // obs_t（k=0 输入 + reconstruction k=0 目标）
+        let obs_rows: Vec<&[f32]> = items.iter().map(|it| it.obs_t.as_slice()).collect();
+        let obs_tensor = stack(&obs_rows, obs_dim);
+        // 各步 policy 目标 [G, action_dim]（slot 0..=k）
+        let policy_at = |slot: usize| -> Tensor {
+            let rows: Vec<&[f32]> = items
+                .iter()
+                .map(|it| it.target_policies[slot].as_slice())
+                .collect();
+            stack(&rows, self.action_dim)
+        };
+        // 各步 value 标量 → two-hot [G, support]（slot 0..=k）
+        let value_two_hot_at = |slot: usize| -> Tensor {
+            let xs: Vec<f32> = items.iter().map(|it| it.target_values[slot]).collect();
+            Self::two_hot_batch(&xs)
+        };
+
+        // ---- k=0：repr → pred（policy + value）+ reconstruction ----
+        let mut latent = self.repr.forward(&obs_tensor)?;
+        let (pred_policy, pred_value_logits) = self.pred.forward(&latent);
+        let tp0 = policy_at(0);
+        let tv0 = value_two_hot_at(0);
+        let mut total_loss = pred_policy.cross_entropy(&tp0)?;
+        total_loss =
+            &total_loss + &(&pred_value_logits.cross_entropy(&tv0)? * loss::VALUE_LOSS_COEF);
+
+        if reconstruction_coef > 0.0 {
+            let recon0 = self.recon.forward(&latent);
+            let recon_loss0 = recon0.mse_loss(&obs_tensor)?;
+            total_loss = &total_loss + &(&recon_loss0 * reconstruction_coef);
+        }
+
+        // value prefix：LSTM hidden 初始化为全零（[G, hidden]）
+        let (mut vp_h, mut vp_c) = if use_value_prefix {
+            let h0 = self.graph.zeros(&[g, self.lstm.hidden])?;
+            let c0 = self.graph.zeros(&[g, self.lstm.hidden])?;
+            (h0, c0)
+        } else {
+            let dummy = self.graph.zeros(&[1, 1])?;
+            (dummy.clone(), dummy)
+        };
+
+        let step_scale = if k > 0 { 1.0 / k as f32 } else { 1.0 };
+
+        for i in 0..k {
+            // action onehot [G, action_dim]
+            let mut oh_flat = vec![0.0f32; g * self.action_dim];
+            for (row, it) in items.iter().enumerate() {
+                let a = it.actions[i];
+                if a < self.action_dim {
+                    oh_flat[row * self.action_dim + a] = 1.0;
+                }
+            }
+            let oh_var = self
+                .graph
+                .input(&Tensor::new(&oh_flat, &[g, self.action_dim]))?;
+
+            let (next_latent, pred_reward_logits, pred_continuation_logit) =
+                self.dyn_net.forward(&latent, &oh_var)?;
+            let (pred_p, pred_v_logits) = self.pred.forward(&next_latent);
+
+            let tp = policy_at(i + 1);
+            let tv = value_two_hot_at(i + 1);
+            let tr = Self::two_hot_batch(
+                &items
+                    .iter()
+                    .map(|it| it.target_rewards[i])
+                    .collect::<Vec<_>>(),
+            );
+            let tc_flat: Vec<f32> = items
+                .iter()
+                .map(|it| it.target_continuations[i].clamp(0.0, 1.0))
+                .collect();
+            let tc = Tensor::new(&tc_flat, &[g, 1]);
+
+            let step_policy_loss = pred_p.cross_entropy(&tp)?;
+            let step_value_loss = pred_v_logits.cross_entropy(&tv)?;
+
+            let step_reward_loss = if use_value_prefix {
+                let (h_new, c_new) = self.lstm.step(&next_latent, &vp_h, &vp_c)?;
+                let prefix_logits = self.lstm.prefix_logits(&h_new);
+                vp_h = h_new;
+                vp_c = c_new;
+                prefix_logits.cross_entropy(&tr)?
+            } else {
+                pred_reward_logits.cross_entropy(&tr)?
+            };
+            let pred_continuation = (&pred_continuation_logit + CONTINUATION_LOGIT_BIAS).sigmoid();
+            let step_continuation_loss = pred_continuation.mse_loss(&tc)?;
+
+            let mut step_loss = &step_policy_loss
+                + &(&step_value_loss * loss::VALUE_LOSS_COEF)
+                + &(&step_reward_loss * loss::REWARD_LOSS_COEF)
+                + &(&step_continuation_loss * loss::CONTINUATION_LOSS_COEF);
+
+            // consistency / reconstruction：仅在该步有真实 next_obs 时（组内 i<n_next 统一成立）
+            if i < n_next {
+                let next_rows: Vec<&[f32]> =
+                    items.iter().map(|it| it.next_obs[i].as_slice()).collect();
+                let next_obs_tensor = stack(&next_rows, obs_dim);
+
+                if consistency_coef > 0.0 {
+                    let repr_target = self.repr.forward(&next_obs_tensor)?;
+                    let proj_target = self.projector.forward(&repr_target);
+                    let proj_online = self.projector.forward(&next_latent);
+                    let pred_online = self.predictor.forward(&proj_online);
+                    let cons_loss = negative_cosine_similarity(&pred_online, &proj_target)?;
+                    step_loss = &step_loss + &(&cons_loss * consistency_coef);
+                }
+                if reconstruction_coef > 0.0 {
+                    let recon = self.recon.forward(&next_latent);
+                    let recon_loss = recon.mse_loss(&next_obs_tensor)?;
+                    step_loss = &step_loss + &(&recon_loss * reconstruction_coef);
+                }
+            }
+
+            total_loss = &total_loss + &step_loss.scale_gradient(step_scale);
+            latent = next_latent.scale_gradient(loss::DYNAMICS_GRADIENT_SCALE);
+        }
+
+        Ok(total_loss)
+    }
+}
+
+/// batch-native 训练的单条样本（已展开好各步目标）。
+///
+/// 同一组（传入 [`MyZeroModel::train_unroll_batch`]）内所有 `UnrollItem` 须满足：
+/// `actions.len()`（= actual_k）与 `next_obs.len()`（= consistency/recon 有效步数）一致，
+/// 从而组内结构逐样本对齐、可直接堆叠成 batch 而无需 padding。
+pub(crate) struct UnrollItem {
+    pub obs_t: Vec<f32>,
+    pub actions: Vec<usize>,            // len = actual_k
+    pub target_policies: Vec<Vec<f32>>, // len = actual_k + 1
+    pub target_values: Vec<f32>,        // len = actual_k + 1
+    pub target_rewards: Vec<f32>,       // len = actual_k（value_prefix 时为前缀目标）
+    pub target_continuations: Vec<f32>, // len = actual_k
+    pub next_obs: Vec<Vec<f32>>,        // len = next_obs 有效步数（≤ actual_k）
 }
 
 // ============================================================================

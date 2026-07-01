@@ -23,6 +23,10 @@ fn main() -> Result<(), GraphError> {
     if let Ok(v) = std::env::var("TD_STEPS") {
         builder = builder.td_steps(v.parse().expect("TD_STEPS 必须是正整数"));
     }
+    // SEEDS=N：多 seed 回归（统计口径哨兵，打印中位 env-steps）。
+    if let Ok(v) = std::env::var("SEEDS") {
+        builder = builder.seeds(v.parse().expect("SEEDS 必须是正整数"));
+    }
     if smoke {
         builder = builder.smoke();
     }

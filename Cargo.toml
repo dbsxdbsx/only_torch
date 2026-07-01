@@ -152,6 +152,10 @@
     name   ="my_zero_forward"
     harness=false
 
+[[bench]]
+    name   ="my_zero_train_batch"
+    harness=false
+
     # ==================== 示例 ====================
 
 [[example]]

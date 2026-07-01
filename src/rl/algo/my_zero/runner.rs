@@ -6,7 +6,7 @@ use super::component::Components;
 use super::config::{MyZeroConfig, greedy_episode_seed, self_play_episode_seed};
 use super::my_zero::MyZero;
 use super::n_step::compute_n_step_target;
-use super::network::MyZeroModel;
+use super::network::{MyZeroModel, UnrollItem};
 use super::reanalyze::reanalyze_unroll_window;
 use super::report::TrainReport;
 use super::sampled_params::{
@@ -24,7 +24,7 @@ use crate::rl::{GameOutcome, GymEnv, ReplayBuffer, SelfPlayGame, SelfPlayStep};
 use pyo3::Python;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 
 /// 打印已启用的消融组件（全关时不输出）。
 fn print_components(c: &Components) {
@@ -271,7 +271,15 @@ pub(crate) fn writeback_reanalyzed_samples(
     }
 }
 
-/// 真 batch 训练：一次 zero_grad + N 个 position 各自 backward（梯度累积）+ 一次 step
+/// batch-native 训练：一次 zero_grad + 按 unroll 结构分组做 batch forward/backward + 一次 step。
+///
+/// # 与逐样本的关系（数学等价，浮点顺序不同）
+/// 旧实现对 batch 内每个 position 单独 `train_unroll`+`backward`（各乘 `1/batch_size` 后累积）。
+/// 现改为把 position 按 `(actual_k, next_obs 步数)` 分组——**同组结构逐样本一致**——每组一次
+/// `[G, X]` 前向 + backward，组 loss（CE/MSE/consistency 均 batch 均值）再乘 `G/batch_size`。
+/// 实数域下总梯度 = `(1/batch_size) Σ_g ∇L_g`，与逐样本累积相同；仅浮点归约顺序不同，
+/// 故 env-steps 不再逐 bit 复现（改用 solved / 多 seed 统计口径验收）。
+/// 分组用 [`BTreeMap`] 保证跨运行**确定性**（同 seed 可复现）。
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn train_batch(
     model: &MyZeroModel,
@@ -287,10 +295,16 @@ pub(crate) fn train_batch(
     }
 
     let batch_size = samples.len() as f32;
-    let mut total_loss_val = 0.0;
+    let consistency_coef = if components.consistency { 2.0 } else { 0.0 };
+    let reconstruction_coef = if components.reconstruction {
+        super::loss::RECONSTRUCTION_LOSS_COEF
+    } else {
+        0.0
+    };
+    let want_next_obs = components.consistency || components.reconstruction;
 
-    optimizer.zero_grad()?;
-
+    // 1) 逐样本展开成 UnrollItem，并按 (actual_k, next_obs 步数) 分组（结构对齐才能同批堆叠）
+    let mut groups: BTreeMap<(usize, usize), Vec<UnrollItem>> = BTreeMap::new();
     for (game, start) in samples {
         let steps = &game.steps;
         let len = steps.len();
@@ -348,8 +362,6 @@ pub(crate) fn train_batch(
             })
             .collect();
 
-        let obs_t = &steps[t].obs;
-
         // value prefix：把单步 reward 转为累计前缀目标
         let final_rewards = if components.value_prefix {
             reward_prefix_targets(&target_rewards)
@@ -357,38 +369,40 @@ pub(crate) fn train_batch(
             target_rewards
         };
 
-        // consistency / reconstruction：收集 unroll 每步对应的真实 next_obs
-        let consistency_coef = if components.consistency { 2.0 } else { 0.0 };
-        let reconstruction_coef = if components.reconstruction {
-            super::loss::RECONSTRUCTION_LOSS_COEF
+        // consistency / reconstruction：收集 unroll 每步对应的真实 next_obs（否则留空）
+        let next_obs: Vec<Vec<f32>> = if want_next_obs {
+            (0..actual_k)
+                .take_while(|&i| t + i + 1 < len)
+                .map(|i| steps[t + i + 1].obs.clone())
+                .collect()
         } else {
-            0.0
+            Vec::new()
         };
-        let next_obs_list: Option<Vec<Vec<f32>>> =
-            if components.consistency || components.reconstruction {
-                Some(
-                    (0..actual_k)
-                        .take_while(|&i| t + i + 1 < len)
-                        .map(|i| steps[t + i + 1].obs.clone())
-                        .collect(),
-                )
-            } else {
-                None
-            };
 
-        let loss = model.train_unroll(
-            obs_t,
-            &actions,
-            &target_policies,
-            &target_values,
-            &final_rewards,
-            &target_continuations,
-            next_obs_list.as_deref(),
+        let key = (actual_k, next_obs.len());
+        groups.entry(key).or_default().push(UnrollItem {
+            obs_t: steps[t].obs.clone(),
+            actions,
+            target_policies,
+            target_values,
+            target_rewards: final_rewards,
+            target_continuations,
+            next_obs,
+        });
+    }
+
+    // 2) 每组一次 batch 前向 + backward（组 loss × G/batch_size 累积梯度），最后一次 step
+    optimizer.zero_grad()?;
+    let mut total_loss_val = 0.0;
+    for items in groups.into_values() {
+        let scale = items.len() as f32 / batch_size;
+        let loss = model.train_unroll_batch(
+            &items,
             consistency_coef,
             reconstruction_coef,
             components.value_prefix,
-        )? * (1.0 / batch_size);
-        total_loss_val += loss.backward()?;
+        )?;
+        total_loss_val += (&loss * scale).backward()?;
     }
 
     optimizer.step()?;
