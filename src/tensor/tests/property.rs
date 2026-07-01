@@ -40,6 +40,29 @@ fn test_view_mut() {
     assert_eq!(tensor.data[[1, 0]], 7.0);
     assert_eq!(tensor.data[[1, 1]], 8.0);
 }
+
+/// **回归测试**：`view` / `view_mut` 对**非连续**张量（`permute` 产物）必须按逻辑序
+/// stride 感知遍历、不得 panic（此前 `as_slice().unwrap()` 会 panic）。
+#[test]
+fn test_view_noncontiguous() {
+    // base [2,3] → permute[1,0] → [3,2] 非连续
+    let mut tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).permute(&[1, 0]);
+    assert!(!tensor.is_contiguous(), "permute 结果应为非连续");
+
+    // view 按逻辑索引读取：转置后 [[1,4],[2,5],[3,6]]
+    let view = tensor.view();
+    assert_eq!(view[[0, 0]], 1.0);
+    assert_eq!(view[[0, 1]], 4.0);
+    assert_eq!(view[[1, 0]], 2.0);
+    assert_eq!(view[[2, 1]], 6.0);
+
+    // view_mut 按逻辑索引写入非连续张量，不得 panic
+    let mut view_mut = tensor.view_mut();
+    view_mut[[0, 0]] = 10.0;
+    view_mut[[2, 1]] = 60.0;
+    assert_eq!(tensor.data[[0, 0]], 10.0);
+    assert_eq!(tensor.data[[2, 1]], 60.0);
+}
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑快照/view(_mut)↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓shape↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/

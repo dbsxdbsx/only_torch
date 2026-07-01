@@ -27,6 +27,12 @@
 
 ### Changed
 
+- **fix(nn/tensor/data): 非连续张量布局健壮性——统一守卫 panic 与静默算错**（框架级）
+  - 张量可为非连续内存视图（`permute`/`transpose` 用 stride 重排）；多处"按物理行主序读缓冲"（`data_as_slice` / `flatten_view` / `as_slice().unwrap()` / 手写平铺偏移）隐含"逻辑序==物理序"假设，遇非连续输入会 **panic** 或**静默算错**（实测 conv2d 前向 loss 78 vs 正确 66，比 panic 更危险）
+  - 方针：**局部守卫、非全局**（不在 autograd 驱动器 / `permute` 输出处强制连续，以保零拷贝视图）。新增 `Tensor::contiguous() -> Cow`（连续零拷贝借用、非连续单次物化）作为布局相关读取消费点的统一守卫；硬化 `flatten` / `flatten_mut` 对齐 `reshape`
+  - 覆盖：autograd 节点（`minimum` / `maximum` / `amax` / `amin` / `clip` / `atan2` / `bce` / `huber` / `layer_norm` / `rms_norm` / `batch_norm` / `repeat` / `conv2d` / `conv_transpose2d` / `deformable_conv2d` / `sqrt`）、Tensor 原语（`pad` / `slice_ranges` / `repeat` / `topk` / `diag` / `one_hot` / `order` / `shuffle`）、`group_norm` / `embedding` / onnx 导出 / 参数序列化、`src/data` 变换与 DataLoader、`tensor/image.rs` 图像 I/O
+  - 公共 API 尾部收口：`Tensor::view` / `view_mut`（改用 stride 感知的 `data.view()`）、`Tensor::squeeze` / `squeeze_mut`（对齐 `reshape` 物化非连续）、`my_zero::target_net::ema_update`（`data_as_slice` → 布局无关 `to_vec`）
+  - 各修复点补带 `permute` 上游的 `*noncontiguous*` 回归测试（与"物化连续副本"逐元素对比，既抓 panic 也抓静默错序）；全 lib 测试 0 失败。性能经干净背靠背 benchmark 确认**无退化**（因消除 `clone().into_contiguous()` 双拷贝反而略优化）
 - **fix(nn): MSE/MAE/BCE/Huber 反向忽略 `upstream_grad` 的 autograd bug**（框架级）
   - 四个 loss 节点历史上把自己当**终端 loss**（upstream=1）、反向省略上游梯度；只有 `SoftmaxCrossEntropy` 正确处理。作为**中间 loss 项**（组合 + `scale_gradient` + 系数缩放，如 MyZero 的 continuation / reconstruction MSE）时会丢链式法则缩放因子，且 batch 化后 `numel` 随 batch 变化 → 逐样本 / 批量梯度发散
   - 修复：`calc_grad_to_parent` 乘 `upstream_grad[[0,0]]`（对齐 `SoftmaxCrossEntropy`）

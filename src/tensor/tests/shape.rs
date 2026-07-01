@@ -277,6 +277,34 @@ fn test_squeeze_mut() {
     assert_eq!(tensor.shape(), &[2, 3]);
 }
 
+/// **回归测试**：`squeeze` / `squeeze_mut` 对**非连续**张量（`permute` 产物）必须先按
+/// 逻辑序物化再 `into_shape`、不得 panic（与 `reshape` 一致）。以"物化连续副本"为参考。
+#[test]
+fn test_squeeze_noncontiguous() {
+    // base [1,2,3]（含 1 维）→ permute[2,1,0] → [3,2,1] 非连续；squeeze 应得 [3,2]
+    let base = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[1, 2, 3]);
+    let nc = base.permute(&[2, 1, 0]);
+    assert!(!nc.is_contiguous(), "permute 结果应为非连续");
+    let contig = nc.clone().into_contiguous();
+
+    let sq = nc.squeeze();
+    assert_eq!(sq.shape(), &[3, 2]);
+    assert_eq!(
+        sq,
+        contig.squeeze(),
+        "squeeze 非连续应等于 squeeze 连续副本"
+    );
+
+    let mut nc_mut = base.permute(&[2, 1, 0]);
+    nc_mut.squeeze_mut();
+    assert_eq!(nc_mut.shape(), &[3, 2]);
+    assert_eq!(
+        nc_mut,
+        contig.squeeze(),
+        "squeeze_mut 非连续应等于 squeeze 连续副本"
+    );
+}
+
 #[test]
 fn test_unsqueeze() {
     // 测试在最前面增加一个维度

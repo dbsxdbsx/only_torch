@@ -280,9 +280,14 @@ impl Tensor {
                 new_shape.push(*dim);
             }
         }
-        let squeezed_data = self.data.clone().into_shape(new_shape).unwrap();
+        // 与 reshape 一致：非连续布局（permute 等）先按逻辑序物化，避免 into_shape panic
+        let contiguous = if self.is_contiguous() {
+            self.data.clone()
+        } else {
+            self.data.as_standard_layout().into_owned()
+        };
         Self {
-            data: squeezed_data,
+            data: contiguous.into_shape(new_shape).unwrap(),
             source_id: next_source_id(),
         }
     }
@@ -294,12 +299,11 @@ impl Tensor {
                 new_shape.push(*dim);
             }
         }
-        self.data = self
-            .data
-            .view_mut()
-            .into_shape(new_shape)
-            .unwrap()
-            .to_owned();
+        // 与 reshape_mut 一致：非连续先物化再 into_shape
+        if !self.is_contiguous() {
+            self.data = self.data.as_standard_layout().into_owned();
+        }
+        self.data = self.data.clone().into_shape(new_shape).unwrap();
     }
 
     /// 在指定维度上增加一个维度。

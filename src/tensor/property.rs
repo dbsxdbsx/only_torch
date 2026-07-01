@@ -59,12 +59,12 @@ pub fn broadcast_shape(shape_a: &[usize], shape_b: &[usize]) -> Option<Vec<usize
 impl Tensor {
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓快照/view(_mut)↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     pub fn view(&self) -> ArrayViewD<'_, f32> {
-        ArrayViewD::from_shape(self.shape(), self.data.as_slice().unwrap()).unwrap()
+        // 直接借用 ndarray 视图（stride 感知），非连续布局也按逻辑序正确遍历，
+        // 而非 `as_slice().unwrap()` 那样对 permute/transpose 视图 panic。
+        self.data.view()
     }
     pub fn view_mut(&mut self) -> ArrayViewMutD<'_, f32> {
-        let shape = self.shape().to_owned();
-        let slice_mut = self.data.as_slice_mut();
-        ArrayViewMutD::from_shape(shape, slice_mut.unwrap()).unwrap()
+        self.data.view_mut()
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑快照/view(_mut)↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
