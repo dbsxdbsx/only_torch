@@ -139,7 +139,10 @@ fn self_play_one_episode(
         });
 
         let env_action = adapter.to_env(action_idx);
-        let (next_obs_raw, reward, terminated, truncated) = env.step(&env_action);
+        let (next_obs_raw, reward, terminated, truncated) = {
+            crate::prof_scope!("env.step");
+            env.step(&env_action)
+        };
         let last = steps.last_mut().unwrap();
         last.reward = reward * reward_scale;
         last.terminated = terminated;
@@ -423,7 +426,10 @@ pub(crate) fn greedy_one_episode(
             _ => 0,
         };
         let env_action = adapter.to_env(action_idx);
-        let (next_obs_raw, reward, terminated, truncated) = env.step(&env_action);
+        let (next_obs_raw, reward, terminated, truncated) = {
+            crate::prof_scope!("env.step");
+            env.step(&env_action)
+        };
         total_reward += reward;
         length += 1;
         if terminated || truncated {
@@ -783,6 +789,7 @@ fn train_one_seed(
     let solved = cfg.eval.solved;
     let reward_scale = cfg.env.reward_scale;
     let profile = std::env::var("PROFILE").is_ok();
+    crate::rl::profiling::reset();
     let mut prof_self_play = 0.0f32;
     let mut prof_batch_prepare = 0.0f32;
     let mut prof_train_step = 0.0f32;
@@ -1001,6 +1008,7 @@ fn train_one_seed(
             measured,
             wall_secs,
         );
+        crate::rl::profiling::print_report();
     }
 
     if !smoke {

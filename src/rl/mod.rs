@@ -51,6 +51,7 @@ pub mod algo;
 pub mod buffer;
 mod env;
 pub mod mcts;
+pub mod profiling;
 
 #[cfg(test)]
 mod tests;

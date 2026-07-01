@@ -148,6 +148,10 @@
     name   ="attention"
     harness=false
 
+[[bench]]
+    name   ="my_zero_forward"
+    harness=false
+
     # ==================== 示例 ====================
 
 [[example]]

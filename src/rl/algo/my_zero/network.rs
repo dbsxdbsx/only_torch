@@ -328,6 +328,29 @@ impl Module for ReconstructionNet {
 // MyZero 组合模型
 // ============================================================================
 
+/// 持久化 root 推理子图（h + f）：建一次、搜索期只 `set_value(obs)` + forward + 读缓存，
+/// 避免每次 root 推理重建节点。`sink` 是全部输出的 concat，用于单趟 forward 一并计算。
+struct RootInfer {
+    obs_in: Var,
+    latent: Var,
+    policy: Var,
+    value_logits: Var,
+    sink: Var,
+}
+
+/// 持久化 recurrent 推理子图（g + f）：建一次、搜索期只 `set_value(latent, action)` +
+/// forward + 读缓存。这是 MCTS 最热路径（sims × 每步），复用节点消除每次 ~25 个节点的重建。
+struct RecInfer {
+    latent_in: Var,
+    action_in: Var,
+    next_latent: Var,
+    reward_logits: Var,
+    continuation_logit: Var,
+    policy: Var,
+    value_logits: Var,
+    sink: Var,
+}
+
 pub struct MyZeroModel {
     pub repr: RepresentationNet,
     pub dyn_net: DynamicsNet,
@@ -339,6 +362,9 @@ pub struct MyZeroModel {
     pub graph: Graph,
     pub action_dim: usize,
     pub latent_dim: usize,
+    // 搜索期持久化推理子图（不参与训练/序列化；训练走各网络自己的 forward 建图）
+    root_infer: RootInfer,
+    rec_infer: RecInfer,
 }
 
 impl MyZeroModel {
@@ -349,17 +375,71 @@ impl MyZeroModel {
         latent_dim: usize,
     ) -> Result<Self, GraphError> {
         let lstm_hidden = latent_dim; // LSTM hidden 维度 = latent_dim
+        let repr = RepresentationNet::new(graph, obs_dim, latent_dim)?;
+        let dyn_net = DynamicsNet::new(graph, latent_dim, action_dim)?;
+        let pred = PredictionNet::new(graph, latent_dim, action_dim)?;
+        let projector = ProjectorNet::new(graph, latent_dim)?;
+        let predictor = PredictorNet::new(graph, latent_dim)?;
+        let recon = ReconstructionNet::new(graph, latent_dim, obs_dim)?;
+        let lstm = ValuePrefixLstm::new(graph, latent_dim, lstm_hidden)?;
+
+        // 持久化 root 推理子图：obs → latent →(policy, value)。dummy 初值，搜索期 set_value 覆盖。
+        let root_infer = {
+            let obs_in = graph.input(&Tensor::zeros(&[1, obs_dim]))?;
+            let latent = repr.forward(&obs_in)?;
+            let (policy, value_logits) = pred.forward(&latent);
+            let sink = Var::concat(&[&latent, &policy, &value_logits], 1)?;
+            RootInfer {
+                obs_in,
+                latent,
+                policy,
+                value_logits,
+                sink,
+            }
+        };
+
+        // 持久化 recurrent 推理子图：(latent, action) → (next_latent, reward, continuation, policy, value)。
+        let rec_infer = {
+            let latent_in = graph.input(&Tensor::zeros(&[1, latent_dim]))?;
+            let action_in = graph.input(&Tensor::zeros(&[1, action_dim]))?;
+            let (next_latent, reward_logits, continuation_logit) =
+                dyn_net.forward(&latent_in, &action_in)?;
+            let (policy, value_logits) = pred.forward(&next_latent);
+            let sink = Var::concat(
+                &[
+                    &next_latent,
+                    &reward_logits,
+                    &continuation_logit,
+                    &policy,
+                    &value_logits,
+                ],
+                1,
+            )?;
+            RecInfer {
+                latent_in,
+                action_in,
+                next_latent,
+                reward_logits,
+                continuation_logit,
+                policy,
+                value_logits,
+                sink,
+            }
+        };
+
         Ok(Self {
-            repr: RepresentationNet::new(graph, obs_dim, latent_dim)?,
-            dyn_net: DynamicsNet::new(graph, latent_dim, action_dim)?,
-            pred: PredictionNet::new(graph, latent_dim, action_dim)?,
-            projector: ProjectorNet::new(graph, latent_dim)?,
-            predictor: PredictorNet::new(graph, latent_dim)?,
-            recon: ReconstructionNet::new(graph, latent_dim, obs_dim)?,
-            lstm: ValuePrefixLstm::new(graph, latent_dim, lstm_hidden)?,
+            repr,
+            dyn_net,
+            pred,
+            projector,
+            predictor,
+            recon,
+            lstm,
             graph: graph.clone(),
             action_dim,
             latent_dim,
+            root_infer,
+            rec_infer,
         })
     }
 
@@ -566,13 +646,16 @@ impl Dynamics for &MyZeroModel {
 
 impl MyZeroModel {
     fn initial_state_impl(&self, obs: &[f32]) -> (Vec<f32>, Vec<f32>, f32) {
-        let obs_tensor = Tensor::new(obs, &[1, obs.len()]);
-        let latent_var = self.repr.forward(&obs_tensor).expect("repr forward 失败");
-        let latent_tensor = latent_var.value().unwrap().unwrap();
+        // 复用持久化 root 子图：只写入 obs、单趟 forward、读缓存输出（不重建节点）。
+        let r = &self.root_infer;
+        r.obs_in
+            .set_value(&Tensor::new(obs, &[1, obs.len()]))
+            .expect("set obs 失败");
+        self.graph.forward(&r.sink).expect("root forward 失败");
 
-        let (policy_var, value_logits_var) = self.pred.forward(&latent_var);
-        let policy_tensor = policy_var.value().unwrap().unwrap();
-        let value_logits = value_logits_var.value().unwrap().unwrap();
+        let latent_tensor = r.latent.value().unwrap().unwrap();
+        let policy_tensor = r.policy.value().unwrap().unwrap();
+        let value_logits = r.value_logits.value().unwrap().unwrap();
 
         let policy_probs = policy_tensor.softmax(1);
 
@@ -589,28 +672,40 @@ impl MyZeroModel {
             _ => 0,
         };
 
-        let latent_tensor = Tensor::new(state, &[1, self.latent_dim]);
-        let latent_var = self.graph.input(&latent_tensor).unwrap();
+        let rc = &self.rec_infer;
 
-        let mut oh = vec![0.0; self.action_dim];
-        if action_idx < self.action_dim {
-            oh[action_idx] = 1.0;
+        // setup：只写入 latent / action onehot（复用持久化输入节点，不新建）
+        {
+            crate::prof_scope!("model.rec.setup");
+            rc.latent_in
+                .set_value(&Tensor::new(state, &[1, self.latent_dim]))
+                .expect("set latent 失败");
+            let mut oh = vec![0.0; self.action_dim];
+            if action_idx < self.action_dim {
+                oh[action_idx] = 1.0;
+            }
+            rc.action_in
+                .set_value(&Tensor::new(&oh, &[1, self.action_dim]))
+                .expect("set action 失败");
         }
-        let oh_tensor = Tensor::new(&oh, &[1, self.action_dim]);
-        let oh_var = self.graph.input(&oh_tensor).unwrap();
 
-        let (next_latent_var, reward_logits_var, continuation_logit_var) =
-            self.dyn_net.forward(&latent_var, &oh_var).unwrap();
-        let next_latent_tensor = next_latent_var.value().unwrap().unwrap();
-        let reward_logits = reward_logits_var.value().unwrap().unwrap();
-        let continuation_logit = continuation_logit_var.value().unwrap().unwrap();
+        // 单趟 forward：sink 覆盖全部输出，一次前向算完（复用持久化子图，不重建节点）。
+        {
+            crate::prof_scope!("model.rec.fwd");
+            self.graph
+                .forward(&rc.sink)
+                .expect("recurrent forward 失败");
+        }
 
-        let (policy_var, value_logits_var) = self.pred.forward(&next_latent_var);
-        let policy_tensor = policy_var.value().unwrap().unwrap();
-        let value_logits = value_logits_var.value().unwrap().unwrap();
+        // read + decode：读缓存值 + categorical 解码 + to_vec 拷贝组装
+        crate::prof_scope!("model.rec.decode");
+        let next_latent_tensor = rc.next_latent.value().unwrap().unwrap();
+        let reward_logits = rc.reward_logits.value().unwrap().unwrap();
+        let continuation_logit = rc.continuation_logit.value().unwrap().unwrap();
+        let policy_tensor = rc.policy.value().unwrap().unwrap();
+        let value_logits = rc.value_logits.value().unwrap().unwrap();
 
         let policy_probs = policy_tensor.softmax(1);
-
         let reward = Self::decode_categorical(&reward_logits);
         let value = Self::decode_categorical(&value_logits);
         let continuation = sigmoid_scalar(

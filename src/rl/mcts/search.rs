@@ -26,7 +26,10 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
     rng: &mut dyn RngCore,
 ) -> SearchResult {
     // 1. root 推理 → 建根节点 + 展开子节点
-    let root_out = model.root(obs);
+    let root_out = {
+        crate::prof_scope!("mcts.root_fwd");
+        model.root(obs)
+    };
 
     // 空候选 / 终局 root → 直接返回空结果
     if root_out.candidates.is_empty() {
@@ -80,10 +83,14 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
         };
 
         // selection: 从根往下选择
-        let leaf_id = select(&tree, policy, &min_max, cfg, forced_root);
+        let leaf_id = {
+            crate::prof_scope!("mcts.select");
+            select(&tree, policy, &min_max, cfg, forced_root)
+        };
 
         // 若叶子已终止，只做 backup
         if tree.nodes[leaf_id].terminal {
+            crate::prof_scope!("mcts.backup");
             backup(&mut tree, leaf_id, 0.0, &mut min_max, cfg);
             continue;
         }
@@ -96,7 +103,10 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
         let parent_state = tree.states[parent_id]
             .as_ref()
             .expect("parent state should exist");
-        let rec_out = model.recurrent(parent_state, &action);
+        let rec_out = {
+            crate::prof_scope!("mcts.recurrent_fwd");
+            model.recurrent(parent_state, &action)
+        };
 
         // 更新叶子节点信息
         if let Some(parent_id) = tree.nodes[leaf_id].parent {
@@ -112,6 +122,7 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
         tree.states[leaf_id] = Some(rec_out.state.clone());
 
         if !rec_out.terminal && !rec_out.candidates.is_empty() {
+            crate::prof_scope!("mcts.expand");
             let candidates =
                 candidate_provider.expand_candidates(&rec_out.candidates, cfg, false, rng);
 
@@ -125,7 +136,10 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
         }
 
         let backup_value = if rec_out.terminal { 0.0 } else { rec_out.value };
-        backup(&mut tree, leaf_id, backup_value, &mut min_max, cfg);
+        {
+            crate::prof_scope!("mcts.backup");
+            backup(&mut tree, leaf_id, backup_value, &mut min_max, cfg);
+        }
     }
 
     // 4. 收集最终根子节点统计
