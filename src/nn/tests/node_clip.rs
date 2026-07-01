@@ -17,7 +17,7 @@
  */
 
 use crate::nn::Mode;
-use crate::nn::{Graph, GraphError, Init, VarActivationOps, VarLossOps};
+use crate::nn::{Graph, GraphError, Init, VarActivationOps, VarLossOps, VarReduceOps, VarShapeOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 use std::rc::Rc;
@@ -404,4 +404,39 @@ fn test_create_clip_node_drop_releases() {
     }
     assert!(weak_clip.upgrade().is_none());
     assert!(weak_input.upgrade().is_none());
+}
+
+// ==================== 非连续内存（contiguity）回归测试 ====================
+
+/// **回归测试**：Clip 的**父节点值（input 缓存）非连续**（上游是 `permute`）时不得 panic，
+/// 且梯度正确。
+///
+/// 历史脆弱点：反向对缓存的 input 做 `data_as_slice()` 构造 mask，非连续布局会 panic。
+/// 构造 `sum(clip(permute(a)))` vs 参考 `sum(clip(a))`：clip 逐元素、sum 全局、置换不变，
+/// 故对 a 的梯度逐元素一致。
+#[test]
+fn test_clip_backward_noncontiguous_input() {
+    fn run(permute_input: bool) -> Tensor {
+        let graph = Graph::new();
+        let a = graph.parameter(&[2, 3], Init::Zeros, "a").unwrap();
+        a.set_value(&Tensor::new(&[-2.0, 0.5, 3.0, 1.0, -3.0, 2.0], &[2, 3]))
+            .unwrap();
+        let x = if permute_input {
+            a.permute(&[1, 0]).unwrap() // [3,2] 非连续
+        } else {
+            a.clone()
+        };
+        let loss = x.clip(-1.0, 1.0).sum();
+        loss.forward().unwrap();
+        loss.backward().unwrap();
+        a.grad().unwrap().unwrap()
+    }
+
+    let g_ref = run(false);
+    let g = run(true);
+    // 经 permute 回传的参数梯度可能是非连续布局，逐元素按逻辑序比较。
+    assert_eq!(g.shape(), g_ref.shape());
+    for (x, y) in g.to_vec().iter().zip(g_ref.to_vec().iter()) {
+        assert_abs_diff_eq!(*x, *y, epsilon = 1e-6);
+    }
 }

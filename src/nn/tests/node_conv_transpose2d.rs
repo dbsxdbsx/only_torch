@@ -325,3 +325,109 @@ fn test_conv_transpose2d_e2e_backward() -> Result<(), GraphError> {
 
     Ok(())
 }
+
+// ==================== 非连续内存（contiguity）回归测试 ====================
+
+/// **回归测试**：ConvTranspose2d 前向/反向拿到**非连续 kernel**（上游是 `permute`）时不得 panic，
+/// 且结果正确。
+///
+/// 历史脆弱点：`kernel.flatten_view()`（`into_shape`）对非连续视图会 panic。input 经
+/// `input[[..]]`、upstream 经 `d_y[[..]]` 索引读取，对非连续本就安全，故只需覆盖 kernel。
+///
+/// 参考路径把非连续 kernel **物化为连续值**喂给 deconv；测试路径 `k → permute → deconv`。
+/// 两者 forward 输出与 input 梯度应逐元素一致，且 kernel 的梯度存在（dK 路径不 panic）。
+#[test]
+fn test_conv_transpose2d_noncontiguous_kernel() {
+    let input_val = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 1, 2, 2]);
+    let kernel_base = Tensor::new(&[0.5, -0.5, 1.0, 2.0], &[1, 1, 2, 2]);
+    // permute [0,1,3,2]：kH<->kW 转置，形状仍 [1,1,2,2] 但非连续
+    let kernel_perm_contig = kernel_base.permute(&[0, 1, 3, 2]).into_contiguous();
+
+    // 参考：直接用物化后的连续 kernel
+    let (out_ref, gi_ref) = {
+        let graph = Graph::new();
+        let inner = graph.inner_rc();
+        let input = inner
+            .borrow_mut()
+            .create_parameter_node(&[1, 1, 2, 2], Some("input"))
+            .unwrap();
+        let kernel = inner
+            .borrow_mut()
+            .create_parameter_node(&[1, 1, 2, 2], Some("kernel"))
+            .unwrap();
+        let deconv = inner
+            .borrow_mut()
+            .create_conv_transpose2d_node(
+                vec![input.clone(), kernel.clone()],
+                (1, 1),
+                (0, 0),
+                (0, 0),
+                Some("deconv"),
+            )
+            .unwrap();
+        let loss = inner
+            .borrow_mut()
+            .create_sum_node(Rc::clone(&deconv), None, None)
+            .unwrap();
+        input.set_value(Some(&input_val)).unwrap();
+        kernel.set_value(Some(&kernel_perm_contig)).unwrap();
+        inner.borrow_mut().forward_via_node_inner(&loss).unwrap();
+        inner.borrow_mut().backward_via_node_inner(&loss).unwrap();
+        (
+            deconv.value().unwrap().clone(),
+            input.grad().expect("input 应有 grad"),
+        )
+    };
+
+    // 测试：k → permute → deconv，deconv 拿到非连续 kernel
+    let (out_t, gi_t) = {
+        let graph = Graph::new();
+        let inner = graph.inner_rc();
+        let input = inner
+            .borrow_mut()
+            .create_parameter_node(&[1, 1, 2, 2], Some("input"))
+            .unwrap();
+        let kernel = inner
+            .borrow_mut()
+            .create_parameter_node(&[1, 1, 2, 2], Some("kernel"))
+            .unwrap();
+        let kp = inner
+            .borrow_mut()
+            .create_permute_node(Rc::clone(&kernel), &[0, 1, 3, 2], None)
+            .unwrap();
+        let deconv = inner
+            .borrow_mut()
+            .create_conv_transpose2d_node(
+                vec![input.clone(), kp],
+                (1, 1),
+                (0, 0),
+                (0, 0),
+                Some("deconv"),
+            )
+            .unwrap();
+        let loss = inner
+            .borrow_mut()
+            .create_sum_node(Rc::clone(&deconv), None, None)
+            .unwrap();
+        input.set_value(Some(&input_val)).unwrap();
+        kernel.set_value(Some(&kernel_base)).unwrap();
+        inner.borrow_mut().forward_via_node_inner(&loss).unwrap();
+        inner.borrow_mut().backward_via_node_inner(&loss).unwrap();
+        assert!(
+            kernel.grad().is_some(),
+            "kernel 梯度应存在（dK 路径未 panic）"
+        );
+        (
+            deconv.value().unwrap().clone(),
+            input.grad().expect("input 应有 grad"),
+        )
+    };
+
+    assert_eq!(out_t.shape(), out_ref.shape(), "forward 输出形状应一致");
+    for (x, y) in out_t.to_vec().iter().zip(out_ref.to_vec().iter()) {
+        assert_abs_diff_eq!(*x, *y, epsilon = 1e-5);
+    }
+    for (x, y) in gi_t.to_vec().iter().zip(gi_ref.to_vec().iter()) {
+        assert_abs_diff_eq!(*x, *y, epsilon = 1e-5);
+    }
+}

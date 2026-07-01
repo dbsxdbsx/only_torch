@@ -452,10 +452,19 @@ impl Tensor {
 
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓flatten↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     /// 将张量展平为1维张量，并返回新的张量（不影响原张量）
+    ///
+    /// 按**逻辑行主序**展平，对任意内存布局都成立（与 [`reshape`](Self::reshape) 一致）：
+    /// `permute`/`transpose` 等产生的非连续张量会先物化为连续再展平，不会 panic。
     pub fn flatten(&self) -> Self {
         let total_elements = self.data.len();
+        // 与 reshape 保持一致：非连续时先按逻辑序物化为连续布局，再 into_shape。
+        let contiguous = if self.is_contiguous() {
+            self.data.clone()
+        } else {
+            self.data.as_standard_layout().into_owned()
+        };
         Self {
-            data: self.data.clone().into_shape(vec![total_elements]).unwrap(),
+            data: contiguous.into_shape(vec![total_elements]).unwrap(),
             source_id: next_source_id(),
         }
     }
@@ -463,6 +472,10 @@ impl Tensor {
     /// 将张量展平为1维张量（影响原张量）
     pub fn flatten_mut(&mut self) {
         let total_elements = self.data.len();
+        // 与 reshape_mut 一致：非连续时先物化为连续再展平。
+        if !self.is_contiguous() {
+            self.data = self.data.as_standard_layout().into_owned();
+        }
         self.data = self.data.clone().into_shape(vec![total_elements]).unwrap();
     }
 
@@ -526,7 +539,9 @@ impl Tensor {
         if self.is_vector() {
             let n = self.size();
             let mut diag_data = vec![0.0; n * n];
-            let data_slice = self.data.as_slice().unwrap();
+            // 按逻辑序读向量元素；非连续视图先物化为连续。
+            let src = self.contiguous();
+            let data_slice = src.data_as_slice();
             for i in 0..n {
                 diag_data[i * n + i] = data_slice[i];
             }
@@ -600,7 +615,9 @@ impl Tensor {
         if self.is_vector() {
             let n = self.size();
             let mut diag_data = vec![0.0; n * n];
-            let data_slice = self.data.as_slice().unwrap();
+            // 按逻辑序读向量元素；非连续视图先物化为连续。
+            let src = self.contiguous();
+            let data_slice = src.data_as_slice();
             for i in 0..n {
                 diag_data[i * n + i] = data_slice[i];
             }
@@ -696,7 +713,9 @@ impl Tensor {
         let mut data = vec![value; total_size];
 
         // 将原始数据复制到正确位置
-        let flat = self.flatten_view();
+        // 按行主序手写索引 flat[i]，要求连续；非连续（permute/transpose 视图）先物化为连续。
+        let src = self.contiguous();
+        let flat = src.flatten_view();
         let old_strides = Self::compute_strides(&old_shape);
         let new_strides = Self::compute_strides(&new_shape);
 
@@ -748,7 +767,9 @@ impl Tensor {
             })
             .collect();
 
-        let flat = self.flatten_view();
+        // 按行主序手写索引 flat[old_linear]，要求连续；非连续视图先物化为连续。
+        let src = self.contiguous();
+        let flat = src.flatten_view();
         let old_strides = Self::compute_strides(old_shape);
         let new_strides = Self::compute_strides(&new_shape);
         let new_size: usize = new_shape.iter().product();
@@ -820,7 +841,9 @@ impl Tensor {
             .collect();
 
         let total = new_shape.iter().product();
-        let flat = self.flatten_view();
+        // 按行主序手写索引 flat[old_linear]，要求连续；非连续视图（permute 等）先物化为连续。
+        let src = self.contiguous();
+        let flat = src.flatten_view();
         let mut data = vec![0.0f32; total];
 
         let old_strides = Self::compute_strides(old_shape);

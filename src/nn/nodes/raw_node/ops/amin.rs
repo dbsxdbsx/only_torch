@@ -166,9 +166,12 @@ impl TraitNode for Amin {
         let outer_size: usize = input_shape[..axis].iter().product();
         let inner_size: usize = input_shape[axis + 1..].iter().product();
 
-        let input_slice = input_value.data_as_slice();
-        let min_slice = min_value.data_as_slice();
-        let upstream_slice = upstream_grad.data_as_slice();
+        // 手写按行主序索引，必须拿到逻辑行主序的连续数据：
+        // input_value 可能是 permute/narrow 等非连续视图，upstream_grad 也可能来自
+        // permute/transpose 的反向（非连续）。to_vec 按逻辑序展开、对任意布局都成立。
+        let input_slice = input_value.to_vec();
+        let min_slice = min_value.to_vec();
+        let upstream_slice = upstream_grad.to_vec();
 
         // 遍历每个 reduction 位置
         for outer in 0..outer_size {

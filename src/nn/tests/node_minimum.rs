@@ -288,6 +288,116 @@ fn test_minimum_equal_values_gradient_split() {
     assert_abs_diff_eq!(b_grad[[1, 0]], -1.0, epsilon = 1e-5);
 }
 
+// ==================== 非连续内存（contiguity）回归测试 ====================
+
+/// **回归测试**：Minimum 反向读取到**非连续 `upstream_grad`** 时不得 panic，且结果正确。
+///
+/// 历史脆弱点：反向对 upstream/父值做手写行主序 `data_as_slice()`，遇到非连续布局会
+/// panic（`permute`/`transpose` 的反向会把非连续视图当上游梯度回传）。
+///
+/// 构造 `sum(permute(min(a,b)))` vs 参考 `sum(min(a,b))`：全局 sum 对置换不变，
+/// 两条路径的参数梯度应逐元素一致；带 permute 的路径会给 min 传入非连续 upstream。
+#[test]
+fn test_minimum_backward_noncontiguous_upstream() {
+    fn run(permute_after: bool) -> (Tensor, Tensor) {
+        let graph = Graph::new();
+        let a = graph.parameter(&[2, 3], Init::Zeros, "a").unwrap();
+        let b = graph.parameter(&[2, 3], Init::Zeros, "b").unwrap();
+        a.set_value(&Tensor::new(&[1.0, 5.0, 3.0, 2.0, 4.0, 6.0], &[2, 3]))
+            .unwrap();
+        b.set_value(&Tensor::new(&[2.0, 4.0, 3.0, 1.0, 5.0, 0.0], &[2, 3]))
+            .unwrap();
+
+        let min_node = graph
+            .inner_mut()
+            .create_minimum_node(Rc::clone(a.node()), Rc::clone(b.node()), None)
+            .unwrap();
+        let mut out = Var::new_with_rc_graph(min_node, &graph.inner_rc());
+
+        if permute_after {
+            let p = graph
+                .inner_mut()
+                .create_permute_node(Rc::clone(out.node()), &[1, 0], None)
+                .unwrap();
+            out = Var::new_with_rc_graph(p, &graph.inner_rc());
+        }
+
+        let sum_node = graph
+            .inner_mut()
+            .create_sum_node(Rc::clone(out.node()), None, None)
+            .unwrap();
+        let loss = Var::new_with_rc_graph(sum_node, &graph.inner_rc());
+        loss.forward().unwrap();
+        loss.backward().unwrap();
+        (a.grad().unwrap().unwrap(), b.grad().unwrap().unwrap())
+    }
+
+    let (ga_ref, gb_ref) = run(false);
+    let (ga, gb) = run(true);
+    assert_abs_diff_eq!(&ga, &ga_ref, epsilon = 1e-6);
+    assert_abs_diff_eq!(&gb, &gb_ref, epsilon = 1e-6);
+}
+
+/// **回归测试**：Minimum 的**父节点值非连续**（上游是 `permute`）时不得 panic，且结果正确。
+///
+/// 构造 `sum(min(permute(a), permute(b)))` vs 参考 `sum(min(a,b))`：min 逐元素、sum 全局，
+/// 置换只是重排求和顺序，故对 a/b 的梯度逐元素一致；permute 的输出是非连续视图，
+/// 正好覆盖 min 反向对 target/other 父值的 `data_as_slice` 路径。
+#[test]
+fn test_minimum_backward_noncontiguous_inputs() {
+    fn run(permute_inputs: bool) -> (Tensor, Tensor) {
+        let graph = Graph::new();
+        let a = graph.parameter(&[2, 3], Init::Zeros, "a").unwrap();
+        let b = graph.parameter(&[2, 3], Init::Zeros, "b").unwrap();
+        a.set_value(&Tensor::new(&[1.0, 5.0, 3.0, 2.0, 4.0, 6.0], &[2, 3]))
+            .unwrap();
+        b.set_value(&Tensor::new(&[2.0, 4.0, 3.0, 1.0, 5.0, 0.0], &[2, 3]))
+            .unwrap();
+
+        let (left, right) = if permute_inputs {
+            let pa = graph
+                .inner_mut()
+                .create_permute_node(Rc::clone(a.node()), &[1, 0], None)
+                .unwrap();
+            let pb = graph
+                .inner_mut()
+                .create_permute_node(Rc::clone(b.node()), &[1, 0], None)
+                .unwrap();
+            (pa, pb)
+        } else {
+            (Rc::clone(a.node()), Rc::clone(b.node()))
+        };
+
+        let min_node = graph
+            .inner_mut()
+            .create_minimum_node(left, right, None)
+            .unwrap();
+        let out = Var::new_with_rc_graph(min_node, &graph.inner_rc());
+        let sum_node = graph
+            .inner_mut()
+            .create_sum_node(Rc::clone(out.node()), None, None)
+            .unwrap();
+        let loss = Var::new_with_rc_graph(sum_node, &graph.inner_rc());
+        loss.forward().unwrap();
+        loss.backward().unwrap();
+        (a.grad().unwrap().unwrap(), b.grad().unwrap().unwrap())
+    }
+
+    let (ga_ref, gb_ref) = run(false);
+    let (ga, gb) = run(true);
+    // 经 permute 回传的参数梯度可能是非连续（Fortran）布局，逐元素按逻辑序比较。
+    assert_grad_logically_eq(&ga, &ga_ref);
+    assert_grad_logically_eq(&gb, &gb_ref);
+}
+
+/// 按逻辑行主序逐元素比较两个张量（对非连续布局也成立）。
+fn assert_grad_logically_eq(actual: &Tensor, expected: &Tensor) {
+    assert_eq!(actual.shape(), expected.shape(), "梯度形状应一致");
+    for (x, y) in actual.to_vec().iter().zip(expected.to_vec().iter()) {
+        assert_abs_diff_eq!(*x, *y, epsilon = 1e-6);
+    }
+}
+
 // ==================== 错误处理测试 ====================
 
 /// 测试形状不兼容应报错

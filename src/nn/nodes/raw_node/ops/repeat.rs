@@ -120,7 +120,10 @@ impl TraitNode for Repeat {
         upstream_grad: &Tensor,
     ) -> Result<GradResult, GraphError> {
         let ndim = self.input_shape.len();
-        let flat_up = upstream_grad.flatten_view();
+        // 反向按行主序读 flat_up[i]，要求连续；upstream_grad 可能来自 permute/transpose 的反向
+        // （非连续）。连续时零拷贝借用。
+        let up_c = upstream_grad.contiguous();
+        let flat_up = up_c.flatten_view();
         let total_in: usize = self.input_shape.iter().product();
         let mut grad_data = vec![0.0f32; total_in];
 

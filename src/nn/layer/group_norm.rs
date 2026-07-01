@@ -86,7 +86,13 @@ impl GroupNorm {
         // 1. 获取输入 Tensor
         // 2. 纯 Tensor 计算均值/方差/归一化
         // 3. 结果包装回 Var 用于 gamma/beta 的乘加
-        let x_tensor = x.value().expect("GroupNorm: 输入尚未计算").unwrap();
+        // 前向按行主序手写索引 flat[idx]，要求连续；输入可能来自 permute 等非连续视图，
+        // 直接按内存序读会静默算错。已连续时 into_contiguous 为零拷贝。
+        let x_tensor = x
+            .value()
+            .expect("GroupNorm: 输入尚未计算")
+            .unwrap()
+            .into_contiguous();
         let shape = x_tensor.shape();
         let ndim = shape.len();
         assert!(ndim >= 2, "GroupNorm: 输入至少 2D [N, C, ...]");

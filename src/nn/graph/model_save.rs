@@ -80,7 +80,10 @@ pub(crate) fn write_params(
             .value()
             .ok_or_else(|| GraphError::ComputationError(format!("参数 '{name}' 没有值")))?;
         let shape = value.shape();
-        let data = value.data_as_slice();
+        // 参数值可能被 set_value 塞入非连续视图（如 permute 结果）；按逻辑行主序保存。
+        // contiguous() 连续时零拷贝借用，仅非连续时物化一次。
+        let value_c = value.contiguous();
+        let data = value_c.data_as_slice();
 
         // 写名称
         let name_bytes = name.as_bytes();

@@ -468,6 +468,21 @@ fn test_tensor_one_hot() {
     assert!((encoded[[2, 1]] - 1.0).abs() < 1e-6);
 }
 
+/// **回归测试**：one_hot 对**非连续**索引（`permute` 视图）不得 panic，按逻辑序编码
+/// （与物化连续副本结果一致）。
+#[test]
+fn test_tensor_one_hot_noncontiguous() {
+    let base = Tensor::new(&[0.0, 1.0, 2.0, 2.0, 1.0, 0.0], &[2, 3]);
+    let nc = base.permute(&[1, 0]); // [3,2] 非连续
+    let contig = nc.clone().into_contiguous();
+    assert!(!nc.is_contiguous());
+
+    let enc_nc = nc.one_hot(3);
+    let enc_ref = contig.one_hot(3);
+    assert_eq!(enc_nc.shape(), enc_ref.shape());
+    assert_eq!(enc_nc, enc_ref, "one_hot 非连续应等于连续副本");
+}
+
 #[test]
 fn test_tensor_one_hot_2d() {
     let indices = Tensor::new(&[0.0, 1.0, 2.0, 0.0], &[2, 2]);

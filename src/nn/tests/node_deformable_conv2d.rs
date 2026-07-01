@@ -205,6 +205,62 @@ fn test_deformable_conv2d_nonzero_offset_matches_pytorch_reference() -> Result<(
     Ok(())
 }
 
+/// **回归测试**：offset 传入**非连续布局**时，前向/反向不得 panic，且与连续 offset
+/// 的 PyTorch 参考值一致。
+///
+/// 历史脆弱点：offset 用手写行主序 `data_as_slice()` 索引（`offset_index`），
+/// permute/narrow 等上游会产生非连续视图，直接切片会 panic。
+/// 这里构造一个「逻辑上等于 `reference_offset`、但内存非连续」的 offset：先交换最后两维
+/// 物化为连续，再交换回来得到非连续视图，逻辑数据不变。
+#[test]
+fn test_deformable_conv2d_noncontiguous_offset() -> Result<(), GraphError> {
+    let (_graph, input, kernel, offset, deform) = build_reference_node(&[1, 8, 2, 2])?;
+    input.set_value(Some(&reference_input()))?;
+    kernel.set_value(Some(&reference_kernel()))?;
+
+    let swapped = reference_offset().permute(&[0, 1, 3, 2]).into_contiguous();
+    let offset_nc = swapped.permute(&[0, 1, 3, 2]);
+    assert!(!offset_nc.is_contiguous(), "构造的 offset 应为非连续布局");
+    assert_slice_close(&offset_nc.to_vec(), &reference_offset().to_vec(), 1e-6);
+    offset.set_value(Some(&offset_nc))?;
+
+    deform.forward_recursive(1, Mode::Train)?;
+    let output = deform.value().unwrap();
+    assert_slice_close(
+        output.data_as_slice(),
+        &[12.25, 14.8125, 15.875, 17.5],
+        1e-5,
+    );
+
+    let upstream = Tensor::ones(&[1, 1, 2, 2]);
+    let input_grad = deform
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
+    assert_slice_close(
+        input_grad.data_as_slice(),
+        &[0.375, 0.375, -0.5625, 1.625, 2.875, 1.75, 0.125, 2.75, 0.75],
+        1e-5,
+    );
+
+    let offset_grad = deform
+        .calc_grad_to_parent_index(2, &upstream)?
+        .resolve(&upstream);
+    #[rustfmt::skip]
+    let expected_offset_grad = [
+        3.0, 3.0, 3.0, 3.0,
+        1.0, 1.0, 1.0, 1.0,
+        -3.0, -2.25, -3.0, -3.0,
+        -1.0, 2.25, -1.0, 6.0,
+        1.5, 1.5, -1.75, -4.0,
+        0.5, 0.5, 1.75, 0.5,
+        6.0, 6.0, -16.0, 6.0,
+        2.0, -12.0, 2.0, 2.0,
+    ];
+    assert_slice_close(offset_grad.data_as_slice(), &expected_offset_grad, 1e-5);
+
+    Ok(())
+}
+
 #[test]
 fn test_deformable_conv2d_rejects_bad_offset_shape() -> Result<(), GraphError> {
     let graph = Graph::new();

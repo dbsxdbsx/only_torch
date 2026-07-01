@@ -12,7 +12,7 @@
  */
 
 use crate::nn::Mode;
-use crate::nn::{Graph, GraphError, Init, VarLossOps, VarMatrixOps};
+use crate::nn::{Graph, GraphError, Init, VarLossOps, VarMatrixOps, VarShapeOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -687,5 +687,39 @@ fn test_bce_respects_upstream_grad_when_non_terminal() -> Result<(), GraphError>
 
     let expected = &grad_terminal * SCALE;
     assert_abs_diff_eq!(&grad_scaled, &expected, epsilon = 1e-6);
+    Ok(())
+}
+
+// ==================== 非连续内存（contiguity）回归测试 ====================
+
+/// **回归测试**：BCE 前向拿到**非连续 logits**（上游 `permute`）时不得 panic，且不得错配。
+///
+/// 前向 zip logits/target 的 flatten_view；若 logits 非连续被按物理内存序读、target 连续，
+/// 会把 logit 与错误位置的 target 配对 → loss 静默算错。
+/// 让 logits=`permute(a)`（非连续）、target 按 logits 逻辑序给定；对比参考（logits 物化为连续）。
+#[test]
+fn test_bce_forward_noncontiguous_logits() -> Result<(), GraphError> {
+    // a: [2,3]，permute[1,0] → logits 逻辑形状 [3,2]
+    let a_data = Tensor::new(&[0.5, -0.5, 1.0, -1.0, 0.3, 0.8], &[2, 3]);
+    let logits_logical = a_data.permute(&[1, 0]).into_contiguous(); // [3,2]
+    // target 按 logits 逻辑序、位置相关且非对称，错配会改变 loss
+    let target = Tensor::new(&[1.0, 0.0, 0.0, 1.0, 1.0, 0.0], &[3, 2]);
+
+    // 参考：logits 为物化连续张量
+    let g1 = Graph::new();
+    let logits_ref = g1.input(&logits_logical)?;
+    let loss_ref = logits_ref.bce_loss(&target)?;
+    loss_ref.forward()?;
+    let v_ref = loss_ref.item()?;
+
+    // 测试：logits = permute(a)（非连续视图）
+    let g2 = Graph::new();
+    let a = g2.input(&a_data)?;
+    let logits_nc = a.permute(&[1, 0])?;
+    let loss_nc = logits_nc.bce_loss(&target)?;
+    loss_nc.forward()?;
+    let v_nc = loss_nc.item()?;
+
+    assert_abs_diff_eq!(v_nc, v_ref, epsilon = 1e-5);
     Ok(())
 }

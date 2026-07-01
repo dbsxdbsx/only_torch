@@ -146,7 +146,10 @@ impl TraitNode for LayerNormOp {
         // batch_size = 前面维度的元素总数
         let batch_size: usize = shape[..norm_start].iter().product();
 
-        let flat = x.flatten_view();
+        // 前向按行主序手写索引 flat[offset+i]，要求连续；父节点可能传入 permute 等非连续视图，
+        // 直接按内存序读会静默算错。连续时零拷贝借用。
+        let x_c = x.contiguous();
+        let flat = x_c.flatten_view();
         let mut x_hat_data = vec![0.0f32; x.size()];
         let mut std_data = vec![0.0f32; batch_size];
 
@@ -233,7 +236,10 @@ impl TraitNode for LayerNormOp {
         let d = self.d;
         let batch_size: usize = shape[..norm_start].iter().product();
 
-        let up_flat = upstream_grad.flatten_view();
+        // upstream_grad 可能来自 permute/transpose 的反向（非连续）；手写平铺索引前先保证连续。
+        // x_hat / std 是本节点缓存（由 Tensor::new(vec) 构造，恒连续），无需处理。
+        let up_c = upstream_grad.contiguous();
+        let up_flat = up_c.flatten_view();
         let xh_flat = x_hat.flatten_view();
         let std_flat = std_t.flatten_view();
 

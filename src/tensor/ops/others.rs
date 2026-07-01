@@ -38,8 +38,8 @@ impl<'a> From<&'a f32> for Tensor {
 impl Tensor {
     /// 不改变形状情况下，将张量的元素按从小到大的顺序排列，并将其返回（不影响原张量）
     pub fn order(&self) -> Self {
-        let flat_data = self.data.view().into_shape(self.data.len()).unwrap();
-        let mut sorted_data = flat_data.as_slice().unwrap().to_owned();
+        // to_vec 按逻辑行主序取值，对非连续布局（permute 等）也成立。
+        let mut sorted_data = self.to_vec();
         sorted_data.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let ordered_data = Array::from_shape_vec(self.data.shape(), sorted_data).unwrap();
         Self {
@@ -50,14 +50,11 @@ impl Tensor {
 
     /// 不改变形状情况下，将张量的元素按从小到大的顺序排列（影响原张量）
     pub fn order_mut(&mut self) {
-        let flat_len = self.data.len();
-        let mut flat_data = self.data.view_mut().into_shape(flat_len).unwrap();
-        let flat_data_slice = flat_data.as_slice_mut().unwrap();
-        flat_data_slice.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        self.data = flat_data
-            .to_owned()
-            .into_shape(self.data.shape().to_owned())
-            .unwrap();
+        // to_vec 按逻辑行主序取值，对非连续布局也成立；结果重建为连续张量。
+        let shape = self.data.shape().to_owned();
+        let mut sorted_data = self.to_vec();
+        sorted_data.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        self.data = Array::from_shape_vec(shape, sorted_data).unwrap();
     }
 
     /// 打乱张量中的元素顺序，并将其返回（不影响原张量）
@@ -81,9 +78,10 @@ impl Tensor {
             }
             shuffled_data = new_data;
         } else {
-            let mut flat_data = shuffled_data.into_shape(self.data.len()).unwrap();
-            flat_data.as_slice_mut().unwrap().shuffle(&mut rng);
-            shuffled_data = flat_data.into_shape(self.data.shape()).unwrap();
+            // to_vec 按逻辑序取值，对非连续布局也成立；打乱后重建为连续张量。
+            let mut v = self.to_vec();
+            v.shuffle(&mut rng);
+            shuffled_data = Array::from_shape_vec(IxDyn(self.data.shape()), v).unwrap();
         }
 
         Self {
@@ -111,14 +109,11 @@ impl Tensor {
                 slice.assign(&chunk);
             }
         } else {
-            let flat_len = self.data.len();
-            let mut flat_data = self.data.view_mut().into_shape(flat_len).unwrap();
-            let flat_data_slice = flat_data.as_slice_mut().unwrap();
-            flat_data_slice.shuffle(&mut rng);
-            self.data = flat_data
-                .to_owned()
-                .into_shape(self.data.shape().to_owned())
-                .unwrap();
+            // to_vec 按逻辑序取值，对非连续布局也成立；打乱后重建为连续张量。
+            let shape = self.data.shape().to_owned();
+            let mut v = self.to_vec();
+            v.shuffle(&mut rng);
+            self.data = Array::from_shape_vec(shape, v).unwrap();
         }
     }
 
@@ -142,14 +137,11 @@ impl Tensor {
                 slice.assign(&chunk);
             }
         } else {
-            let flat_len = self.data.len();
-            let mut flat_data = self.data.view_mut().into_shape(flat_len).unwrap();
-            let flat_data_slice = flat_data.as_slice_mut().unwrap();
-            flat_data_slice.shuffle(&mut rng);
-            self.data = flat_data
-                .to_owned()
-                .into_shape(self.data.shape().to_owned())
-                .unwrap();
+            // to_vec 按逻辑序取值，对非连续布局也成立；打乱后重建为连续张量。
+            let shape = self.data.shape().to_owned();
+            let mut v = self.to_vec();
+            v.shuffle(&mut rng);
+            self.data = Array::from_shape_vec(shape, v).unwrap();
         }
     }
 
@@ -303,7 +295,9 @@ impl Tensor {
         let axis_len = shape[axis];
         let inner_size: usize = shape[axis + 1..].iter().product();
         let outer_size: usize = shape[..axis].iter().product();
-        let data_slice = self.data.as_slice().unwrap();
+        // 按行主序手写索引 data_slice[flat_idx]，要求连续；非连续视图（permute 等）先物化为连续。
+        let src = self.contiguous();
+        let data_slice = src.data_as_slice();
 
         // 临时 buffer：(value, original_index) 对
         let mut pairs: Vec<(f32, usize)> = Vec::with_capacity(axis_len);

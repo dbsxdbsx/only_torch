@@ -7,7 +7,7 @@
  */
 
 use crate::nn::Mode;
-use crate::nn::{Graph, GraphError, Init, VarLossOps};
+use crate::nn::{Graph, GraphError, Init, VarLossOps, VarReduceOps, VarShapeOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -148,4 +148,88 @@ fn test_rms_norm_op_backward_e2e() -> Result<(), GraphError> {
     assert_eq!(x_grad.shape(), &[2, 4]);
 
     Ok(())
+}
+
+// ==================== 非连续内存（contiguity）回归测试 ====================
+
+/// **回归测试**：RMSNorm 反向拿到非连续 `upstream_grad`（输出接 `permute`）不得 panic/算错。
+/// 用 `mse(head, target)` 制造非均匀上游：`mse(rn(x),T)` vs `mse(permute(rn(x)),permute(T))`，
+/// 匹配置换下 mse 不变 → loss 与 `x.grad` 逐元素一致（非均匀 upstream 能抓静默错序）。
+#[test]
+fn test_rms_norm_backward_noncontiguous_upstream() {
+    use std::rc::Rc;
+    let target_ref = Tensor::new(&[0.1, -0.2, 0.3, 0.4, -0.5, 0.6], &[2, 3]);
+    let target_perm = target_ref.permute(&[1, 0]).into_contiguous();
+    fn run(permute_after: bool, target_ref: &Tensor, target_perm: &Tensor) -> Tensor {
+        let graph = Graph::new();
+        let x = graph.parameter(&[2, 3], Init::Zeros, "x").unwrap();
+        x.set_value(&Tensor::new(&[1.0, 2.0, 3.0, 0.5, 1.5, 4.0], &[2, 3]))
+            .unwrap();
+        let rn_node = graph
+            .inner_mut()
+            .create_rms_norm_op_node(Rc::clone(x.node()), 1, 1e-5, Some("rn"))
+            .unwrap();
+        let rn = crate::nn::Var::new_with_rc_graph(rn_node, &graph.inner_rc());
+        let (head, target) = if permute_after {
+            (
+                rn.permute(&[1, 0]).unwrap(),
+                graph.input(target_perm).unwrap(),
+            )
+        } else {
+            (rn, graph.input(target_ref).unwrap())
+        };
+        let loss = head.mse_loss(&target).unwrap();
+        graph.zero_grad().unwrap();
+        loss.backward().unwrap();
+        x.grad().unwrap().unwrap()
+    }
+    let g_ref = run(false, &target_ref, &target_perm);
+    let g = run(true, &target_ref, &target_perm);
+    assert_eq!(g.shape(), g_ref.shape());
+    for (a, b) in g.to_vec().iter().zip(g_ref.to_vec().iter()) {
+        assert_abs_diff_eq!(*a, *b, epsilon = 1e-5);
+    }
+}
+
+/// **回归测试**：RMSNorm 前向拿到非连续输入（上游 `permute`）不得 panic/静默算错。
+/// 参考喂 permute 物化连续张量，测试 `a → permute → rn`，两者前向输出逐元素一致。
+#[test]
+fn test_rms_norm_forward_noncontiguous_input() {
+    let base = Tensor::new(&[1.0, 2.0, 3.0, 0.5, 1.5, 4.0], &[2, 3]);
+    let permuted_contig = base.permute(&[1, 0]).into_contiguous();
+
+    let forward_output = |use_permute: bool| -> Tensor {
+        let graph = Graph::new();
+        let inner = graph.inner_rc();
+        let leaf = inner
+            .borrow_mut()
+            .create_basic_input_node(&[2, 3], Some("leaf"))
+            .unwrap();
+        let rn_parent = if use_permute {
+            inner
+                .borrow_mut()
+                .create_permute_node(leaf.clone(), &[1, 0], None)
+                .unwrap()
+        } else {
+            leaf.clone()
+        };
+        let rn = inner
+            .borrow_mut()
+            .create_rms_norm_op_node(rn_parent, 1, 1e-5, Some("rn"))
+            .unwrap();
+        if use_permute {
+            leaf.set_value(Some(&base)).unwrap();
+        } else {
+            leaf.set_value(Some(&permuted_contig)).unwrap();
+        }
+        rn.forward_recursive(1, Mode::Train).unwrap();
+        rn.value().unwrap().clone()
+    };
+
+    let out_ref = forward_output(false);
+    let out_test = forward_output(true);
+    assert_eq!(out_ref.shape(), out_test.shape());
+    for (a, b) in out_ref.to_vec().iter().zip(out_test.to_vec().iter()) {
+        assert_abs_diff_eq!(*a, *b, epsilon = 1e-5);
+    }
 }

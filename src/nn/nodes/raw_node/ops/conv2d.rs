@@ -485,8 +485,23 @@ impl TraitNode for Conv2d {
     }
 
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
-        let input = parent_values[0];
-        let kernel = parent_values[1];
+        // 前向按行主序手写 im2col / pad（`flatten_view().as_slice()`），必须连续输入。
+        // 父节点可能传入 permute/narrow/transpose 等非连续视图——直接按内存顺序读会**静默算错**
+        // （把逻辑转置矩阵当成原矩阵）。已连续时零成本借用，仅非连续时物化一份连续副本。
+        let input_storage;
+        let input = if parent_values[0].is_contiguous() {
+            parent_values[0]
+        } else {
+            input_storage = parent_values[0].clone().into_contiguous();
+            &input_storage
+        };
+        let kernel_storage;
+        let kernel = if parent_values[1].is_contiguous() {
+            parent_values[1]
+        } else {
+            kernel_storage = parent_values[1].clone().into_contiguous();
+            &kernel_storage
+        };
         self.input_shape = input.shape().to_vec();
 
         if !self.should_cache_for_backward
@@ -555,9 +570,26 @@ impl TraitNode for Conv2d {
             })?
         };
 
-        let kernel = parent_values
+        // 反向 dX/dK 按行主序读 kernel 与 upstream_grad（`flatten_view().as_slice()`）。
+        // upstream_grad 可能来自 permute/transpose 的反向（非连续），kernel 也可能是非连续视图；
+        // 非连续时直接读会 panic 或读错内存顺序（非均匀梯度会静默算错）。已连续零成本借用。
+        let kernel_ref: &Tensor = *parent_values
             .get(1)
             .ok_or_else(|| GraphError::ComputationError("Conv2D 梯度计算需要卷积核".to_string()))?;
+        let kernel_storage;
+        let kernel: &Tensor = if kernel_ref.is_contiguous() {
+            kernel_ref
+        } else {
+            kernel_storage = kernel_ref.clone().into_contiguous();
+            &kernel_storage
+        };
+        let upstream_storage;
+        let upstream_grad: &Tensor = if upstream_grad.is_contiguous() {
+            upstream_grad
+        } else {
+            upstream_storage = upstream_grad.clone().into_contiguous();
+            &upstream_storage
+        };
 
         let grad_shape = upstream_grad.shape();
         let (batch_size, out_c, out_h, out_w) =

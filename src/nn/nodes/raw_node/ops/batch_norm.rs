@@ -247,7 +247,10 @@ impl TraitNode for BatchNormOp {
     }
 
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
-        let x = parent_values[0];
+        // channel_mean / channel_var 按行主序手写索引 flat[idx]，要求连续；父节点可能传入
+        // permute 等非连续视图，直接按内存序读会静默算错。连续时零拷贝借用。
+        let x_c = parent_values[0].contiguous();
+        let x: &Tensor = &x_c;
         let shape = x.shape();
         let spatial_size: usize = shape[2..].iter().product();
         self.n_reduce = shape[0] * spatial_size.max(1);
@@ -350,8 +353,12 @@ impl TraitNode for BatchNormOp {
             let batch_size = shape[0];
 
             // 计算 per-channel sum(upstream) 和 sum(upstream * x_hat)
-            let up_flat = upstream_grad.flatten_view();
-            let xh_flat = x_hat.flatten_view();
+            // upstream_grad 可能来自 permute/transpose 的反向（非连续）；x_hat 为算子结果，
+            // 布局不保证。手写平铺索引前统一保证连续（连续时零拷贝）。
+            let up_c = upstream_grad.contiguous();
+            let xh_c = x_hat.contiguous();
+            let up_flat = up_c.flatten_view();
+            let xh_flat = xh_c.flatten_view();
 
             let mut sum_up = vec![0.0f32; c];
             let mut sum_up_xh = vec![0.0f32; c];

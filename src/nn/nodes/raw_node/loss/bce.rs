@@ -103,8 +103,12 @@ impl BCE {
     ///
     /// BCE(logit, target) = max(logit, 0) - logit * target + log(1 + exp(-|logit|))
     fn sigmoid_and_bce_sum(logits: &Tensor, target: &Tensor) -> (Tensor, f32) {
-        let logits_view = logits.flatten_view();
-        let target_view = target.flatten_view();
+        // flatten_view 要求连续；父节点可能传入 permute/transpose 等非连续视图。
+        // 连续时零拷贝借用，仅非连续时物化一份连续副本（sigmoid 输出仍按 logits 逻辑序）。
+        let logits_c = logits.contiguous();
+        let target_c = target.contiguous();
+        let logits_view = logits_c.flatten_view();
+        let target_view = target_c.flatten_view();
         let mut sigmoid_data = Vec::with_capacity(logits.size());
         let mut bce_sum = 0.0f32;
 

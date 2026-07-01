@@ -507,7 +507,9 @@ impl Tensor {
     /// // encoded = [[1,0,0], [0,0,1], [0,1,0]], shape [3, 3]
     /// ```
     pub fn one_hot(&self, num_classes: usize) -> Self {
-        let flat = self.flatten_view();
+        // 按行主序读 flat[i]，要求连续；非连续索引视图（permute 等）先物化为连续。
+        let src = self.contiguous();
+        let flat = src.flatten_view();
         let n = flat.len();
         let mut data = vec![0.0f32; n * num_classes];
         for i in 0..n {

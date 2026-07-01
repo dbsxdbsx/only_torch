@@ -23,6 +23,26 @@ fn test_order() {
     assert_eq!(tensor1, ordered_tensor);
 }
 
+/// **回归测试**：`order` / `shuffle_mut_seeded` 对**非连续**输入（`permute` 视图）不得 panic，
+/// 且按逻辑序处理（与物化连续副本结果一致）。
+#[test]
+fn test_order_shuffle_noncontiguous() {
+    let base = Tensor::new(&[3.0, 1.0, 4.0, 1.0, 5.0, 9.0], &[2, 3]);
+    let nc = base.permute(&[1, 0]); // [3,2] 非连续
+    let contig = nc.clone().into_contiguous();
+    assert!(!nc.is_contiguous());
+
+    // order：排序结果与连续副本一致
+    assert_eq!(nc.order(), contig.order(), "order 非连续应等于连续副本");
+
+    // shuffle_mut_seeded：同 seed + 同逻辑值 → 同结果
+    let mut a = nc.clone();
+    let mut b = contig.clone();
+    a.shuffle_mut_seeded(None, 123);
+    b.shuffle_mut_seeded(None, 123);
+    assert_eq!(a, b, "shuffle_mut_seeded 非连续应与连续副本同结果");
+}
+
 #[test]
 fn test_order_mut() {
     // 1. 2维张量

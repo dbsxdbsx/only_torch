@@ -115,3 +115,27 @@ fn test_topk_k_exceeds() {
     let t = Tensor::new(&[1.0, 2.0], &[1, 2]);
     t.topk(3, 1, true);
 }
+
+/// **回归测试**：topk 对**非连续**输入（`permute` 视图）不得 panic/静默算错。
+///
+/// topk 前向按行主序 `data_as_slice()[flat_idx]` 读取，非连续会 panic。以物化连续副本为参考，
+/// 两者的 values/indices 应逐元素一致。
+#[test]
+fn test_topk_noncontiguous() {
+    // base [2,4] → permute[1,0] → [4,2] 非连续
+    let base = Tensor::new(&[1.0, 4.0, 2.0, 3.0, 8.0, 5.0, 7.0, 6.0], &[2, 4]);
+    let nc = base.permute(&[1, 0]); // [4,2] 非连续
+    let contig = nc.clone().into_contiguous();
+    assert!(!nc.is_contiguous());
+
+    let (v_nc, i_nc) = nc.topk(2, 0, true);
+    let (v_ref, i_ref) = contig.topk(2, 0, true);
+
+    assert_eq!(v_nc.shape(), v_ref.shape());
+    for (a, b) in v_nc.to_vec().iter().zip(v_ref.to_vec().iter()) {
+        assert_abs_diff_eq!(*a, *b, epsilon = 1e-6);
+    }
+    for (a, b) in i_nc.to_vec().iter().zip(i_ref.to_vec().iter()) {
+        assert_abs_diff_eq!(*a, *b, epsilon = 1e-6);
+    }
+}

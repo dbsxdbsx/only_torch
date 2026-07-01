@@ -4,7 +4,7 @@
  */
 
 use crate::nn::Mode;
-use crate::nn::{Graph, GraphError, Init, VarLossOps, VarShapeOps};
+use crate::nn::{Graph, GraphError, Init, VarLossOps, VarReduceOps, VarShapeOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -78,4 +78,46 @@ fn test_repeat_backward() -> Result<(), GraphError> {
     assert!(flat.iter().all(|&v| v.abs() > 0.0), "梯度不应全为 0");
 
     Ok(())
+}
+
+// ==================== 非连续内存（contiguity）回归测试 ====================
+
+/// **回归测试**：Repeat 反向拿到非连续 `upstream_grad`（输出接 `permute`）不得 panic/算错。
+///
+/// 反向对 `upstream_grad.flatten_view()` 做手写 stride 索引，非连续会 panic/错序。
+/// 用 `mse(head, target)` 制造非均匀上游：`mse(repeat(x),T)` vs `mse(permute(repeat(x)),permute(T))`，
+/// 匹配置换下 mse 不变 → `x.grad` 逐元素一致（非均匀 upstream 能抓静默错序）。
+#[test]
+fn test_repeat_backward_noncontiguous_upstream() {
+    // repeat 输出 [4,6]；target 同形，permute[1,0] → [6,4]
+    let target_ref = Tensor::new(
+        &(0..24).map(|i| (i as f32) * 0.1 - 1.0).collect::<Vec<_>>(),
+        &[4, 6],
+    );
+    let target_perm = target_ref.permute(&[1, 0]).into_contiguous();
+    fn run(permute_after: bool, target_ref: &Tensor, target_perm: &Tensor) -> Tensor {
+        let graph = Graph::new();
+        let x = graph.parameter(&[2, 2], Init::Zeros, "x").unwrap();
+        x.set_value(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]))
+            .unwrap();
+        let y = x.repeat(&[2, 3]).unwrap(); // [4,6]
+        let (head, target) = if permute_after {
+            (
+                y.permute(&[1, 0]).unwrap(),
+                graph.input(target_perm).unwrap(),
+            )
+        } else {
+            (y, graph.input(target_ref).unwrap())
+        };
+        let loss = head.mse_loss(&target).unwrap();
+        graph.zero_grad().unwrap();
+        loss.backward().unwrap();
+        x.grad().unwrap().unwrap()
+    }
+    let g_ref = run(false, &target_ref, &target_perm);
+    let g = run(true, &target_ref, &target_perm);
+    assert_eq!(g.shape(), g_ref.shape());
+    for (a, b) in g.to_vec().iter().zip(g_ref.to_vec().iter()) {
+        assert_abs_diff_eq!(*a, *b, epsilon = 1e-5);
+    }
 }

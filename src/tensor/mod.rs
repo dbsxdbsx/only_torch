@@ -79,11 +79,13 @@ impl AbsDiffEq for Tensor {
     }
 
     fn abs_diff_eq(&self, other: &Self, epsilon: Self::Epsilon) -> bool {
+        // 用 ndarray 的 iter() 按逻辑行主序遍历，对非连续布局（permute/transpose 视图）也成立；
+        // flatten_view() 对非连续会 panic，故此处直接用逻辑序迭代器。
         self.shape() == other.shape()
             && self
-                .flatten_view()
+                .data
                 .iter()
-                .zip(other.flatten_view().iter())
+                .zip(other.data.iter())
                 .all(|(a, b)| (*a - *b).abs() <= epsilon)
     }
 }

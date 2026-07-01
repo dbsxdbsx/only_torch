@@ -385,6 +385,26 @@ impl Tensor {
         }
     }
 
+    /// 借用或按需物化为连续布局（零拷贝守卫）
+    ///
+    /// 用于"下游要按行主序读原始缓冲"（`data_as_slice` / `flatten_view().as_slice()` /
+    /// 手写平铺偏移索引）的**消费点**:
+    /// - 已连续：返回 `Cow::Borrowed`，**零拷贝、零分配**（仅一次 O(1) 布局检查）；
+    /// - 不连续（如上游 `permute`/`transpose` 传入的视图）：**单次** O(n) 复制成连续副本。
+    ///
+    /// 相比 `x.clone().into_contiguous()`（不连续时会拷两次），本方法在不连续分支只拷一次；
+    /// 相比 `to_vec()`（总是拷贝），本方法在连续时零拷贝。是局部连续性守卫的首选写法。
+    pub(crate) fn contiguous(&self) -> std::borrow::Cow<'_, Tensor> {
+        if self.is_contiguous() {
+            std::borrow::Cow::Borrowed(self)
+        } else {
+            std::borrow::Cow::Owned(Tensor {
+                data: self.data.as_standard_layout().into_owned(),
+                source_id: next_source_id(),
+            })
+        }
+    }
+
     /// 获取张量数据的 Vec 副本（总是成功，即使内存不连续）
     ///
     /// 当需要获取数据但不确定内存布局时使用。

@@ -317,7 +317,8 @@ fn build_initializers<'a>(
             let name = pool.get(&n.name);
             let dims: Vec<i64> = n.output_shape.iter().map(|&d| d as i64).collect();
             let data = if let Some(tensor) = weights.get(&n.name) {
-                tensor.flatten_view().to_vec()
+                // to_vec 按逻辑行主序展开、对任意布局都成立（flatten_view 对非连续会 panic）。
+                tensor.to_vec()
             } else {
                 vec![0.0f32; n.output_shape.iter().product()]
             };

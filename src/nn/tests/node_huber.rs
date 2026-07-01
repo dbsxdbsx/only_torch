@@ -12,7 +12,7 @@
  */
 
 use crate::nn::Mode;
-use crate::nn::{Graph, GraphError, Init, VarLossOps};
+use crate::nn::{Graph, GraphError, Init, VarLossOps, VarShapeOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -786,5 +786,41 @@ fn test_huber_respects_upstream_grad_when_non_terminal() -> Result<(), GraphErro
 
     let expected = &grad_terminal * SCALE;
     assert_abs_diff_eq!(&grad_scaled, &expected, epsilon = 1e-6);
+    Ok(())
+}
+
+// ==================== 非连续内存（contiguity）回归测试 ====================
+
+/// **回归测试**：Huber 前向拿到**非连续输入**（上游 `permute`）时不得 panic/错配。
+///
+/// diff = input - target 会被前向/反向经 flatten_view 读取；若 input 非连续导致 diff 非标准布局，
+/// 会 panic 或按物理序错配。让 input=`permute(a)`（非连续）、target 按逻辑序给定，含
+/// |a|≤δ 与 |a|>δ 两段，对比参考（input 物化为连续）loss 一致，且反向不 panic、梯度存在。
+#[test]
+fn test_huber_forward_noncontiguous_input() -> Result<(), GraphError> {
+    // a: [2,3]，permute[1,0] → input 逻辑形状 [3,2]
+    let a_data = Tensor::new(&[1.0, 2.0, 5.0, 0.5, 3.0, 1.0], &[2, 3]);
+    let input_logical = a_data.permute(&[1, 0]).into_contiguous(); // [3,2]
+    // target 按 input 逻辑序，制造混合大/小误差
+    let target = Tensor::new(&[1.2, 2.5, 1.0, 0.4, 0.5, 1.1], &[3, 2]);
+
+    // 参考：input 为物化连续张量
+    let g1 = Graph::new();
+    let input_ref = g1.input(&input_logical)?;
+    let loss_ref = input_ref.huber_loss(&target)?;
+    loss_ref.forward()?;
+    let v_ref = loss_ref.item()?;
+
+    // 测试：input = permute(a)（非连续视图），并验证反向可用
+    let g2 = Graph::new();
+    let a = g2.parameter(&[2, 3], Init::Zeros, "a")?;
+    a.set_value(&a_data)?;
+    let input_nc = a.permute(&[1, 0])?;
+    let loss_nc = input_nc.huber_loss(&target)?;
+    g2.zero_grad()?;
+    let v_nc = loss_nc.backward()?;
+
+    assert_abs_diff_eq!(v_nc, v_ref, epsilon = 1e-5);
+    assert!(a.grad()?.is_some(), "a 的梯度应存在（反向未 panic）");
     Ok(())
 }

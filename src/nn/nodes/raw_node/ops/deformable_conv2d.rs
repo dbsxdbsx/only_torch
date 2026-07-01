@@ -376,7 +376,10 @@ impl TraitNode for DeformableConv2d {
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         let input = parent_values[0];
         let kernel = parent_values[1];
-        let offset = parent_values[2];
+        // offset 用手写行主序索引（offset_index → data_as_slice），必须连续；
+        // 父节点可能传入 permute/narrow 等非连续视图。Cow 守卫：连续时零拷贝借用。
+        let offset_contiguous = parent_values[2].contiguous();
+        let offset = &offset_contiguous;
         let output_shape = self.runtime_output_shape(input, offset)?;
         let (batch, out_c, out_h, out_w) = (
             output_shape[0],
@@ -431,7 +434,10 @@ impl TraitNode for DeformableConv2d {
     ) -> Result<GradResult, GraphError> {
         let input = parent_values[0];
         let kernel = parent_values[1];
-        let offset = parent_values[2];
+        // offset 用手写行主序索引（offset_index → data_as_slice），必须连续；
+        // 父节点可能传入 permute/narrow 等非连续视图。Cow 守卫：连续时零拷贝借用。
+        let offset_contiguous = parent_values[2].contiguous();
+        let offset = &offset_contiguous;
         let output_shape = self.runtime_output_shape(input, offset)?;
         if upstream_grad.shape() != output_shape.as_slice() {
             return Err(GraphError::ShapeMismatch {

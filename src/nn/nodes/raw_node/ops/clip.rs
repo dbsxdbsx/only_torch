@@ -173,9 +173,11 @@ impl TraitNode for Clip {
 
         // mask: 1.0 if min < x < max, else 0.0
         // 边界处（x == min 或 x == max）梯度为 0（与 PyTorch 行为一致）
+        // 用 to_vec 按逻辑行主序取值：input_cache 可能是 permute/narrow 等非连续视图，
+        // 直接 data_as_slice 会 panic。
         let mask = Tensor::new(
             &input
-                .data_as_slice()
+                .to_vec()
                 .iter()
                 .map(|&x| if x > min && x < max { 1.0 } else { 0.0 })
                 .collect::<Vec<_>>(),

@@ -147,9 +147,10 @@ impl TraitNode for Atan2 {
             .to_vec();
         let output_shape = upstream_grad.shape();
 
+        // broadcast_to 已产出连续张量；upstream 用 Cow 守卫：连续时零拷贝借用。
         let y_broadcast = y_value.broadcast_to(output_shape).into_contiguous();
         let x_broadcast = x_value.broadcast_to(output_shape).into_contiguous();
-        let upstream_contiguous = upstream_grad.clone().into_contiguous();
+        let upstream_contiguous = upstream_grad.contiguous();
 
         let y_slice = y_broadcast.data_as_slice();
         let x_slice = x_broadcast.data_as_slice();

@@ -52,7 +52,9 @@ impl GraphInner {
                 .value()
                 .ok_or_else(|| GraphError::ComputationError(format!("参数 {name} 没有值")))?;
             let shape = value.shape();
-            let data = value.data_as_slice();
+            // 参数值可能被 set_value 塞入非连续视图；按逻辑行主序保存（连续时零拷贝）。
+            let value_c = value.contiguous();
+            let data = value_c.data_as_slice();
 
             let name_bytes = name.as_bytes();
             writer

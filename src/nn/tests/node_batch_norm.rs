@@ -18,7 +18,7 @@
  */
 
 use crate::nn::Mode;
-use crate::nn::{Graph, GraphError, Init, VarLossOps};
+use crate::nn::{Graph, GraphError, Init, VarLossOps, VarReduceOps, VarShapeOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 use std::cell::RefCell;
@@ -248,6 +248,116 @@ fn test_batch_norm_op_backward_e2e() -> Result<(), GraphError> {
     assert_eq!(x_grad.shape(), &[4, 3]);
 
     Ok(())
+}
+
+// ==================== 非连续内存（contiguity）回归测试 ====================
+
+/// **回归测试**：BatchNorm 反向拿到非连续 `upstream_grad`（输出接 `permute`）不得 panic/算错。
+/// 用 `mse(head, target)` 制造非均匀上游：`mse(bn(x),T)` vs `mse(permute(bn(x)),permute(T))`，
+/// 匹配置换下 mse 不变 → loss 与 `x.grad` 逐元素一致（非均匀 upstream 能抓静默错序）。
+#[test]
+fn test_batch_norm_backward_noncontiguous_upstream() {
+    let target_ref = Tensor::new(
+        &[
+            0.1, -0.2, 0.3, 0.4, -0.5, 0.6, 0.7, -0.8, 0.9, -1.0, 1.1, -1.2,
+        ],
+        &[3, 4],
+    );
+    let target_perm = target_ref.permute(&[1, 0]).into_contiguous();
+    fn run(permute_after: bool, target_ref: &Tensor, target_perm: &Tensor) -> Tensor {
+        let graph = Graph::new();
+        let x = graph.parameter(&[3, 4], Init::Zeros, "x").unwrap();
+        x.set_value(&Tensor::new(
+            &[
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+            ],
+            &[3, 4],
+        ))
+        .unwrap();
+        let (rm, rv) = default_running_stats(4);
+        let bn_node = graph
+            .inner_mut()
+            .create_batch_norm_op_node(Rc::clone(x.node()), 1e-5, 0.1, rm, rv, Some("bn"))
+            .unwrap();
+        let bn = crate::nn::Var::new_with_rc_graph(bn_node, &graph.inner_rc());
+        let (head, target) = if permute_after {
+            (
+                bn.permute(&[1, 0]).unwrap(),
+                graph.input(target_perm).unwrap(),
+            )
+        } else {
+            (bn, graph.input(target_ref).unwrap())
+        };
+        let loss = head.mse_loss(&target).unwrap();
+        graph.zero_grad().unwrap();
+        loss.backward().unwrap();
+        x.grad().unwrap().unwrap()
+    }
+    let g_ref = run(false, &target_ref, &target_perm);
+    let g = run(true, &target_ref, &target_perm);
+    assert_eq!(g.shape(), g_ref.shape());
+    for (a, b) in g.to_vec().iter().zip(g_ref.to_vec().iter()) {
+        assert_abs_diff_eq!(*a, *b, epsilon = 1e-5);
+    }
+}
+
+/// **回归测试**：BatchNorm 前向拿到非连续输入（上游 `permute`）不得 panic/静默算错。
+/// 两路 bn 看到**同一逻辑张量** [3,4]（一连续、一为 permute 视图），前向输出逐元素一致
+/// （channel_mean/channel_var 曾用手写平铺索引，非连续会静默算错）。
+#[test]
+fn test_batch_norm_forward_noncontiguous_input() {
+    let base = Tensor::new(
+        &[
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+        ],
+        &[4, 3],
+    );
+    let permuted_contig = base.permute(&[1, 0]).into_contiguous(); // [3,4]，channels=4
+
+    // 参考：leaf 直接为 [3,4] 连续张量
+    let out_ref = {
+        let graph = Graph::new();
+        let inner = graph.inner_rc();
+        let leaf = inner
+            .borrow_mut()
+            .create_basic_input_node(&[3, 4], Some("leaf"))
+            .unwrap();
+        let (rm, rv) = default_running_stats(4);
+        let bn = inner
+            .borrow_mut()
+            .create_batch_norm_op_node(leaf.clone(), 1e-5, 0.1, rm, rv, Some("bn"))
+            .unwrap();
+        leaf.set_value(Some(&permuted_contig)).unwrap();
+        bn.forward_recursive(1, Mode::Train).unwrap();
+        bn.value().unwrap().clone()
+    };
+
+    // 测试：leaf [4,3] → permute → [3,4]（非连续视图）→ bn
+    let out_test = {
+        let graph = Graph::new();
+        let inner = graph.inner_rc();
+        let leaf = inner
+            .borrow_mut()
+            .create_basic_input_node(&[4, 3], Some("leaf"))
+            .unwrap();
+        let bn_parent = inner
+            .borrow_mut()
+            .create_permute_node(leaf.clone(), &[1, 0], None)
+            .unwrap();
+        let (rm, rv) = default_running_stats(4);
+        let bn = inner
+            .borrow_mut()
+            .create_batch_norm_op_node(bn_parent, 1e-5, 0.1, rm, rv, Some("bn"))
+            .unwrap();
+        leaf.set_value(Some(&base)).unwrap();
+        bn.forward_recursive(1, Mode::Train).unwrap();
+        bn.value().unwrap().clone()
+    };
+
+    assert_eq!(out_ref.shape(), out_test.shape());
+    for (a, b) in out_ref.to_vec().iter().zip(out_test.to_vec().iter()) {
+        assert_abs_diff_eq!(*a, *b, epsilon = 1e-5);
+    }
 }
 
 // ==================== Create API 测试 ====================

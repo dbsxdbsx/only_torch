@@ -472,6 +472,46 @@ fn test_to_vec() {
     assert_eq!(vec, &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
 }
 
+/// 测试 `contiguous()` 零拷贝守卫：连续时借用（共享底层），非连续时物化连续副本。
+#[test]
+fn test_contiguous_cow_guard() {
+    use std::borrow::Cow;
+
+    // 连续张量：返回 Borrowed（零拷贝），逻辑值不变
+    let t = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    let c = t.contiguous();
+    assert!(matches!(c, Cow::Borrowed(_)), "连续张量应零拷贝借用");
+    assert!(c.is_contiguous());
+    assert_eq!(c.data_as_slice(), &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+
+    // 非连续张量（permute 产物）：返回 Owned，且物化为逻辑行主序的连续副本
+    let permuted = t.permute(&[1, 0]); // [3,2] 非连续
+    assert!(!permuted.is_contiguous());
+    let pc = permuted.contiguous();
+    assert!(matches!(pc, Cow::Owned(_)), "非连续张量应物化为 Owned");
+    assert!(pc.is_contiguous(), "物化结果应连续");
+    // 逻辑行主序：[3,2] 转置后为 [1,4,2,5,3,6]
+    assert_eq!(pc.data_as_slice(), &[1.0, 4.0, 2.0, 5.0, 3.0, 6.0]);
+    // 逻辑值与原张量一致（形状 + 元素）
+    assert_eq!(pc.shape(), &[3, 2]);
+}
+
+/// **回归测试**：`assert_abs_diff_eq!`（`AbsDiffEq`）对**非连续**张量（`permute` 视图）
+/// 不得 panic，且按逻辑序逐元素比较。
+#[test]
+fn test_abs_diff_eq_noncontiguous() {
+    use approx::assert_abs_diff_eq;
+    let base = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    let nc = base.permute(&[1, 0]); // [3,2] 非连续
+    let contig = nc.clone().into_contiguous();
+    assert!(!nc.is_contiguous());
+    // 非连续 vs 其连续副本：逻辑值相等
+    assert_abs_diff_eq!(&nc, &contig, epsilon = 1e-6);
+    // 非连续 vs 非连续：同样成立
+    let nc2 = base.permute(&[1, 0]);
+    assert_abs_diff_eq!(&nc, &nc2, epsilon = 1e-6);
+}
+
 /// 测试 stack 结果总是可以安全调用 data_as_slice
 #[test]
 fn test_stack_always_contiguous() {

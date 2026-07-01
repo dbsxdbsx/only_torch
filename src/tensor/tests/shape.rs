@@ -530,6 +530,64 @@ fn test_flatten_mut() {
     assert_eq!(tensor, Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[6]));
 }
 
+/// **回归测试**：`flatten` / `flatten_mut` 对**非连续**张量（`permute`/`transpose` 产物）
+/// 必须按逻辑行主序展平、不得 panic（与 `reshape` 行为一致）。
+#[test]
+fn test_flatten_noncontiguous() {
+    // [2,3] → permute → [3,2] 非连续视图；逻辑行主序应为转置后的顺序
+    let base = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    let permuted = base.permute(&[1, 0]); // 形状 [3,2]，非连续
+    assert!(!permuted.is_contiguous(), "permute 结果应为非连续");
+
+    // 逻辑序：行优先遍历 [3,2] → [1,4,2,5,3,6]
+    let expected = Tensor::new(&[1.0, 4.0, 2.0, 5.0, 3.0, 6.0], &[6]);
+
+    let flattened = permuted.flatten();
+    assert_eq!(flattened.shape(), &[6]);
+    assert_eq!(flattened, expected, "flatten 应按逻辑行主序展平非连续张量");
+
+    let mut permuted_mut = base.permute(&[1, 0]);
+    permuted_mut.flatten_mut();
+    assert_eq!(permuted_mut.shape(), &[6]);
+    assert_eq!(
+        permuted_mut, expected,
+        "flatten_mut 应按逻辑行主序展平非连续张量"
+    );
+}
+
+/// **回归测试**：`pad` / `slice_ranges` / `repeat` 对**非连续**输入（`permute` 视图）必须按
+/// 逻辑行主序处理、不得 panic/静默算错。以"物化连续副本"为参考，两者结果应逐比特一致。
+#[test]
+fn test_pad_repeat_slice_noncontiguous() {
+    // base [2,3] → permute[1,0] → [3,2] 非连续
+    let base = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    let nc = base.permute(&[1, 0]); // [3,2] 非连续
+    let contig = nc.clone().into_contiguous(); // 逻辑等价的连续副本
+    assert!(!nc.is_contiguous());
+    assert!(contig.is_contiguous());
+
+    // pad：四周各 pad 1
+    let p_nc = nc.pad(&[(1, 1), (1, 1)], 0.0);
+    let p_ref = contig.pad(&[(1, 1), (1, 1)], 0.0);
+    assert_eq!(p_nc.shape(), &[5, 4]);
+    assert_eq!(p_nc, p_ref, "pad 非连续应等于 pad 连续副本");
+
+    // slice_ranges：取回中间区域（pad 的逆），应还原
+    let s_nc = p_nc.slice_ranges(&[(1, 4), (1, 3)]);
+    assert_eq!(s_nc, contig, "slice_ranges 非连续应还原逻辑张量");
+
+    // slice_ranges 直接作用在**非连续**张量上（上游 permute）：取子块应等于连续副本同操作
+    let sub_nc = nc.slice_ranges(&[(0, 2), (0, 2)]);
+    let sub_ref = contig.slice_ranges(&[(0, 2), (0, 2)]);
+    assert_eq!(sub_nc, sub_ref, "slice_ranges 非连续输入应等于连续副本");
+
+    // repeat：沿两维重复
+    let r_nc = nc.repeat(&[2, 3]);
+    let r_ref = contig.repeat(&[2, 3]);
+    assert_eq!(r_nc.shape(), &[6, 6]);
+    assert_eq!(r_nc, r_ref, "repeat 非连续应等于 repeat 连续副本");
+}
+
 #[test]
 fn test_flatten_view() {
     // 测试标量

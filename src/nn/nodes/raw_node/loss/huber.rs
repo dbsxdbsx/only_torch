@@ -146,8 +146,10 @@ impl TraitNode for Huber {
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         let input = parent_values[0];
         let target = parent_values[1];
-        // 计算 diff = input - target
-        let diff = input - target;
+        // 计算 diff = input - target；归一化为连续布局。
+        // diff 会被前向/反向经 flatten_view 按行主序读取（非连续会 panic）；若 input/target
+        // 是非连续视图，算子结果可能非标准布局。已连续时 into_contiguous 为零拷贝。
+        let diff = (input - target).into_contiguous();
         // 更新 numel（支持动态 batch size）
         self.numel_cache = input.size();
         // 缓存 diff 用于反向传播

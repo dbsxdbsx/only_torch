@@ -342,6 +342,80 @@ fn test_amax_dqn_style() {
     assert_abs_diff_eq!(grad[[1, 1, 3]], 0.0, epsilon = 1e-5);
 }
 
+// ==================== 非连续内存（contiguity）回归测试 ====================
+
+/// **回归测试**：Amax 反向读取到**非连续 `upstream_grad`** 时不得 panic，且结果正确。
+///
+/// 历史脆弱点：反向对 upstream/父值做手写行主序切片，非连续布局会 panic
+/// （`permute`/`transpose` 的反向把非连续视图当上游梯度回传）。
+///
+/// 用「置换 amax 输出 + 同步置换 target 的 MSE」构造非均匀且非连续的上游梯度，
+/// 与未置换的参考路径应得到逐元素一致的 `x.grad`。
+#[test]
+fn test_amax_backward_noncontiguous_upstream() {
+    fn run(permute_after: bool) -> Tensor {
+        let graph = Graph::new();
+        let x = graph.parameter(&[2, 2, 2], Init::Zeros, "x").unwrap();
+        x.set_value(&Tensor::new(
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+            &[2, 2, 2],
+        ))
+        .unwrap();
+        let mx = x.amax(1); // [2, 2]
+        let loss = if permute_after {
+            let p = mx.permute(&[1, 0]).unwrap(); // [2,2] 非连续
+            // target 同步转置，保证 loss 与参考路径逐元素等价
+            let target_p = Tensor::new(&[0.5, 2.5, 1.5, 3.5], &[2, 2]);
+            p.mse_loss(&target_p).unwrap()
+        } else {
+            let target = Tensor::new(&[0.5, 1.5, 2.5, 3.5], &[2, 2]);
+            mx.mse_loss(&target).unwrap()
+        };
+        loss.forward().unwrap();
+        loss.backward().unwrap();
+        x.grad().unwrap().unwrap()
+    }
+
+    let g_ref = run(false);
+    let g = run(true);
+    assert_abs_diff_eq!(&g, &g_ref, epsilon = 1e-6);
+}
+
+/// **回归测试**：Amax 的**父节点值非连续**（上游是 `permute`）时不得 panic，且梯度正确。
+///
+/// 用 3D 输入避免 reduction 到 1D（框架 1D 归约的历史限制）：置换前两维得到非连续输入，
+/// 沿最后一维取 max。置换只是重排前两维、reduce 轴不变，故对 x 的梯度逐元素等价于参考路径。
+#[test]
+fn test_amax_backward_noncontiguous_input() {
+    fn run(permute_input: bool) -> Tensor {
+        let graph = Graph::new();
+        let x = graph.parameter(&[2, 2, 3], Init::Zeros, "x").unwrap();
+        x.set_value(&Tensor::new(
+            &[
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+            ],
+            &[2, 2, 3],
+        ))
+        .unwrap();
+        let inp = if permute_input {
+            x.permute(&[1, 0, 2]).unwrap() // [2,2,3] 非连续
+        } else {
+            x.clone()
+        };
+        let loss = inp.amax(2).sum(); // [2,2] → [1,1]
+        loss.forward().unwrap();
+        loss.backward().unwrap();
+        x.grad().unwrap().unwrap()
+    }
+
+    let g_ref = run(false);
+    let g = run(true);
+    assert_eq!(g.shape(), g_ref.shape());
+    for (a, b) in g.to_vec().iter().zip(g_ref.to_vec().iter()) {
+        assert_abs_diff_eq!(*a, *b, epsilon = 1e-6);
+    }
+}
+
 // ==================== 错误处理测试 ====================
 
 /// 测试 axis 超出范围应报错

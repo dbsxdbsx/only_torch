@@ -143,10 +143,15 @@ impl TraitNode for Minimum {
         let target_broadcast = target_value.broadcast_to(output_shape);
         let other_broadcast = other_value.broadcast_to(output_shape);
 
-        // 2. 在广播后的形状上逐元素计算 mask
-        let target_slice = target_broadcast.data_as_slice();
-        let other_slice = other_broadcast.data_as_slice();
-        let upstream_slice = upstream_grad.data_as_slice();
+        // 2. 在广播后的形状上逐元素计算 mask（按行主序读，要求连续）
+        //    upstream_grad 可能来自 permute/transpose 的反向（非连续视图）；broadcast_to 已产出
+        //    连续张量。upstream 用 Cow 守卫：连续时零拷贝借用（与 maximum 一致）。
+        let target_contiguous = target_broadcast.into_contiguous();
+        let other_contiguous = other_broadcast.into_contiguous();
+        let upstream_contiguous = upstream_grad.contiguous();
+        let target_slice = target_contiguous.data_as_slice();
+        let other_slice = other_contiguous.data_as_slice();
+        let upstream_slice = upstream_contiguous.data_as_slice();
 
         let mut grad_data = Vec::with_capacity(upstream_slice.len());
 
