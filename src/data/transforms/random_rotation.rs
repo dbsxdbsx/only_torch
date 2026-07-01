@@ -250,7 +250,9 @@ fn rotate_kernel(tensor: &Tensor, angle_deg: f64, fill_value: f32, kind: InterpK
     let cx = (w as f64 - 1.0) / 2.0;
     let cy = (h as f64 - 1.0) / 2.0;
 
-    let flat: Vec<f32> = tensor.flatten_view().to_vec();
+    // to_vec 按逻辑行主序展开、对任意布局都成立：输入可能是 permute/transpose/narrow
+    // 等非连续视图，flatten_view（into_shape）在非连续上会 panic。
+    let flat: Vec<f32> = tensor.to_vec();
     let mut data = vec![fill_value; c * h * w];
 
     for ch in 0..c {

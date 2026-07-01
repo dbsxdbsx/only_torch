@@ -110,7 +110,9 @@ fn sample_image_width(tensor: &Tensor) -> usize {
 /// 水平翻转（确定性版本，供内部和测试使用）
 pub(crate) fn flip_horizontal(tensor: &Tensor) -> Tensor {
     let shape = tensor.shape();
-    let flat = tensor.flatten_view();
+    // contiguous 守卫：连续时零拷贝借用，非连续视图物化一份（flatten_view 对非连续会 panic）。
+    let src = tensor.contiguous();
+    let flat = src.flatten_view();
 
     match shape.len() {
         2 => {

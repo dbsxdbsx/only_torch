@@ -48,7 +48,8 @@ impl DetectionBatch {
                     got: sample.image.shape().to_vec(),
                 });
             }
-            data.extend_from_slice(&sample.image.flatten_view().to_vec());
+            // to_vec 按逻辑行主序展开、对任意布局都成立（非连续视图不会 panic）。
+            data.extend_from_slice(&sample.image.to_vec());
             labels.push(sample.labels.clone());
         }
 

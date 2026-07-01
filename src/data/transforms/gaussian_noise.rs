@@ -36,7 +36,9 @@ impl GaussianNoise {
 impl Transform for GaussianNoise {
     fn apply(&self, tensor: &Tensor) -> Tensor {
         let mut rng = rand::thread_rng();
-        let flat = tensor.flatten_view();
+        // contiguous 守卫：连续时零拷贝借用，非连续视图物化一份（flatten_view 对非连续会 panic）。
+        let src = tensor.contiguous();
+        let flat = src.flatten_view();
         let mut data = Vec::with_capacity(tensor.size());
 
         for &val in flat.iter() {

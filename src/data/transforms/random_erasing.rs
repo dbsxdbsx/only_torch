@@ -183,8 +183,9 @@ pub(crate) fn erase_region(
     value: f32,
 ) -> Tensor {
     let shape = tensor.shape();
-    let flat = tensor.flatten_view();
-    let mut data: Vec<f32> = flat.to_vec();
+    // to_vec 按逻辑行主序展开、对任意布局都成立：输入可能是非连续视图，
+    // flatten_view（into_shape）在非连续上会 panic。
+    let mut data: Vec<f32> = tensor.to_vec();
     match shape.len() {
         2 => {
             let (h, w) = (shape[0], shape[1]);

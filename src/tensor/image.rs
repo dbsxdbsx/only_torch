@@ -18,8 +18,9 @@ impl Tensor {
             _ => return Err("图像张量的通道数只可能是0、1、3或4。".to_string()),
         };
 
-        let data = self.data.as_slice().unwrap();
-        for pixel in data {
+        // 逐元素范围校验与遍历顺序无关，用 iter()（布局无关）即可，
+        // 避免 as_slice().unwrap() 在非连续（permute/transpose 视图）输入上 panic。
+        for pixel in self.data.iter() {
             // 检查每个像素值是否在[0,255]闭区间内
             if *pixel < 0.0 || *pixel > 255.0 {
                 return Err(format!(

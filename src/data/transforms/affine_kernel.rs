@@ -146,7 +146,9 @@ fn affine_kernel(tensor: &Tensor, params: AffineParams, fill: f32, kind: InterpK
     let inv10 = -a10 / det;
     let inv11 = a00 / det;
 
-    let flat: Vec<f32> = tensor.flatten_view().to_vec();
+    // to_vec 按逻辑行主序展开、对任意布局都成立：输入可能是非连续视图，
+    // flatten_view（into_shape）在非连续上会 panic。
+    let flat: Vec<f32> = tensor.to_vec();
     let mut out = vec![fill; c * h * w];
 
     for ch in 0..c {

@@ -478,7 +478,9 @@ fn apply_transform_to_batch(batch: &Tensor, transform: &dyn Transform) -> Tensor
 
     let sample_shape = &shape[1..];
     let sample_size: usize = sample_shape.iter().product();
-    let flat = batch.flatten_view();
+    // contiguous 守卫：连续时零拷贝借用，非连续视图物化一份（flatten_view 对非连续会 panic）。
+    let batch_c = batch.contiguous();
+    let flat = batch_c.flatten_view();
 
     // 变换第一个样本以获取输出形状
     let first_sample_data: Vec<f32> = flat.iter().take(sample_size).copied().collect();
@@ -488,7 +490,9 @@ fn apply_transform_to_batch(batch: &Tensor, transform: &dyn Transform) -> Tensor
     let out_sample_size: usize = out_sample_shape.iter().product();
 
     let mut result_data = Vec::with_capacity(n * out_sample_size);
-    result_data.extend_from_slice(&first_transformed.flatten_view().to_vec());
+    // to_vec 按逻辑行主序展开、对任意布局都成立：变换输出可能非连续（如未来某变换
+    // 直接返回 permute/transpose 视图），flatten_view（into_shape）在非连续上会 panic。
+    result_data.extend_from_slice(&first_transformed.to_vec());
 
     // 变换剩余样本
     for i in 1..n {
@@ -496,7 +500,7 @@ fn apply_transform_to_batch(batch: &Tensor, transform: &dyn Transform) -> Tensor
         let sample_data: Vec<f32> = flat.iter().skip(start).take(sample_size).copied().collect();
         let sample = Tensor::new(&sample_data, sample_shape);
         let transformed = transform.apply(&sample);
-        result_data.extend_from_slice(&transformed.flatten_view().to_vec());
+        result_data.extend_from_slice(&transformed.to_vec());
     }
 
     let mut new_shape = vec![n];
@@ -596,9 +600,12 @@ fn extract_tensor_batch(features: &Tensor, labels: &Tensor, indices: &[usize]) -
     let feature_sample_size: usize = feature_shape[1..].iter().product();
     let label_sample_size: usize = label_shape[1..].iter().product();
 
-    // 获取扁平化视图
-    let flat_features = features.flatten_view();
-    let flat_labels = labels.flatten_view();
+    // 获取扁平化视图（contiguous 守卫：连续零拷贝借用，非连续视图物化一份，
+    // flatten_view 对非连续会 panic；flat 按逻辑行主序，与手写偏移对齐）。
+    let features_c = features.contiguous();
+    let labels_c = labels.contiguous();
+    let flat_features = features_c.flatten_view();
+    let flat_labels = labels_c.flatten_view();
 
     // 提取特征
     let mut feature_data = Vec::with_capacity(batch_size * feature_sample_size);

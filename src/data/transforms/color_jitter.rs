@@ -100,7 +100,9 @@ fn adjust_contrast(tensor: &Tensor, factor: f32) -> Tensor {
     let shape = tensor.shape();
     let c = shape[0];
     let spatial_size: usize = shape[1..].iter().product();
-    let flat = tensor.flatten_view();
+    // contiguous 守卫：连续时零拷贝借用，非连续视图物化一份（flatten_view 对非连续会 panic）。
+    let src = tensor.contiguous();
+    let flat = src.flatten_view();
     let mut data = vec![0.0f32; tensor.size()];
 
     for ch in 0..c {
@@ -127,7 +129,9 @@ fn adjust_saturation(tensor: &Tensor, factor: f32) -> Tensor {
     let h = shape[1];
     let w = shape[2];
     let hw = h * w;
-    let flat = tensor.flatten_view();
+    // contiguous 守卫：连续时零拷贝借用，非连续视图物化一份（flatten_view 对非连续会 panic）。
+    let src = tensor.contiguous();
+    let flat = src.flatten_view();
     let mut data = vec![0.0f32; tensor.size()];
 
     // ITU-R BT.601 灰度系数

@@ -1,17 +1,31 @@
 ---
-status: active
+status: resolved
 created: 2026-07-01
 updated: 2026-07-01
+resolved: 2026-07-01
 owners: []
 reviewers: []
 ---
 
 # 非连续张量契约：`src/data` 变换/加载 与 `src/tensor/image.rs` 图像 I/O
 
-> **状态**：active —— autograd/raw_node 主线 + Tensor 数值公共原语 + 参数序列化的**连续性（contiguity）健壮性已闭环**（见下文「已闭环范围」）。本条目仅追踪**刻意留作后续**的两块边界：数据管线变换/加载、图像 I/O。它们契约不同、风险面独立，非 autograd 数值主风险面。
-> **关联**：广播/shape 见 [广播机制设计](../../.doc/design/broadcast_mechanism_design.md)；数据加载见 [数据加载设计](../../.doc/design/data_loader_design.md)。
+> **状态**：resolved（2026-07-01 闭环）—— 两块边界均按**方案 2·统一守卫**收口，全仓公共 Tensor 输入现统一接受非连续布局。原始分析保留作历史参考。
+
+## 解决方案（2026-07-01 闭环）
+
+采纳 [四、决策] 中的**方案 2（统一守卫）**，把 `src/data` 与 `src/tensor/image.rs` 的布局相关读取全部改为布局无关或加 `contiguous()` 守卫，让变换/加载/图像 I/O 与 autograd 主线口径一致——**接受任意布局输入**：
+
+- **`X.flatten_view().to_vec()` → `X.to_vec()`**（结果本就是拷贝，`to_vec` 按逻辑行主序、布局无关）：`random_rotation` / `affine_kernel` / `random_resized_crop` / `random_erasing`（`erase_region`）/ `detection`（`ImageBatch`）/ `dataloader`（`apply_transform_to_batch` 两处）。
+- **`let flat = X.flatten_view();` → `let src = X.contiguous(); let flat = src.flatten_view();`**（连续零拷贝借用、非连续物化一份，flat 逻辑序与手写偏移对齐）：`normalize` / `gaussian_noise` / `color_jitter`（对比度/饱和度两处）/ `random_flip`（`flip_horizontal`）/ `dataloader`（`apply_transform_to_batch` 迭代、`extract_tensor_batch` 特征/标签）。
+- **`image.rs::is_image` 的 `as_slice().unwrap()` → `iter()`**：逐元素范围校验与遍历顺序无关，直接用布局无关的 `iter()`；`to_image_buff_*` 本就用 `self[[y,x,c]]` 逻辑索引，无需改动。
+- **回归测试**：新增 `src/data/tests/transform_noncontiguous.rs`（Normalize / 水平翻转与「permute 视图物化为连续」的等价计算逐元素对比，既抓 panic 也抓静默错序；GaussianNoise 非连续 no-panic 冒烟）与 `src/tensor/tests/image.rs`（`is_image` 非连续 no-panic、`to_image` 与连续等价张量产出一致）。
+
+**验证**：全 lib **3271 测试 0 失败**；`cargo fmt` 已过；改动文件无新增 clippy 告警。**关键校正**：排查中一度怀疑 `CenterCrop`/`RandomCrop`（内部 `narrow`）会产出非连续张量、接 `Compose(...→Normalize)` 时 panic；实测发现本项目 `narrow` 实现为 `slice.to_owned()`（**立即物化为连续**），故 crop 链路本就安全——即在此次统一守卫前，库内也**无**可达 panic，这块纯属把「用户手动喂 permute/transpose 视图」的潜伏 footgun 一并焊死。
 
 ---
+
+## 原始内容（保留作为历史参考）
+
 
 ## 一、背景：什么是"连续性"问题
 

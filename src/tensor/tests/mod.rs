@@ -15,6 +15,7 @@ mod div_assign;
 mod elementwise;
 mod eq;
 mod gather;
+mod image;
 mod index;
 mod mat_mul;
 mod max_axis;

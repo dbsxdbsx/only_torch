@@ -18,6 +18,7 @@ mod transform_crop;
 mod transform_erasing;
 mod transform_flip;
 mod transform_noise;
+mod transform_noncontiguous;
 mod transform_normalize;
 mod transform_resized_crop;
 mod transform_rotation;

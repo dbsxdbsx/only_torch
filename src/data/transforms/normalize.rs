@@ -65,7 +65,10 @@ impl Transform for Normalize {
         );
 
         let spatial_size: usize = shape[1..].iter().product();
-        let flat = tensor.flatten_view();
+        // contiguous 守卫：连续时零拷贝借用，非连续（permute/transpose/narrow 视图）物化一份。
+        // flatten_view（into_shape）直接对非连续会 panic；flat 按逻辑行主序，与手写偏移对齐。
+        let src = tensor.contiguous();
+        let flat = src.flatten_view();
         let mut data = vec![0.0f32; tensor.size()];
 
         for ch in 0..c {

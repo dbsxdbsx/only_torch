@@ -92,7 +92,9 @@ impl Transform for RandomResizedCrop {
         let (top, left, crop_h, crop_w) = get_crop_params(h, w, self.scale, self.ratio);
 
         // 裁切 + 双线性插值 resize
-        let flat: Vec<f32> = tensor.flatten_view().to_vec();
+        // to_vec 按逻辑行主序展开、对任意布局都成立：输入可能是非连续视图，
+        // flatten_view（into_shape）在非连续上会 panic。
+        let flat: Vec<f32> = tensor.to_vec();
         let mut out = vec![0.0f32; c * self.target_h * self.target_w];
 
         for ch in 0..c {
