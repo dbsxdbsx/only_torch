@@ -30,7 +30,8 @@ pub(crate) struct Components {
     pub completed_q_target: bool,
     /// completedQ 的 `σ(q)=(c_visit+max_b N(b))·c_scale·q` 中的 `c_visit`（默认 50.0）
     pub cq_c_visit: f32,
-    /// completedQ 的 `c_scale`（默认 0.02；CartPole 实测 0.02 优于 0.1）
+    /// completedQ 的 `c_scale`（默认 1.0；论文棋类口径）。
+    /// tree-level Q 归一化下向量环境也适用 1.0；旧局部 over-children min-max 才需 per-env 调小。
     pub cq_c_scale: f32,
     /// Sampled MuZero：展开时采 K 个候选 + PUCT 用 π̂_β（Hubert et al. 2021）
     /// K 由 [`sampled_params`](super::sampled_params) 按 N、sims 公式自动解析，非本字段配置。
@@ -49,7 +50,7 @@ impl Default for Components {
             gumbel: false,
             completed_q_target: false,
             cq_c_visit: 50.0,
-            cq_c_scale: 0.02,
+            cq_c_scale: 1.0,
             sampled: false,
         }
     }
@@ -86,9 +87,9 @@ mod tests {
     }
 
     #[test]
-    fn cq_defaults_match_cartpole() {
+    fn cq_defaults_match_reference_qtransform() {
         let c = Components::default();
         assert!((c.cq_c_visit - 50.0).abs() < 1e-6);
-        assert!((c.cq_c_scale - 0.02).abs() < 1e-6);
+        assert!((c.cq_c_scale - 1.0).abs() < 1e-6);
     }
 }

@@ -191,6 +191,9 @@ pub struct SearchResult {
     pub learn_policy: Vec<f32>,
     /// root 推理时 value network 对当前状态的估计 `vπ`（Gumbel MuZero completedQ 未访问动作回填）
     pub network_value: f32,
+    /// 搜索树 tree-level Q 值范围 `(min, max)`；`None` = 无有效范围（空搜索/未更新）。
+    /// completedQ 的 σ 归一化用此全局范围替代局部 over-children min-max（见 [`crate::rl::mcts::MinMaxStats::range`]）。
+    pub q_range: Option<(f32, f32)>,
 }
 
 impl SearchResult {

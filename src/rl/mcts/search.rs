@@ -35,6 +35,7 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
             recommended: super::types::ActionPayload::Discrete(0),
             learn_policy: Vec::new(),
             network_value: root_out.value,
+            q_range: None,
         };
     }
 
@@ -154,6 +155,7 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
         recommended,
         learn_policy,
         network_value: root_out.value,
+        q_range: min_max.range(),
     }
 }
 

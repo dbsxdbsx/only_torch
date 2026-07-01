@@ -42,6 +42,19 @@ impl MinMaxStats {
             0.5
         }
     }
+
+    /// 返回 tree-level Q 极值 `(min, max)`；尚无有效 range（未更新）时返回 `None`。
+    ///
+    /// completedQ 的 σ 归一化用此**全局**范围替代局部 over-children min-max：
+    /// `|A|=2` 时局部 min-max 恒把两动作拉成 `{0,1}`，σ 退化为与 Q 差无关的符号开关；
+    /// 改用整棵搜索树的 Q 范围后，根动作的 `norm_q` 才反映其在全局分布里的真实位置。
+    pub fn range(&self) -> Option<(f32, f32)> {
+        if self.min.is_finite() && self.max.is_finite() && self.max >= self.min {
+            Some((self.min, self.max))
+        } else {
+            None
+        }
+    }
 }
 
 impl Default for MinMaxStats {

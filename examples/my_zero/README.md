@@ -31,7 +31,7 @@
 | value_prefix |                ❌                 |                 ⏳                 |      —      | CartPole 有害（≠ 全局坏） |
 | target_net   |                 ⏳                 |                 ⏳                 |      —      | 已入库，训练循环待接 |
 | SVE          |                 ⏳                 |                 ⏳                 |      —      | 已入库，训练循环待接；🔲 改进：固定权重 → 自适应 mixed target |
-| completedQ   | ❌ 2×2 无收益（visit ~12k vs CQ ~30–34k steps） |                 ⏳                 |      —      | CartPole 不 promote · [issue](../../.issue/items/my_zero_gumbel_completedq_cartpole_negative.md) |
+| completedQ   | ❌ tree-range 修复后仍慢（seed 16.7k/95k/232k+ vs visit 13.1k/55.9k/11.7k） |                 ⏳                 |      —      | 归一化 bug 已修但 CartPole 无增益、不 promote · [issue](../../.issue/items/my_zero_gumbel_completedq_cartpole_negative.md) |
 | Gumbel-root  | ❌ sims=10/20 未收敛（greedy 峰值 154/123） |                 ⏳                 |      —      | 库内已实现；CartPole 暂缓 · 同上 issue |
 | 连续采样候选 |              ✅ 接入不回归           |                 ⏳                 |      —      | CartPole N=2 退化全枚举；Pendulum B=7 首次真实子采样诊断 |
 

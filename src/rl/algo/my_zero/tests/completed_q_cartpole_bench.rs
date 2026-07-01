@@ -2,17 +2,17 @@
 //!
 //! | sims | PUCT visit | +completedQ | Gumbel visit |
 //! |------|------------|-------------|--------------|
-//! | 50   | 11,682 @ ep275 | 34,490 @ ep575 ❌ | — |
-//! | 20   | 12,186 @ ep250 ✅ | 30,409 @ ep450 ❌ | 峰值 greedy 123 @ ep1725 ❌ |
+//! | 50   | 11,682 @ ep275 | 34,490 @ ep575 ❌（旧：裸 vπ + c_scale=0.02） | — |
+//! | 20   | 12,186 @ ep250 ✅ | 30,409 @ ep450 ❌（旧：裸 vπ + c_scale=0.02） | 峰值 greedy 123 @ ep1725 ❌ |
 //! | 15   | 26,306 @ ep500 | （待测） | — |
 //! | 10   | 16,152 @ ep875 ✅ | （待测） | 峰值 greedy 154 @ ep1800+ ❌ |
 //!
 //! 详见 `.issue/items/my_zero_gumbel_completedq_cartpole_negative.md`
 //!
 //! ```bash
-//! # sim=20 基线
+//! # sim=20 基线（多 seed，Phase 1 never-worse 对照）
 //! cargo test --release cartpole_bench_s20_visit --features blas-mkl -- --ignored --nocapture
-//! # sim=20 + completedQ
+//! # sim=20 + completedQ（vmix + reference value_scale=0.1）
 //! cargo test --release cartpole_bench_s20_completed_q --features blas-mkl -- --ignored --nocapture
 //! ```
 
@@ -33,6 +33,7 @@ fn run_cartpole_bench(
         .solved(475.0)
         .max_episodes(2000)
         .num_simulations(sims)
+        .seeds(3)
         .save_model_when_eval(format!(
             "models/my_zero/CartPole-v1/seed_42/bench_s{sims}_{save_suffix}"
         ));

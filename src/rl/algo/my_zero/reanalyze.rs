@@ -220,8 +220,13 @@ mod tests {
         assert_eq!(step.policy_target, expected);
         // 与 visit target 应不同（completedQ 在此 mock 下会放大 Q 差）
         assert_ne!(step.policy_target, result.learn_policy);
-        let expected_direct =
-            completed_q_policy_target(&result.children, result.network_value, 50.0, 1.0);
+        let expected_direct = completed_q_policy_target(
+            &result.children,
+            result.network_value,
+            result.q_range,
+            50.0,
+            1.0,
+        );
         assert_eq!(step.policy_target, expected_direct);
     }
 
