@@ -12,10 +12,22 @@
 
     keywords=["machine-learning", "logic", "AI", "torch", "NEAT"]
 
+# 快迭代运行档：RL 长训练等 release 运行走这里。thin LTO + 多 codegen unit + 增量编译，
+# 单文件改动重编译从 ~1m30s（fat LTO + cg=1）降到十几秒；运行时代价见 bench 口径说明。
+# 注意：profile 不随 crate 发布，只影响本仓库本地构建。
 [profile.release]
+    lto          ="thin"
+    codegen-units=16
+    incremental  =true
+    strip        ="debuginfo"
+
+# 测量档：Criterion（cargo bench 默认走 bench profile）与宏基准钉死旧 release 配置
+# （fat LTO + 单 codegen unit + 无增量），保证历史 baseline 可比性不受上面放宽影响。
+[profile.bench]
+    inherits     ="release"
     lto          =true
     codegen-units=1
-    strip        ="debuginfo"
+    incremental  =false
 
 # Debug 模式优化：在保持可调试性的前提下提升运行速度
 # opt-level=1 对本项目代码开启基本优化（循环优化、部分内联）

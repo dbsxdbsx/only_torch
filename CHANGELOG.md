@@ -27,6 +27,12 @@
 
 ### Changed
 
+- **chore(build): 构建 profile 三档制 + justfile BLAS flag 统一**（2026-07-02）
+  - `[profile.release]` 放宽为 thin LTO + `codegen-units=16` + 增量编译——RL 单文件改动重编译 **~1m27s → ~13.5s**，MyZero 热路径运行时约 +5~10%；新增 `[profile.bench]` 钉死旧配置（fat LTO + `codegen-units=1` + 无增量），Criterion 历史 baseline 可比性不受影响，宏基准（`bench-macro*` / `bench-onnx-vs-otm`）改走 `--profile bench` 同口径
+  - justfile 三档口径（头部新增约定注释）：**验证档 dev**（test / 全部 smoke / 传统与演化示例；SAC smoke 自 release 归位 dev）· **运行档 release**（RL 完整训练；SAC 四目标补 `--release` 与 PPO/MyZero 对齐；dev 实测比 release 慢 1.5–2.9×，长跑不宜 dev）· **测量档 bench**
+  - 修复 6 个 RL 目标（PPO / MyZero 的 example + smoke）漏传 `{{_blas_flag}}`：echo 声称 MKL 实则 pure Rust 构建；micro-bench 实测 MKL 对 MyZero 各路径快 **1.0–1.5×**（`mkl-static-lp64-seq` 下 batch=1 小矩阵亦无调用开销回退）
+  - `examples-traditional` 聚合移除 3 个 SAC 目标（已归 `examples-rl`），`just examples` 恢复"无 Python 依赖的 dev 档正确性扫查"定位
+  - 历史哨兵 wall-clock / env-steps 为"纯 Rust + fat LTO"口径，后续对比注意后端与 profile 差异（两条口径变更已记入 `examples/my_zero/cartpole/README.md`）
 - **fix(nn/tensor/data): 非连续张量布局健壮性——统一守卫 panic 与静默算错**（框架级）
   - 张量可为非连续内存视图（`permute`/`transpose` 用 stride 重排）；多处"按物理行主序读缓冲"（`data_as_slice` / `flatten_view` / `as_slice().unwrap()` / 手写平铺偏移）隐含"逻辑序==物理序"假设，遇非连续输入会 **panic** 或**静默算错**（实测 conv2d 前向 loss 78 vs 正确 66，比 panic 更危险）
   - 方针：**局部守卫、非全局**（不在 autograd 驱动器 / `permute` 输出处强制连续，以保零拷贝视图）。新增 `Tensor::contiguous() -> Cow`（连续零拷贝借用、非连续单次物化）作为布局相关读取消费点的统一守卫；硬化 `flatten` / `flatten_mut` 对齐 `reshape`

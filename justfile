@@ -26,6 +26,15 @@ _detected_blas := ```
 _blas_flag := if _detected_blas != "" { "--features " + _detected_blas } else { "" }
 _blas_name := if _detected_blas == "blas-mkl" { "Intel MKL" } else if _detected_blas == "blas-openblas" { "OpenBLAS" } else { "pure Rust" }
 
+# ==================== 构建 Profile 约定（三档制） ====================
+# 验证档   dev（默认）     ：test / 全部 smoke / 短示例——图编译快（与 just test 共享缓存），
+#                            正确性与优化等级无关。dev 已配 opt-level=1 + 依赖 opt-level=3。
+# 运行档   release（放宽） ：RL 完整训练等长跑——thin LTO + cg=16 + 增量编译，
+#                            单文件改动重编译 ~13s（旧 fat LTO 约 1m30s），运行时约 +5~10%。
+# 测量档   bench（钉死）   ：Criterion 与 hyperfine 宏基准——固定 fat LTO + cg=1，
+#                            保证历史 baseline 可比；追求极限运行速度的超长跑也可手动
+#                            `cargo run --profile bench`。
+
 # 默认命令：运行测试和 lint
 default: test lint
 
@@ -132,31 +141,31 @@ bench-rnn:
 bench-attention:
     cargo bench --bench attention {{_blas_flag}}
 
-# 真实 example 级宏基准；显式触发，整组耗时分钟级
+# 真实 example 级宏基准；显式触发，整组耗时分钟级（测量档：--profile bench 钉死配置）
 bench-macro:
-    @echo "=== Macro benchmark (release, {{_blas_name}}) ==="
+    @echo "=== Macro benchmark (bench profile, {{_blas_name}}) ==="
     @command -v hyperfine >/dev/null 2>&1 || (echo "hyperfine 未安装，请先 cargo install hyperfine" && exit 1)
     @test -f "models/vinxiangqi.onnx" || (echo "缺少 chinese_chess_yolov5_onnx_recognize_fen 所需本地 ONNX 模型，请先按 example 文档下载；或改跑 just bench-macro-core" && exit 1)
     hyperfine --warmup 1 --runs 2 \
-      'cargo run --release {{_blas_flag}} --example mnist_cnn' \
-      'cargo run --release {{_blas_flag}} --example chinese_chess_yolov5_onnx_recognize_fen' \
-      'cargo run --release {{_blas_flag}} --example evolution_mnist' \
+      'cargo run --profile bench {{_blas_flag}} --example mnist_cnn' \
+      'cargo run --profile bench {{_blas_flag}} --example chinese_chess_yolov5_onnx_recognize_fen' \
+      'cargo run --profile bench {{_blas_flag}} --example evolution_mnist' \
       --export-json target/bench-macro.json
 
 # 决策性 bench：对比 ONNX 直载 vs OTM 预处理两条 model loading 路径
 # （冷启动、文件大小、参数量、推理速度），评估新模型选型时跑。不进 bench-save/compare 回归。
 bench-onnx-vs-otm:
-    @echo "=== ONNX vs OTM loading bench (release, {{_blas_name}}) ==="
+    @echo "=== ONNX vs OTM loading bench (bench profile, {{_blas_name}}) ==="
     @test -f "models/vinxiangqi.onnx" || (echo "缺少 models/vinxiangqi.onnx，请先按 examples/traditional/chinese_chess_yolov5_onnx_recognize_fen/README.md 拉取" && exit 1)
-    cargo test --release --test onnx_otm_load_bench {{_blas_flag}} -- --ignored --nocapture
+    cargo test --profile bench --test onnx_otm_load_bench {{_blas_flag}} -- --ignored --nocapture
 
 # 不依赖本地 ONNX 模型的宏基准子集
 bench-macro-core:
-    @echo "=== Macro benchmark core (release, {{_blas_name}}) ==="
+    @echo "=== Macro benchmark core (bench profile, {{_blas_name}}) ==="
     @command -v hyperfine >/dev/null 2>&1 || (echo "hyperfine 未安装，请先 cargo install hyperfine" && exit 1)
     hyperfine --warmup 1 --runs 2 \
-      'cargo run --release {{_blas_flag}} --example mnist_cnn' \
-      'cargo run --release {{_blas_flag}} --example evolution_mnist' \
+      'cargo run --profile bench {{_blas_flag}} --example mnist_cnn' \
+      'cargo run --profile bench {{_blas_flag}} --example evolution_mnist' \
       --export-json target/bench-macro-core.json
 
 # ==================== Examples ====================
@@ -169,7 +178,9 @@ examples: examples-traditional examples-evolution
 # 运行所有 traditional examples
 # 注:example-chinese-chess-yolov5-onnx-recognize-fen 不在此聚合内,因为它依赖 ~93MB 的 VinXiangQi
 # .onnx 模型(已被 .gitignore),需用户先跑 download_model.py 才能跑通
-examples-traditional: example-xor example-iris example-sine example-mnist example-mnist-cnn example-single-object-segmentation example-single-object-detection example-multi-instance-segmentation example-overlapping-shapes-semantic-segmentation example-overlapping-shapes-unet-lite-segmentation example-deformable-conv2d-segmentation example-overlapping-fixed-slot-instance-segmentation example-mnist-gan example-california example-parity example-dual-input example-siamese example-dual-output example-multi-io example-multi-label example-chinese-chess-cnn-onnx-finetune example-cartpole-sac example-pendulum-sac example-platform-sac
+# 注:RL 示例（SAC/PPO/MyZero）不在此聚合内——它们是 release 长训练且需 Python + gymnasium，
+# 归 examples-rl；本聚合保持"无 Python 依赖、dev 档正确性扫查"定位
+examples-traditional: example-xor example-iris example-sine example-mnist example-mnist-cnn example-single-object-segmentation example-single-object-detection example-multi-instance-segmentation example-overlapping-shapes-semantic-segmentation example-overlapping-shapes-unet-lite-segmentation example-deformable-conv2d-segmentation example-overlapping-fixed-slot-instance-segmentation example-mnist-gan example-california example-parity example-dual-input example-siamese example-dual-output example-multi-io example-multi-label example-chinese-chess-cnn-onnx-finetune
 
 # 运行所有 parity examples（RNN/LSTM/GRU）
 example-parity: example-parity-fixed example-parity-var example-parity-lstm example-parity-gru
@@ -283,56 +294,56 @@ example-chinese-chess-yolov5-onnx-recognize-fen:
 
 example-cartpole-sac:
     @echo "=== Running CartPole SAC [{{_blas_name}}] (requires Python + gymnasium) ==="
-    cargo run --example cartpole_sac {{_blas_flag}}
+    cargo run --example cartpole_sac --release {{_blas_flag}}
 
 # CartPole SAC smoke 验证（≥3 episode + loss 有限，不断言 reward）
 smoke-cartpole-sac:
     @echo "=== CartPole SAC SMOKE [{{_blas_name}}] ==="
-    SMOKE=1 cargo run --release --example cartpole_sac {{_blas_flag}}
+    SMOKE=1 cargo run --example cartpole_sac {{_blas_flag}}
 
 example-pendulum-sac:
     @echo "=== Running Pendulum SAC [{{_blas_name}}] (requires Python + gymnasium) ==="
-    cargo run --example pendulum_sac {{_blas_flag}}
+    cargo run --example pendulum_sac --release {{_blas_flag}}
 
 example-platform-sac:
     @echo "=== Running Platform Hybrid SAC [{{_blas_name}}] (requires Python + gymnasium + hybrid-platform) ==="
-    cargo run --example platform_sac {{_blas_flag}}
+    cargo run --example platform_sac --release {{_blas_flag}}
 
 example-lunarlander-sac:
     @echo "=== Running LunarLander-v3 SAC-Discrete [{{_blas_name}}] (requires Python + gymnasium[box2d]) ==="
-    cargo run --example lunarlander_sac {{_blas_flag}}
+    cargo run --example lunarlander_sac --release {{_blas_flag}}
 
 # ---------- RL 聚合 ----------
 
 # PPO CartPole（需 Python + gymnasium）
 example-cartpole-ppo:
     @echo "=== Running CartPole PPO [{{_blas_name}}] (requires Python + gymnasium) ==="
-    cargo run --example ppo_cartpole --release
+    cargo run --example ppo_cartpole --release {{_blas_flag}}
 
 # PPO CartPole smoke（管线验证，不验收敛）
 smoke-cartpole-ppo:
-    @echo "=== Running CartPole PPO Smoke ==="
-    SMOKE=1 cargo run --example ppo_cartpole
+    @echo "=== Running CartPole PPO Smoke [{{_blas_name}}] ==="
+    SMOKE=1 cargo run --example ppo_cartpole {{_blas_flag}}
 
 # MyZero CartPole（需 Python + gymnasium；CartPole 回归哨兵）
 example-cartpole-my-zero:
     @echo "=== Running CartPole MyZero [{{_blas_name}}] (requires Python + gymnasium) ==="
-    cargo run --example my_zero_cartpole --release
+    cargo run --example my_zero_cartpole --release {{_blas_flag}}
 
 # MyZero CartPole smoke（3 局管线验证，不落盘、不验收敛）
 smoke-my-zero-cartpole:
-    @echo "=== Running MyZero CartPole Smoke (no checkpoint) ==="
-    SMOKE=1 cargo run --example my_zero_cartpole
+    @echo "=== Running MyZero CartPole Smoke (no checkpoint) [{{_blas_name}}] ==="
+    SMOKE=1 cargo run --example my_zero_cartpole {{_blas_flag}}
 
 # MyZero Pendulum smoke（管线验证，不验收敛）
 smoke-my-zero-pendulum:
-    @echo "=== Running MyZero Pendulum Smoke ==="
-    SMOKE=1 cargo run --example my_zero_pendulum
+    @echo "=== Running MyZero Pendulum Smoke [{{_blas_name}}] ==="
+    SMOKE=1 cargo run --example my_zero_pendulum {{_blas_flag}}
 
 # MyZero Pendulum（需 Python + gymnasium；连续 + Sampled B=7）
 example-pendulum-my-zero:
     @echo "=== Running Pendulum MyZero [{{_blas_name}}] (requires Python + gymnasium) ==="
-    cargo run --example my_zero_pendulum --release
+    cargo run --example my_zero_pendulum --release {{_blas_flag}}
 
 # 运行所有 RL examples（需 Python + gymnasium + extras）
 examples-rl: example-cartpole-sac example-pendulum-sac example-platform-sac example-lunarlander-sac example-cartpole-ppo example-cartpole-my-zero

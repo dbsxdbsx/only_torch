@@ -23,6 +23,10 @@ SEEDS=3 cargo run --example my_zero_cartpole --release
 > **哨兵口径变更（batch-native + autograd 修复后）**：训练已改为 batch-native（`train_unroll_batch`，与逐样本数学等价），且修复了 MSE/MAE/BCE/Huber 反向忽略 `upstream_grad` 的框架 bug。梯度归约顺序改变 → env-steps 不再逐 bit 复现，验收改**统计口径**：`SEEDS=3` 下 **3/3 达标、median greedy 495.4、中位 env-steps ~21.9k**（seed 42/43/44 = 21928 / 9770 / 29614）。
 >
 > **下方消融表为历史数据**（逐样本 + 未修复 autograd，seed=42 单点）：旧的 ~10–13k env-steps 部分依赖 MSE bug 使 continuation/reconstruction 辅助 loss 偏强；修复后辅助 loss 回到正确量级，采样效率是诚实值。若要恢复更高样本效率，正道是显式调大 `RECONSTRUCTION_LOSS_COEF` / `CONTINUATION_LOSS_COEF`（后续调参）。
+>
+> **BLAS 口径变更（2026-07-02）**：`just` 的 MyZero/PPO 目标此前漏传 `{{_blas_flag}}`，历史 wall-clock 与 env-steps 均为**纯 Rust（matrixmultiply）口径**；现已与 test/bench 统一为自动检测注入（本机 Intel MKL）。micro-bench 实测 MKL 对 MyZero 各路径快 1.0–1.5×（无回退）；GEMM 浮点累加顺序不同会使轨迹漂移，属统计口径已覆盖的扰动，但与历史行对比 wall-clock 时需注意后端差异。
+>
+> **Release profile 口径变更（2026-07-02）**：`[profile.release]` 从 fat LTO + cg=1 放宽为 thin LTO + cg=16 + 增量编译（单文件改动重编译 ~1m30s → ~13s，MyZero 热路径运行时约 +5~10%）；Criterion / 宏基准钉死旧配置于 `[profile.bench]`，baseline 不受影响。后续哨兵 wall-clock 与历史行对比时同样注意此差异；若需极限速度长跑可手动 `cargo run --profile bench`。
 
 ---
 
