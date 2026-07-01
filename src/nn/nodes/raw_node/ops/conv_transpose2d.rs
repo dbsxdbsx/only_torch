@@ -379,15 +379,10 @@ impl TraitNode for ConvTranspose2d {
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         let input = parent_values[0];
         // kernel 前向经 `flatten_view()` 展平（`into_shape` 对非连续视图会 panic）；
-        // 父节点可能传入 permute 等非连续 kernel。已连续零成本借用，仅非连续时物化一份。
+        // 父节点可能传入 permute 等非连续 kernel。Cow 守卫：连续零拷贝借用，非连续物化一份。
         // （input/upstream 均用 ndarray 索引读取，对非连续安全，无需处理。）
-        let kernel_storage;
-        let kernel = if parent_values[1].is_contiguous() {
-            parent_values[1]
-        } else {
-            kernel_storage = parent_values[1].clone().into_contiguous();
-            &kernel_storage
-        };
+        let kernel_c = parent_values[1].contiguous();
+        let kernel: &Tensor = &kernel_c;
         self.cached_input_shape = input.shape().to_vec();
         let h_out = self.fixed_shape[2];
         let w_out = self.fixed_shape[3];
@@ -413,18 +408,14 @@ impl TraitNode for ConvTranspose2d {
         let input = parent_values
             .first()
             .ok_or_else(|| GraphError::ComputationError("转置卷积梯度计算需要输入".to_string()))?;
-        // kernel 反向经 `flatten_view()` 展平，非连续（如上游 permute）会 panic；已连续零成本借用。
+        // kernel 反向经 `flatten_view()` 展平，非连续（如上游 permute）会 panic。
+        // Cow 守卫：连续零拷贝借用，非连续物化一份。
         // （input 经 `input[[..]]`、upstream 经 `d_y[[..]]` 索引读取，对非连续安全。）
         let kernel_ref: &Tensor = *parent_values.get(1).ok_or_else(|| {
             GraphError::ComputationError("转置卷积梯度计算需要卷积核".to_string())
         })?;
-        let kernel_storage;
-        let kernel: &Tensor = if kernel_ref.is_contiguous() {
-            kernel_ref
-        } else {
-            kernel_storage = kernel_ref.clone().into_contiguous();
-            &kernel_storage
-        };
+        let kernel_c = kernel_ref.contiguous();
+        let kernel: &Tensor = &kernel_c;
 
         let orig_input_shape = &self.cached_input_shape;
         let (batch_size, in_c, h_in, w_in) = (

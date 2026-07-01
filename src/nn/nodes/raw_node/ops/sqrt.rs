@@ -117,8 +117,12 @@ impl TraitNode for Sqrt {
         })?;
 
         // grad = upstream_grad * 0.5 / y，其中 y = √x
+        // 前向 √x 用 mapv 计算，会保留输入的内存布局：若输入来自 permute/transpose
+        // （非连续视图），则缓存的 output 也非连续，直接 data_as_slice 会 panic。
+        // contiguous() 连续时零拷贝借用，非连续时按逻辑序物化一次（值序与 output.shape() 对齐）。
+        let output_c = output.contiguous();
         let half_recip = Tensor::new(
-            &output
+            &output_c
                 .data_as_slice()
                 .iter()
                 .map(|&y| 0.5 / y)

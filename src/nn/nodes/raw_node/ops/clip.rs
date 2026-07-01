@@ -173,11 +173,12 @@ impl TraitNode for Clip {
 
         // mask: 1.0 if min < x < max, else 0.0
         // 边界处（x == min 或 x == max）梯度为 0（与 PyTorch 行为一致）
-        // 用 to_vec 按逻辑行主序取值：input_cache 可能是 permute/narrow 等非连续视图，
-        // 直接 data_as_slice 会 panic。
+        // input_cache 可能是 permute/narrow 等非连续视图。Cow 守卫：连续时零拷贝借用，
+        // 非连续时物化一份（按逻辑行主序，与 input.shape() 对齐）。
+        let input_c = input.contiguous();
         let mask = Tensor::new(
-            &input
-                .to_vec()
+            &input_c
+                .data_as_slice()
                 .iter()
                 .map(|&x| if x > min && x < max { 1.0 } else { 0.0 })
                 .collect::<Vec<_>>(),

@@ -476,7 +476,10 @@ impl Tensor {
         if !self.is_contiguous() {
             self.data = self.data.as_standard_layout().into_owned();
         }
-        self.data = self.data.clone().into_shape(vec![total_elements]).unwrap();
+        // 此时 data 必为连续，into_shape 仅改写元数据（O(1)）；用 mem::replace 取出所有权，
+        // 避免多余的整块 clone（占位空数组零分配）。
+        let contiguous = std::mem::replace(&mut self.data, Array::zeros(IxDyn(&[0])));
+        self.data = contiguous.into_shape(vec![total_elements]).unwrap();
     }
 
     /// 返回张量的1维展开视图，不复制数据

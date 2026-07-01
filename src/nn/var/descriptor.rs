@@ -176,7 +176,10 @@ fn node_type_to_descriptor(raw: &NodeType) -> NodeTypeDescriptor {
         NodeType::WhereCond(w) => {
             let cond = w.condition();
             NodeTypeDescriptor::WhereCond {
-                condition_data: cond.data_as_slice().to_vec(),
+                // condition 归一化用 where_with_f32（mapv 类）会保留输入布局：若用户传入
+                // permute/transpose 掩码，cond 可能非连续，data_as_slice 会 panic。
+                // to_vec 按逻辑行主序展开、对任意布局都成立（与 condition_shape 对齐）。
+                condition_data: cond.to_vec(),
                 condition_shape: cond.shape().to_vec(),
             }
         }

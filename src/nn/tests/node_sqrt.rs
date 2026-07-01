@@ -17,7 +17,7 @@
  */
 
 use crate::nn::Mode;
-use crate::nn::{Graph, GraphError, Init, VarActivationOps, VarLossOps};
+use crate::nn::{Graph, GraphError, Init, VarActivationOps, VarLossOps, VarShapeOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 use std::rc::Rc;
@@ -173,6 +173,51 @@ fn test_sqrt_backward_e2e() -> Result<(), GraphError> {
     let x_grad = x.grad()?.expect("x 应有 grad");
     assert_eq!(x_grad.shape(), &[2, 2]);
 
+    Ok(())
+}
+
+/// **回归测试**：`permute(x) → sqrt → mse_loss` 中 sqrt 非终端且输入非连续。
+///
+/// sqrt 前向用 `mapv` 计算，会保留输入布局：非连续输入（permute 视图）→ 缓存输出也非连续。
+/// 反向此前用 `output.data_as_slice()` 会 **panic**（`Tensor 数据应为连续内存布局`）。
+/// 本用例用非对称 target 制造非均匀上游，既抓 panic，也抓"按物理序错读"的静默错误：
+/// 与「把 permute 结果显式物化为连续参数」的等价计算对比，loss 与梯度须逐元素一致。
+#[test]
+fn test_sqrt_noncontiguous_backward() -> Result<(), GraphError> {
+    // Path A：x[2,3] → permute([1,0]) → [3,2] 非连续 → sqrt → mse
+    let ga = Graph::new();
+    let x = ga.parameter(&[2, 3], Init::Zeros, "x")?;
+    x.set_value(&Tensor::new(&[1.0, 4.0, 9.0, 16.0, 25.0, 36.0], &[2, 3]))?;
+    let xp = x.permute(&[1, 0])?; // [3,2] 非连续
+    let target_data = [0.5, 3.5, 1.5, 4.5, 2.5, 5.5];
+    let sa = xp.sqrt();
+    let ta = ga.input(&Tensor::new(&target_data, &[3, 2]))?;
+    let loss_a = sa.mse_loss(&ta)?;
+    ga.zero_grad()?;
+    let la = loss_a.backward()?;
+    let grad_x = x.grad()?.expect("x 应有 grad").clone();
+    assert_eq!(grad_x.shape(), &[2, 3]);
+
+    // Path B：把 permute 结果显式物化为连续参数 xc[3,2]，其余相同
+    let gb = Graph::new();
+    let xc = gb.parameter(&[3, 2], Init::Zeros, "xc")?;
+    // x.permute([1,0]) 的逻辑值（行主序）：[[1,16],[4,25],[9,36]]
+    xc.set_value(&Tensor::new(&[1.0, 16.0, 4.0, 25.0, 9.0, 36.0], &[3, 2]))?;
+    let sb = xc.sqrt();
+    let tb = gb.input(&Tensor::new(&target_data, &[3, 2]))?;
+    let loss_b = sb.mse_loss(&tb)?;
+    gb.zero_grad()?;
+    let lb = loss_b.backward()?;
+    let grad_xc = xc.grad()?.expect("xc 应有 grad").clone();
+
+    // loss 必须一致
+    assert_abs_diff_eq!(la, lb, epsilon = 1e-6);
+    // grad_x[2,3] 应等于 grad_xc[3,2] 逆 permute 回 [2,3]（逐元素一致，抓静默错序）
+    let grad_xc_back = grad_xc.permute(&[1, 0]);
+    assert_eq!(grad_xc_back.shape(), &[2, 3]);
+    for (a, b) in grad_x.to_vec().iter().zip(grad_xc_back.to_vec().iter()) {
+        assert_abs_diff_eq!(*a, *b, epsilon = 1e-6);
+    }
     Ok(())
 }
 
