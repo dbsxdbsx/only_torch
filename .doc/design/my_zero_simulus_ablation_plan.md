@@ -23,7 +23,7 @@
 
 - **改动**：`value_encoding.rs` 增加 `scalar_to_hl_gauss(x, cfg, σ)`——软标签由"相邻两原子线性插值"改为"高斯 CDF 差分摊到全 support"（Farebrother et al. 2024 实证 HL-Gauss > two-hot > MSE）；解码端不变（期望 → h⁻¹）。网络头与 CE loss 完全复用，改动集中在编码函数 + 一个 σ 超参（论文用 σ ≈ 0.75 × bin 宽）。
 - **前置**：无框架级前置（CE 已支持 soft target——two-hot 本身就是 soft 的）。
-- **消融**：recipe 不动，仅切编码；3-seed vs 现基线（promoted 中位 ~66.2k）。
+- **消融**：recipe 不动，仅切编码；3-seed vs 现哨兵（以[账本](../../examples/my_zero/cartpole/README.md)当前 promoted 行为准，不在本文维护数字）。
 - **预期与判读**：CartPole value 范围窄，预期持平——**持平即通过**（哨兵证"不崩"），真正收益押在图像线大 value 噪声场景；若显著劣化则回退并记录。
 
 ### A2 · 辅助 loss stop-gradient 解耦实验（P0 批次，与 loss 系数重标定同批）
@@ -44,7 +44,7 @@
 | 项 | 触发条件 |
 |---|---|
 | ensemble JSD 内在奖励 | 图像线遇到**稀疏奖励**环境（商业游戏类）且探索成为实测瓶颈；实现时用 stop-grad 输出上的多头（开销小），奖励只注入想象/搜索期 |
-| symlog 观测归一化 | 图像线连续特征范围失控时作为廉价预处理选项 |
+| symlog 观测归一化 | **已升级为主动项（2026-07-02）**：排入[收口规划 Phase 0](./rl_closure_plan.md)「obs 无量纲化（symlog）消融」，不再等触发；协议以该处为准 |
 
 ## 4. 执行顺序与验收
 

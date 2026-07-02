@@ -21,6 +21,7 @@
 - **docs(rl): RL 全面收口规划落盘（v0.26→v0.28 五阶段）**（2026-07-02）
   - 新增 `.doc/design/rl_closure_plan.md`：终态验收四条（矩阵零 ⏳ / 四类环境支柱 / issue 全归档 / smoke-rl 扩容）+ 五阶段战役次序（训练信号收口 → 图像线+风险 spike → Gomoku self-play → 样本效率纵深 → 总收口）+ issue/版本裁决映射 + Simulus 与旧规划吸收对照（§6b/§6c，零散 plan 全部清账）+ 两条制度化条款（spike 唯一改道节点、CartPole 哨兵铁律）；`rl_roadmap.md` §5 链入
   - Gumbel 负结果 issue 补 **§七 复裁前置修复清单**：① greedy eval 注入 Gumbel 噪声 bug（`final_recommendation` 无视 temperature=0，疑似"未收敛"真因，此前无仓库内记录）② `q_range` 局部归一化同源 bug——两项不修则 Phase 2 复裁无效
+  - 补遗（同日完整性二审）：Phase 0 增 **obs 无量纲化（symlog）消融**（全家 loss 仅 reconstruction 带环境量纲；模型边界单点变换 + 预注册三臂协议入档，此前方案仅存于对话记录；Phase 1 挂「recon 系数免重调」兑现判据，Simulus 计划 §3 symlog 行同步升级为主动项）；认领两条悬空项——Phase 4 **Sampled 小动作空间自动短路裁决**（账本 v0.25 结论 3「留 v0.26 评估」此前无人认领）、Phase 2 `predict_batch` 条件触发（草案有、落盘时遗失）
 - **docs: CPU 优化 + RL 样本效率论文批次清账（7 篇）**（2026-07-02）
   - 新增 `.doc/paper/reading_log.md` 累积论文阅读日志：Winograd / 手写 GEMM / Strassen 系内核级优化路线**整体否决盖棺**（含"未来图像线网络变大"场景，理由逐条留档），唯一采纳项 Simulus（arXiv 2502.11537）
   - 新增 `.doc/design/my_zero_simulus_ablation_plan.md`：HL-Gauss value 编码（two-hot 升级，挂 P0）、辅助 loss stop-gradient 解耦实验（挂 P0）、loss 优先回放（挂 P1 reanalyze）三项消融候选的映射与执行顺序；`rl_roadmap.md` §5 链入

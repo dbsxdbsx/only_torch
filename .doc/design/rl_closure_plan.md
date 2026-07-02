@@ -2,7 +2,7 @@
 
 > **定位**：把「所有 RL 基准 + MyZero 万金油算法」收口到可验收终态的**战役次序文档**——回答"先做什么、后做什么、为什么这个顺序、做到什么算过关"。
 > 当前状态与验收协议见 [rl_roadmap.md](./rl_roadmap.md)；战术细节各自链出（Simulus 消融见 [my_zero_simulus_ablation_plan.md](./my_zero_simulus_ablation_plan.md)）；实测数字唯一账本仍是 [cartpole README](../../examples/my_zero/cartpole/README.md)。
-> **创建**：2026-07-02 · 贯穿纪律沿用 [roadmap §3.2](./rl_roadmap.md#32-改动纪律搬运--改进沿用)：一次一项、预注册协议、3-seed 消融、数字只进账本。
+> **创建**：2026-07-02 · 贯穿纪律沿用 [roadmap §3.2](./rl_roadmap.md#32-改动纪律搬运--改进沿用)：一次一项、预注册协议、3-seed 消融、数字只进账本；性能优化 measure-first、挂实测需求（内核级优化路线已盖棺，见 [optimization_candidates](../optimization_candidates.md)）。
 
 ---
 
@@ -22,7 +22,11 @@
 - ✅ 系数消融 4+1 臂 + recon 5-seed 复裁（已收口：recon_coef 1→16 promote，哨兵中位 66.2k→~9.8k；recon=1 实测有害、悬案闭合——见账本与 CHANGELOG 2026-07-02 条目）
 - ⏳ 梯度流审计（读码产出 cons/recon 对 representation/dynamics 的回流现状图，零风险先行）→ 视结果追加 **sg 解耦臂**（= Simulus 计划 A2）
 - ⏳ **HL-Gauss 编码消融**（= Simulus 计划 A1：two-hot → 高斯软标签，改动集中在 `value_encoding.rs`）
-- **退出判据**：v0.26 recipe 定稿（系数 + 编码 + 梯度流结构三者有据）、账本回填；**此后 CartPole 冻结为纯回归哨兵**（见 §7 条款二）。
+- ⏳ **obs 无量纲化（symlog）消融**（2026-07-02 P0 复盘定案：全家 loss 仅 reconstruction 直接暴露在环境单位下——value/reward 已走 h 变换 + categorical、consistency 余弦、continuation 有界；量纲不统一则 recon 系数每换环境重付一轮标定税，须在图像线定 CNN 约定**之前**收口。与上两项同为改行为，串行执行）
+  - 落点：`MyZeroModel` obs 入口**单点** `symlog(x) = sign(x)·ln(1+|x|)`——repr 输入与 recon 解码目标同源变换；无状态（不进 checkpoint、保 seed 逐 bit 复现）；buffer / env I/O 继续存 raw obs
+  - 预注册：内部开关 `obs_symlog`（默认关，零行为变化落地）；三臂 = symlog × recon_coef {16, 4, 1} 各 3-seed vs 现哨兵；小系数与 16 打平 → 按简单性取小并 promote（系数回归论文默认 = 量纲工作被撤走的证明）；显著劣化 → 负结果留档、保持现状（量纲留图像线 [0,1] 自然解决）
+  - 判据定位：CartPole 只验「不显著变差 + 最优系数向 1 回移」，**不预期变快**；终极兑现判据挂 Phase 1——图像环境 recon 系数**免重调**
+- **退出判据**：v0.26 recipe 定稿（系数 + obs 量纲 + 编码 + 梯度流结构四者有据）、账本回填；**此后 CartPole 冻结为纯回归哨兵**（见 §7 条款二）。
 
 ## 2. Phase 1 · 图像线立柱 + 一级风险压测（v0.26 下半）
 
@@ -30,7 +34,7 @@
 
 - **风险 spike 先行**：最小 CNN 栈 + 假图像输入，实测「CNN 前向 × sims」单步 wall-clock，对照 [CPU 风险 issue](../../.issue/items/cpu_only_mcts_image_realtime_risk.md) 的触发线，产出去/留/改道决策
 - 图像 obs 管线（复用 `src/vision/preprocess`：降采样/灰度/帧堆叠）→ CNN representation 进 `network.rs`（按 recipe 注入）→ **预注册基准门槛**（Pong 类；验收 = 3-seed 可复现学习曲线 + 预注册分数，**非 SOTA**）
-- native 域复裁：consistency / reconstruction / HL-Gauss 各一次 A/B；recon_coef=16 为 CartPole 临时值，在此复验
+- native 域复裁：consistency / reconstruction / HL-Gauss 各一次 A/B；recon_coef 为 CartPole 临时值，在此复验；obs symlog（Phase 0 裁决）的「recon 系数免重调」兑现判据也在此验证
 - Simulus 暂缓项触发点：若环境奖励稀疏且探索成实测瓶颈，ensemble JSD 内在奖励在此转正（唯一入口）
 - **退出判据**：图像支柱 3-seed 账本 + CPU 风险 issue 第一格勾选。
 
@@ -42,6 +46,7 @@
   - ① greedy eval 去噪 bug：`gumbel.rs::final_recommendation` 无视 `temperature=0` 仍用 Gumbel 噪声打分，eval 分数被污染（疑似"Gumbel 未收敛"负结果真因）——详见[负结果 issue §七](../../.issue/items/my_zero_gumbel_completedq_cartpole_negative.md)
   - ② `q_range` 局部归一化同源 bug（completedQ 已修 tree-level，Gumbel 侧未修，issue §六留档）
 - Gomoku 训练闭环（棋盘 2D 表征复用 Phase 1 CNN）→ **预注册棋盘账本口径**（建议 vs random ≥95% + vs 旧 checkpoint ≥55%）→ Gumbel-root / completedQ 终局复裁（兼 P2 少 sim acting 复测）
+- 条件项：self-play 对弈吞吐成实测瓶颈时，兑现 `predict_batch` 批量叶子评估接缝（挂需求、不主动做；缓解杠杆背景见 [CPU 风险 issue](../../.issue/items/cpu_only_mcts_image_realtime_risk.md)）
 - 裁决后据实沉淀「三件套正交分层」文档至 [vision](./my_zero_algorithm_vision.md) §5.4（Sampled=候选层 / Gumbel=根层 / completedQ=目标层 + 融合契约——旧规划遗留文档债）
 - **退出判据**：胜率门槛达成 + 两个负结果 issue 终局归档 + 棋盘 recipe 进 `recipe.rs`。
 
@@ -59,6 +64,7 @@
 - **Pendulum 固定预算终审**（假设清单见[诊断 issue](../../.issue/items/pendulum_failure_diagnosis.md)）：修好 → 连续支柱成立（Sampled B=7 真实子采样一并裁决）；修不好 → 正式 known-limitation。**两个出口都是收口。**
 - **value_prefix 复测前置**（矩阵清零该行前必做，若 Phase 1 提前复测则随 Phase 1）：补 `use_value_prefix=true` 的逐样本 vs batch 等价测试 + `ValuePrefixLstm` 专项测试——现状 `batch_train_equivalence.rs` 显式 `vp=false`，LSTM 路径零测试覆盖（v0.24 遗留测试债，v0.25 batch 化后扩大）
 - **reward_scale 去旋钮化**（旧 completedq_norm_reshape 规划 B1 遗留：`config.rs` 用户旋钮、Pendulum override 0.1；自动 support 半宽或内部归一化；若 Phase 1 图像 reward 尺度先成障碍则提前）
+- **Sampled 小动作空间自动短路裁决**（认领账本 v0.25 结论 3「留 v0.26 评估」的悬空项）：纯离散 K_eff=N 全枚举时 Sampled 与 PUCT 已实证逐步等价、仅余 +~26% wall-clock 簿记开销——recipe 是否自动短路在此终审，做/不做皆可、裁决回注账本（等价性优化，非行为改动）
 - 矩阵清零（逐格补测或裁决 ⏸）→ smoke-rl 扩容 + `baseline_matrix_bench` 增量链重定档 → 文档终审（roadmap 重写为收口版，v0.26–v0.27 归档）
 - **Platform 混合动作正式不在收口范围**（v0.25 旧规划 G3 硬承诺作废，roadmap 已降级留 backlog，§0 终态验收不含它）
 
