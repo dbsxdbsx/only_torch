@@ -4,6 +4,9 @@
 
 ### Added
 
+- **docs(rl): 商业实时图像游戏目标画像登记（匿名化）**（2026-07-02）
+  - 新增 `.issue/items/commercial_realtime_game_target_profile.md`：纲领 §2.3「商业图像游戏」战略目标的真实标的技术画像（16:9 非方形 obs / 滑窗 3 帧 / Dict 观测 / MultiDiscrete 256 联合动作 / 50ms 决策周期 / 重度 POMDP）× 五项能力缺口清单（矩形输入 → 堆叠可配 → Dict obs 双分支 → MultiDiscrete 适配 → POMDP 验证，均不进 v0.26 关键路径、按接入需求逐项兑现）
+  - 关键洞察存档：私有侧「MCTS 实时延迟硬伤」旧否决基于 Python 栈算术（~5-6ms/推理 × 50 sims），被 Phase 1 spike 实测推翻（recurrent 0.03ms，sims=50 全套 3.9ms）——wall-clock 维度该标的对 MyZero 重新开放；纲领 §2.3 链入
 - **feat(my_zero): v0.26 Phase 1 图像线立柱——风险 spike 裁决 GO + 图像 obs 管线 / CNN 表征进库 + Pong 基准载体**（2026-07-02，基准数字待回填，见下方已知问题）
   - **风险 spike（收口规划 §2 条款一唯一改道节点，裁决 GO 绿）**：`tests/spike_cnn_mcts_bench.rs`（手动档，`just spike-cnn-mcts`）实测 flat-latent 臂完整 acting 单步（真实 `mcts_search` 含树簿记）sims=2/20/50 = **1.9/2.3/3.9ms**、悲观 conv-recurrent 臂 sims=50 = 6.6ms——两臂全档位远低于 16–33ms 实时预算线；「CNN×sims」结构性风险不成立（CNN 只进 representation，sims 放大的 MLP recurrent 仅 0.03ms）；数字与适用边界回填 [CPU 风险 issue §四/§五](.issue/items/cpu_only_mcts_image_realtime_risk.md)
   - **图像 obs 管线**：新增 `obs_pipeline.rs`——BT.601 灰度 → 双线性 84² → [0,1] → 4 帧堆叠；`ObsAdapter`（与 `ActionAdapter` 对偶，按 env 观察空间事实自动检测）；**内存纪律**：buffer 只存单帧（≈28KB/步），堆叠在 acting 滑窗 / 训练组装两处按需拼（episode 起点前向填充，语义逐 bit 一致）

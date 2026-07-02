@@ -46,7 +46,7 @@ MyZero 的两个**真实落地目标**，及其对路线优先级的含义：
 | 目标 | 特性 | 命中的算法本命田 |
 |------|------|------------------|
 | **中国象棋** | 离散、完美信息、self-play | AlphaZero 系正是为此发明；MCTS + self-play + legal_mask 是标准答案 |
-| **商业图像游戏** | 图像 obs、实时（环境不等 agent）、样本贵 | EfficientZero 立身之本（Atari-100k：极少样本掌握图像游戏）；自监督表征（consistency + reconstruction）是命门组件 |
+| **商业图像游戏** | 图像 obs、实时（环境不等 agent）、样本贵 | EfficientZero 立身之本（Atari-100k：极少样本掌握图像游戏）；自监督表征（consistency + reconstruction）是命门组件。真实标的的匿名化技术画像与能力缺口清单见 [目标画像 issue](../../.issue/items/commercial_realtime_game_target_profile.md)（2026-07-02：spike 实测推翻「MCTS 实时延迟硬伤」旧否决，wall-clock 维度重新开放） |
 
 由此得出的路线裁决：
 

@@ -38,6 +38,12 @@
 
 `pong_image_ablation_bench.rs`:recon(RECON_COEF pilot {1,4,16} → 3-seed)/ cons-off / hl-gauss 三臂,半额预算 75 局,协议已预注册。
 
+## 四b、附带产出:商业实时游戏目标画像登记(2026-07-02)
+
+以真实商业标的(匿名化)对表 Phase 1 产物,新开 [目标画像 issue](../../.issue/items/commercial_realtime_game_target_profile.md):
+16:9 非方形输入 / 堆叠数可配 / Dict obs 双分支 / MultiDiscrete 适配 / POMDP 验证五项缺口登记(均不进 v0.26 关键路径);
+关键洞察——私有侧「MCTS 实时延迟硬伤」旧否决基于 Python 栈算术,被本框架 spike 实测推翻,已链入纲领 §2.3。
+
 ## 五、待办
 
 - [ ] Ep53 崩溃根因 + 修复
