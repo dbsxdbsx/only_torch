@@ -446,6 +446,58 @@ fn test_create_sigmoid_node_chain() {
     assert_eq!(sig2.parents().len(), 1);
 }
 
+// ==================== 融合反向逐 bit 金测试 ====================
+
+/// 融合反向（zip_map 单趟）必须与旧张量链逐 bit 一致
+///
+/// 旧链：`ones - y` → `y * (1-y)` → `g * local`（3 次全尺寸分配 + 3 趟遍历）；
+/// 新实现：`g * (y * (1-y))` 单趟融合。逐元素运算顺序一致，结果必须逐 bit 相等，
+/// 否则依赖梯度数值的哨兵复现性会漂移。
+#[test]
+fn test_sigmoid_vjp_bitwise_matches_unfused_chain() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let x = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 7], Some("x"))
+        .unwrap();
+    let sigmoid = inner
+        .borrow_mut()
+        .create_sigmoid_node(x.clone(), Some("sigmoid"))
+        .unwrap();
+
+    x.set_value(Some(&Tensor::normal_seeded(0.0, 2.0, &[4, 7], 3)))
+        .unwrap();
+    sigmoid.forward_recursive(1, Mode::Train).unwrap();
+
+    let upstream_grad = Tensor::normal_seeded(0.0, 1.5, &[4, 7], 4);
+    let grad = sigmoid
+        .calc_grad_to_parent_index(0, &upstream_grad)?
+        .resolve(&upstream_grad);
+
+    // 旧链参考实现（融合前的张量表达式，逐元素：先 y*(1-y) 再乘 g）
+    let y = sigmoid.value().unwrap();
+    let one_minus_y = Tensor::ones(y.shape()) - &y;
+    let local_grad = &y * &one_minus_y;
+    let expected = &upstream_grad * &local_grad;
+
+    let g = grad.data_as_slice();
+    let e = expected.data_as_slice();
+    assert_eq!(g.len(), e.len());
+    for i in 0..g.len() {
+        assert_eq!(
+            g[i].to_bits(),
+            e[i].to_bits(),
+            "Sigmoid 融合反向与旧链不逐 bit 一致：i={i} fused={} reference={}",
+            g[i],
+            e[i]
+        );
+    }
+
+    Ok(())
+}
+
 #[test]
 fn test_create_sigmoid_node_drop_releases() {
     let graph = Graph::new();

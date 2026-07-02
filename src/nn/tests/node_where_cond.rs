@@ -421,3 +421,62 @@ fn test_where_cond_different_graph() {
     let err = crate::nn::Var::where_cond(&cond, &x, &y);
     assert!(err.is_err(), "不同 Graph 应报错");
 }
+
+// ==================== 融合反向逐 bit 金测试 ====================
+
+/// grad_y 融合实现（zip_map 单趟）必须与旧张量链逐 bit 一致
+///
+/// 旧链：`ones - cond` → `inv_cond * g`（2 次全尺寸分配）；
+/// 新实现：`(1 - c) * g` 单趟融合。逐元素运算顺序一致，结果必须逐 bit 相等。
+#[test]
+fn test_where_cond_grad_y_bitwise_matches_unfused_chain() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let x = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 7], Some("x"))
+        .unwrap();
+    let y = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 7], Some("y"))
+        .unwrap();
+    // 伪随机 0/1 掩码（固定模式，可复现）
+    let cond_data: Vec<f32> = (0..28).map(|i| f32::from(u8::from(i % 3 != 0))).collect();
+    let cond = Tensor::new(&cond_data, &[4, 7]);
+
+    let wc = inner
+        .borrow_mut()
+        .create_where_cond_node(x.clone(), y.clone(), cond.clone(), Some("wc"))
+        .unwrap();
+
+    x.set_value(Some(&Tensor::normal_seeded(0.0, 2.0, &[4, 7], 7)))
+        .unwrap();
+    y.set_value(Some(&Tensor::normal_seeded(0.0, 2.0, &[4, 7], 8)))
+        .unwrap();
+    wc.forward_recursive(1, Mode::Train).unwrap();
+
+    let upstream_grad = Tensor::normal_seeded(0.0, 1.5, &[4, 7], 9);
+    let grad_y = wc
+        .calc_grad_to_parent_index(1, &upstream_grad)?
+        .resolve(&upstream_grad);
+
+    // 旧链参考实现（融合前的张量表达式：先 1-c 再乘 g）
+    let inv_cond = Tensor::ones(cond.shape()) - &cond;
+    let expected = &inv_cond * &upstream_grad;
+
+    let g = grad_y.data_as_slice();
+    let e = expected.data_as_slice();
+    assert_eq!(g.len(), e.len());
+    for i in 0..g.len() {
+        assert_eq!(
+            g[i].to_bits(),
+            e[i].to_bits(),
+            "WhereCond grad_y 融合与旧链不逐 bit 一致：i={i} fused={} reference={}",
+            g[i],
+            e[i]
+        );
+    }
+
+    Ok(())
+}

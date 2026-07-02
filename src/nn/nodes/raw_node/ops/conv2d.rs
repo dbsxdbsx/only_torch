@@ -219,11 +219,13 @@ impl Conv2d {
         let input_slice = input_flat.as_slice().unwrap();
         let input_sample_size = c * h * w;
 
-        // Rayon 并行处理每个 batch 样本
-        let batch_results: Vec<Vec<f32>> = (0..batch_size)
-            .into_par_iter()
-            .map(|bi| {
-                let mut sample_data = vec![0.0f32; single_sample_size];
+        // 预分配整块输出（零值即 padding），Rayon 按样本 chunk 直写：
+        // 相比旧的 Vec<Vec> 收集 + flatten + Tensor::new，少两次全量拷贝。
+        let mut all_data = vec![0.0f32; batch_size * single_sample_size];
+        all_data
+            .par_chunks_mut(single_sample_size)
+            .enumerate()
+            .for_each(|(bi, sample_data)| {
                 let input_base = bi * input_sample_size;
                 for ci in 0..c {
                     let input_channel_base = input_base + ci * h * w;
@@ -231,17 +233,13 @@ impl Conv2d {
                     for hi in 0..h {
                         let input_row_base = input_channel_base + hi * w;
                         let output_row_base = output_channel_base + (hi + pad_h) * new_w + pad_w;
-                        for wi in 0..w {
-                            sample_data[output_row_base + wi] = input_slice[input_row_base + wi];
-                        }
+                        sample_data[output_row_base..output_row_base + w]
+                            .copy_from_slice(&input_slice[input_row_base..input_row_base + w]);
                     }
                 }
-                sample_data
-            })
-            .collect();
+            });
 
-        let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
-        Tensor::new(&all_data, &new_shape)
+        Tensor::from_vec(all_data, &new_shape)
     }
 
     /// im2col：将单样本输入 [C_in, H, W] 展开为列矩阵 [out_h*out_w, C_in*k_h*k_w]
@@ -315,7 +313,42 @@ impl Conv2d {
         dil_w: usize,
     ) -> Vec<f32> {
         let mut result = vec![0.0f32; in_c * in_h * in_w];
+        Self::col2im_into(
+            col,
+            &mut result,
+            in_c,
+            in_h,
+            in_w,
+            k_h,
+            k_w,
+            out_h,
+            out_w,
+            stride_h,
+            stride_w,
+            dil_h,
+            dil_w,
+        );
+        result
+    }
 
+    /// col2im 的直写版本：累加进调用方提供的**已清零**缓冲（免中间 Vec 分配）
+    #[allow(clippy::too_many_arguments)]
+    fn col2im_into(
+        col: &Array2<f32>,
+        result: &mut [f32],
+        in_c: usize,
+        in_h: usize,
+        in_w: usize,
+        k_h: usize,
+        k_w: usize,
+        out_h: usize,
+        out_w: usize,
+        stride_h: usize,
+        stride_w: usize,
+        dil_h: usize,
+        dil_w: usize,
+    ) {
+        debug_assert_eq!(result.len(), in_c * in_h * in_w);
         for oh in 0..out_h {
             for ow in 0..out_w {
                 let row = oh * out_w + ow;
@@ -335,7 +368,6 @@ impl Conv2d {
                 }
             }
         }
-        result
     }
 
     /// im2col + GEMM 卷积（Rayon 批并行）
@@ -372,26 +404,27 @@ impl Conv2d {
         let k_flat = kernel.flatten_view();
         let kernel_mat = k_flat.into_shape((out_c, col_w)).unwrap();
 
-        // Rayon 并行计算每个 batch 样本
-        let batch_results: Vec<(Vec<f32>, Array2<f32>)> = (0..batch_size)
-            .into_par_iter()
-            .map(|b| {
+        // 预分配整块输出，Rayon 按样本 chunk 直写：GEMM 经 general_mat_mul 写入
+        // chunk 视图（与 dot 同一 BLAS/matrixmultiply 调用，beta=0，结果逐 bit 一致），
+        // 相比旧的「dot 分配 → collect 拷贝 → extend 拷贝 → Tensor::new 拷贝」少三次全量拷贝。
+        let sample_out_size = out_c * out_h * out_w;
+        let spatial = out_h * out_w;
+        let mut all_data = vec![0.0f32; batch_size * sample_out_size];
+        let im2col_cache: Vec<Array2<f32>> = all_data
+            .par_chunks_mut(sample_out_size)
+            .enumerate()
+            .map(|(b, chunk)| {
                 let col = Self::im2col(
                     input, b, in_c, k_h, k_w, out_h, out_w, stride_h, stride_w, dil_h, dil_w,
                 );
-                let result = kernel_mat.dot(&col.t());
-                (result.iter().copied().collect(), col)
+                let mut out_view =
+                    ndarray::ArrayViewMut2::from_shape((out_c, spatial), chunk).unwrap();
+                ndarray::linalg::general_mat_mul(1.0, &kernel_mat, &col.t(), 0.0, &mut out_view);
+                col
             })
             .collect();
 
-        let mut all_data = Vec::with_capacity(batch_size * out_c * out_h * out_w);
-        let mut im2col_cache = Vec::with_capacity(batch_size);
-        for (output, col) in batch_results {
-            all_data.extend(output);
-            im2col_cache.push(col);
-        }
-
-        (Tensor::new(&all_data, &output_shape), im2col_cache)
+        (Tensor::from_vec(all_data, &output_shape), im2col_cache)
     }
 
     /// eval 模式下的 1x1 stride=1 卷积快路径。
@@ -416,26 +449,25 @@ impl Conv2d {
         let input_slice = input_flat.as_slice().unwrap();
         let sample_size = in_c * spatial;
 
-        let batch_results: Vec<Vec<f32>> = (0..batch_size)
-            .into_par_iter()
-            .map(|b| {
+        // 预分配整块输出 + 按样本 chunk 直写 GEMM（同 convolve，少两次全量拷贝）
+        let sample_out_size = out_c * spatial;
+        let mut all_data = vec![0.0f32; batch_size * sample_out_size];
+        all_data
+            .par_chunks_mut(sample_out_size)
+            .enumerate()
+            .for_each(|(b, chunk)| {
                 let start = b * sample_size;
                 let sample = ArrayView2::from_shape(
                     (in_c, spatial),
                     &input_slice[start..start + sample_size],
                 )
                 .unwrap();
-                let result = kernel_mat.dot(&sample);
-                result.iter().copied().collect()
-            })
-            .collect();
+                let mut out_view =
+                    ndarray::ArrayViewMut2::from_shape((out_c, spatial), chunk).unwrap();
+                ndarray::linalg::general_mat_mul(1.0, &kernel_mat, &sample, 0.0, &mut out_view);
+            });
 
-        let mut all_data = Vec::with_capacity(batch_size * out_c * spatial);
-        for output in batch_results {
-            all_data.extend(output);
-        }
-
-        Tensor::new(&all_data, &output_shape)
+        Tensor::from_vec(all_data, &output_shape)
     }
 }
 
@@ -596,37 +628,45 @@ impl TraitNode for Conv2d {
             let k_flat = kernel.flatten_view();
             let kernel_mat = k_flat.into_shape((out_c, col_w)).unwrap();
 
-            let col2im_crop = |dx_col: &Array2<f32>| -> Vec<f32> {
-                let padded_grad = Self::col2im(
-                    dx_col, in_c, padded_h, padded_w, k_h, k_w, out_h, out_w, stride_h, stride_w,
-                    dil_h, dil_w,
-                );
+            // 无 padding：col2im 直接累加进（已清零的）输出 chunk；
+            // 有 padding：col2im 到临时 padded 缓冲，再按行裁剪拷入 chunk。
+            let col2im_crop_into = |dx_col: &Array2<f32>, out: &mut [f32]| {
                 if pad_h == 0 && pad_w == 0 {
-                    padded_grad
+                    Self::col2im_into(
+                        dx_col, out, in_c, padded_h, padded_w, k_h, k_w, out_h, out_w, stride_h,
+                        stride_w, dil_h, dil_w,
+                    );
                 } else {
-                    let mut result = Vec::with_capacity(in_c * orig_in_h * orig_in_w);
+                    let padded_grad = Self::col2im(
+                        dx_col, in_c, padded_h, padded_w, k_h, k_w, out_h, out_w, stride_h,
+                        stride_w, dil_h, dil_w,
+                    );
+                    let mut out_base = 0;
                     for ic in 0..in_c {
                         for ih in 0..orig_in_h {
-                            for iw in 0..orig_in_w {
-                                let idx = ic * padded_h * padded_w
-                                    + (ih + pad_h) * padded_w
-                                    + (iw + pad_w);
-                                result.push(padded_grad[idx]);
-                            }
+                            let src_base =
+                                ic * padded_h * padded_w + (ih + pad_h) * padded_w + pad_w;
+                            out[out_base..out_base + orig_in_w]
+                                .copy_from_slice(&padded_grad[src_base..src_base + orig_in_w]);
+                            out_base += orig_in_w;
                         }
                     }
-                    result
                 }
             };
 
-            let batch_results: Vec<Vec<f32>> = {
+            // 预分配整块 dX，按样本 chunk 直写（相比旧的 Vec<Vec> + flatten + Tensor::new
+            // 少两次全量拷贝；无 padding 分支还省掉 col2im 的中间 Vec）
+            let sample_in_size = in_c * orig_in_h * orig_in_w;
+            let mut all_data = vec![0.0f32; batch_size * sample_in_size];
+            {
                 let grad_flat = upstream_grad.flatten_view();
                 let grad_flat_slice = grad_flat.as_slice().unwrap();
                 let sample_grad_size = out_c * spatial;
 
-                (0..batch_size)
-                    .into_par_iter()
-                    .map(|b| {
+                all_data
+                    .par_chunks_mut(sample_in_size)
+                    .enumerate()
+                    .for_each(|(b, chunk)| {
                         let gs = b * sample_grad_size;
                         let grad_b = ArrayView2::from_shape(
                             (out_c, spatial),
@@ -634,21 +674,19 @@ impl TraitNode for Conv2d {
                         )
                         .unwrap();
                         let dx_col = grad_b.t().dot(&kernel_mat);
-                        col2im_crop(&dx_col)
-                    })
-                    .collect()
-            };
+                        col2im_crop_into(&dx_col, chunk);
+                    });
+            }
 
-            let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
-            Ok(GradResult::Computed(Tensor::new(
-                &all_data,
+            Ok(GradResult::Computed(Tensor::from_vec(
+                all_data,
                 orig_input_shape,
             )))
         } else {
             // ========== dL/dK（对卷积核的梯度）==========
             let kernel_shape = kernel.shape();
 
-            let kernel_grad_data: Vec<f32> = {
+            let kernel_grad: Array2<f32> = {
                 let grad_flat = upstream_grad.flatten_view();
                 let grad_flat_slice = grad_flat.as_slice().unwrap();
                 let sample_grad_size = out_c * spatial;
@@ -656,7 +694,7 @@ impl TraitNode for Conv2d {
                 let im2col_cache = self.im2col_cache.as_ref().ok_or_else(|| {
                     GraphError::backward_cache_missing(self.display_node(), "im2col")
                 })?;
-                let kernel_grad = (0..batch_size)
+                (0..batch_size)
                     .into_par_iter()
                     .map(|b| {
                         let gs = b * sample_grad_size;
@@ -674,13 +712,13 @@ impl TraitNode for Conv2d {
                             acc += &g;
                             acc
                         },
-                    );
-
-                kernel_grad.as_slice().unwrap().to_vec()
+                    )
             };
 
-            Ok(GradResult::Computed(Tensor::new(
-                &kernel_grad_data,
+            // reduce 产物为新分配的标准布局矩阵，into_raw_vec 零拷贝取出底层缓冲，
+            // from_vec 零拷贝按 4D kernel 形状接管（旧路径 to_vec + Tensor::new 拷两次）
+            Ok(GradResult::Computed(Tensor::from_vec(
+                kernel_grad.into_raw_vec(),
                 kernel_shape,
             )))
         }

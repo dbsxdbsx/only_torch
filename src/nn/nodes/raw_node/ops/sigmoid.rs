@@ -92,12 +92,12 @@ impl TraitNode for Sigmoid {
             GraphError::ComputationError(format!("{}没有值，无法计算梯度", self.display_node()))
         })?;
 
-        // 计算 sigmoid(x) * (1 - sigmoid(x))（逐元素）
-        let one_minus_sigmoid = Tensor::ones(value.shape()) - value;
-        let local_grad = value * &one_minus_sigmoid;
-
-        // 逐元素乘以上游梯度
-        Ok(GradResult::Computed(upstream_grad * &local_grad))
+        // 单趟融合：g * (y * (1 - y))
+        // 与旧链（ones - y → y * (1-y) → g * local，3 次全尺寸分配 + 3 趟遍历）
+        // 逐元素运算顺序一致（逐 bit 等价），现为 1 次分配 + 1 趟遍历。
+        Ok(GradResult::Computed(
+            upstream_grad.zip_map(value, |g, y| g * (y * (1.0 - y))),
+        ))
     }
 
     fn grad(&self) -> Option<&Tensor> {

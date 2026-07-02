@@ -91,11 +91,16 @@ impl<S: Clone + 'static> Tree<S> {
     }
 
     /// 展开节点：为其每个候选动作创建子节点
+    ///
+    /// 子节点的隐状态初始为 `None`（与 `expand_root` 一致）：
+    /// 状态只在该子节点被选为 leaf、经 recurrent 推理后写入（`states[leaf] = Some(...)`），
+    /// 且读取只发生在 parent 侧（写必先于读）。旧实现按候选数预克隆父状态填充，
+    /// 既是语义错误的值（父状态的拷贝）又从未被读——大动作空间（如棋类数百候选）
+    /// 时每次 expansion 白付 `候选数 × latent` 的克隆开销。
     pub fn expand(
         &mut self,
         node_id: NodeId,
         candidates: &[ActionCandidate],
-        states: &[S],
         to_play: u8,
         discount: f32,
     ) {
@@ -110,8 +115,7 @@ impl<S: Clone + 'static> Tree<S> {
                 to_play,
                 expanded: false,
             };
-            let state = states.get(i).cloned();
-            let child_id = self.add_node(child, state);
+            let child_id = self.add_node(child, None);
             edges.push(Edge {
                 action_id: candidate.id,
                 action: candidate.payload.clone(),

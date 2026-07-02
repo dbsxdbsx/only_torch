@@ -1,5 +1,112 @@
 use crate::tensor::Tensor;
 
+// ==================== mat_mul_nt / mat_mul_tn（转置视图 GEMM）====================
+//
+// MatMul 反向已改用这两个 NT/TN 原语（转置只翻 stride、零物化拷贝）。
+// 必须与「物化 transpose 后 mat_mul」逐 bit 一致，否则训练轨迹漂移。
+
+/// `a.mat_mul_nt(b)` 必须与 `a.mat_mul(&b.transpose())` 逐 bit 一致
+#[test]
+fn test_mat_mul_nt_bitwise_matches_materialized_transpose() {
+    for (m, k, n) in [(1usize, 4usize, 2usize), (3, 5, 7), (16, 64, 41)] {
+        let a = Tensor::normal_seeded(0.0, 1.0, &[m, k], 31);
+        let b = Tensor::normal_seeded(0.0, 1.0, &[n, k], 32);
+
+        let fast = a.mat_mul_nt(&b);
+        let reference = a.mat_mul(&b.transpose());
+
+        assert_eq!(fast.shape(), &[m, n]);
+        let (f, r) = (fast.to_vec(), reference.to_vec());
+        for i in 0..f.len() {
+            assert_eq!(
+                f[i].to_bits(),
+                r[i].to_bits(),
+                "mat_mul_nt 与物化转置结果不一致：({m},{k},{n}) i={i} fast={} ref={}",
+                f[i],
+                r[i]
+            );
+        }
+    }
+}
+
+/// `a.mat_mul_tn(b)` 必须与 `a.transpose().mat_mul(&b)` 逐 bit 一致
+#[test]
+fn test_mat_mul_tn_bitwise_matches_materialized_transpose() {
+    for (k, m, n) in [(1usize, 4usize, 2usize), (5, 3, 7), (32, 64, 41)] {
+        let a = Tensor::normal_seeded(0.0, 1.0, &[k, m], 41);
+        let b = Tensor::normal_seeded(0.0, 1.0, &[k, n], 42);
+
+        let fast = a.mat_mul_tn(&b);
+        let reference = a.transpose().mat_mul(&b);
+
+        assert_eq!(fast.shape(), &[m, n]);
+        let (f, r) = (fast.to_vec(), reference.to_vec());
+        for i in 0..f.len() {
+            assert_eq!(
+                f[i].to_bits(),
+                r[i].to_bits(),
+                "mat_mul_tn 与物化转置结果不一致：({k},{m},{n}) i={i} fast={} ref={}",
+                f[i],
+                r[i]
+            );
+        }
+    }
+}
+
+/// NT/TN 原语对非连续输入（transpose 视图）也必须正确
+///
+/// MatMul 父节点的值可能来自 permute/transpose（非连续布局），
+/// 转置视图 GEMM 不得依赖行主序假设。
+#[test]
+fn test_mat_mul_nt_tn_noncontiguous_inputs() {
+    // a_nc: [2,4] 非连续（由 [4,2] 转置而来）
+    let a_base = Tensor::normal_seeded(0.0, 1.0, &[4, 2], 51);
+    let a_nc = a_base.transpose();
+    assert!(!a_nc.is_contiguous());
+    let a_c = Tensor::new(&a_nc.to_vec(), &[2, 4]);
+
+    let b = Tensor::normal_seeded(0.0, 1.0, &[3, 4], 52);
+
+    let from_nc = a_nc.mat_mul_nt(&b);
+    let from_c = a_c.mat_mul_nt(&b);
+    assert_eq!(from_nc.shape(), &[2, 3]);
+    let (x, y) = (from_nc.to_vec(), from_c.to_vec());
+    for i in 0..x.len() {
+        assert_eq!(
+            x[i].to_bits(),
+            y[i].to_bits(),
+            "NT 非连续输入结果漂移：i={i}"
+        );
+    }
+
+    // TN：非连续 self
+    let s_base = Tensor::normal_seeded(0.0, 1.0, &[5, 4], 53);
+    let s_nc = s_base.transpose(); // [4,5] 非连续
+    let s_c = Tensor::new(&s_nc.to_vec(), &[4, 5]);
+    let o = Tensor::normal_seeded(0.0, 1.0, &[4, 6], 54);
+
+    let from_nc = s_nc.mat_mul_tn(&o);
+    let from_c = s_c.mat_mul_tn(&o);
+    assert_eq!(from_nc.shape(), &[5, 6]);
+    let (x, y) = (from_nc.to_vec(), from_c.to_vec());
+    for i in 0..x.len() {
+        assert_eq!(
+            x[i].to_bits(),
+            y[i].to_bits(),
+            "TN 非连续输入结果漂移：i={i}"
+        );
+    }
+}
+
+/// NT/TN 形状不匹配时应 panic（与 mat_mul 相同契约）
+#[test]
+#[should_panic]
+fn test_mat_mul_nt_shape_mismatch() {
+    let a = Tensor::zeros(&[2, 3]);
+    let b = Tensor::zeros(&[4, 5]); // b 列数 5 != a 列数 3
+    let _ = a.mat_mul_nt(&b);
+}
+
 #[test]
 fn test_mat_mul_vector_vector() {
     // 结果为标量的情况

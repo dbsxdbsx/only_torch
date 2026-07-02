@@ -281,6 +281,43 @@ impl NodeInner {
         self.raw_node.borrow_mut().clear_grad()
     }
 
+    /// 优化器融合更新入口：在单次借用内以 `(参数值, 梯度)` 调用闭包原地更新
+    ///
+    /// 仅 Parameter 节点支持。相比「`grad()` clone + `value()` clone + 计算 +
+    /// `set_value_owned`」的旧路径，本方法零 clone、零临时张量。
+    ///
+    /// # 返回
+    /// - `Ok(true)`: 有梯度，已执行更新
+    /// - `Ok(false)`: 无梯度，跳过（与旧的 `if let Some(grad)` 行为一致）
+    /// - `Err`: 非 Parameter 节点，或有梯度但参数没有值
+    pub(crate) fn apply_param_update(
+        &self,
+        f: impl FnOnce(&mut Tensor, &Tensor),
+    ) -> Result<bool, GraphError> {
+        let mut raw = self.raw_node.borrow_mut();
+        match &mut *raw {
+            NodeType::Parameter(p) => {
+                let (value, grad) = p.value_mut_and_grad();
+                match (value, grad) {
+                    (Some(v), Some(g)) => {
+                        f(v, g);
+                        Ok(true)
+                    }
+                    (_, None) => Ok(false),
+                    (None, Some(_)) => Err(GraphError::ComputationError(format!(
+                        "参数节点 {:?} 没有值",
+                        self.id
+                    ))),
+                }
+            }
+            _ => Err(GraphError::InvalidOperation(format!(
+                "apply_param_update 仅支持 Parameter 节点，得到 {}[{}]",
+                self.type_name(),
+                self.id
+            ))),
+        }
+    }
+
     // ==================== 形状查询 ====================
 
     /// 获取节点的期望输出形状（静态形状）
@@ -302,35 +339,35 @@ impl NodeInner {
     /// # 性能优化
     /// 直接借用父节点的 raw_node，避免通过 `value()` 方法 clone Tensor
     fn calc_value_from_parents(&self, mode: Mode) -> Result<(), GraphError> {
-        // 1. 先收集错误信息所需的元数据（在借用 raw_node 之前）
-        let self_type_name = self.type_name();
-        let parent_info: Vec<(String, NodeId)> = self
-            .parents
-            .iter()
-            .map(|p| (p.type_name(), p.id()))
-            .collect();
-
-        // 2. 借用所有父节点的 raw_node（保持 borrow 存活直到计算完成）
+        // 1. 借用所有父节点的 raw_node（保持 borrow 存活直到计算完成）
         let parent_borrows: Vec<std::cell::Ref<NodeType>> =
             self.parents.iter().map(|p| p.raw_node.borrow()).collect();
 
-        // 3. 从 borrow 中提取值引用（零 clone！）
+        // 2. 从 borrow 中提取值引用（零 clone！）
+        //
+        // 错误元数据（type_name 等 String）只在缺值的异常路径内懒构造：
+        // 前向是全库最热路径，若每次先分配这些 String 会造成大量无谓小分配。
+        // 注：闭包内 `p.type_name()` 对父节点 raw_node 追加一次共享 borrow，
+        // 与已存活的 parent_borrows 共存是安全的（RefCell 允许多个不可变借用）。
         let parent_values: Result<Vec<&Tensor>, GraphError> = parent_borrows
             .iter()
             .enumerate()
             .map(|(i, b)| {
                 b.value().ok_or_else(|| {
-                    let (p_type, p_id) = &parent_info[i];
+                    let p = &self.parents[i];
                     GraphError::ComputationError(format!(
                         "{}[{}] 的父节点 {}[{}] 没有值",
-                        self_type_name, self.id, p_type, p_id
+                        self.type_name(),
+                        self.id,
+                        p.type_name(),
+                        p.id()
                     ))
                 })
             })
             .collect();
         let parent_values = parent_values?;
 
-        // 4. 同步执行模式并计算
+        // 3. 同步执行模式并计算
         // 注意：self.raw_node 与 parent.raw_node 是不同的 RefCell，可以同时借用
         let mut raw = self.raw_node.borrow_mut();
         raw.set_mode(mode);
@@ -562,8 +599,18 @@ impl NodeInner {
     ///    - 更新 `last_backward_pass_id`
     pub fn backward_propagate(self: &Rc<Self>, pass_id: u64) -> Result<(), GraphError> {
         let topo_order = self.backward_topo_order();
+        Self::backward_propagate_with_order(&topo_order, pass_id)
+    }
 
-        for node in &topo_order {
+    /// 用已构建好的反向拓扑序执行反向传播
+    ///
+    /// 供调用方在同一次 backward 中复用拓扑序（如 `backward_via_node_inner`
+    /// 先用它清中间梯度，再传播），避免重复 DFS + HashSet + `Vec<Rc>` 构建。
+    pub fn backward_propagate_with_order(
+        topo_order: &[Rc<NodeInner>],
+        pass_id: u64,
+    ) -> Result<(), GraphError> {
+        for node in topo_order {
             // 跳过已处理的节点
             if node.last_backward_pass_id() == pass_id {
                 continue;

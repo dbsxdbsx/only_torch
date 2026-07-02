@@ -162,9 +162,9 @@ impl TraitNode for Softmax {
             })
             .collect();
 
-        // 合并结果
+        // 合并结果（from_vec 零拷贝接管，行主序由按 batch 顺序 flatten 保证）
         let all_grads: Vec<f32> = batch_grads.into_iter().flatten().collect();
-        Ok(GradResult::Computed(Tensor::new(&all_grads, shape)))
+        Ok(GradResult::Computed(Tensor::from_vec(all_grads, shape)))
     }
 
     fn grad(&self) -> Option<&Tensor> {

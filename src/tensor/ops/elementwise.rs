@@ -10,6 +10,33 @@ use crate::tensor::Tensor;
 use ndarray::{IxDyn, Zip};
 
 impl Tensor {
+    /// 同形状双张量的单趟逐元素融合运算（内部原语）
+    ///
+    /// `out[i] = f(self[i], other[i])`，一次 Zip 遍历 + 一次分配。
+    /// 用于把「多个中间张量链」（如激活反向的 `ones - y`、`y * (1-y)`、
+    /// `g * local` 三连）融合为单趟，消除全尺寸临时分配。
+    ///
+    /// Zip 是 stride 感知的：对非连续布局（permute/transpose 视图）也按
+    /// 逻辑序正确配对，不依赖底层内存连续。
+    ///
+    /// # Panics
+    /// 两张量形状不一致时 panic（不做广播——广播场景请用具体算子）。
+    pub(crate) fn zip_map(&self, other: &Self, f: impl Fn(f32, f32) -> f32) -> Self {
+        assert!(
+            self.is_same_shape(other),
+            "zip_map: 形状不一致 {:?} vs {:?}",
+            self.shape(),
+            other.shape()
+        );
+        let data = Zip::from(&self.data)
+            .and(&other.data)
+            .map_collect(|&a, &b| f(a, b));
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
+    }
+
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓minimum/maximum↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     /// 逐元素取两个张量的最小值
     ///

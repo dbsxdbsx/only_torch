@@ -120,14 +120,13 @@ impl Optimizer for SGD {
     }
 
     fn step(&mut self) -> Result<(), GraphError> {
+        let lr = self.lr;
         for param in &self.params {
-            if let Some(grad) = param.node().grad() {
-                let current = param.node().value().ok_or_else(|| {
-                    GraphError::ComputationError(format!("参数节点 {:?} 没有值", param.node_id()))
-                })?;
-                let new_value = current - self.lr * &grad;
-                param.node().set_value_owned(new_value)?;
-            }
+            // 融合原地更新：单次借用内 `p -= lr * g`（逐元素与旧 `current - lr*&grad`
+            // 逐 bit 一致），免去 grad/value 各一次整块 clone 与 2 个临时张量。
+            param
+                .node()
+                .apply_param_update(|value, grad| value.sgd_step_inplace(grad, lr))?;
         }
         Ok(())
     }
@@ -259,40 +258,28 @@ impl Optimizer for Adam {
         let bc1 = 1.0 - self.beta1.powi(self.t as i32);
         let bc2 = 1.0 - self.beta2.powi(self.t as i32);
         let step_size = self.lr / bc1; // 合并 lr 和 bc1，省去 m_hat 张量除法
+        let (beta1, beta2, epsilon) = (self.beta1, self.beta2, self.epsilon);
 
-        for param in &self.params {
+        // 拆分字段借用：params 只读遍历，m/v 在闭包内可变访问
+        let params = &self.params;
+        let m_states = &mut self.m;
+        let v_states = &mut self.v;
+
+        for param in params {
             let node_id = param.node_id();
-            if let Some(grad) = param.node().grad() {
-                let current = param.node().value().ok_or_else(|| {
-                    GraphError::ComputationError(format!("参数节点 {node_id:?} 没有值"))
-                })?;
-
-                // 更新一阶矩: m = β1*m + (1-β1)*g
-                let m = self
-                    .m
+            // 融合原地更新：单次借用内一趟 Zip 完成 m/v/参数三者更新。
+            // 逐元素公式与旧张量表达式链逐 bit 一致（无跨元素归约，融合不改浮点顺序），
+            // 由 nn/tests/optimizer.rs 的 fused-vs-reference 金测试钉死；
+            // 免去每参数每步 grad/value 各一次整块 clone + ~6 个全尺寸临时张量。
+            param.node().apply_param_update(|value, grad| {
+                let m = m_states
                     .entry(node_id)
                     .or_insert_with(|| Tensor::zeros(grad.shape()));
-                *m *= self.beta1;
-                *m += &(&grad * (1.0 - self.beta1));
-
-                // 更新二阶矩: v = β2*v + (1-β2)*g²
-                let mut grad_sq = &grad * &grad;
-                grad_sq *= 1.0 - self.beta2; // 原地乘标量，省去 scaled_grad_squared 临时分配
-                let v = self
-                    .v
+                let v = v_states
                     .entry(node_id)
                     .or_insert_with(|| Tensor::zeros(grad.shape()));
-                *v *= self.beta2;
-                *v += &grad_sq;
-
-                // 参数更新: θ = θ - (lr/bc1) * m / (√(v/bc2) + ε)
-                let mut denom = (&*v / bc2).sqrt();
-                denom += self.epsilon; // 原地加标量，省去 &v_sqrt + eps 临时分配
-                let update = &*m / &denom;
-                let new_value = current - step_size * &update;
-
-                param.node().set_value_owned(new_value)?;
-            }
+                value.adam_step_inplace(grad, m, v, beta1, beta2, epsilon, step_size, bc2);
+            })?;
         }
         Ok(())
     }

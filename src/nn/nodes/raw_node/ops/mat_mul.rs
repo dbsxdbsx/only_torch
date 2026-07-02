@@ -151,40 +151,40 @@ impl TraitNode for MatMul {
             // 计算 dL/dA = upstream_grad @ B^T
             // upstream_grad: [batch, k], B: [n, k] -> B^T: [k, n]
             // 结果: [batch, n]
-            let b_t = b_value.transpose();
-            if upstream_grad.shape()[1] != b_t.shape()[0] {
+            // mat_mul_nt 以转置视图参与（仅翻转 stride 元数据），
+            // 免去旧 `transpose()` 对 B 的整块物化拷贝。
+            if upstream_grad.shape()[1] != b_value.shape()[1] {
                 return Err(GraphError::ShapeMismatch {
-                    expected: vec![upstream_grad.shape()[0], b_t.shape()[1]],
-                    got: vec![upstream_grad.shape()[1], b_t.shape()[0]],
+                    expected: vec![upstream_grad.shape()[0], b_value.shape()[0]],
+                    got: vec![upstream_grad.shape()[1], b_value.shape()[1]],
                     message: format!(
-                        "MatMul ({}) dL/dA 形状不匹配: upstream_grad {:?} @ B^T {:?}",
+                        "MatMul ({}) dL/dA 形状不匹配: upstream_grad {:?} @ B^T (B={:?})",
                         self.display_node(),
                         upstream_grad.shape(),
-                        b_t.shape()
+                        b_value.shape()
                     ),
                 });
             }
-            Ok(GradResult::Computed(upstream_grad.mat_mul(&b_t)))
+            Ok(GradResult::Computed(upstream_grad.mat_mul_nt(b_value)))
         } else if target_parent_index == 1 {
             // 计算 dL/dB = A^T @ upstream_grad
             // A: [batch, n] -> A^T: [n, batch]
             // upstream_grad: [batch, k]
             // 结果: [n, k]（自然对 batch 求和）
-            let a_t = a_value.transpose();
-            if a_t.shape()[1] != upstream_grad.shape()[0] {
+            // mat_mul_tn 以转置视图参与，免去旧 `transpose()` 对 A 的整块物化拷贝。
+            if a_value.shape()[0] != upstream_grad.shape()[0] {
                 return Err(GraphError::ShapeMismatch {
-                    expected: vec![a_t.shape()[0], upstream_grad.shape()[1]],
-                    got: vec![a_t.shape()[1], upstream_grad.shape()[0]],
+                    expected: vec![a_value.shape()[1], upstream_grad.shape()[1]],
+                    got: vec![a_value.shape()[0], upstream_grad.shape()[0]],
                     message: format!(
-                        "MatMul ({}) dL/dB 形状不匹配: A^T {:?} (A={:?}) @ upstream_grad {:?}",
+                        "MatMul ({}) dL/dB 形状不匹配: A^T (A={:?}) @ upstream_grad {:?}",
                         self.display_node(),
-                        a_t.shape(),
                         a_value.shape(),
                         upstream_grad.shape()
                     ),
                 });
             }
-            Ok(GradResult::Computed(a_t.mat_mul(upstream_grad)))
+            Ok(GradResult::Computed(a_value.mat_mul_tn(upstream_grad)))
         } else {
             Err(GraphError::ComputationError(format!(
                 "MatMul 节点只有 2 个父节点，索引 {} 无效",

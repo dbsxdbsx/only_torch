@@ -26,6 +26,7 @@ mod value_transform;
 
 // ---- 集成 / 等价性 / 复现性 ----
 mod batch_train_equivalence;
+mod network_decode;
 mod reanalyze_writeback;
 mod seed_reproducibility;
 mod value_head_capacity;

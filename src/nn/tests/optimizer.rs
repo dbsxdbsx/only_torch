@@ -16,6 +16,179 @@ use crate::nn::layer::Linear;
 use crate::nn::{Adam, Module, Optimizer, SGD, VarActivationOps, VarLossOps, VarMatrixOps};
 use crate::tensor::Tensor;
 
+// ==================== 融合原地更新 vs 参考实现（逐 bit 金测试）====================
+//
+// SGD/Adam 的 step 已改为单趟 Zip 融合原地更新（消除 grad/value clone 与临时张量链）。
+// 融合不允许改变任何逐元素浮点运算顺序——这里用旧张量表达式链作为参考实现，
+// 在随机数据上多步对比，必须逐 bit 相等。
+
+/// 旧 SGD 更新的参考实现：`new = current - lr * grad`
+fn sgd_reference(current: &Tensor, grad: &Tensor, lr: f32) -> Tensor {
+    current - lr * grad
+}
+
+/// 旧 Adam 更新的参考实现（与优化历史版本的张量表达式链完全一致）
+#[allow(clippy::too_many_arguments)]
+fn adam_reference(
+    current: &Tensor,
+    grad: &Tensor,
+    m: &mut Tensor,
+    v: &mut Tensor,
+    beta1: f32,
+    beta2: f32,
+    epsilon: f32,
+    step_size: f32,
+    bc2: f32,
+) -> Tensor {
+    *m *= beta1;
+    *m += &(grad * (1.0 - beta1));
+
+    let mut grad_sq = grad * grad;
+    grad_sq *= 1.0 - beta2;
+    *v *= beta2;
+    *v += &grad_sq;
+
+    let mut denom = (&*v / bc2).sqrt();
+    denom += epsilon;
+    let update = &*m / &denom;
+    current - step_size * &update
+}
+
+/// SGD 融合原地更新必须与参考实现逐 bit 一致（多步）
+#[test]
+fn test_sgd_step_inplace_bitwise_matches_reference() {
+    let lr = 0.037f32;
+    let mut fused = Tensor::normal_seeded(0.0, 1.0, &[4, 7], 11);
+    let mut reference = fused.clone();
+
+    for step in 0..5 {
+        let grad = Tensor::normal_seeded(0.0, 0.5, &[4, 7], 100 + step);
+
+        fused.sgd_step_inplace(&grad, lr);
+        reference = sgd_reference(&reference, &grad, lr);
+
+        let f = fused.data_as_slice();
+        let r = reference.data_as_slice();
+        for i in 0..f.len() {
+            assert_eq!(
+                f[i].to_bits(),
+                r[i].to_bits(),
+                "SGD 融合与参考实现不逐 bit 一致：step={step} i={i} fused={} ref={}",
+                f[i],
+                r[i]
+            );
+        }
+    }
+}
+
+/// Adam 融合原地更新必须与参考实现逐 bit 一致（多步、含 m/v 状态演化）
+#[test]
+fn test_adam_step_inplace_bitwise_matches_reference() {
+    let (beta1, beta2, epsilon, lr) = (0.9f32, 0.999f32, 1e-8f32, 0.003f32);
+
+    let mut fused_param = Tensor::normal_seeded(0.0, 1.0, &[3, 5], 21);
+    let mut ref_param = fused_param.clone();
+    let mut fused_m = Tensor::zeros(&[3, 5]);
+    let mut fused_v = Tensor::zeros(&[3, 5]);
+    let mut ref_m = Tensor::zeros(&[3, 5]);
+    let mut ref_v = Tensor::zeros(&[3, 5]);
+
+    for t in 1..=8 {
+        let bc1 = 1.0 - beta1.powi(t);
+        let bc2 = 1.0 - beta2.powi(t);
+        let step_size = lr / bc1;
+        let grad = Tensor::normal_seeded(0.0, 0.7, &[3, 5], 200 + t as u64);
+
+        fused_param.adam_step_inplace(
+            &grad,
+            &mut fused_m,
+            &mut fused_v,
+            beta1,
+            beta2,
+            epsilon,
+            step_size,
+            bc2,
+        );
+        ref_param = adam_reference(
+            &ref_param, &grad, &mut ref_m, &mut ref_v, beta1, beta2, epsilon, step_size, bc2,
+        );
+
+        let f = fused_param.data_as_slice();
+        let r = ref_param.data_as_slice();
+        for i in 0..f.len() {
+            assert_eq!(
+                f[i].to_bits(),
+                r[i].to_bits(),
+                "Adam 融合与参考实现不逐 bit 一致：t={t} i={i} fused={} ref={}",
+                f[i],
+                r[i]
+            );
+        }
+        // m/v 状态本身也应逐 bit 一致
+        let (fm, rm) = (fused_m.data_as_slice(), ref_m.data_as_slice());
+        let (fv, rv) = (fused_v.data_as_slice(), ref_v.data_as_slice());
+        for i in 0..fm.len() {
+            assert_eq!(fm[i].to_bits(), rm[i].to_bits(), "m 状态漂移：t={t} i={i}");
+            assert_eq!(fv[i].to_bits(), rv[i].to_bits(), "v 状态漂移：t={t} i={i}");
+        }
+    }
+}
+
+/// Adam 融合更新对非连续梯度（permute 视图产物）也必须按逻辑序正确
+///
+/// 优化器融合走 ndarray `Zip`（stride 感知）；本测试用转置视图梯度对比
+/// 「先物化连续再更新」的结果，确保非连续布局不会静默算错。
+#[test]
+fn test_adam_step_inplace_noncontiguous_grad() {
+    let (beta1, beta2, epsilon, step_size, bc2) = (0.9f32, 0.999f32, 1e-8f32, 0.01f32, 0.5f32);
+
+    // 非连续梯度：transpose 产生的置换视图（逻辑形状 [2,3]）
+    let base = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]);
+    let grad_noncontig = base.transpose(); // [2,3]，非连续
+    assert!(
+        !grad_noncontig.is_contiguous(),
+        "前置条件：梯度应为非连续布局"
+    );
+    let grad_contig = Tensor::new(&grad_noncontig.to_vec(), &[2, 3]); // 逻辑序物化
+
+    let init = Tensor::new(&[0.5, -0.5, 1.0, -1.0, 2.0, -2.0], &[2, 3]);
+
+    let mut p1 = init.clone();
+    let (mut m1, mut v1) = (Tensor::zeros(&[2, 3]), Tensor::zeros(&[2, 3]));
+    p1.adam_step_inplace(
+        &grad_noncontig,
+        &mut m1,
+        &mut v1,
+        beta1,
+        beta2,
+        epsilon,
+        step_size,
+        bc2,
+    );
+
+    let mut p2 = init.clone();
+    let (mut m2, mut v2) = (Tensor::zeros(&[2, 3]), Tensor::zeros(&[2, 3]));
+    p2.adam_step_inplace(
+        &grad_contig,
+        &mut m2,
+        &mut v2,
+        beta1,
+        beta2,
+        epsilon,
+        step_size,
+        bc2,
+    );
+
+    let (a, b) = (p1.to_vec(), p2.to_vec());
+    for i in 0..a.len() {
+        assert_eq!(
+            a[i].to_bits(),
+            b[i].to_bits(),
+            "非连续梯度与连续物化结果不一致：i={i}"
+        );
+    }
+}
+
 #[test]
 fn test_sgd_basic() {
     let graph = Graph::new_with_seed(42);

@@ -104,17 +104,30 @@ impl TraitNode for Add {
     }
 
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
-        // 逐元素相加（支持广播）
-        let mut result = None;
-        for &parent_value in parent_values {
-            match &mut result {
-                None => result = Some(parent_value.clone()),
-                Some(sum) => {
-                    *sum += parent_value;
-                }
+        // 逐元素相加（支持广播）。
+        //
+        // 不能以「clone 首父再 `+=`」作为累加方案：`+=` 不允许左操作数被扩形，
+        // 若首父是被广播方（如 `bias[1,n] + x[m,n]`）会直接 panic，而 Add::new 的
+        // 静态形状检查（广播后形状）是允许该父节点顺序的。
+        // 因此前两个父节点用引用加法（任意方向广播，单次分配直得广播后结果），
+        // 后续父节点在形状已覆盖时走原地 `+=`（零分配），否则继续引用加法扩形。
+        let mut result = match parent_values {
+            [] => {
+                return Err(GraphError::ComputationError(
+                    "Add 节点至少需要 2 个父节点的值".to_string(),
+                ));
+            }
+            [only] => (*only).clone(),
+            [first, second, ..] => *first + *second,
+        };
+        for &parent_value in parent_values.iter().skip(2) {
+            if result.can_assign_broadcast_from(parent_value) {
+                result += parent_value;
+            } else {
+                result = &result + parent_value;
             }
         }
-        self.value = result;
+        self.value = Some(result);
         Ok(())
     }
 

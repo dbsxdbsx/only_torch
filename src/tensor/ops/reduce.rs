@@ -81,15 +81,13 @@ impl Tensor {
             self.dimension()
         );
 
-        // 沿指定轴求和
+        // 沿指定轴求和后在原轴位置插回长度 1 的维度（keepdims）。
+        // insert_axis 仅改元数据，直接复用 sum_axis 的输出缓冲，零额外拷贝。
         let summed = self.data.sum_axis(Axis(axis));
-
-        // 构建新形状（在求和的轴位置插入 1）
-        let mut new_shape: Vec<usize> = summed.shape().to_vec();
-        new_shape.insert(axis, 1);
-
-        // 创建新张量
-        Self::new(summed.as_slice().unwrap(), &new_shape)
+        Self {
+            data: summed.insert_axis(Axis(axis)),
+            source_id: next_source_id(),
+        }
     }
 
     /// 对两个操作数进行逐元素相乘后求和，返回形状为[1,1]的张量。
@@ -169,15 +167,12 @@ impl Tensor {
             self.dimension()
         );
 
-        // 沿指定轴求均值
+        // 沿指定轴求均值后 insert_axis 恢复维度（同 sum_axis_keepdims，零额外拷贝）
         let meaned = self.data.mean_axis(Axis(axis)).unwrap();
-
-        // 构建新形状（在求均值的轴位置插入 1）
-        let mut new_shape: Vec<usize> = meaned.shape().to_vec();
-        new_shape.insert(axis, 1);
-
-        // 创建新张量
-        Self::new(meaned.as_slice().unwrap(), &new_shape)
+        Self {
+            data: meaned.insert_axis(Axis(axis)),
+            source_id: next_source_id(),
+        }
     }
 
     /// 计算张量所有元素的总体方差（ddof=0），返回形状为 [1, 1] 的张量。
@@ -225,14 +220,13 @@ impl Tensor {
             self.dimension()
         );
 
-        // ndarray 的 var_axis(Axis, ddof) 直接计算方差，ddof=0.0 即总体方差
+        // ndarray 的 var_axis(Axis, ddof) 直接计算方差，ddof=0.0 即总体方差；
+        // insert_axis 恢复维度（同 sum_axis_keepdims，零额外拷贝）
         let var_array = self.data.var_axis(Axis(axis), 0.0);
-
-        // 构建新形状（在方差的轴位置插入 1）
-        let mut new_shape: Vec<usize> = var_array.shape().to_vec();
-        new_shape.insert(axis, 1);
-
-        Self::new(var_array.as_slice().unwrap(), &new_shape)
+        Self {
+            data: var_array.insert_axis(Axis(axis)),
+            source_id: next_source_id(),
+        }
     }
 
     /// 计算张量的标准差

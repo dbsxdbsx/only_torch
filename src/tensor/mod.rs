@@ -28,6 +28,7 @@ mod ops {
     pub mod mul;
     pub mod mul_assign;
     pub mod neg;
+    pub mod optim;
     pub mod others;
     pub mod reduce;
     pub mod shape;
@@ -101,6 +102,29 @@ impl Tensor {
         let data_len = data.len();
         let data = Array::from_shape_vec(IxDyn(shape), data.to_vec()).unwrap_or_else(|e| {
             panic!("Tensor::new: 数据长度 {data_len} 与形状 {shape:?} 不匹配: {e}")
+        });
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
+    }
+
+    /// 从已有 `Vec<f32>` 创建张量（**零拷贝**，move 语义）。
+    ///
+    /// 与 [`Tensor::new`]（接收 `&[f32]`，内部总是复制一次）不同，本方法直接接管
+    /// `data` 的所有权，不发生任何数据复制。适用于"先按**行主序**构建 `Vec` 再包成
+    /// Tensor"的热点路径（如卷积/损失节点的输出组装）。
+    ///
+    /// # 布局契约
+    /// `data` 必须已按行主序（C-contiguous）排列——`Vec` 本身总是连续内存，
+    /// 调用方只需保证**元素逻辑顺序**是行主序。产出的张量必为连续布局。
+    ///
+    /// # Panics
+    /// 当 `data.len()` 与 `shape` 各维乘积不一致时 panic（与 `Tensor::new` 相同）。
+    pub fn from_vec(data: Vec<f32>, shape: &[usize]) -> Self {
+        let data_len = data.len();
+        let data = Array::from_shape_vec(IxDyn(shape), data).unwrap_or_else(|e| {
+            panic!("Tensor::from_vec: 数据长度 {data_len} 与形状 {shape:?} 不匹配: {e}")
         });
         Self {
             data,

@@ -105,6 +105,37 @@ fn sigmoid_scalar(x: f32) -> f32 {
     1.0 / (1.0 + (-x).exp())
 }
 
+/// 借用节点值并按逻辑序取出为 `Vec<f32>`（搜索期读输出专用）
+///
+/// 相比 `var.value()`（clone 整块 Tensor）+ `data_as_slice().to_vec()`（再拷一次）
+/// 的双拷贝，本函数在借用内直接 `to_vec()`，单次拷贝；`to_vec` 按逻辑行主序
+/// 迭代，对非连续布局也正确（不会像 `data_as_slice` 那样 panic）。
+pub(super) fn read_value_vec(var: &Var) -> Vec<f32> {
+    var.node()
+        .with_value(|v| v.expect("推理输出没有值，需先执行 forward").to_vec())
+}
+
+/// 单行数值稳定 softmax（搜索期解码专用，免 Tensor 中间分配）
+///
+/// 与 `Tensor::softmax(1)` 在 `[1, N]` 输入上**逐 bit 一致**：
+/// - max：与 `amax` 相同的 `fold(NEG_INFINITY, f32::max)`；
+/// - exp(x − max)：同 `mapv`；
+/// - 求和：走 ndarray 1D `sum()`（与 `sum_axis` 对 lane 的归约同一路径，
+///   包括其内部的分组累加顺序）；
+/// - 逐元素除以 sum。
+///
+/// 替代旧的 `logits_tensor.softmax(1)` 链（amax → unsqueeze → sub → exp →
+/// sum → div，约 6 次小 Tensor 分配），MCTS 每次 recurrent 推理调用 3 次。
+pub(super) fn softmax_row(logits: &[f32]) -> Vec<f32> {
+    let max_val = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let mut out: Vec<f32> = logits.iter().map(|&x| (x - max_val).exp()).collect();
+    let sum = ndarray::aview1(&out).sum();
+    for v in &mut out {
+        *v /= sum;
+    }
+    out
+}
+
 /// latent min-max 归一化到 [0,1]（canonical MuZero，**逐样本**沿特征维）
 ///
 /// `s_norm = (s - min(s)) / (max(s) - min(s) + eps)`，每行（样本）独立取 min/max。
@@ -675,7 +706,7 @@ impl MyZeroModel {
     }
 
     fn two_hot_target(&self, x: f32) -> Tensor {
-        Tensor::new(&self.encode_scalar(x), &[1, SUPPORT.size()])
+        Tensor::from_vec(self.encode_scalar(x), &[1, SUPPORT.size()])
     }
 
     /// 一批标量 value/reward → categorical 目标张量 `[G, support_size]`（逐行编码）。
@@ -685,13 +716,12 @@ impl MyZeroModel {
         for &x in xs {
             flat.extend_from_slice(&self.encode_scalar(x));
         }
-        Tensor::new(&flat, &[xs.len(), size])
+        Tensor::from_vec(flat, &[xs.len(), size])
     }
 
-    /// value/reward logits Tensor → 标量（softmax 期望 + h⁻¹）
-    fn decode_categorical(logits: &Tensor) -> f32 {
-        let probs = logits.softmax(1);
-        two_hot_to_scalar(probs.data_as_slice(), &SUPPORT)
+    /// value/reward logits 切片 → 标量（softmax 期望 + h⁻¹，无 Tensor 中间分配）
+    pub(super) fn decode_categorical_slice(logits: &[f32]) -> f32 {
+        two_hot_to_scalar(&softmax_row(logits), &SUPPORT)
     }
 
     // ========================================================================
@@ -768,7 +798,7 @@ impl MyZeroModel {
 
         for i in 0..k {
             let oh = self.action_to_onehot(actions[i]);
-            let oh_tensor = Tensor::new(&oh, &[1, self.action_dim]);
+            let oh_tensor = Tensor::from_vec(oh, &[1, self.action_dim]);
             let oh_var = self.graph.input(&oh_tensor)?;
 
             let (next_latent, pred_reward_logits, pred_continuation_logit) =
@@ -870,7 +900,7 @@ impl MyZeroModel {
             for r in rows {
                 flat.extend_from_slice(r);
             }
-            Tensor::new(&flat, &[g, dim])
+            Tensor::from_vec(flat, &[g, dim])
         };
         // obs 专用堆叠：入口单点 symlog（repr 输入与 recon 目标同源；policy 等目标不经过）
         let stack_obs = |rows: &[&[f32]], dim: usize| -> Tensor {
@@ -879,7 +909,7 @@ impl MyZeroModel {
                 flat.extend_from_slice(r);
             }
             maybe_symlog_in_place(self.obs_symlog, &mut flat);
-            Tensor::new(&flat, &[g, dim])
+            Tensor::from_vec(flat, &[g, dim])
         };
         // obs_t（k=0 输入 + reconstruction k=0 目标）
         let obs_rows: Vec<&[f32]> = items.iter().map(|it| it.obs_t.as_slice()).collect();
@@ -936,7 +966,7 @@ impl MyZeroModel {
             }
             let oh_var = self
                 .graph
-                .input(&Tensor::new(&oh_flat, &[g, self.action_dim]))?;
+                .input(&Tensor::from_vec(oh_flat, &[g, self.action_dim]))?;
 
             let (next_latent, pred_reward_logits, pred_continuation_logit) =
                 self.dyn_net.forward(&latent, &oh_var)?;
@@ -1039,21 +1069,17 @@ impl MyZeroModel {
         // 复用持久化 root 子图：只写入 obs、单趟 forward、读缓存输出（不重建节点）。
         // obs 入口单点变换（与训练路径同一开关，保证搜索/推理量纲一致）。
         let obs_tf = maybe_symlog(self.obs_symlog, obs);
+        let obs_len = obs_tf.len();
         let r = &self.root_infer;
         r.obs_in
-            .set_value(&Tensor::new(&obs_tf, &[1, obs_tf.len()]))
+            .set_value_owned(Tensor::from_vec(obs_tf.into_owned(), &[1, obs_len]))
             .expect("set obs 失败");
         self.graph.forward(&r.sink).expect("root forward 失败");
 
-        let latent_tensor = r.latent.value().unwrap().unwrap();
-        let policy_tensor = r.policy.value().unwrap().unwrap();
-        let value_logits = r.value_logits.value().unwrap().unwrap();
-
-        let policy_probs = policy_tensor.softmax(1);
-
-        let latent_vec = latent_tensor.data_as_slice().to_vec();
-        let policy_vec = policy_probs.data_as_slice().to_vec();
-        let value = Self::decode_categorical(&value_logits);
+        // 读取输出：借用直取（单次拷贝）+ 无 Tensor 解码（softmax/categorical 走切片路径）
+        let latent_vec = read_value_vec(&r.latent);
+        let policy_vec = softmax_row(&read_value_vec(&r.policy));
+        let value = Self::decode_categorical_slice(&read_value_vec(&r.value_logits));
 
         (latent_vec, policy_vec, value)
     }
@@ -1066,18 +1092,19 @@ impl MyZeroModel {
 
         let rc = &self.rec_infer;
 
-        // setup：只写入 latent / action onehot（复用持久化输入节点，不新建）
+        // setup：只写入 latent / action onehot（复用持久化输入节点，不新建；
+        // set_value_owned 直接 move 刚构建的 Tensor，免去 set_value 的 clone）
         {
             crate::prof_scope!("model.rec.setup");
             rc.latent_in
-                .set_value(&Tensor::new(state, &[1, self.latent_dim]))
+                .set_value_owned(Tensor::from_vec(state.to_vec(), &[1, self.latent_dim]))
                 .expect("set latent 失败");
             let mut oh = vec![0.0; self.action_dim];
             if action_idx < self.action_dim {
                 oh[action_idx] = 1.0;
             }
             rc.action_in
-                .set_value(&Tensor::new(&oh, &[1, self.action_dim]))
+                .set_value_owned(Tensor::from_vec(oh, &[1, self.action_dim]))
                 .expect("set action 失败");
         }
 
@@ -1089,31 +1116,26 @@ impl MyZeroModel {
                 .expect("recurrent forward 失败");
         }
 
-        // read + decode：读缓存值 + categorical 解码 + to_vec 拷贝组装
+        // read + decode：借用直取（单次拷贝）+ 无 Tensor 解码（softmax/categorical 走切片路径）
         crate::prof_scope!("model.rec.decode");
-        let next_latent_tensor = rc.next_latent.value().unwrap().unwrap();
-        let reward_logits = rc.reward_logits.value().unwrap().unwrap();
-        let continuation_logit = rc.continuation_logit.value().unwrap().unwrap();
-        let policy_tensor = rc.policy.value().unwrap().unwrap();
-        let value_logits = rc.value_logits.value().unwrap().unwrap();
-
-        let policy_probs = policy_tensor.softmax(1);
-        let reward = Self::decode_categorical(&reward_logits);
-        let value = Self::decode_categorical(&value_logits);
-        let continuation = sigmoid_scalar(
-            continuation_logit
-                .data_as_slice()
+        let next_state = read_value_vec(&rc.next_latent);
+        let reward = Self::decode_categorical_slice(&read_value_vec(&rc.reward_logits));
+        let value = Self::decode_categorical_slice(&read_value_vec(&rc.value_logits));
+        let prior = softmax_row(&read_value_vec(&rc.policy));
+        let continuation_logit = rc.continuation_logit.node().with_value(|v| {
+            v.expect("推理输出没有值，需先执行 forward")
+                .to_vec()
                 .first()
                 .copied()
                 .unwrap_or(0.0)
-                + CONTINUATION_LOGIT_BIAS,
-        )
-        .clamp(0.0, 1.0);
+        });
+        let continuation =
+            sigmoid_scalar(continuation_logit + CONTINUATION_LOGIT_BIAS).clamp(0.0, 1.0);
 
         DynamicsOutput {
-            next_state: next_latent_tensor.data_as_slice().to_vec(),
+            next_state,
             reward,
-            prior: policy_probs.data_as_slice().to_vec(),
+            prior,
             value,
             terminal: continuation <= TERMINAL_CONTINUATION_THRESHOLD,
             continuation,

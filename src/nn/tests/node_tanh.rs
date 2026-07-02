@@ -431,3 +431,55 @@ fn test_create_tanh_node_drop_releases() {
     assert!(weak_tanh.upgrade().is_none());
     assert!(weak_input.upgrade().is_none());
 }
+
+// ==================== 融合反向逐 bit 金测试 ====================
+
+/// 融合反向（zip_map 单趟）必须与旧张量链逐 bit 一致
+///
+/// 旧链：`y * y` → `ones - y²` → `g * local`（3 次全尺寸分配 + 3 趟遍历）；
+/// 新实现：`g * (1 - y·y)` 单趟融合。逐元素运算顺序一致，结果必须逐 bit 相等，
+/// 否则依赖梯度数值的哨兵复现性会漂移。
+#[test]
+fn test_tanh_vjp_bitwise_matches_unfused_chain() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let x = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 7], Some("x"))
+        .unwrap();
+    let tanh = inner
+        .borrow_mut()
+        .create_tanh_node(x.clone(), Some("tanh"))
+        .unwrap();
+
+    x.set_value(Some(&Tensor::normal_seeded(0.0, 2.0, &[4, 7], 5)))
+        .unwrap();
+    tanh.forward_recursive(1, Mode::Train).unwrap();
+
+    let upstream_grad = Tensor::normal_seeded(0.0, 1.5, &[4, 7], 6);
+    let grad = tanh
+        .calc_grad_to_parent_index(0, &upstream_grad)?
+        .resolve(&upstream_grad);
+
+    // 旧链参考实现（融合前的张量表达式，逐元素：先 1-y² 再乘 g）
+    let y = tanh.value().unwrap();
+    let tanh_squared = &y * &y;
+    let local_grad = Tensor::ones(y.shape()) - tanh_squared;
+    let expected = &upstream_grad * &local_grad;
+
+    let g = grad.data_as_slice();
+    let e = expected.data_as_slice();
+    assert_eq!(g.len(), e.len());
+    for i in 0..g.len() {
+        assert_eq!(
+            g[i].to_bits(),
+            e[i].to_bits(),
+            "Tanh 融合反向与旧链不逐 bit 一致：i={i} fused={} reference={}",
+            g[i],
+            e[i]
+        );
+    }
+
+    Ok(())
+}

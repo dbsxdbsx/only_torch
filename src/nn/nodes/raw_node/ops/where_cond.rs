@@ -131,11 +131,10 @@ impl TraitNode for WhereCond {
         match target_parent_index {
             // grad_x = condition * upstream_grad
             0 => Ok(GradResult::Computed(&self.condition * upstream_grad)),
-            // grad_y = (1 - condition) * upstream_grad
-            1 => {
-                let inv_cond = Tensor::ones(self.condition.shape()) - &self.condition;
-                Ok(GradResult::Computed(&inv_cond * upstream_grad))
-            }
+            // grad_y = (1 - condition) * upstream_grad（单趟融合，免 ones/inv_cond 两个临时）
+            1 => Ok(GradResult::Computed(
+                self.condition.zip_map(upstream_grad, |c, g| (1.0 - c) * g),
+            )),
             _ => Err(GraphError::InvalidOperation(format!(
                 "WhereCond: parent_index {} 无效（应为 0 或 1）",
                 target_parent_index

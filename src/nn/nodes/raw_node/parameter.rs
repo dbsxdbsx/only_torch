@@ -37,6 +37,15 @@ impl Parameter {
         })
     }
 
+    /// 同时取 `&mut value` 与 `&grad`（优化器融合原地更新专用）
+    ///
+    /// 借 struct 字段拆分借用（split borrow），使优化器能在**单次** `RefCell`
+    /// 可变借用内完成"读梯度 + 原地写参数"，免去 `grad()` / `value()` 各一次
+    /// 整块 clone。
+    pub(crate) fn value_mut_and_grad(&mut self) -> (Option<&mut Tensor>, Option<&Tensor>) {
+        (self.value.as_mut(), self.grad.as_ref())
+    }
+
     /// 使用固定种子创建参数节点（确保可重复性）
     ///
     /// 使用 Kaiming/He 初始化：std = sqrt(2 / `fan_in`)

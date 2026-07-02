@@ -739,7 +739,7 @@ impl Tensor {
             data[new_linear] = flat[i];
         }
 
-        Self::new(&data, &new_shape)
+        Self::from_vec(data, &new_shape)
     }
 
     /// 从张量中提取指定范围的切片（pad 的逆操作）
@@ -793,7 +793,7 @@ impl Tensor {
             data[i] = flat[old_linear];
         }
 
-        Self::new(&data, &new_shape)
+        Self::from_vec(data, &new_shape)
     }
 
     /// 计算给定形状的步幅（strides）
@@ -869,7 +869,7 @@ impl Tensor {
             data[i] = flat[old_linear];
         }
 
-        Self::new(&data, &new_shape)
+        Self::from_vec(data, &new_shape)
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑repeat↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }

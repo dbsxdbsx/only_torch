@@ -333,8 +333,8 @@ impl Tensor {
             }
         }
 
-        let values = Self::new(&values_data, &out_shape);
-        let indices = Self::new(&indices_data, &out_shape);
+        let values = Self::from_vec(values_data, &out_shape);
+        let indices = Self::from_vec(indices_data, &out_shape);
         (values, indices)
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑topk↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/

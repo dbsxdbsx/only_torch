@@ -92,12 +92,12 @@ impl TraitNode for Tanh {
             GraphError::ComputationError(format!("{}没有值，无法计算梯度", self.display_node()))
         })?;
 
-        // 计算 1 - tanh²(x)（逐元素）
-        let tanh_squared = value * value;
-        let local_grad = Tensor::ones(value.shape()) - tanh_squared;
-
-        // 逐元素乘以上游梯度
-        Ok(GradResult::Computed(upstream_grad * &local_grad))
+        // 单趟融合：g * (1 - y·y)
+        // 与旧链（y*y → ones - y² → g * local，3 次全尺寸分配 + 3 趟遍历）
+        // 逐元素运算顺序一致（逐 bit 等价），现为 1 次分配 + 1 趟遍历。
+        Ok(GradResult::Computed(
+            upstream_grad.zip_map(value, |g, y| g * (1.0 - y * y)),
+        ))
     }
 
     fn grad(&self) -> Option<&Tensor> {

@@ -1,7 +1,7 @@
 # 性能优化候选项
 
 > 本文档记录性能优化的候选项、已实施项和已否决项。
-> 最后更新: 2026-04-29
+> 最后更新: 2026-07-03
 
 ---
 
@@ -25,6 +25,7 @@
 |---|---|---|---|---|
 | `pre-execution-context` | 2026-04-29 | `just bench-save pre-execution-context` | `blas-mkl` | `Mode` 重构前的 Criterion 对照基线 |
 | `post-mode-refactor` | 2026-04-29 | `just bench-save post-mode-refactor` | `blas-mkl` | `Mode` 重构完成后的新命名完整基线，后续性能回归从这里继续比较 |
+| `pre-hotpath-opt` | 2026-07-03 | `just bench-save pre-hotpath-opt` | `blas-mkl` | 热路径分配/拷贝消除批量优化（见优化 J）前的完整基线；已快照入仓 `.bench/history/20260703-000547-pre-hotpath-opt-before-hotpath/`（104 case） |
 
 说明：baseline 保存在 Criterion 的 `target/criterion` 报告目录中，属于本地构建产物，不入仓。`pre-execution-context` 仅用于解释 `Mode` 重构前后差异；`smoke_conv2d_eval_1x1_b1` 已随语义改名为 `smoke_conv2d_inference_1x1_b1`，后续不再为重构前 baseline 兼容名称，统一从 `post-mode-refactor` 继续对比。
 
@@ -57,7 +58,24 @@
 
 ---
 
-### 3. 推理模式中间节点 value 及早释放（liveness）
+### 3. 热路径审计留档项（2026-07-03，批量优化 J 时降级未做）
+
+2026-07-02/03 全库分配/拷贝热路径审计（优化 J）中识别、经 Reviewer 评估后**刻意不随批实施**的项。共同特点：真实存在但缺 profiler 证据排进热点前列，或改动会触碰图结构/行为（需单独 3-seed 重验），不值得为其扩大批量改动的验证面。
+
+| 项 | 位置 | 问题 | 优先级与备注 |
+|---|---|---|---|
+| A3 | `node_inner.rs` `propagate_grad_to_parents` | 用 `msg.contains("不应该")` 字符串匹配做控制流（loss 对 target 不传梯度）；实际因 target 是叶子会被 `branch_needs_gradient()` 提前跳过，无热路径开销 | P2，纯代码卫生：正解是 `GradResult::NoGrad` 变体 |
+| B2 | `softmax.rs` / CE 反向 | 逐 batch IxDyn 逐元素索引，可改行 slice 直取 | P1，等 profiler 证据 |
+| B7 | `tensor/property.rs` `sum_to_shape` | 多趟归约（逐轴循环 sum_axis），可单趟 | P2 |
+| B8 | `loss/mse.rs` 前向 | 平方和走张量表达式链，可单趟 fold | P2 |
+| D4 | `mcts/search.rs` `select` | 每次 simulation 重建全量 `ChildStat` Vec | P2，等 tree-reuse 改造时一起做 |
+| E1 | `graph/inner` CSE | CSE key 用 String 拼接，可换紧凑 hash key | P2 |
+| C2 | `my_zero/network.rs` `min_max_normalize` | 两个 repeat 节点冗余（Subtract/Divide 本就支持 `[B,dim] ÷ [B,1]` 广播），代数成立 | 改图结构 → 必须单独一项 + 3-seed 哨兵重验，勿与其他改动混批 |
+| C1 | `layer/attention.rs` | 逐 head 循环建图 | 正解是 3D batched MatMul，归属演化阶段 D（刻意暂缓），不单独开口子 |
+
+---
+
+### 4. 推理模式中间节点 value 及早释放（liveness）
 
 **来源**：arXiv 2308.13898（内存感知调度）的"穷人版"思想——执行顺序与张量生命周期决定峰值内存；论文本体（ILP 调度器）对我们不适用，见[阅读日志](./paper/reading_log.md)。
 

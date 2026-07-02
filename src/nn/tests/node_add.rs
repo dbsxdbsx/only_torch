@@ -556,6 +556,110 @@ fn test_add_broadcast_forward() -> Result<(), GraphError> {
     Ok(())
 }
 
+/// 回归测试：广播的小张量在前（`bias + x`）也必须能前向
+///
+/// 旧实现「clone 首父再 `+=`」在首父是被广播方时 panic（`+=` 不允许左操作数扩形），
+/// 而 Add::new 的静态形状检查允许该顺序。两个方向都应得到相同结果。
+#[test]
+fn test_add_broadcast_forward_small_first() -> Result<(), GraphError> {
+    let graph = Graph::new();
+
+    let bias = graph.input(&Tensor::new(&[10., 20., 30., 40.], &[1, 4]))?;
+    let x = graph.input(&Tensor::new(
+        &[1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12.],
+        &[3, 4],
+    ))?;
+
+    // 小 + 大（被广播方在前）
+    let add_small_first = &bias + &x;
+    add_small_first.forward()?;
+    let out1 = add_small_first.value()?.unwrap();
+
+    // 大 + 小（常规顺序）
+    let add_big_first = &x + &bias;
+    add_big_first.forward()?;
+    let out2 = add_big_first.value()?.unwrap();
+
+    let expected = Tensor::new(
+        &[11., 22., 33., 44., 15., 26., 37., 48., 19., 30., 41., 52.],
+        &[3, 4],
+    );
+    assert_eq!(out1, expected);
+    assert_eq!(out2, expected);
+
+    Ok(())
+}
+
+/// 回归测试：广播小张量在前的端到端反向传播
+///
+/// `bias[1,3] + matrix[2,3]` 顺序下，bias 梯度仍应沿 axis=0 求和回 [1,3]。
+#[test]
+fn test_add_broadcast_e2e_small_first() -> Result<(), GraphError> {
+    let graph = Graph::new();
+
+    let bias = graph.parameter(&[1, 3], Init::Zeros, "bias")?;
+    let matrix = graph.parameter(&[2, 3], Init::Zeros, "matrix")?;
+    bias.set_value(&Tensor::new(&[10., 20., 30.], &[1, 3]))?;
+    matrix.set_value(&Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]))?;
+
+    // 被广播方在前
+    let result = &bias + &matrix;
+    let target = graph.input(&Tensor::zeros(&[2, 3]))?;
+    let loss = result.mse_loss(&target)?;
+
+    graph.zero_grad()?;
+    loss.backward()?;
+
+    let matrix_grad = matrix.grad()?.expect("matrix 应有 grad");
+    let bias_grad = bias.grad()?.expect("bias 应有 grad");
+    assert_eq!(matrix_grad.shape(), &[2, 3]);
+    assert_eq!(bias_grad.shape(), &[1, 3]);
+
+    // 与 test_add_broadcast_e2e（大 + 小顺序）完全相同的期望梯度
+    let expected_bias_grad = Tensor::new(&[25. / 3., 47. / 3., 69. / 3.], &[1, 3]);
+    assert_abs_diff_eq!(&bias_grad, &expected_bias_grad, epsilon = 1e-4);
+
+    Ok(())
+}
+
+/// 回归测试：3 父节点且被广播方在前（首两父引用加法 + 第三父原地累加路径）
+#[test]
+fn test_add_forward_three_parents_broadcast_first() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let small = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 2], Some("small"))
+        .unwrap();
+    let big1 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("big1"))
+        .unwrap();
+    let big2 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("big2"))
+        .unwrap();
+    let add = inner
+        .borrow_mut()
+        .create_add_node(vec![small.clone(), big1.clone(), big2.clone()], Some("add"))
+        .unwrap();
+
+    small
+        .set_value(Some(&Tensor::new(&[100.0, 200.0], &[1, 2])))
+        .unwrap();
+    big1.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))
+        .unwrap();
+    big2.set_value(Some(&Tensor::new(&[10.0, 20.0, 30.0, 40.0], &[2, 2])))
+        .unwrap();
+
+    add.forward_recursive(1, Mode::Train).unwrap();
+
+    let output = add.value().unwrap();
+    let expected = Tensor::new(&[111.0, 222.0, 133.0, 244.0], &[2, 2]);
+    assert_eq!(output, expected);
+}
+
 // ==================== 动态形状测试 ====================
 
 /// 测试 Add 节点的动态形状传播

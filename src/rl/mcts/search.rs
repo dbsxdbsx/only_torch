@@ -129,7 +129,6 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
             tree.expand(
                 leaf_id,
                 &candidates.candidates,
-                &vec![rec_out.state.clone(); candidates.len()],
                 rec_out.to_play,
                 rec_out.discount,
             );
@@ -363,8 +362,7 @@ mod tests {
             ActionCandidate::new(ActionId(0), ActionPayload::Discrete(0), 0.8),
             ActionCandidate::new(ActionId(1), ActionPayload::Discrete(1), 0.2),
         ];
-        let states = vec![1_u32, 2_u32];
-        tree.expand(tree.root, &candidates, &states, 0, 1.0);
+        tree.expand(tree.root, &candidates, 0, 1.0);
 
         let mut stats = collect_child_stats(&tree, tree.root);
         stats[0].prior = 0.3;
@@ -373,5 +371,29 @@ mod tests {
 
         assert!((tree.nodes[0].children[0].prior - 0.3).abs() < 1e-6);
         assert!((tree.nodes[0].children[1].prior - 0.7).abs() < 1e-6);
+    }
+
+    /// expand 后子节点隐状态应为 None（推理后才写入；与 expand_root 语义一致）
+    ///
+    /// 回归：旧实现预克隆父状态填充子节点（值语义错误且从未被读），
+    /// 大动作空间下每次 expansion 白付 候选数 × latent 的克隆开销。
+    #[test]
+    fn expand_leaves_child_states_none_until_recurrent() {
+        let mut tree = Tree::new(vec![1.0f32; 8], 0);
+        let candidates = vec![
+            ActionCandidate::new(ActionId(0), ActionPayload::Discrete(0), 0.5),
+            ActionCandidate::new(ActionId(1), ActionPayload::Discrete(1), 0.3),
+            ActionCandidate::new(ActionId(2), ActionPayload::Discrete(2), 0.2),
+        ];
+        tree.expand(tree.root, &candidates, 0, 1.0);
+
+        // 根自身的状态保留；子节点状态为 None，直到被选为 leaf 并 recurrent 后写入
+        assert!(tree.states[tree.root].is_some());
+        for edge in &tree.nodes[tree.root].children {
+            assert!(
+                tree.states[edge.child].is_none(),
+                "expand 不应预填充子节点状态"
+            );
+        }
     }
 }

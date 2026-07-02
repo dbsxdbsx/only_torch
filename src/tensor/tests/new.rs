@@ -40,6 +40,42 @@ fn test_new_invalid_scalar() {
     let _ = Tensor::new(&[1., 2.], &[1, 1, 1]);
 }
 
+// ==================== from_vec（零拷贝构造）====================
+
+/// from_vec 与 new 语义等价：同一行主序数据产出完全相同的张量
+#[test]
+fn test_from_vec_equivalent_to_new() {
+    let data = vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
+    let by_new = Tensor::new(&data, &[2, 3]);
+    let by_from_vec = Tensor::from_vec(data, &[2, 3]);
+    assert_eq!(by_from_vec.shape(), &[2, 3]);
+    assert_eq!(by_from_vec.data, by_new.data);
+    // 产出必为连续布局（行主序契约）
+    assert!(by_from_vec.is_contiguous());
+}
+
+/// from_vec 支持标量/向量/高维形状
+#[test]
+fn test_from_vec_various_shapes() {
+    let scalar = Tensor::from_vec(vec![7.0], &[1, 1]);
+    assert_eq!(scalar.shape(), &[1, 1]);
+    assert_eq!(scalar[[0, 0]], 7.0);
+
+    let vec4 = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[4]);
+    assert_eq!(vec4.shape(), &[4]);
+
+    let t4d = Tensor::from_vec((0..24).map(|i| i as f32).collect(), &[2, 3, 2, 2]);
+    assert_eq!(t4d.shape(), &[2, 3, 2, 2]);
+    assert_eq!(t4d[[1, 2, 1, 1]], 23.0);
+}
+
+/// from_vec 长度与形状不匹配时 panic（与 new 相同契约）
+#[test]
+#[should_panic]
+fn test_from_vec_invalid_len() {
+    let _ = Tensor::from_vec(vec![1.0, 2.0], &[3]);
+}
+
 #[test]
 fn test_new_vector() {
     // 向量
