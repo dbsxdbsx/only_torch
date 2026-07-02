@@ -21,12 +21,9 @@
 
 - ✅ 系数消融 4+1 臂 + recon 5-seed 复裁（已收口：recon_coef 1→16 promote，哨兵中位 66.2k→~9.8k；recon=1 实测有害、悬案闭合——见账本与 CHANGELOG 2026-07-02 条目）
 - ✅ 梯度流审计（2026-07-02 闭环：现状完全 canonical——cons target 已 sg、×0.5/×1/K 缩放齐备、recon 回流为设计本意；**sg 解耦两臂均不追加**——(b) 与 t1 数据经验冗余、(c) 反价值等价原则且前提不成立；流向图与裁决细节见 [Simulus 计划 A2 审计结论](./my_zero_simulus_ablation_plan.md#a2-审计结论2026-07-02--已闭环现状-canonicalbc-两臂均不追加)，复活触发留 Phase 1 干扰症状）
-- ⏳ **HL-Gauss 编码消融**（= Simulus 计划 A1：two-hot → 高斯软标签，改动集中在 `value_encoding.rs`）
-- ⏳ **obs 无量纲化（symlog）消融**（2026-07-02 P0 复盘定案：全家 loss 仅 reconstruction 直接暴露在环境单位下——value/reward 已走 h 变换 + categorical、consistency 余弦、continuation 有界；量纲不统一则 recon 系数每换环境重付一轮标定税，须在图像线定 CNN 约定**之前**收口。与上两项同为改行为，串行执行）
-  - 落点：`MyZeroModel` obs 入口**单点** `symlog(x) = sign(x)·ln(1+|x|)`——repr 输入与 recon 解码目标同源变换；无状态（不进 checkpoint、保 seed 逐 bit 复现）；buffer / env I/O 继续存 raw obs
-  - 预注册：内部开关 `obs_symlog`（默认关，零行为变化落地）；三臂 = symlog × recon_coef {16, 4, 1} 各 3-seed vs 现哨兵；小系数与 16 打平 → 按简单性取小并 promote（系数回归论文默认 = 量纲工作被撤走的证明）；显著劣化 → 负结果留档、保持现状（量纲留图像线 [0,1] 自然解决）
-  - 判据定位：CartPole 只验「不显著变差 + 最优系数向 1 回移」，**不预期变快**；终极兑现判据挂 Phase 1——图像环境 recon 系数**免重调**
-- **退出判据**：v0.26 recipe 定稿（系数 + obs 量纲 + 编码 + 梯度流结构四者有据）、账本回填；**此后 CartPole 冻结为纯回归哨兵**（见 §7 条款二）。
+- ✅ **HL-Gauss 编码消融**（= Simulus 计划 A1；2026-07-02 闭环：**负结果**——中位 9.8k→27.6k 显著劣化，窄 support 低噪声下 two-hot 尖标签是信息优势；回退 two-hot、`hl_gauss` 开关留库，Phase 1 图像域 native 复测，见下节复裁条目）
+- ✅ **obs 无量纲化（symlog）消融**（2026-07-02 闭环：**负结果**——三臂 symlog × recon {16,4,1} 中位 12.9k / 19.7k / 39.4k，「系数向 1 回移」完全未发生（仍 16 最优且单调恶化），symlog+16 亦无增益；由此裁决 **recon_coef=16 本质是自监督话语权旋钮而非单位换算**——CartPole obs 本就小量纲、无量纲可撤。`obs_symlog` 开关留库、默认恒关，触发条件回归 Simulus 计划 §3（连续特征范围失控）；图像线走 [0,1] 像素归一 + 该域重标系数）
+- ✅ **退出判据达成（2026-07-02）**：v0.26 recipe 定稿 = **系数 recon16 + two-hot 编码 + raw obs + canonical 梯度流**（四者全部有据，两项负结果证明现状即最优）、账本回填完毕；**CartPole 自此冻结为纯回归哨兵**（条款二生效，哨兵 12,519 / 8,643 / 9,826 · 中位 ~9.8k）。
 
 ## 2. Phase 1 · 图像线立柱 + 一级风险压测（v0.26 下半）
 
@@ -34,7 +31,7 @@
 
 - **风险 spike 先行**：最小 CNN 栈 + 假图像输入，实测「CNN 前向 × sims」单步 wall-clock，对照 [CPU 风险 issue](../../.issue/items/cpu_only_mcts_image_realtime_risk.md) 的触发线，产出去/留/改道决策
 - 图像 obs 管线（复用 `src/vision/preprocess`：降采样/灰度/帧堆叠）→ CNN representation 进 `network.rs`（按 recipe 注入）→ **预注册基准门槛**（Pong 类；验收 = 3-seed 可复现学习曲线 + 预注册分数，**非 SOTA**）
-- native 域复裁：consistency / reconstruction / HL-Gauss 各一次 A/B；recon_coef 为 CartPole 临时值，在此复验；obs symlog（Phase 0 裁决）的「recon 系数免重调」兑现判据也在此验证
+- native 域复裁：consistency / reconstruction / HL-Gauss 各一次 A/B；recon_coef=16 为 CartPole 域标定值，图像 obs 走 [0,1] 像素归一并**在该域重标**（Phase 0 symlog 负结果已裁决：该系数是权衡旋钮而非单位换算，跨量纲不免重调）
 - Simulus 暂缓项触发点：若环境奖励稀疏且探索成实测瓶颈，ensemble JSD 内在奖励在此转正（唯一入口）
 - **退出判据**：图像支柱 3-seed 账本 + CPU 风险 issue 第一格勾选。
 

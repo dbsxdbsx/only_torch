@@ -25,6 +25,7 @@
 - **前置**：无框架级前置（CE 已支持 soft target——two-hot 本身就是 soft 的）。
 - **消融**：recipe 不动，仅切编码；3-seed vs 现哨兵（以[账本](../../examples/my_zero/cartpole/README.md)当前 promoted 行为准，不在本文维护数字）。
 - **预期与判读**：CartPole value 范围窄，预期持平——**持平即通过**（哨兵证"不崩"），真正收益押在图像线大 value 噪声场景；若显著劣化则回退并记录。
+- **✅ 已消融，CartPole 负结果（2026-07-02）**：实测**显著劣化**（中位 9.8k → 27.6k，range 完全不重叠），非预期的"持平"——窄 support 低噪声下 two-hot 尖标签是信息优势，HL-Gauss 的软标签等于主动注模糊。已回退 two-hot；`hl_gauss` 开关留库，**Phase 1 图像域（native 场景）复测**。数字见[账本](../../examples/my_zero/cartpole/README.md#v026-phase-0编码--量纲消融2026-07-02)。
 
 ### A2 · 辅助 loss stop-gradient 解耦实验（P0 批次，与 loss 系数重标定同批）
 
@@ -68,7 +69,7 @@ repr(next_obs) → projector ──[detach ✂]── -cos ·cons_coef        [�
 | 项 | 触发条件 |
 |---|---|
 | ensemble JSD 内在奖励 | 图像线遇到**稀疏奖励**环境（商业游戏类）且探索成为实测瓶颈；实现时用 stop-grad 输出上的多头（开销小），奖励只注入想象/搜索期 |
-| symlog 观测归一化 | **已升级为主动项（2026-07-02）**：排入[收口规划 Phase 0](./rl_closure_plan.md)「obs 无量纲化（symlog）消融」，不再等触发；协议以该处为准 |
+| symlog 观测归一化 | **已消融，CartPole 负结果（2026-07-02）**：Phase 0 三臂（symlog × recon {16,4,1}）系数未向 1 回移且无增益（[账本](../../examples/my_zero/cartpole/README.md#v026-phase-0编码--量纲消融2026-07-02)）→ 开关留库、默认关；**回归原触发条件**：未来环境连续特征范围失控时再启用 |
 
 ## 4. 执行顺序与验收
 

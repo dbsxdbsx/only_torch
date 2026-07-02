@@ -28,6 +28,10 @@ cargo test --release --features blas-mkl cartpole_baseline_t0_base -- --ignored 
 # v0.26 P0 loss 系数重标定消融（预注册协议见测试文件 doc 注释）
 cargo test --release --features blas-mkl cartpole_coef -- --ignored --nocapture --test-threads=1
 cargo test --release --features blas-mkl cartpole_seedext -- --ignored --nocapture --test-threads=1
+
+# v0.26 Phase 0 编码 / 量纲消融（预注册协议见各测试文件 doc 注释）
+cargo test --release --features blas-mkl cartpole_hlgauss -- --ignored --nocapture --test-threads=1
+cargo test --release --features blas-mkl cartpole_symlog -- --ignored --nocapture --test-threads=1
 ```
 
 训练日志：**`len`** = 本局步数；**`total_env_steps`** = 累计真实环境交互（首要评价指标）。
@@ -70,6 +74,45 @@ cargo test --release --features blas-mkl cartpole_seedext -- --ignored --nocaptu
 3. **cont 系数保持 1.0**：两档均无稳定收益且注入方差（cont=4 一个 seed 不收敛）；binary gate 语义不需要更大权重。
 4. **recon(16) vs 纯 consistency 在 CartPole 分不出高下**（中位 12.5k vs 18.6k，逐 seed 2/5，尾部更好 79k vs 151k）——哨兵分辨率极限；recon 的最终价值裁决留给图像环境（自监督本命田），CartPole 保留其回归覆盖。
 5. **临时值声明**：recon_coef=16 为 CartPole 单环境证据 + 框架级放大倍数推导（K×B）联合支持的临时默认；图像线 obs 归一化后量纲变化，须复验后定稿。
+
+---
+
+## v0.26 Phase 0：编码 / 量纲消融（2026-07-02）
+
+**口径**：`release`（thin LTO + cg16）+ Intel MKL · seeds 42/43/44 · 3-seed 中位 env-steps + 达标率；
+baseline = 上节哨兵（12,519 / 8,643 / 9,826，中位 ~9.8k，range 8.6k–12.5k），不重跑。
+预注册协议见 [`hl_gauss_ablation_bench.rs`](../../../src/rl/algo/my_zero/tests/hl_gauss_ablation_bench.rs) 与 [`obs_symlog_ablation_bench.rs`](../../../src/rl/algo/my_zero/tests/obs_symlog_ablation_bench.rs) doc 注释。
+
+### HL-Gauss value/reward 编码（two-hot → 高斯软标签，σ=0.75×bin）
+
+| 臂 | seed42 / 43 / 44 env-steps | **中位** | 达标率 | 裁决 |
+|----|----------------------------|----------|--------|------|
+| baseline（two-hot，= 哨兵） | 12,519 / 8,643 / 9,826 | 9,826 | 3/3 | 对照 |
+| HL-Gauss | 14,480 / 27,975 / 27,602 | 27,602 | 3/3 | **range 完全更差不重叠（14.5k–28.0k vs 8.6k–12.5k）→ 负结果，回退 two-hot** |
+
+**结论**：CartPole 上 HL-Gauss 显著劣化（中位 9.8k → 27.6k，~2.8×），非文献预期的「持平」。机制解释：CartPole value 目标经 h 变换后范围窄（≈0–17.6）且低噪声，two-hot 的"尖"标签在此是**信息优势**（目标可精确定位到相邻两原子）；HL-Gauss 把质量摊到 ~±3 原子等于主动注入标签模糊，其鲁棒性收益只在大 value 噪声场景（图像/大规模）才能兑现——正合 Farebrother et al. 的适用前提。**默认保持 two-hot；`hl_gauss` 开关与实现保留在库，Phase 1 图像域（native 场景）复测**（收口规划 §2 已有该复裁条目）。
+
+### obs symlog 无量纲化（symlog × recon_coef 三臂）
+
+| 臂 | seed42 / 43 / 44 env-steps | **中位** | 达标率 | 裁决（预注册规则） |
+|----|----------------------------|----------|--------|--------------------|
+| baseline（raw obs · recon=16，= 哨兵） | 12,519 / 8,643 / 9,826 | 9,826 | 3/3 | 对照 |
+| symlog + recon=16 | 41,081 / 10,623 / 12,864 | 12,864 | 3/3 | 与哨兵 range 重叠但中位 +31%、尾部 41k；无增益 |
+| symlog + recon=4 | 19,710 / 19,596 / 39,985 | 19,710 | 3/3 | 差于 symlog+16 → 系数未回移 |
+| symlog + recon=1 | 39,399 / 187,827 / 16,352 | 39,399 | 3/3 | 最差 + 187.8k 极端尾部 → promote 条件不满足 |
+
+**结论（负结果，保持 raw obs）**：
+
+1. **「最优系数向 1 回移」完全没有发生**——symlog 下仍是 16 最优且单调恶化（16 → 4 → 1 = 12.9k → 19.7k → 39.4k）。预注册 promote 条件（小系数与 16 打平）不满足，且 symlog+16 相对哨兵无任何改善（中位 +31%、尾部方差放大）。
+2. **机制解释**：CartPole obs 本来就是 O(0.1–1) 小量纲（angle ±0.42、实际 pos/vel ±3 内），symlog 在 |x|<1 近恒等——**无量纲可撤**，只轻微非线性挤压了 obs 的可分辨结构。由此裁决 v0.25 复盘的悬案：**recon_coef=16 在 CartPole 上的本质是「自监督话语权」权衡旋钮，不是单位换算**（若是单位换算，撤走量纲后系数应回归 1）。
+3. **对 Phase 1 的指导**：低维小量纲环境不需要 obs 归一化；图像线走 [0,1] 像素归一 + 该域重标 recon 系数即可。`obs_symlog` 开关保留库内（未来大范围连续特征环境可按 [Simulus 计划 §3](../../../.doc/design/my_zero_simulus_ablation_plan.md) 原触发条件启用），recipe 默认恒关。
+
+### Phase 0 收口定格（2026-07-02 · CartPole 自此冻结为纯回归哨兵）
+
+两项消融均负结果 → **recipe 零变更**；两个开关（`hl_gauss` / `obs_symlog`）默认关落地后，
+`SEEDS=3` 官方哨兵**逐 bit 复现** promoted 数字：**12,519 / 8,643 / 9,826，中位 ~9.8k，3/3 达标**
+（行为零变化的实证）。v0.26 recipe 定稿 = cons(2) + recon(**16**) + two-hot + raw obs + canonical 梯度流
+（[收口规划 §1](../../../.doc/design/rl_closure_plan.md) 四者有据）；此后 CartPole 只回答「崩没崩」（条款二）。
 
 ---
 

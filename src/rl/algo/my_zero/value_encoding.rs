@@ -74,10 +74,65 @@ pub fn scalar_to_two_hot(x: f32, cfg: &SupportConfig) -> Vec<f32> {
 ///
 /// 流程：`Σ pᵢ·atomᵢ（变换域期望）→ h⁻¹ → 标量`。
 /// `probs` 应为已归一化的概率（如 `softmax(logits)`），长度须等于 `cfg.size()`。
+/// 解码与编码方式无关（two-hot / HL-Gauss 共用：都取期望再 h⁻¹）。
 pub fn two_hot_to_scalar(probs: &[f32], cfg: &SupportConfig) -> f32 {
     let mut y = 0.0f32;
     for (i, &p) in probs.iter().enumerate() {
         y += p * cfg.atom(i);
     }
     value_transform_inv(y)
+}
+
+/// HL-Gauss 软标签的高斯宽度 σ（变换域；bin 宽 = 1，取 0.75 × bin 宽）。
+///
+/// Farebrother et al. 2024（*Stop Regressing*）与 Simulus（arXiv 2502.11537）实证口径：
+/// σ/bin ≈ 0.75 使高斯質量跨约 ±3 个原子，标签平滑但不糊化。**非用户旋钮**。
+pub const HL_GAUSS_SIGMA: f32 = 0.75;
+
+/// 标量 → HL-Gauss 概率分布（histogram loss with Gaussian smoothing）
+///
+/// 流程：`x → h(x) → clamp 到 [-half, half] → 高斯 CDF 按 bin 边界差分 → 截断归一化`。
+/// 每个原子 `zᵢ` 视为宽 1 的 bin（边界 `zᵢ ± 0.5`）：
+/// `pᵢ ∝ Φ((zᵢ+0.5−y)/σ) − Φ((zᵢ−0.5−y)/σ)`，再对 support 全域截断归一（Σpᵢ = 1）。
+///
+/// 与 [`scalar_to_two_hot`] 的差异：质量摊到 ~±3 个原子（软标签更平滑，CE 梯度对
+/// target 邻域误差不敏感），期望仍 ≈ y（内点处离散化偏差 < 1e-3）。
+/// 解码端不变（[`two_hot_to_scalar`] 取期望 → h⁻¹）。
+pub fn scalar_to_hl_gauss(x: f32, cfg: &SupportConfig) -> Vec<f32> {
+    let size = cfg.size();
+    let half = cfg.half_size as f32;
+    let y = value_transform(x).clamp(-half, half);
+
+    // bin 边界：b_i = atom(i) − 0.5，i ∈ 0..=size（共 size+1 条）
+    let cdf_at = |border: f32| std_normal_cdf((border - y) / HL_GAUSS_SIGMA);
+    let total = cdf_at(half + 0.5) - cdf_at(-half - 0.5);
+
+    let mut out = vec![0.0f32; size];
+    let mut lower_cdf = cdf_at(-half - 0.5);
+    for (i, slot) in out.iter_mut().enumerate() {
+        let upper_cdf = cdf_at(cfg.atom(i) + 0.5);
+        *slot = (upper_cdf - lower_cdf) / total;
+        lower_cdf = upper_cdf;
+    }
+    out
+}
+
+/// 标准正态 CDF：`Φ(t) = 0.5·(1 + erf(t/√2))`。
+fn std_normal_cdf(t: f32) -> f32 {
+    0.5 * (1.0 + erf(t / std::f32::consts::SQRT_2))
+}
+
+/// 误差函数近似（Abramowitz & Stegun 7.1.26，|误差| ≤ 1.5e-7，f32 足够）。
+fn erf(x: f32) -> f32 {
+    let sign = if x < 0.0 { -1.0 } else { 1.0 };
+    let x = x.abs();
+    const A1: f32 = 0.254_829_6;
+    const A2: f32 = -0.284_496_74;
+    const A3: f32 = 1.421_413_7;
+    const A4: f32 = -1.453_152;
+    const A5: f32 = 1.061_405_4;
+    const P: f32 = 0.327_591_1;
+    let t = 1.0 / (1.0 + P * x);
+    let poly = ((((A5 * t + A4) * t + A3) * t + A2) * t + A1) * t;
+    sign * (1.0 - poly * (-x * x).exp())
 }

@@ -35,6 +35,12 @@ fn print_components(c: &Components) {
     if c.reconstruction {
         tags.push("reconstruction");
     }
+    if c.hl_gauss {
+        tags.push("HL-Gauss");
+    }
+    if c.obs_symlog {
+        tags.push("obs-symlog");
+    }
     if c.value_prefix {
         tags.push("value_prefix");
     }
@@ -788,7 +794,9 @@ pub(crate) fn materialize(
     let obs_dim = env.get_flatten_observation_len();
     let action_dim = adapter.action_dim();
     let graph = Graph::new_with_seed(seed);
-    let model = MyZeroModel::new(&graph, obs_dim, action_dim, cfg.model.latent_dim)?;
+    let model = MyZeroModel::new(&graph, obs_dim, action_dim, cfg.model.latent_dim)?
+        .with_value_encoding(cfg.components.hl_gauss)
+        .with_obs_symlog(cfg.components.obs_symlog);
     env.close();
     Ok(MyZero::from_parts(cfg.clone(), model, adapter))
 }
@@ -842,7 +850,9 @@ fn train_one_seed(
     }
 
     let graph = Graph::new_with_seed(seed);
-    let model = MyZeroModel::new(&graph, obs_dim, action_dim, latent_dim)?;
+    let model = MyZeroModel::new(&graph, obs_dim, action_dim, latent_dim)?
+        .with_value_encoding(cfg.components.hl_gauss)
+        .with_obs_symlog(cfg.components.obs_symlog);
     let mut optimizer = Adam::new(&graph, &model.parameters(), t.lr);
     let mut buffer: ReplayBuffer<SelfPlayGame> = ReplayBuffer::new(t.buffer_capacity);
     let mut rng = StdRng::seed_from_u64(seed);

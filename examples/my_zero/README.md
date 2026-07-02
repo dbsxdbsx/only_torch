@@ -30,6 +30,8 @@
 | consistency  |                ✅                 |                 ⏳                 |      ⏳      | SimSiam 一致性 loss |
 | reconstruction |              ✅※                |                 ⏳                 |      ⏳      | ※ autograd 修复后 3-seed 中位不再显示增益（方差大、未回滚），v0.26 P0 重标定 loss 系数后复裁，见[账本结论](cartpole/README.md#结论v025-收口) |
 | Sampled（连续采样候选） |       ✅ 接入不回归        |                 ⏳                 |      ⏸      | CartPole K=N 退化全枚举、与无 Sampled 逐步等价；Pendulum B=7 才是真实子采样 |
+| HL-Gauss value/reward 编码 | ❌ 显著劣化（中位 9.8k→27.6k） | ⏸ | ⏳ **native 场景** | 窄 support 低噪声下 two-hot 尖标签是信息优势；开关留库，Phase 1 图像域复测（[账本](cartpole/README.md#v026-phase-0编码--量纲消融2026-07-02)） |
+| obs symlog 无量纲化 | ❌ 无增益且系数不回移 | ⏳ | ⏸ 图像走 [0,1] 归一 | CartPole obs 本就小量纲；开关留库，触发条件回归 [Simulus 计划 §3](../../.doc/design/my_zero_simulus_ablation_plan.md)（连续特征范围失控时） |
 | reanalyze    | ❌ 当前实现有害（[issue](../../.issue/items/my_zero_reanalyze_cartpole_regression.md)） | ⏳ | **v0.26 战略组件** | 「实时轻 acting + 离线重 reanalyze」解耦，图像线优先验证 |
 | value_prefix |                ❌                 |                 ⏳                 |      ⏳      | CartPole 有害（≠ 全局坏） |
 | target_net   |                 ⏳                 |                 ⏳                 |      ⏳      | 已入库，训练循环待接 |

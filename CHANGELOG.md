@@ -18,6 +18,11 @@
 
 ### Added
 
+- **feat(my_zero): 收口规划 Phase 0 全项闭环——HL-Gauss 与 obs symlog 双消融（均负结果，recipe 零变更），CartPole 冻结为纯回归哨兵**（2026-07-02）
+  - **HL-Gauss value/reward 编码**（Simulus 计划 A1）：`value_encoding.rs` 增 `scalar_to_hl_gauss`（高斯 CDF 差分软标签，σ=0.75×bin，内置 erf 近似；解码端与 two-hot 共用）+ `Components.hl_gauss` 开关（默认关）。CartPole 3-seed **负结果**：中位 9.8k→27.6k、range 完全不重叠——窄 support 低噪声下 two-hot 尖标签是信息优势；回退 two-hot，开关留库 Phase 1 图像域（native 场景）复测
+  - **obs symlog 无量纲化**（收口规划 Phase 0 第四项）：新增 `obs_transform.rs`（`sign(x)·ln(1+|x|)`，模型 obs 入口单点：repr 输入 + recon 目标同源，buffer/env 恒存 raw）+ `Components.obs_symlog` 开关（默认关）。三臂 symlog × recon {16,4,1} 3-seed **负结果**：中位 12.9k / 19.7k / 39.4k，「系数向 1 回移」未发生——裁决 **recon_coef=16 本质是自监督话语权旋钮而非单位换算**（CartPole obs 本就小量纲）；开关留库、触发条件回归 Simulus 计划 §3，图像线走 [0,1] 像素归一 + 该域重标
+  - **Phase 0 退出判据达成**：v0.26 recipe 定稿 = recon16 + two-hot + raw obs + canonical 梯度流（四者有据）；两开关默认关落地后官方哨兵 `SEEDS=3` **逐 bit 复现** 12,519 / 8,643 / 9,826（行为零变化实证）；**CartPole 自此冻结（条款二生效）**，下一步 Phase 1 CNN×MCTS 风险 spike
+  - 新增 13 个单元测试（HL-Gauss 性质 7 + symlog 性质/接线 4 + 编码基线 2）+ 2 个预注册消融 bench（`hl_gauss_ablation_bench.rs` / `obs_symlog_ablation_bench.rs`）；账本 / 组件矩阵 / roadmap / 收口规划 / Simulus 计划 / AGENTS 全量同步
 - **docs(rl): RL 全面收口规划落盘（v0.26→v0.28 五阶段）**（2026-07-02）
   - 新增 `.doc/design/rl_closure_plan.md`：终态验收四条（矩阵零 ⏳ / 四类环境支柱 / issue 全归档 / smoke-rl 扩容）+ 五阶段战役次序（训练信号收口 → 图像线+风险 spike → Gomoku self-play → 样本效率纵深 → 总收口）+ issue/版本裁决映射 + Simulus 与旧规划吸收对照（§6b/§6c，零散 plan 全部清账）+ 两条制度化条款（spike 唯一改道节点、CartPole 哨兵铁律）；`rl_roadmap.md` §5 链入
   - Gumbel 负结果 issue 补 **§七 复裁前置修复清单**：① greedy eval 注入 Gumbel 噪声 bug（`final_recommendation` 无视 temperature=0，疑似"未收敛"真因，此前无仓库内记录）② `q_range` 局部归一化同源 bug——两项不修则 Phase 2 复裁无效

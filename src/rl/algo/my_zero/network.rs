@@ -11,7 +11,10 @@
 
 use super::consistency::negative_cosine_similarity;
 use super::loss;
-use super::value_encoding::{SupportConfig, scalar_to_two_hot, two_hot_to_scalar};
+use super::obs_transform::{maybe_symlog, maybe_symlog_in_place};
+use super::value_encoding::{
+    SupportConfig, scalar_to_hl_gauss, scalar_to_two_hot, two_hot_to_scalar,
+};
 use crate::nn::{
     Graph, GraphError, IntoVar, Linear, Module, Var, VarActivationOps, VarLossOps, VarReduceOps,
     VarShapeOps,
@@ -364,6 +367,14 @@ pub struct MyZeroModel {
     pub graph: Graph,
     pub action_dim: usize,
     pub latent_dim: usize,
+    /// value/reward 训练目标编码开关（false = two-hot，true = HL-Gauss）。
+    /// 只影响训练目标构造，解码端（期望 → h⁻¹）与推理路径完全无关；
+    /// 由 runner 按 `Components.hl_gauss` 注入（[`Self::with_value_encoding`]）。
+    value_hl_gauss: bool,
+    /// obs symlog 无量纲化开关（模型 obs 入口单点：repr 输入 + recon 目标同源变换；
+    /// buffer / env I/O 恒存 raw obs）。由 runner 按 `Components.obs_symlog` 注入
+    /// （[`Self::with_obs_symlog`]）。**开关必须与训练时一致**，否则权重语义失配。
+    obs_symlog: bool,
     // 搜索期持久化推理子图（不参与训练/序列化；训练走各网络自己的 forward 建图）
     root_infer: RootInfer,
     rec_infer: RecInfer,
@@ -440,9 +451,29 @@ impl MyZeroModel {
             graph: graph.clone(),
             action_dim,
             latent_dim,
+            value_hl_gauss: false,
+            obs_symlog: false,
             root_infer,
             rec_infer,
         })
+    }
+
+    /// 设置 value/reward 训练目标编码（builder 式；默认 two-hot）。
+    ///
+    /// 与权重/图结构无关（纯目标构造分支），故可在构造后任意时点设置；
+    /// 加载旧 checkpoint 推理不受影响（解码端两种编码相同）。
+    pub(crate) fn with_value_encoding(mut self, hl_gauss: bool) -> Self {
+        self.value_hl_gauss = hl_gauss;
+        self
+    }
+
+    /// 设置 obs symlog 无量纲化（builder 式；默认关）。
+    ///
+    /// 数据空间纯函数变换（进图前作用于 f32 切片），不改图结构与持久化子图；
+    /// 训练 / 搜索 / 推理共用本开关，须与权重的训练口径一致。
+    pub(crate) fn with_obs_symlog(mut self, on: bool) -> Self {
+        self.obs_symlog = on;
+        self
     }
 
     pub fn parameters(&self) -> Vec<Var> {
@@ -487,16 +518,25 @@ impl MyZeroModel {
     }
 
     /// 标量 value/reward → two-hot 目标张量 [1, support_size]
-    fn two_hot_target(&self, x: f32) -> Tensor {
-        Tensor::new(&scalar_to_two_hot(x, &SUPPORT), &[1, SUPPORT.size()])
+    /// 标量 → categorical 软标签向量（按 [`Self::value_hl_gauss`] 选 two-hot / HL-Gauss）。
+    fn encode_scalar(&self, x: f32) -> Vec<f32> {
+        if self.value_hl_gauss {
+            scalar_to_hl_gauss(x, &SUPPORT)
+        } else {
+            scalar_to_two_hot(x, &SUPPORT)
+        }
     }
 
-    /// 一批标量 value/reward → two-hot 目标张量 `[G, support_size]`（逐行 two-hot）。
-    fn two_hot_batch(xs: &[f32]) -> Tensor {
+    fn two_hot_target(&self, x: f32) -> Tensor {
+        Tensor::new(&self.encode_scalar(x), &[1, SUPPORT.size()])
+    }
+
+    /// 一批标量 value/reward → categorical 目标张量 `[G, support_size]`（逐行编码）。
+    fn two_hot_batch(&self, xs: &[f32]) -> Tensor {
         let size = SUPPORT.size();
         let mut flat = Vec::with_capacity(xs.len() * size);
         for &x in xs {
-            flat.extend_from_slice(&scalar_to_two_hot(x, &SUPPORT));
+            flat.extend_from_slice(&self.encode_scalar(x));
         }
         Tensor::new(&flat, &[xs.len(), size])
     }
@@ -543,6 +583,10 @@ impl MyZeroModel {
         use_value_prefix: bool,
     ) -> Result<Var, GraphError> {
         let k = actions.len();
+
+        // obs 入口单点变换（symlog 开关；repr 输入与 recon 目标同源）
+        let obs_tf = maybe_symlog(self.obs_symlog, obs_t);
+        let obs_t: &[f32] = &obs_tf;
 
         let obs_tensor = Tensor::new(obs_t, &[1, obs_t.len()]);
         let mut latent = self.repr.forward(&obs_tensor)?;
@@ -610,9 +654,14 @@ impl MyZeroModel {
                 + &(&step_reward_loss * loss::REWARD_LOSS_COEF)
                 + &(&step_continuation_loss * continuation_coef);
 
+            // consistency / reconstruction 的 next_obs 同经模型入口单点变换
+            let next_obs_tf = next_obs_list
+                .and_then(|list| list.get(i))
+                .map(|no| maybe_symlog(self.obs_symlog, no));
+
             // consistency：dynamics 预测的 next_latent 与 repr 编码的真实 next_obs 对齐
             if consistency_coef > 0.0
-                && let Some(next_obs) = next_obs_list.and_then(|list| list.get(i))
+                && let Some(next_obs) = next_obs_tf.as_deref()
             {
                 let obs_len = obs_t.len();
                 let repr_target = self.repr.forward(Tensor::new(next_obs, &[1, obs_len]))?;
@@ -625,7 +674,7 @@ impl MyZeroModel {
 
             // reconstruction k>0：dynamics latent 重建 next_obs
             if reconstruction_coef > 0.0
-                && let Some(next_obs) = next_obs_list.and_then(|list| list.get(i))
+                && let Some(next_obs) = next_obs_tf.as_deref()
             {
                 let obs_len = obs_t.len();
                 let recon = self.recon.forward(&next_latent);
@@ -676,9 +725,18 @@ impl MyZeroModel {
             }
             Tensor::new(&flat, &[g, dim])
         };
+        // obs 专用堆叠：入口单点 symlog（repr 输入与 recon 目标同源；policy 等目标不经过）
+        let stack_obs = |rows: &[&[f32]], dim: usize| -> Tensor {
+            let mut flat = Vec::with_capacity(g * dim);
+            for r in rows {
+                flat.extend_from_slice(r);
+            }
+            maybe_symlog_in_place(self.obs_symlog, &mut flat);
+            Tensor::new(&flat, &[g, dim])
+        };
         // obs_t（k=0 输入 + reconstruction k=0 目标）
         let obs_rows: Vec<&[f32]> = items.iter().map(|it| it.obs_t.as_slice()).collect();
-        let obs_tensor = stack(&obs_rows, obs_dim);
+        let obs_tensor = stack_obs(&obs_rows, obs_dim);
         // 各步 policy 目标 [G, action_dim]（slot 0..=k）
         let policy_at = |slot: usize| -> Tensor {
             let rows: Vec<&[f32]> = items
@@ -687,10 +745,10 @@ impl MyZeroModel {
                 .collect();
             stack(&rows, self.action_dim)
         };
-        // 各步 value 标量 → two-hot [G, support]（slot 0..=k）
+        // 各步 value 标量 → categorical 目标 [G, support]（slot 0..=k）
         let value_two_hot_at = |slot: usize| -> Tensor {
             let xs: Vec<f32> = items.iter().map(|it| it.target_values[slot]).collect();
-            Self::two_hot_batch(&xs)
+            self.two_hot_batch(&xs)
         };
 
         // ---- k=0：repr → pred（policy + value）+ reconstruction ----
@@ -739,7 +797,7 @@ impl MyZeroModel {
 
             let tp = policy_at(i + 1);
             let tv = value_two_hot_at(i + 1);
-            let tr = Self::two_hot_batch(
+            let tr = self.two_hot_batch(
                 &items
                     .iter()
                     .map(|it| it.target_rewards[i])
@@ -775,7 +833,7 @@ impl MyZeroModel {
             if i < n_next {
                 let next_rows: Vec<&[f32]> =
                     items.iter().map(|it| it.next_obs[i].as_slice()).collect();
-                let next_obs_tensor = stack(&next_rows, obs_dim);
+                let next_obs_tensor = stack_obs(&next_rows, obs_dim);
 
                 if consistency_coef > 0.0 {
                     let repr_target = self.repr.forward(&next_obs_tensor)?;
@@ -832,9 +890,11 @@ impl Dynamics for &MyZeroModel {
 impl MyZeroModel {
     fn initial_state_impl(&self, obs: &[f32]) -> (Vec<f32>, Vec<f32>, f32) {
         // 复用持久化 root 子图：只写入 obs、单趟 forward、读缓存输出（不重建节点）。
+        // obs 入口单点变换（与训练路径同一开关，保证搜索/推理量纲一致）。
+        let obs_tf = maybe_symlog(self.obs_symlog, obs);
         let r = &self.root_infer;
         r.obs_in
-            .set_value(&Tensor::new(obs, &[1, obs.len()]))
+            .set_value(&Tensor::new(&obs_tf, &[1, obs_tf.len()]))
             .expect("set obs 失败");
         self.graph.forward(&r.sink).expect("root forward 失败");
 

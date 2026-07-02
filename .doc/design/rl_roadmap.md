@@ -87,6 +87,7 @@
 | 优先级 | 方向 | 说明 |
 |--------|------|------|
 | **P0 ✅（2026-07-02 完成）** | loss 系数重标定消融 | 已裁决：**recon_coef 1→16 promote**（新哨兵中位 **~9.8k** env-steps、3/3，超过 bug 时代 13.1k；cont 保持 1.0，cons 无重标定理由）；同批 5-seed 复裁「recon=1 有害、recon 去留终审留图像环境」。数字与预注册协议见[基准账本](../../examples/my_zero/cartpole/README.md#v026-p0loss-系数重标定2026-07-02--当前官方哨兵) |
+| **P0 ✅（2026-07-02 完成）** | **收口规划 Phase 0 全项闭环**（训练信号收口） | 梯度流审计：现状 canonical，sg 两臂不追加；**HL-Gauss 编码负结果**（中位 9.8k→27.6k，回退 two-hot，开关留库 Phase 1 图像域复测）；**obs symlog 负结果**（三臂系数不回移，recon_coef=16 裁决为权衡旋钮非单位换算，开关留库）。recipe 零变更定稿、哨兵逐 bit 复现 ~9.8k，**CartPole 自此冻结为纯回归哨兵（条款二生效）**。细节见[收口规划 §1](./rl_closure_plan.md)与[账本](../../examples/my_zero/cartpole/README.md#v026-phase-0编码--量纲消融2026-07-02) |
 | **P0** | CNN 图像表征 + 图像离散基准（Atari-100k 类） | 商业游戏直接代理；复用已验收 consistency + reconstruction（自监督正是图像+少样本的命门组件） |
 | **P1** | Gomoku self-play → 象棋踏脚石 | `SelfPlayGame` / negamax backup / legal_mask 地基已在库；环境 `python/gym_env/gomoku/` 已备 |
 | **P1** | reanalyze 复活 + acting/reanalyze 解耦 | 「实时轻 acting（少 sim / policy 先验）+ 离线重 reanalyze（榨样本）」是商业游戏路线的战略组件；CartPole 负结果不构成否定 |

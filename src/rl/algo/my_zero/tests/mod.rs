@@ -11,12 +11,14 @@ mod config;
 mod consistency;
 mod model_io;
 mod n_step;
+mod obs_transform;
 mod reanalyze;
 mod recipe;
 mod sampled_params;
 mod sve;
 mod target;
 mod target_net;
+mod value_encoding;
 mod value_prefix;
 mod value_transform;
 
@@ -29,4 +31,6 @@ mod value_head_capacity;
 // ---- 手动档 bench（--ignored）----
 mod baseline_matrix_bench;
 mod completed_q_cartpole_bench;
+mod hl_gauss_ablation_bench;
 mod loss_coef_ablation_bench;
+mod obs_symlog_ablation_bench;
