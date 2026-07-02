@@ -44,6 +44,7 @@
 //! 算法组件（**均为 MyZero 自身实现，自包含**；MyZero 是项目唯一的 `*Zero` 实现）：
 //! - [`value_encoding`] / [`value_transform`]：categorical value/reward 编解码（two-hot / HL-Gauss）+ h(x) 变换
 //! - [`obs_transform`]：obs symlog 无量纲化（模型入口单点，buffer/env 存 raw）
+//! - [`obs_pipeline`]：图像 obs 管线（灰度 84² 降采样 + 4 帧堆叠；buffer 只存单帧，v0.26 Phase 1）
 //! - [`n_step`]：n-step bootstrap value target（区分 terminated / truncated，并使用 transition continuation）
 //! - [`reanalyze`]：position 级 MCTS 重搜 + train 后写回（`Components.reanalyze`；CartPole 暂不 promote）
 //! - [`loss`]：loss 系数与梯度缩放常量
@@ -65,6 +66,7 @@ pub mod model_io;
 pub mod my_zero;
 pub mod n_step;
 pub mod network;
+pub(crate) mod obs_pipeline;
 pub(crate) mod obs_transform;
 pub mod reanalyze;
 pub mod recipe;

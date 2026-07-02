@@ -5,7 +5,7 @@ use crate::rl::algo::my_zero::action::ActionAdapter;
 use crate::rl::algo::my_zero::component::Components;
 use crate::rl::algo::my_zero::network::MyZeroModel;
 use crate::rl::algo::my_zero::runner::{
-    TrainBatchItem, prepare_train_batch, writeback_reanalyzed_samples,
+    PreparedBatch, TrainBatchItem, prepare_train_batch, writeback_reanalyzed_samples,
 };
 use crate::rl::buffer::{GameOutcome, ReplayBuffer, SelfPlayGame, SelfPlayStep};
 use rand::SeedableRng;
@@ -108,7 +108,7 @@ fn prepare_reanalyze_then_writeback_updates_buffer() {
 
     let mut rng = StdRng::seed_from_u64(42);
     let components = Components::default();
-    let batch = prepare_train_batch(
+    let prepared = prepare_train_batch(
         &buf,
         1,
         1,
@@ -121,6 +121,10 @@ fn prepare_reanalyze_then_writeback_updates_buffer() {
         None,
         &mut rng,
     );
+    let batch = match prepared {
+        PreparedBatch::Owned(items) => items,
+        PreparedBatch::Borrowed(_) => panic!("reanalyze 路径应返回 Owned 副本"),
+    };
     assert_eq!(batch.len(), 1);
     let idx = batch[0]
         .buffer_idx
@@ -137,6 +141,7 @@ fn prepare_reanalyze_then_writeback_updates_buffer() {
         5,
         0.99,
         &Default::default(),
+        None,
     )
     .unwrap();
 
@@ -161,7 +166,7 @@ fn prepare_reanalyze_then_writeback_updates_buffer() {
 }
 
 #[test]
-fn prepare_without_reanalyze_does_not_attach_buffer_idx() {
+fn prepare_without_reanalyze_returns_borrowed_indices() {
     let graph = Graph::new_with_seed(1);
     let model = MyZeroModel::new(&graph, 4, 2, 32).unwrap();
     let adapter = ActionAdapter::discrete_for_test(2);
@@ -184,6 +189,14 @@ fn prepare_without_reanalyze_does_not_attach_buffer_idx() {
         None,
         &mut rng,
     );
-    assert_eq!(batch.len(), 1);
-    assert!(batch[0].buffer_idx.is_none(), "未开 reanalyze 时不应写回");
+    // 非 reanalyze 路径应走零克隆 Borrowed（只带下标 + 起点，不写回）
+    match batch {
+        PreparedBatch::Borrowed(items) => {
+            assert_eq!(items.len(), 1);
+            let (idx, start) = items[0];
+            assert_eq!(idx, 0);
+            assert!(start < 2);
+        }
+        PreparedBatch::Owned(_) => panic!("未开 reanalyze 时应返回 Borrowed"),
+    }
 }

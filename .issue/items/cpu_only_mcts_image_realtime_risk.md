@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-07-02
-updated: 2026-07-02
+updated: 2026-07-02 (Phase 1 spike 实测回填，一级风险裁决 GO)
 owners: []
 reviewers: []
 ---
@@ -46,10 +46,14 @@ reviewers: []
 
 ## 四、触发重估的条件
 
-- [ ] v0.26 图像基准（Atari-100k 类）首个 spike：实测「CNN 前向 × sims」单步 wall-clock，对照 16–33ms 实时预算
-- [ ] 若离线训练吞吐使一次实验 > 数天：重估「CPU-only 是否对图像线豁免」（例如允许可选 GPU feature，项目其余部分保持 CPU-only）
+- [x] **v0.26 图像基准首个 spike（2026-07-02 已裁决：GO 绿）**：`src/rl/algo/my_zero/tests/spike_cnn_mcts_bench.rs`（手动档 bench，`just spike-cnn-mcts`；release+MKL，warmup 后中位数，协议见 [Phase 1 计划 §S0](../../.doc/design/rl_phase1_image_plan.md)）实测：
+  - 组件：CNN root（84²×4，EfficientZero-lite 栈，~255k 参数）**2.4ms**；42² 降档 **0.4ms**；MLP recurrent **0.03ms**；conv recurrent（悲观臂空间 latent 32×6×6）**0.10ms**
+  - 完整 acting 单步（真实 `mcts_search` 含树簿记，flat-latent 臂）：sims=2 → **1.9ms** · sims=20 → **2.3ms** · sims=50 → **3.9ms**；悲观 conv-recurrent 臂 sims=20 → 3.5ms、sims=50 → 6.6ms——**两臂全部 sims 档位均远低于 16–33ms 实时预算线**
+  - 训练吞吐：batch=8 CNN fwd+bwd+Adam step 84² **37.7ms** / 42² 6.8ms → 120k env-steps 单实验（1 train/step 悲观口径）≈ **1.3h**，离线吞吐无忧
+  - **裁决：GO**——「CNN 前向 × sims」在本框架架构下不成立为一级风险：CNN 只进 representation（每步 1 次），sims 放大的是轻量 recurrent；条款一改道预案不触发，图像线全速推进。实测中 wall-clock 主耗在**训练步**（37.7ms × replay ratio）而非 acting——风险从「实时预算」移位为「训练吞吐 × 消融轮次」，量级可控
+- [ ] 若离线训练吞吐使一次实验 > 数天：重估「CPU-only 是否对图像线豁免」（例如允许可选 GPU feature，项目其余部分保持 CPU-only）——按 spike 数据当前不触发
 - [ ] 象棋线不受本 issue 约束，正常推进
 
-## 五、诚实结论（当前）
+## 五、诚实结论（2026-07-02 spike 后更新）
 
-CPU-only 与「图像 + 实时 + MCTS」**同时全量成立的概率不高**；本 issue 的目的是让将来做取舍时（砍实时性 / 砍图像分辨率 / 放宽 CPU-only）有据可查，而不是走到跟前才发现。
+原判断「CPU-only 与图像 + 实时 + MCTS 同时全量成立的概率不高」经 spike 实测**证伪于本框架的具体形态**：flat-latent MyZero（CNN 仅在 h，g/f 为 MLP）下单步 acting 仅 ~2–4ms，距 16–33ms 预算余量 8–14×。该结论的适用边界：latent 64 / sims ≤ 50 / 84² 灰度输入 / 小卷积栈；若未来上大 CNN（残差塔）或空间 latent conv dynamics，需按本 issue §三缓解清单重新压测（悲观臂 6.6ms @ sims=50 仍留有余量）。学习效果（能否在此预算下学会 Pong）由 Phase 1 基准（[pong README](../../examples/my_zero/pong/README.md)）另行裁决——本 issue 只管 wall-clock 结构性风险。

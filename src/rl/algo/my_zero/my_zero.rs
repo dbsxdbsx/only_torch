@@ -97,11 +97,13 @@ impl MyZero {
         let env_id = self.cfg.env.env_id;
         Python::attach(|py| {
             let env = crate::rl::GymEnv::new(py, env_id);
+            let mut obs_adapter = super::obs_pipeline::ObsAdapter::resolve(&env);
             self.graph().inference();
             let (mean, returns) = greedy_eval_episodes(
                 &env,
                 &self.model,
                 &self.adapter,
+                &mut obs_adapter,
                 &self.cfg.components,
                 gamma,
                 n,
@@ -135,6 +137,7 @@ impl MyZero {
         let env_id = self.cfg.env.env_id;
         Python::attach(|py| {
             let env = crate::rl::GymEnv::new(py, env_id);
+            let mut obs_adapter = super::obs_pipeline::ObsAdapter::resolve(&env);
             self.graph().inference();
             let mut returns = Vec::new();
             let mut lengths = Vec::new();
@@ -149,6 +152,7 @@ impl MyZero {
                     &env,
                     &self.model,
                     &self.adapter,
+                    &mut obs_adapter,
                     &self.cfg.components,
                     gamma,
                     num_simulations,

@@ -355,6 +355,21 @@ smoke-my-zero-pendulum:
     @echo "=== Running MyZero Pendulum Smoke [{{_blas_name}}] ==="
     SMOKE=1 cargo run --example my_zero_pendulum {{_blas_flag}}
 
+# MyZero Pong（图像离散支柱，需 Python + gymnasium[atari]；v0.26 Phase 1）
+example-pong-my-zero:
+    @echo "=== Running Pong MyZero [{{_blas_name}}] (requires Python + gymnasium[atari]) ==="
+    cargo run --example my_zero_pong --release {{_blas_flag}}
+
+# MyZero Pong smoke（3 局图像管线验证，不验收敛）
+smoke-my-zero-pong:
+    @echo "=== Running MyZero Pong Smoke [{{_blas_name}}] ==="
+    SMOKE=1 cargo run --example my_zero_pong {{_blas_flag}}
+
+# Phase 1 风险 spike：CNN × MCTS 单步 wall-clock（假输入纯计时，不需 Python；手动档 bench）
+spike-cnn-mcts:
+    @echo "=== Phase 1 spike: CNN x MCTS wall-clock [{{_blas_name}}] ==="
+    cargo test --release {{_blas_flag}} spike_cnn_mcts -- --ignored --nocapture --test-threads=1
+
 # MyZero Pendulum（需 Python + gymnasium；连续 + Sampled B=7）
 example-pendulum-my-zero:
     @echo "=== Running Pendulum MyZero [{{_blas_name}}] (requires Python + gymnasium) ==="

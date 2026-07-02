@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- **feat(my_zero): v0.26 Phase 1 图像线立柱——风险 spike 裁决 GO + 图像 obs 管线 / CNN 表征进库 + Pong 基准载体**（2026-07-02，基准数字待回填，见下方已知问题）
+  - **风险 spike（收口规划 §2 条款一唯一改道节点，裁决 GO 绿）**：`tests/spike_cnn_mcts_bench.rs`（手动档，`just spike-cnn-mcts`）实测 flat-latent 臂完整 acting 单步（真实 `mcts_search` 含树簿记）sims=2/20/50 = **1.9/2.3/3.9ms**、悲观 conv-recurrent 臂 sims=50 = 6.6ms——两臂全档位远低于 16–33ms 实时预算线；「CNN×sims」结构性风险不成立（CNN 只进 representation，sims 放大的 MLP recurrent 仅 0.03ms）；数字与适用边界回填 [CPU 风险 issue §四/§五](.issue/items/cpu_only_mcts_image_realtime_risk.md)
+  - **图像 obs 管线**：新增 `obs_pipeline.rs`——BT.601 灰度 → 双线性 84² → [0,1] → 4 帧堆叠；`ObsAdapter`（与 `ActionAdapter` 对偶，按 env 观察空间事实自动检测）；**内存纪律**：buffer 只存单帧（≈28KB/步），堆叠在 acting 滑窗 / 训练组装两处按需拼（episode 起点前向填充，语义逐 bit 一致）
+  - **CNN representation**：`network.rs` 增 `ObsSpec::{Flat,Image}` + `ConvRepresentationNet`（stride-2 3×3 栈压空间至 ≤7 + min-max 归一同口径）+ `ReprNet` 枚举；`MyZeroModel::new` 旧签名零破坏；`recipe.rs` 增 `ALE/*` → image base 栈（consistency ON + recon OFF + two-hot + raw obs，预注册未 promote）
+  - **GymEnv**：`ALE/*` 自动 `register_envs(ale_py)`；图像 obs 快路径（numpy `astype+tobytes` 整块拷贝，免 10 万元素逐个 extract）
+  - **训练路径零克隆修复**：非 reanalyze 采样改 `PreparedBatch::Borrowed`（`ReplayBuffer` 增 `sample_indices`/`get_ref`；RNG 序与旧 clone 路径逐 bit 一致）——图像单局数十 MB 时整局 clone 是实测主瓶颈（6 局 profile：batch_prepare 67.7s + writeback 32.9s → 归零，单局 wall 33s→16s）
+  - **Pong 基准载体**：`examples/my_zero/pong`（预注册口径：150 局/seed，门槛 3-seed 中位 best greedy ≥ −18，账本 README 已建）+ `tests/pong_image_ablation_bench.rs` 三臂 A/B（recon pilot/3-seed、cons-off、hl-gauss 图像域复测）+ `smoke-my-zero-pong`
+  - 新增 11 个单元测试（灰度/双线性/堆叠组装 6 + conv 表征 shape/batch 等价/反传/图像模型训推 5）；`just test-filter rl` 全绿；CartPole 3-seed 哨兵 12,519/8,643/9,826 **逐 bit 复现**（图像线改动对哨兵零扰动）；战术计划 `.doc/design/rl_phase1_image_plan.md` + 进行中报告 `rl_phase1_report.md`
+  - **已知问题（进行中）**：Pong 3-seed 首跑 seed42 于 Ep53 崩溃（`Tensor::new` 形状不匹配），确定性可复现，backtrace 复现跑进行中；`Tensor::new` panic 消息已增强（打印数据长度与形状）——修复与基准数字随后续提交
+
 ### Changed
 
 - **test(rl): 内嵌测试归位 `tests/` 子目录**（2026-07-02）——对齐 AGENTS 测试约定（源码旁内嵌仅限 ≤2 test / ≤30 行）

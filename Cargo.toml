@@ -299,6 +299,10 @@
     path="examples/my_zero/pendulum/main.rs"
 
 [[example]]
+    name="my_zero_pong"
+    path="examples/my_zero/pong/main.rs"
+
+[[example]]
     name="ppo_cartpole"
     path="examples/ppo/cartpole/main.rs"
 

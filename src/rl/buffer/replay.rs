@@ -47,6 +47,17 @@ impl<T: BufferItem> ReplayBuffer<T> {
             .collect()
     }
 
+    /// 有放回随机抽样，只返回**存储下标**（零克隆；配合 [`get_ref`](Self::get_ref)）。
+    ///
+    /// RNG 消耗与 [`sample`](Self::sample) 完全一致（每样本一次 `gen_range`）。
+    pub fn sample_indices(&self, batch_size: usize, rng: &mut impl Rng) -> Vec<usize> {
+        if batch_size == 0 || self.buffer.is_empty() {
+            return Vec::new();
+        }
+        let len = self.buffer.len();
+        (0..batch_size).map(|_| rng.gen_range(0..len)).collect()
+    }
+
     /// 有放回随机抽样，额外返回每个样本在 buffer 中的**存储下标**。
     ///
     /// 与 [`sample`](Self::sample) 的唯一区别是带回下标，供 MyZero reanalyze 写回
@@ -77,6 +88,11 @@ impl<T: BufferItem> ReplayBuffer<T> {
     /// 按存储下标读取一条（clone）；越界返回 `None`。
     pub fn get_at(&self, idx: usize) -> Option<T> {
         self.buffer.get(idx).cloned()
+    }
+
+    /// 按存储下标取只读引用（大样本零克隆路径；图像 obs 单局可达数十 MB）。
+    pub fn get_ref(&self, idx: usize) -> Option<&T> {
+        self.buffer.get(idx)
     }
 
     pub fn len(&self) -> usize {

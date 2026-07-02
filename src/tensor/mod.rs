@@ -98,7 +98,10 @@ impl Tensor {
     /// 若为更高维度的数组，`shape`可以是[c,n,m,...]；
     /// 注：除了`data`长度为1且shape为`[]`的情况（标量），`data`的长度必须和`shape`中所有元素的乘积相等。
     pub fn new(data: &[f32], shape: &[usize]) -> Self {
-        let data = Array::from_shape_vec(IxDyn(shape), data.to_vec()).unwrap();
+        let data_len = data.len();
+        let data = Array::from_shape_vec(IxDyn(shape), data.to_vec()).unwrap_or_else(|e| {
+            panic!("Tensor::new: 数据长度 {data_len} 与形状 {shape:?} 不匹配: {e}")
+        });
         Self {
             data,
             source_id: next_source_id(),

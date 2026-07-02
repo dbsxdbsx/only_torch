@@ -296,6 +296,20 @@ impl<'py> GymEnv<'py> {
         if env_name == "Platform-v0" {
             let _ = py.import("gym_platform");
         }
+
+        // Atari（ALE/*）：gymnasium ≥1.0 移除了插件自动注册，须显式 register_envs(ale_py)
+        if env_name.starts_with("ALE/") {
+            let ale = py.import("ale_py").unwrap_or_else(|_| {
+                panic!(
+                    "无法导入 ale_py（Atari 环境依赖）。请安装：\n\
+                     pip install \"gymnasium[atari]\" \"gymnasium[accept-rom-license]\""
+                )
+            });
+            let gymnasium = py.import("gymnasium").expect("import gymnasium 失败");
+            gymnasium
+                .call_method1("register_envs", (ale,))
+                .expect("gymnasium.register_envs(ale_py) 失败");
+        }
     }
 
     /// 获取环境后端模块名（始终为 "gymnasium"）
@@ -695,6 +709,21 @@ impl<'py> GymEnv<'py> {
     /// 从 Python 对象获取观察向量
     fn get_obs_vec_from_python(&self, obs_py: &Bound<'py, PyAny>) -> Vec<Vec<f32>> {
         let mut obs_vec = Vec::new();
+
+        // 图像 obs 快路径：numpy astype(f32) + tobytes 一次性拷贝，
+        // 避免逐元素 extract（210×160×3 = 10 万元素/步时逐元素慢一个量级）。
+        if self.obs_type != ObsType::Vector
+            && let Ok(bytes) = obs_py
+                .call_method1("astype", ("float32",))
+                .and_then(|arr| arr.call_method0("tobytes"))
+                .and_then(|b| b.extract::<Vec<u8>>())
+        {
+            let obs: Vec<f32> = bytes
+                .chunks_exact(4)
+                .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                .collect();
+            return vec![obs];
+        }
 
         if self.obs_prop_vec.len() == 1 {
             // 常规情况：单个 obs

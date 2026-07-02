@@ -7,6 +7,7 @@ use super::config::{MyZeroConfig, greedy_episode_seed, self_play_episode_seed};
 use super::my_zero::MyZero;
 use super::n_step::compute_n_step_target;
 use super::network::{MyZeroModel, UnrollItem};
+use super::obs_pipeline::{ObsAdapter, assemble_stacked_obs};
 use super::reanalyze::reanalyze_unroll_window;
 use super::report::TrainReport;
 use super::sampled_params::{
@@ -106,6 +107,7 @@ fn self_play_one_episode(
     env: &GymEnv,
     model: &MyZeroModel,
     adapter: &ActionAdapter,
+    obs_adapter: &mut ObsAdapter,
     mcts_cfg: &MctsConfig,
     components: &Components,
     gamma: f32,
@@ -114,14 +116,14 @@ fn self_play_one_episode(
     reset_seed: u64,
     rng: &mut StdRng,
 ) -> Vec<SelfPlayStep> {
-    let obs_raw = env.reset(Some(reset_seed));
-    let mut obs = obs_raw[0].clone();
+    // 搜索 obs（图像模式 = 帧堆叠）与存储 obs（图像模式 = 单帧）分离，见 ObsAdapter
+    let (mut search_obs, mut store_obs) = obs_adapter.reset(env, Some(reset_seed));
     let mut steps = Vec::new();
 
     loop {
         let dyn_model = DynamicsModel::new(model, adapter.candidates().to_vec(), gamma);
         let policy = MyZeroSearchPolicy::from_components(components);
-        let result = mcts_search(&dyn_model, &policy, &obs, mcts_cfg, rng);
+        let result = mcts_search(&dyn_model, &policy, &search_obs, mcts_cfg, rng);
 
         let action_idx = match &result.recommended {
             ActionPayload::Discrete(idx) => *idx,
@@ -132,7 +134,7 @@ fn self_play_one_episode(
         let policy_target = mcts_policy_target(&result, cq, adapter.action_dim());
 
         steps.push(SelfPlayStep {
-            obs: obs.clone(),
+            obs: store_obs.clone(),
             action: vec![action_idx as f32],
             policy_target,
             player: 0,
@@ -145,10 +147,8 @@ fn self_play_one_episode(
         });
 
         let env_action = adapter.to_env(action_idx);
-        let (next_obs_raw, reward, terminated, truncated) = {
-            crate::prof_scope!("env.step");
-            env.step(&env_action)
-        };
+        let (next_search, next_store, reward, terminated, truncated) =
+            obs_adapter.step(env, &env_action);
         let last = steps.last_mut().unwrap();
         last.reward = reward * reward_scale;
         last.terminated = terminated;
@@ -158,7 +158,8 @@ fn self_play_one_episode(
         if terminated || truncated {
             break;
         }
-        obs = next_obs_raw[0].clone();
+        search_obs = next_search;
+        store_obs = next_store;
     }
 
     steps
@@ -187,6 +188,15 @@ pub(crate) struct TrainBatchItem {
     pub start: usize,
 }
 
+/// 训练 batch 的两种来源：
+/// - `Borrowed`：非 reanalyze 路径，只记 `(buffer 下标, 起点)`，训练时从 buffer
+///   借引用——**零整局 clone**（图像 obs 单局可达数十 MB，clone+drop 是实测主瓶颈）。
+/// - `Owned`：reanalyze 路径，clone 副本刷标签，train 后写回（语义同旧实现）。
+pub(crate) enum PreparedBatch {
+    Borrowed(Vec<(usize, usize)>),
+    Owned(Vec<TrainBatchItem>),
+}
+
 /// 从 buffer 抽样并（若开启 reanalyze）刷新 unroll 窗口内 policy/value 标签。
 ///
 /// # 流程（reanalyze 开启时）
@@ -207,20 +217,19 @@ pub(crate) fn prepare_train_batch(
     num_simulations: u32,
     cq: Option<(f32, f32)>,
     rng: &mut StdRng,
-) -> Vec<TrainBatchItem> {
-    let mut out = Vec::with_capacity(train_batch_size);
-    let re_cfg = my_zero_mcts_config(
-        num_simulations,
-        1.0,
-        gamma,
-        components,
-        adapter.action_dim(),
-        0.0,
-    );
-    let re_policy = MyZeroSearchPolicy::from_components(components);
-    let dyn_model = DynamicsModel::new(model, adapter.candidates().to_vec(), gamma);
-
+) -> PreparedBatch {
     if reanalyze {
+        let re_cfg = my_zero_mcts_config(
+            num_simulations,
+            1.0,
+            gamma,
+            components,
+            adapter.action_dim(),
+            0.0,
+        );
+        let re_policy = MyZeroSearchPolicy::from_components(components);
+        let dyn_model = DynamicsModel::new(model, adapter.candidates().to_vec(), gamma);
+        let mut out = Vec::with_capacity(train_batch_size);
         for (idx, mut game) in buffer.sample_indexed(train_batch_size, rng) {
             if game.steps.len() < 2 {
                 continue;
@@ -244,20 +253,23 @@ pub(crate) fn prepare_train_batch(
                 start,
             });
         }
+        PreparedBatch::Owned(out)
     } else {
-        for game in buffer.sample(train_batch_size, rng) {
-            if game.steps.len() < 2 {
+        // 零克隆路径：只采下标 + 起点，训练时从 buffer 借引用
+        //（RNG 消耗顺序与旧 clone 路径逐 bit 一致，哨兵可复现）
+        let mut out = Vec::with_capacity(train_batch_size);
+        for idx in buffer.sample_indices(train_batch_size, rng) {
+            let len = buffer
+                .get_ref(idx)
+                .map(|g| g.steps.len())
+                .unwrap_or_default();
+            if len < 2 {
                 continue;
             }
-            let start = rng.gen_range(0..game.steps.len());
-            out.push(TrainBatchItem {
-                buffer_idx: None,
-                game,
-                start,
-            });
+            out.push((idx, rng.gen_range(0..len)));
         }
+        PreparedBatch::Borrowed(out)
     }
-    out
 }
 
 /// reanalyze 路径：train 结束后把刷新过的整局写回 buffer（同 batch 重复 idx 后者覆盖）。
@@ -295,6 +307,7 @@ pub(crate) fn train_batch(
     td_steps: usize,
     gamma: f32,
     components: &Components,
+    image_stack: Option<usize>,
 ) -> Result<f32, GraphError> {
     if samples.is_empty() {
         return Ok(0.0);
@@ -320,6 +333,15 @@ pub(crate) fn train_batch(
         let len = steps.len();
         let t = *start;
         let actual_k = unroll_len_at(steps, t, k_unroll);
+
+        // 模型入口 obs：Flat 直取，图像模式从存储单帧就地组装堆叠（老 → 新）
+        let frames: Vec<&[f32]> = steps.iter().map(|s| s.obs.as_slice()).collect();
+        let obs_at = |pos: usize| -> Vec<f32> {
+            match image_stack {
+                None => steps[pos].obs.clone(),
+                Some(k) => assemble_stacked_obs(&frames, pos, k),
+            }
+        };
 
         let uniform_policy = vec![1.0 / model.action_dim as f32; model.action_dim];
 
@@ -383,7 +405,7 @@ pub(crate) fn train_batch(
         let next_obs: Vec<Vec<f32>> = if want_next_obs {
             (0..actual_k)
                 .take_while(|&i| t + i + 1 < len)
-                .map(|i| steps[t + i + 1].obs.clone())
+                .map(|i| obs_at(t + i + 1))
                 .collect()
         } else {
             Vec::new()
@@ -391,7 +413,7 @@ pub(crate) fn train_batch(
 
         let key = (actual_k, next_obs.len());
         groups.entry(key).or_default().push(UnrollItem {
-            obs_t: steps[t].obs.clone(),
+            obs_t: obs_at(t),
             actions,
             target_policies,
             target_values,
@@ -421,10 +443,12 @@ pub(crate) fn train_batch(
 }
 
 /// 贪心 rollout 单局（原始未缩放 return + 步数）。
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn greedy_one_episode(
     env: &GymEnv,
     model: &MyZeroModel,
     adapter: &ActionAdapter,
+    obs_adapter: &mut ObsAdapter,
     components: &Components,
     gamma: f32,
     num_simulations: u32,
@@ -439,7 +463,7 @@ pub(crate) fn greedy_one_episode(
         0.0,
     );
     let mut rng = StdRng::seed_from_u64(reset_seed);
-    let mut obs = env.reset(Some(reset_seed))[0].clone();
+    let (mut obs, _) = obs_adapter.reset(env, Some(reset_seed));
     let mut total_reward = 0.0f32;
     let mut length = 0usize;
     loop {
@@ -451,25 +475,24 @@ pub(crate) fn greedy_one_episode(
             _ => 0,
         };
         let env_action = adapter.to_env(action_idx);
-        let (next_obs_raw, reward, terminated, truncated) = {
-            crate::prof_scope!("env.step");
-            env.step(&env_action)
-        };
+        let (next_obs, _, reward, terminated, truncated) = obs_adapter.step(env, &env_action);
         total_reward += reward;
         length += 1;
         if terminated || truncated {
             break;
         }
-        obs = next_obs_raw[0].clone();
+        obs = next_obs;
     }
     (total_reward, length)
 }
 
 /// 贪心 eval：跑 `n_episodes` 局，返回均值与各局 return（**原始未缩放**）。
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn greedy_eval_episodes(
     env: &GymEnv,
     model: &MyZeroModel,
     adapter: &ActionAdapter,
+    obs_adapter: &mut ObsAdapter,
     components: &Components,
     gamma: f32,
     n_episodes: usize,
@@ -482,6 +505,7 @@ pub(crate) fn greedy_eval_episodes(
             env,
             model,
             adapter,
+            obs_adapter,
             components,
             gamma,
             num_simulations,
@@ -498,11 +522,12 @@ pub(crate) fn greedy_eval_episodes(
 }
 
 /// 贪心 eval：temperature=0 跑若干局取均值（返回**原始未缩放** return）。
-#[allow(dead_code)]
+#[allow(dead_code, clippy::too_many_arguments)]
 fn eval_episodes(
     env: &GymEnv,
     model: &MyZeroModel,
     adapter: &ActionAdapter,
+    obs_adapter: &mut ObsAdapter,
     components: &Components,
     gamma: f32,
     n_episodes: usize,
@@ -513,6 +538,7 @@ fn eval_episodes(
         env,
         model,
         adapter,
+        obs_adapter,
         components,
         gamma,
         n_episodes,
@@ -528,10 +554,12 @@ fn eval_episodes(
 /// （均反 scale 回原始空间）与真实值。
 /// 若 reward/value 预测**坍缩成常数**或与真实严重不符，说明 learned model 没学准，
 /// 瓶颈在训练/表示/目标，而非搜索分辨率。仅诊断、不改训练。
+#[allow(clippy::too_many_arguments)]
 fn dynamics_diagnostic(
     env: &GymEnv,
     model: &MyZeroModel,
     adapter: &ActionAdapter,
+    obs_adapter: &mut ObsAdapter,
     components: &Components,
     gamma: f32,
     reward_scale: f32,
@@ -547,7 +575,7 @@ fn dynamics_diagnostic(
         0.0,
     );
     let mut rng = StdRng::seed_from_u64(0xD1A6);
-    let mut obs = env.reset(Some(0xD1A6))[0].clone();
+    let (mut obs, _) = obs_adapter.reset(env, Some(0xD1A6));
 
     let mut obses: Vec<Vec<f32>> = Vec::new();
     let mut act_idxs: Vec<usize> = Vec::new();
@@ -566,7 +594,7 @@ fn dynamics_diagnostic(
             _ => 0,
         };
         let env_action = adapter.to_env(action_idx);
-        let (next_obs_raw, reward, terminated, truncated) = env.step(&env_action);
+        let (next_obs, _, reward, terminated, truncated) = obs_adapter.step(env, &env_action);
         obses.push(obs.clone());
         act_idxs.push(action_idx);
         true_rewards.push(reward);
@@ -578,7 +606,7 @@ fn dynamics_diagnostic(
         if terminated || truncated {
             break;
         }
-        obs = next_obs_raw[0].clone();
+        obs = next_obs;
     }
 
     let n = obses.len();
@@ -791,10 +819,10 @@ pub(crate) fn materialize(
 ) -> Result<MyZero, GraphError> {
     let env = GymEnv::new(py, cfg.env.env_id);
     let adapter = ActionAdapter::resolve(&env, cfg.env.action);
-    let obs_dim = env.get_flatten_observation_len();
+    let obs_spec = ObsAdapter::resolve(&env).model_obs_spec(&env);
     let action_dim = adapter.action_dim();
     let graph = Graph::new_with_seed(seed);
-    let model = MyZeroModel::new(&graph, obs_dim, action_dim, cfg.model.latent_dim)?
+    let model = MyZeroModel::new_with_spec(&graph, obs_spec, action_dim, cfg.model.latent_dim)?
         .with_value_encoding(cfg.components.hl_gauss)
         .with_obs_symlog(cfg.components.obs_symlog);
     env.close();
@@ -832,13 +860,26 @@ fn train_one_seed(
 
     let env = GymEnv::new(py, cfg.env.env_id);
     let adapter = ActionAdapter::resolve(&env, cfg.env.action);
-    let obs_dim = env.get_flatten_observation_len();
+    let mut obs_adapter = ObsAdapter::resolve(&env);
+    let obs_spec = obs_adapter.model_obs_spec(&env);
+    let obs_dim = obs_spec.dim();
     let action_dim = adapter.action_dim();
     let latent_dim = cfg.model.latent_dim;
 
+    // 图像模式暂不支持 reanalyze（重搜需堆叠组装，recipe 默认关；Phase 3 接回时一并支持）
+    if obs_adapter.image_stack().is_some() && cfg.components.reanalyze {
+        return Err(GraphError::InvalidOperation(
+            "MyZero: 图像 obs 暂不支持 reanalyze（Phase 3 接回）".into(),
+        ));
+    }
+
     if seed == base_seed {
+        let obs_desc = match obs_adapter.image_stack() {
+            Some(k) => format!("obs=image→{obs_dim}(灰度84²×{k}帧)"),
+            None => format!("obs={obs_dim}"),
+        };
         println!(
-            "[MyZero {}] obs={obs_dim} {} γ={gamma} sims={} r_scale={reward_scale}",
+            "[MyZero {}] {obs_desc} {} γ={gamma} sims={} r_scale={reward_scale}",
             cfg.env.env_id,
             adapter.describe(),
             t.num_simulations,
@@ -850,7 +891,7 @@ fn train_one_seed(
     }
 
     let graph = Graph::new_with_seed(seed);
-    let model = MyZeroModel::new(&graph, obs_dim, action_dim, latent_dim)?
+    let model = MyZeroModel::new_with_spec(&graph, obs_spec, action_dim, latent_dim)?
         .with_value_encoding(cfg.components.hl_gauss)
         .with_obs_symlog(cfg.components.obs_symlog);
     let mut optimizer = Adam::new(&graph, &model.parameters(), t.lr);
@@ -897,6 +938,7 @@ fn train_one_seed(
             &env,
             &model,
             &adapter,
+            &mut obs_adapter,
             &mcts_cfg,
             &cfg.components,
             gamma,
@@ -936,8 +978,17 @@ fn train_one_seed(
                     &mut rng,
                 );
                 prof_batch_prepare += prep_t0.elapsed().as_secs_f32();
-                let train_view: Vec<(&SelfPlayGame, usize)> =
-                    batch.iter().map(|item| (&item.game, item.start)).collect();
+                let train_view: Vec<(&SelfPlayGame, usize)> = match &batch {
+                    PreparedBatch::Borrowed(items) => items
+                        .iter()
+                        .map(|&(idx, start)| {
+                            (buffer.get_ref(idx).expect("buffer 下标应有效"), start)
+                        })
+                        .collect(),
+                    PreparedBatch::Owned(items) => {
+                        items.iter().map(|item| (&item.game, item.start)).collect()
+                    }
+                };
                 let train_t0 = std::time::Instant::now();
                 let l = train_batch(
                     &model,
@@ -947,11 +998,15 @@ fn train_one_seed(
                     t.td_steps,
                     gamma,
                     &cfg.components,
+                    obs_adapter.image_stack(),
                 )?;
                 prof_train_step += train_t0.elapsed().as_secs_f32();
-                let write_t0 = std::time::Instant::now();
-                writeback_reanalyzed_samples(&mut buffer, batch);
-                prof_writeback += write_t0.elapsed().as_secs_f32();
+                drop(train_view);
+                if let PreparedBatch::Owned(items) = batch {
+                    let write_t0 = std::time::Instant::now();
+                    writeback_reanalyzed_samples(&mut buffer, items);
+                    prof_writeback += write_t0.elapsed().as_secs_f32();
+                }
                 loss_sum += l;
             }
             avg_loss = loss_sum / n_trains as f32;
@@ -985,6 +1040,7 @@ fn train_one_seed(
                 &env,
                 &model,
                 &adapter,
+                &mut obs_adapter,
                 &cfg.components,
                 gamma,
                 cfg.eval.eval_episodes,
@@ -1014,6 +1070,7 @@ fn train_one_seed(
             &env,
             &model,
             &adapter,
+            &mut obs_adapter,
             &cfg.components,
             gamma,
             cfg.eval.eval_episodes,
@@ -1060,6 +1117,7 @@ fn train_one_seed(
             &env,
             &model,
             &adapter,
+            &mut obs_adapter,
             &cfg.components,
             gamma,
             reward_scale,

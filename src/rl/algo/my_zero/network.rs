@@ -16,8 +16,8 @@ use super::value_encoding::{
     SupportConfig, scalar_to_hl_gauss, scalar_to_two_hot, two_hot_to_scalar,
 };
 use crate::nn::{
-    Graph, GraphError, IntoVar, Linear, Module, Var, VarActivationOps, VarLossOps, VarReduceOps,
-    VarShapeOps,
+    Conv2d, Graph, GraphError, IntoVar, Linear, Module, Var, VarActivationOps, VarLossOps,
+    VarReduceOps, VarShapeOps,
 };
 use crate::rl::mcts::{ActionPayload, Dynamics, DynamicsOutput};
 use crate::tensor::Tensor;
@@ -126,6 +126,26 @@ fn min_max_normalize(latent: &Var, dim: usize) -> Result<Var, GraphError> {
 // Representation 网络 h: obs → latent（min-max 归一化）
 // ============================================================================
 
+/// obs 编码规格（模型入口形状契约；env 事实 + 预处理管线共同决定）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ObsSpec {
+    /// 低维向量 obs（MLP 编码器），值 = 展平维度
+    Flat(usize),
+    /// 图像 obs（CNN 编码器）：`channels`（帧堆叠数）× `side`²，
+    /// 展平后进模型（`[B, c·side²]`），conv 前向内部 reshape 回 4D。
+    Image { channels: usize, side: usize },
+}
+
+impl ObsSpec {
+    /// 模型输入的展平维度
+    pub const fn dim(&self) -> usize {
+        match *self {
+            Self::Flat(d) => d,
+            Self::Image { channels, side } => channels * side * side,
+        }
+    }
+}
+
 pub struct RepresentationNet {
     fc1: Linear,
     fc2: Linear,
@@ -153,6 +173,121 @@ impl RepresentationNet {
 impl Module for RepresentationNet {
     fn parameters(&self) -> Vec<Var> {
         [self.fc1.parameters(), self.fc2.parameters()].concat()
+    }
+}
+
+/// CNN representation（图像 obs；EfficientZero-lite 卷积栈，Phase 1 spike 同款）。
+///
+/// 输入为**展平**图像 `[B, c·side²]`（与全库 flat obs 通路兼容），前向内部
+/// reshape 回 `[B, c, side, side]` → 若干 stride-2 3×3 conv（空间压到 ≤7）→
+/// flatten → Linear → latent（min-max 归一化，与 MLP 版同口径）。
+pub struct ConvRepresentationNet {
+    convs: Vec<Conv2d>,
+    fc_latent: Linear,
+    channels: usize,
+    side: usize,
+    latent_dim: usize,
+}
+
+impl ConvRepresentationNet {
+    pub fn new(
+        graph: &Graph,
+        channels: usize,
+        side: usize,
+        latent_dim: usize,
+    ) -> Result<Self, GraphError> {
+        let graph = graph.with_model_name("ConvRepr");
+        // stride-2 conv 堆到空间 ≤7：84→42→21→11→6（4 层）、42→21→11→6（3 层）
+        let mut convs = Vec::new();
+        let mut cur_side = side;
+        let mut cur_c = channels;
+        let mut i = 0;
+        while cur_side > 7 {
+            let out_c = if i == 0 { 32 } else { 64 };
+            convs.push(Conv2d::new(
+                &graph,
+                cur_c,
+                out_c,
+                (3, 3),
+                (2, 2),
+                (1, 1),
+                (1, 1),
+                true,
+                &format!("conv{}", i + 1),
+            )?);
+            cur_c = out_c;
+            cur_side = cur_side.div_ceil(2);
+            i += 1;
+        }
+        assert!(
+            !convs.is_empty(),
+            "ConvRepresentationNet: side 过小（≤7），请用 Flat 编码器"
+        );
+        let flat_dim = cur_c * cur_side * cur_side;
+        let fc_latent = Linear::new(&graph, flat_dim, latent_dim, true, "fc_latent")?;
+        Ok(Self {
+            convs,
+            fc_latent,
+            channels,
+            side,
+            latent_dim,
+        })
+    }
+
+    /// `[B, c·side²]` 展平图像 → latent（min-max 归一化）。
+    pub fn forward(&self, x: impl IntoVar) -> Result<Var, GraphError> {
+        let x = x.into_var(&self.fc_latent.parameters()[0].get_graph())?;
+        let batch = x.value_expected_shape()[0];
+        let mut h = x.reshape(&[batch, self.channels, self.side, self.side])?;
+        for conv in &self.convs {
+            h = conv.forward(&h).relu();
+        }
+        let flat = h.flatten()?;
+        let latent = self.fc_latent.forward(&flat);
+        min_max_normalize(&latent, self.latent_dim)
+    }
+}
+
+impl Module for ConvRepresentationNet {
+    fn parameters(&self) -> Vec<Var> {
+        let mut p: Vec<Var> = self.convs.iter().flat_map(Module::parameters).collect();
+        p.extend(self.fc_latent.parameters());
+        p
+    }
+}
+
+/// representation 编码器统一封装（recipe 按 [`ObsSpec`] 注入）。
+pub enum ReprNet {
+    Mlp(RepresentationNet),
+    Conv(ConvRepresentationNet),
+}
+
+impl ReprNet {
+    pub fn new(graph: &Graph, spec: ObsSpec, latent_dim: usize) -> Result<Self, GraphError> {
+        match spec {
+            ObsSpec::Flat(obs_dim) => Ok(Self::Mlp(RepresentationNet::new(
+                graph, obs_dim, latent_dim,
+            )?)),
+            ObsSpec::Image { channels, side } => Ok(Self::Conv(ConvRepresentationNet::new(
+                graph, channels, side, latent_dim,
+            )?)),
+        }
+    }
+
+    pub fn forward(&self, x: impl IntoVar) -> Result<Var, GraphError> {
+        match self {
+            Self::Mlp(net) => net.forward(x),
+            Self::Conv(net) => net.forward(x),
+        }
+    }
+}
+
+impl Module for ReprNet {
+    fn parameters(&self) -> Vec<Var> {
+        match self {
+            Self::Mlp(net) => net.parameters(),
+            Self::Conv(net) => net.parameters(),
+        }
     }
 }
 
@@ -357,7 +492,7 @@ struct RecInfer {
 }
 
 pub struct MyZeroModel {
-    pub repr: RepresentationNet,
+    pub repr: ReprNet,
     pub dyn_net: DynamicsNet,
     pub pred: PredictionNet,
     pub projector: ProjectorNet,
@@ -381,14 +516,26 @@ pub struct MyZeroModel {
 }
 
 impl MyZeroModel {
+    /// 低维向量 obs 构造（MLP 编码器；历史签名，等价 `ObsSpec::Flat`）。
     pub fn new(
         graph: &Graph,
         obs_dim: usize,
         action_dim: usize,
         latent_dim: usize,
     ) -> Result<Self, GraphError> {
+        Self::new_with_spec(graph, ObsSpec::Flat(obs_dim), action_dim, latent_dim)
+    }
+
+    /// 按 [`ObsSpec`] 构造（图像 obs 走 CNN 编码器）。
+    pub fn new_with_spec(
+        graph: &Graph,
+        spec: ObsSpec,
+        action_dim: usize,
+        latent_dim: usize,
+    ) -> Result<Self, GraphError> {
+        let obs_dim = spec.dim();
         let lstm_hidden = latent_dim; // LSTM hidden 维度 = latent_dim
-        let repr = RepresentationNet::new(graph, obs_dim, latent_dim)?;
+        let repr = ReprNet::new(graph, spec, latent_dim)?;
         let dyn_net = DynamicsNet::new(graph, latent_dim, action_dim)?;
         let pred = PredictionNet::new(graph, latent_dim, action_dim)?;
         let projector = ProjectorNet::new(graph, latent_dim)?;
