@@ -291,9 +291,9 @@ fn test_var_set_value() {
 fn test_var_item() {
     let graph = Graph::new();
 
-    let x = graph.input(&Tensor::new(&[3.14], &[1, 1])).unwrap();
+    let x = graph.input(&Tensor::new(&[3.25], &[1, 1])).unwrap();
     let val = x.item().unwrap();
-    assert!((val - 3.14).abs() < 0.001);
+    assert!((val - 3.25).abs() < 0.001);
 }
 
 /// 测试 grad

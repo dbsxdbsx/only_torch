@@ -44,7 +44,7 @@ fn test_ln_forward() {
     assert_abs_diff_eq!(output[[0, 0]], 0.0, epsilon = 1e-6); // ln(1) = 0
     assert_abs_diff_eq!(output[[0, 1]], 1.0, epsilon = 1e-6); // ln(e) = 1
     assert_abs_diff_eq!(output[[1, 0]], 2.0, epsilon = 1e-5); // ln(e²) = 2
-    assert_abs_diff_eq!(output[[1, 1]], -0.6931472, epsilon = 1e-6); // ln(0.5) ≈ -0.693
+    assert_abs_diff_eq!(output[[1, 1]], -std::f32::consts::LN_2, epsilon = 1e-6); // ln(0.5) = -ln2
 }
 
 /// 测试 Ln 前向传播（边界值）
@@ -64,7 +64,7 @@ fn test_ln_forward_edge_cases() {
     let output = result.value().unwrap().unwrap();
     assert_abs_diff_eq!(output[[0, 0]], -6.907755, epsilon = 1e-5); // ln(0.001)
     assert_abs_diff_eq!(output[[0, 1]], 0.0, epsilon = 1e-6); // ln(1) = 0
-    assert_abs_diff_eq!(output[[0, 2]], 2.302585, epsilon = 1e-5); // ln(10)
+    assert_abs_diff_eq!(output[[0, 2]], std::f32::consts::LN_10, epsilon = 1e-5); // ln(10)
     assert_abs_diff_eq!(output[[0, 3]], 4.60517, epsilon = 1e-4); // ln(100)
 }
 

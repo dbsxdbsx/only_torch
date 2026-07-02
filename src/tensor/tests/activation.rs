@@ -128,7 +128,7 @@ fn test_softplus_basic() {
     let x = Tensor::new(&[-2.0, -1.0, 0.0, 1.0, 2.0], &[5]);
     let y = x.softplus();
     // Python: torch.nn.functional.softplus(torch.tensor([-2,-1,0,1,2]))
-    let expected = [0.1269, 0.3133, 0.6931, 1.3133, 2.1269];
+    let expected = [0.1269, 0.3133, std::f32::consts::LN_2, 1.3133, 2.1269];
     for (i, &e) in expected.iter().enumerate() {
         assert!(
             (y[[i]] - e).abs() < 1e-3,

@@ -232,11 +232,11 @@ fn test_graph_handle_randn() {
 fn test_graph_handle_constant() {
     let graph = Graph::new();
 
-    let data = Tensor::new(&[3.14, 2.71, 1.41], &[3, 1]);
+    let data = Tensor::new(&[3.5, 2.75, 1.25], &[3, 1]);
     let c = graph.constant(&data).unwrap();
 
     let value = c.value().unwrap().unwrap();
-    assert_eq!(value.data_as_slice(), &[3.14, 2.71, 1.41]);
+    assert_eq!(value.data_as_slice(), &[3.5, 2.75, 1.25]);
 }
 
 /// 测试 constant_named 方法

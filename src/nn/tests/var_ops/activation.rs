@@ -82,7 +82,7 @@ fn test_var_softplus() {
     // softplus(x) = log(1 + exp(x))
     // softplus(-1) ≈ 0.3133, softplus(0) ≈ 0.6931, softplus(1) ≈ 1.3133
     assert!((result.data_as_slice()[0] - 0.3133).abs() < 0.01);
-    assert!((result.data_as_slice()[1] - 0.6931).abs() < 0.01);
+    assert!((result.data_as_slice()[1] - std::f32::consts::LN_2).abs() < 0.01);
     assert!((result.data_as_slice()[2] - 1.3133).abs() < 0.01);
 }
 
@@ -233,7 +233,7 @@ fn test_var_chained_sigmoid_ln() {
     y.forward().unwrap();
     let result = y.value().unwrap().unwrap();
     // sigmoid(0) = 0.5 -> ln(0.5) ≈ -0.693
-    assert!((result.data_as_slice()[0] - (-0.6931)).abs() < 0.01);
+    assert!((result.data_as_slice()[0] - (-std::f32::consts::LN_2)).abs() < 0.01);
     // sigmoid(1) ≈ 0.731 -> ln(0.731) ≈ -0.313
     assert!(result.data_as_slice()[1] < 0.0);
     // sigmoid(2) ≈ 0.881 -> ln(0.881) ≈ -0.127

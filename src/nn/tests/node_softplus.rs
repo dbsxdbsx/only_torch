@@ -40,7 +40,7 @@ fn test_softplus_forward() {
     // softplus([[-1, 0, 1], [2, -2, 0.5]])
     // = [[0.31326169, 0.69314718, 1.31326163], [2.12692809, 0.12692800, 0.97407699]]
     assert_abs_diff_eq!(output[[0, 0]], 0.31326169, epsilon = 1e-5);
-    assert_abs_diff_eq!(output[[0, 1]], 0.69314718, epsilon = 1e-5);
+    assert_abs_diff_eq!(output[[0, 1]], std::f32::consts::LN_2, epsilon = 1e-5);
     assert_abs_diff_eq!(output[[0, 2]], 1.31326163, epsilon = 1e-5);
     assert_abs_diff_eq!(output[[1, 0]], 2.12692809, epsilon = 1e-5);
     assert_abs_diff_eq!(output[[1, 1]], 0.12692800, epsilon = 1e-5);
@@ -64,7 +64,7 @@ fn test_softplus_numerical_stability() {
     assert!(output[[0, 0]] < 1e-10, "softplus(-50) should be ≈ 0");
     assert!(output[[0, 1]] < 1e-5, "softplus(-20) should be ≈ 0");
     // softplus(0) = ln(2) ≈ 0.693
-    assert_abs_diff_eq!(output[[0, 2]], 0.69314718, epsilon = 1e-5);
+    assert_abs_diff_eq!(output[[0, 2]], std::f32::consts::LN_2, epsilon = 1e-5);
     // softplus(20) ≈ 20, softplus(50) ≈ 50
     assert_abs_diff_eq!(output[[0, 3]], 20.0, epsilon = 1e-5);
     assert_abs_diff_eq!(output[[0, 4]], 50.0, epsilon = 1e-5);
@@ -192,7 +192,12 @@ fn test_softplus_backward_e2e() -> Result<(), GraphError> {
 
     // ∂loss/∂x = 2 * softplus * sigmoid / n
     let softplus_vals = [
-        0.31326169, 0.69314718, 1.31326163, 2.12692809, 0.12692800, 0.97407699,
+        0.31326169,
+        std::f32::consts::LN_2,
+        1.31326163,
+        2.12692809,
+        0.12692800,
+        0.97407699,
     ];
     let sigmoid_vals = [
         0.26894143, 0.5, 0.73105860, 0.88079709, 0.11920292, 0.62245935,
