@@ -33,6 +33,30 @@
 - **实验矩阵**（每项独立 3-seed）：(a) 现状；(b) recon 梯度只训 decoder 不回流 encoder；(c) dynamics 入口 sg（Simulus B.1 式）。与系数消融正交组合时，优先跑单变量。
 - **判读**：per-loss 曲线（recon/cons/policy/value 分项）+ env-steps 中位；关注"某项 loss 降但收敛变慢"的干扰特征。
 
+#### A2 审计结论（2026-07-02 · 已闭环：现状 canonical，(b)/(c) 两臂均不追加）
+
+梯度流向现状图（`network.rs::train_unroll{,_batch}` 读码产出；`[×g]` = 梯度回流路径）：
+
+```text
+repr(obs_t) → latent₀ ─┬─ pred → policy CE + value CE·0.25        [训 pred + repr]
+                       └─ recon(latent₀) vs obs_t MSE             [训 recon + repr]（k=0）
+latentₖ --(链上每步 scale_gradient ×0.5)--> dyn(latentₖ, aₖ) → next_latentₖ₊₁
+  ├─ pred → policy/value CE                                       [训 pred + dyn + 链上 repr]
+  ├─ reward CE ·1.0 / continuation MSE ·cont_coef                 [训 dyn]
+  ├─ recon(next_latent) vs next_obs MSE ·recon_coef               [训 recon + dyn + 链上 repr]
+  └─ projector → predictor ──┐
+repr(next_obs) → projector ──[detach ✂]── -cos ·cons_coef        [训 predictor+projector+dyn+链上 repr；target 支零回流]
+（每步 step_loss 另有 scale_gradient ×1/K；以上均只改反传不改前向）
+```
+
+三条核对结论：① consistency target 支**已** stop-grad（`consistency.rs` 内 `z.detach()`，SimSiam/EZ canonical）；② 两处 canonical 梯度缩放（hidden ×0.5、recurrent loss ×1/K）齐备；③ recon 梯度回流 repr/dynamics 是 Scholz 设计本意（塑造 latent），与 recon_coef=16 promote 结论互洽（弱回流实测有害）。**无任何非 canonical 偏差。**
+
+两臂裁决：
+
+- **(b) recon 只训 decoder：不跑（经验冗余）**——切断 recon→encoder 回流后表征侧等效于关 recon，该点位已有 5-seed 数据（t1 +cons 中位 18.6k vs promoted+recon16 中位 12.5k，账本在案），预期结果可从现有数据外推。
+- **(c) dynamics 入口 sg：不跑（前提不成立 + 反核心原则）**——它同时切断 k≥1 policy/value/reward 与 consistency 对 repr 的全部训练信号，破坏 MuZero 价值等价训练（repr 经 dynamics 链受训是核心机制）；Simulus B.1 的前提是 encoder 有独立的强观测建模信号（token WM），MyZero 的 repr 主信号恰恰来自该链。且系数重标定后哨兵（~9.8k）已超 bug 时代（13.1k），无"调系数调不掉"的病灶证据。
+- **复活触发条件**：Phase 1 图像线若出现干扰症状（recon loss 与 value/policy loss 此消彼长、或 recon 长期不降），(b)/(c) 以图像域证据重新立项。
+
 ### B1 · loss 优先回放（P1，随 reanalyze 复活）
 
 - **改动**：buffer 每样本存最近一次训练 loss（新样本初始 ν₀=10 保证必被光顾）；采样时 α=0.3 按 softmax(loss) 抽、其余均匀；训练后回写。单参数 α，无 PER 的 IS 权重复杂度（Simulus 实测此简化方案稳健）。

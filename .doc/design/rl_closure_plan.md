@@ -20,7 +20,7 @@
 **为什么最先**：图像/self-play 全在这套 loss 栈上训练，汇率错一个量级会污染所有后续消融；且 CartPole 迭代最便宜。
 
 - ✅ 系数消融 4+1 臂 + recon 5-seed 复裁（已收口：recon_coef 1→16 promote，哨兵中位 66.2k→~9.8k；recon=1 实测有害、悬案闭合——见账本与 CHANGELOG 2026-07-02 条目）
-- ⏳ 梯度流审计（读码产出 cons/recon 对 representation/dynamics 的回流现状图，零风险先行）→ 视结果追加 **sg 解耦臂**（= Simulus 计划 A2）
+- ✅ 梯度流审计（2026-07-02 闭环：现状完全 canonical——cons target 已 sg、×0.5/×1/K 缩放齐备、recon 回流为设计本意；**sg 解耦两臂均不追加**——(b) 与 t1 数据经验冗余、(c) 反价值等价原则且前提不成立；流向图与裁决细节见 [Simulus 计划 A2 审计结论](./my_zero_simulus_ablation_plan.md#a2-审计结论2026-07-02--已闭环现状-canonicalbc-两臂均不追加)，复活触发留 Phase 1 干扰症状）
 - ⏳ **HL-Gauss 编码消融**（= Simulus 计划 A1：two-hot → 高斯软标签，改动集中在 `value_encoding.rs`）
 - ⏳ **obs 无量纲化（symlog）消融**（2026-07-02 P0 复盘定案：全家 loss 仅 reconstruction 直接暴露在环境单位下——value/reward 已走 h 变换 + categorical、consistency 余弦、continuation 有界；量纲不统一则 recon 系数每换环境重付一轮标定税，须在图像线定 CNN 约定**之前**收口。与上两项同为改行为，串行执行）
   - 落点：`MyZeroModel` obs 入口**单点** `symlog(x) = sign(x)·ln(1+|x|)`——repr 输入与 recon 解码目标同源变换；无状态（不进 checkpoint、保 seed 逐 bit 复现）；buffer / env I/O 继续存 raw obs
