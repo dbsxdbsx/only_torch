@@ -423,17 +423,29 @@ cargo run --example pendulum_sac
 # 约 25 episode 后单回合奖励达到 -300+
 ```
 
-**Moving-v0 Hybrid SAC** ⭐⭐⭐
+**Platform-v0 Hybrid SAC** ⭐⭐⭐
 
-使用 SAC Hybrid 版本解决混合动作空间（离散 + 连续）的 Moving-v0 任务，展示：
-- 独立连续分支（方式 B）：每个离散动作配专属连续头（Accelerate / Turn / Brake 无连续头）
+使用 SAC Hybrid 版本解决混合动作空间（离散 + 连续）的 Platform-v0 横版跳台任务（`pip install hybrid-platform`），展示：
+- 独立连续分支：每个离散动作（run / hop / leap）配专属连续参数头
 - 双温度参数（$α_d$, $α_c$）：分别自动调节离散和连续探索
 - `Categorical` + `TanhNormal` 分布组合
 - 统一 Actor Loss 公式（log_prob 构建，离散/连续/混合共用逻辑）
 
 ```bash
-cargo run --example moving_sac
+cargo run --example platform_sac --release
 ```
+
+**MyZero CartPole**（模型学习 + MCTS 规划）⭐⭐⭐
+
+项目自研的统一 model-based 算法（MuZero / EfficientZero 谱系），CartPole 上样本效率显著优于 model-free 基线：
+
+```bash
+cargo run --example my_zero_cartpole --release
+# 多 seed 统计口径（官方哨兵）
+SEEDS=3 cargo run --example my_zero_cartpole --release
+```
+
+详见 [MyZero 示例总览](examples/my_zero/README.md) 与 [CartPole 基准账本](examples/my_zero/cartpole/README.md)。
 
 </details>
 
@@ -528,7 +540,7 @@ cargo run --example evolution_parity_seq_var_len
 
 #### 特性覆盖矩阵
 
-| 特性 | xor | iris | sine | california | mnist | mnist_cnn | mnist_gan | parity* | dual_input | siamese | dual_output | multi_io | multi_label | chess_cnn | cartpole_sac | pendulum_sac | moving_sac | evo_xor | evo_iris | evo_mnist | evo_seq | evo_seq_var |
+| 特性 | xor | iris | sine | california | mnist | mnist_cnn | mnist_gan | parity* | dual_input | siamese | dual_output | multi_io | multi_label | chess_cnn | cartpole_sac | pendulum_sac | platform_sac | evo_xor | evo_iris | evo_mnist | evo_seq | evo_seq_var |
 |------|:---:|:----:|:----:|:----------:|:-----:|:---------:|:--------:|:-------:|:----------:|:-------:|:-----------:|:--------:|:-----------:|:-------------:|:------------:|:------------:|:----------:|:-------:|:--------:|:---------:|:-------:|:-----------:|
 | `Linear` 层 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `Conv2d` 层 | | | | | | ✅ | | | | | | | | ✅ | | | | | | ✅ | | |
@@ -603,14 +615,17 @@ cargo build --features blas-openblas
 
 ### 🟢 当前主线（v0.19.0 后）
 
-**强化学习** — 详见 [MyZero 算法纲领](.doc/design/my_zero_algorithm_vision.md)、[RL 路线图 §8](.doc/design/rl_roadmap.md#8-v025-myzero-统一算法2026-06-16-方向定稿)、[MyZero 示例总览](examples/my_zero/README.md) 与 [AGENTS.md — 当前版本与焦点](AGENTS.md#当前版本与焦点)
+**强化学习** — 详见 [MyZero 算法纲领](.doc/design/my_zero_algorithm_vision.md)、[RL 路线图](.doc/design/rl_roadmap.md)、[MyZero 示例总览](examples/my_zero/README.md) 与 [AGENTS.md — 当前版本与焦点](AGENTS.md#当前版本与焦点)
+
+已完成（v0.20–v0.25）：Gymnasium-only 环境层 + buffer 入库 → SAC 三动作类型示例 → MCTS 内核 → **MyZero 统一算法**（项目唯一 `*Zero` 实现，CartPole 哨兵达标，样本效率领先 model-free 基线）。
+
+v0.26 方向（[RL 路线图 §5](.doc/design/rl_roadmap.md#5-v026-方向2026-07-01-战略转向定稿)）：
 
 | 优先级 | 任务 | 入口 |
 |--------|------|------|
-| P0 | 跑通 SAC + CartPole | `just example-cartpole-sac` |
-| P1 | ReplayBuffer / Actor-Critic 更新步沉淀到 `src/rl/` | 对照 `examples/sac/` |
-| P2 | 连续 / 混合动作验证 | `just example-pendulum-sac`、`just example-moving-sac` |
-| P3 | Gymnasium 封装与 Windows 说明 | `.doc/rl_python_env_setup.md` |
+| P0 | loss 系数重标定消融（autograd 修复后收回样本效率） | [基准账本](examples/my_zero/cartpole/README.md) |
+| P0 | CNN 图像表征 + 图像离散基准（商业游戏代理） | [纲领 §2.3](.doc/design/my_zero_algorithm_vision.md) |
+| P1 | Gomoku self-play（象棋踏脚石）；reanalyze 复活 + acting 解耦 | `python/gym_env/gomoku/` |
 
 环境配置： [`.doc/rl_python_env_setup.md`](.doc/rl_python_env_setup.md)
 
@@ -667,7 +682,7 @@ cargo build --features blas-openblas
 - [优化器架构设计](.doc/design/optimizer_architecture_design.md) - SGD / Adam 优化器的内部实现和 API 设计
 - [概率分布模块设计](.doc/design/distributions_design.md) - Categorical / Normal / TanhNormal 三种分布的 API 设计原则（Var vs Tensor、构造时缓存、梯度追踪策略）
 - [MyZero 算法纲领](.doc/design/my_zero_algorithm_vision.md) - MyZero 战略层：做/不做、文献谱系、双轨架构、首要评价指标
-- [强化学习路线图](.doc/design/rl_roadmap.md) - RL 模块当前状态、设计决策、SAC 统一公式技巧、MyZero §8 实施顺序
+- [强化学习路线图](.doc/design/rl_roadmap.md) - RL 当前状态、验收协议与 v0.26 方向（v0.20–v0.24 历史决策见 [归档](.doc/design/archive/rl_roadmap_v020_v024.md)）
 - [MatrixSlow 项目识别文档](.doc/reference/python_MatrixSlow_pid.md) - 基于 MatrixSlow 的 Python 深度学习框架分析，包含计算图、自动求导、静态图执行等核心概念的详细说明
 
 ## 参考资料

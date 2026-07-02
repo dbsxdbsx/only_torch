@@ -260,9 +260,7 @@ fn test_gym_env() {
 
 ### 五子棋环境（Gomoku）
 
-> **TODO v0.22**：将 `tests/python/custom_envs/gomoku.py` 迁入 **`python/gym_env/gomoku/`**（`pip install -e python/gym_env`）。**扁平布局**：`python/gym_env/` 即 `import gym_env` 的包根（`__init__.py` 与 `pyproject.toml` 同级，**不**建 `gym_env/gym_env/`）；`pyproject.toml` 用 `[tool.setuptools.package-dir] "gym_env" = "."`。子模块：`board.py`（规则 + `legal_mask` + `clone`/`restore`，**无 MCTS**）+ `env.py`（薄 Gym 包装）。注册 **`Gomoku-selfplay-v0`**（训练）与 **`Gomoku-naive*-v0`**（评测）。Rust：**MCTS 在 `src/rl/mcts/`**；`GymEnv` 仅桥接 Board；**无** `GomokuRust`。详见 [RL 主线实施计划 v0.22](../c:/Users/Administrator/.cursor/plans/rl_主线实施计划_5966956a.plan.md)。
-
-项目已实现基于 Gymnasium 的五子棋环境，位于 `tests/python/custom_envs/gomoku.py`。
+> **已完成（v0.22 迁移落地）**：五子棋环境位于 **`python/gym_env/gomoku/`**（`pip install -e python/gym_env`）。**扁平布局**：`python/gym_env/` 即 `import gym_env` 的包根（`__init__.py` 与 `pyproject.toml` 同级）。子模块：`board.py`（规则 + `legal_mask` + `clone`/`restore`，**无 MCTS**）+ `env.py`（薄 Gym 包装：`GomokuSelfPlayEnv` 训练 / `GomokuEnv` 带 naive 对手）+ `opponents.py`。Rust 侧：**MCTS 在 `src/rl/mcts/`**，`GymEnv` 仅桥接 Board（`src/rl/tests/env/gomoku_bridge.rs`）。
 
 #### 环境特性
 
@@ -298,17 +296,17 @@ fn test_gym_env() {
 
 ```python
 import gymnasium as gym
-import tests.python.custom_envs  # 触发环境注册
+import gym_env  # pip install -e python/gym_env；导入即注册
 
-# 方式 1: 通过 gymnasium.make()（5 个难度级别可选）
-env = gym.make('Gomoku-random-v0')  # 随机对手
-env = gym.make('Gomoku-naive0-v0')  # 最弱
-env = gym.make('Gomoku-naive1-v0')
-env = gym.make('Gomoku-naive2-v0')  # 推荐
-env = gym.make('Gomoku-naive3-v0')  # 最强
+# 方式 1: 通过 gymnasium.make()
+env = gym.make('Gomoku-selfplay-v0')  # self-play 训练（无内置对手）
+env = gym.make('Gomoku-random-v0')    # 随机对手
+env = gym.make('Gomoku-naive0-v0')    # 最弱
+env = gym.make('Gomoku-naive2-v0')    # 推荐评测档
+env = gym.make('Gomoku-naive3-v0')    # 最强
 
 # 方式 2: 直接实例化
-from tests.python.custom_envs.gomoku import GomokuEnv
+from gym_env.gomoku.env import GomokuEnv
 env = GomokuEnv(board_size=15, win_length=5, opponent='naive2')
 
 # 标准 Gymnasium API
@@ -335,21 +333,7 @@ env.render()  # 打印棋盘
 
 ### 自定义环境目录结构
 
-**当前（v0.20）**：
-
-```
-tests/python/
-├── __init__.py
-├── gym/                    # 标准环境测试
-│   ├── test_01_basic_discrete.py
-│   ├── ...
-│   └── test_08_gomoku.py   # 五子棋测试
-└── custom_envs/            # 自定义环境
-    ├── __init__.py         # 导入时自动注册所有环境
-    └── gomoku.py           # 五子棋环境实现
-```
-
-**目标（v0.22，`python/gym_env/` 扁平包）**：
+**当前（v0.22 起）**：
 
 ```
 python/
@@ -367,11 +351,8 @@ python/
 
 ```rust
 Python::attach(|py| {
-    // 确保自定义环境模块被导入（触发注册）
-    py.import("tests.python.custom_envs").expect("导入自定义环境模块失败");
-
-    // 使用五子棋环境（5 个难度可选）
-    let env = GymEnv::new(py, "Gomoku-naive2-v0");  // 推荐
+    // Gomoku-* 环境 ID：GymEnv 内部自动先 import gym_env（触发注册）
+    let env = GymEnv::new(py, "Gomoku-naive2-v0");  // 推荐评测档
     env.print_env_basic_info();
 });
 ```
@@ -412,26 +393,27 @@ gymnasium.make("CartPole-v1")
 ┌─────────────────────────────────────────────────────────────┐
 │                     Rust 层 (only_torch)                     │
 ├─────────────────────────────────────────────────────────────┤
-│  GymEnv                                                      │
-│  ├── new(py, "CartPole-v1")     → gymnasium                  │
-│  ├── new(py, "Gomoku-v0")       → 自定义 (gymnasium.register) │
-│  ├── new(py, "Platform-v0")     → hybrid-platform（import gym_platform）│
+│  GymEnv（仅 gymnasium.make，无 gym 回退）                     │
+│  ├── new(py, "CartPole-v1")     → gymnasium 内置             │
+│  ├── new(py, "Platform-v0")     → 先 import gym_platform     │
+│  ├── new(py, "Gomoku-*-v0")     → 自定义（gymnasium.register）│
 │  │                                                          │
-│  ├── reset(seed) → Vec<Vec<f32>>                           │
-│  ├── step(action) → (obs, reward, done)                    │
-│  └── sample_action() → Vec<f32>                            │
+│  ├── reset(seed) → Vec<Vec<f32>>                            │
+│  ├── step(action) → (obs, reward, terminated, truncated)    │
+│  └── sample_action() → Vec<f32>                             │
 ├─────────────────────────────────────────────────────────────┤
-│                     Python 层                                │
+│                Python 层（一切皆 Gymnasium API）              │
 ├─────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
-│  │  gymnasium  │  │     gym     │  │  自定义环境模块      │ │
-│  │  (主要)     │  │  (兼容)     │  │  (注册到gymnasium)  │ │
-│  └─────────────┘  └─────────────┘  └─────────────────────┘ │
-│         ↑                ↑                    ↑             │
-│         │                │                    │             │
-│  CartPole-v1      Platform-v0           Gomoku-*-v0   │
-│  Pendulum-v1      (hybrid-platform)     (5 难度级别)        │
-│  MuJoCo envs...                                            │
+│  ┌─────────────┐  ┌──────────────────┐  ┌────────────────┐  │
+│  │  gymnasium  │  │  第三方注册包     │  │  自定义环境包   │  │
+│  │  内置环境    │  │  (hybrid-platform│  │  (python/      │  │
+│  │             │  │   等，注册进      │  │   gym_env，注册 │  │
+│  │             │  │   gymnasium)     │  │   进 gymnasium) │  │
+│  └─────────────┘  └──────────────────┘  └────────────────┘  │
+│         ↑                  ↑                     ↑           │
+│  CartPole-v1         Platform-v0           Gomoku-*-v0       │
+│  Pendulum-v1                               (5 难度级别)      │
+│  MuJoCo/Atari extras...                                      │
 └─────────────────────────────────────────────────────────────┘
 ```
 

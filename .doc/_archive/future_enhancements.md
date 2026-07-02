@@ -360,7 +360,7 @@ impl XorMLP {
 - [神经架构演化设计](./neural_architecture_evolution_design.md) — **核心设计文档**，详细描述混合策略
 - [待扩展节点类型规划](./future_node_types.md) — Exp/Clamp/概率分布等节点的详细规划
 - [动态图生命周期设计](../_archive/dynamic_graph_lifecycle_design.md) — 已归档，已解决多输入/多输出和节点累积问题
-- [强化学习路线图](./rl_roadmap.md) — RL 模块的当前状态、已知差距、SAC 统一公式技巧、未来方向
+- [强化学习路线图](../design/rl_roadmap.md) — RL 模块的当前状态与方向（SAC 技巧等历史内容见 [v0.20–v0.24 归档](../design/archive/rl_roadmap_v020_v024.md)）
 - [Hybrid SAC 论文](./../paper/RL/SAC复合actions.pdf) — Delalleau et al. 2019，离散+连续+混合动作框架
 - [NEAT 论文](./../paper/NEAT_2002/summary.md)
 - [EXAMM 论文](./../paper/EXAMM_2019/summary.md)

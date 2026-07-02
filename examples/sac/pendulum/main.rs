@@ -1,7 +1,8 @@
 //! Pendulum SAC-Continuous 示例
 //!
 //! ```bash
-//! cargo run --example pendulum_sac
+//! cargo run --example pendulum_sac --release
+//! SMOKE=1 cargo run --example pendulum_sac  # 管线验证（2 ep 截短，不验收敛）
 //! ```
 
 mod model;
@@ -19,7 +20,10 @@ use pyo3::Python;
 use std::collections::VecDeque;
 
 fn main() -> Result<(), GraphError> {
-    let (actor_lr, critic_lr, gamma, hidden, batch_sz) = (3e-4, 1e-3, 0.99, 32, 256);
+    let smoke = std::env::var("SMOKE").is_ok();
+    let (actor_lr, critic_lr, gamma, hidden) = (3e-4, 1e-3, 0.99, 32);
+    let max_ep = if smoke { 2 } else { 300 };
+    let (start_after, batch_sz) = if smoke { (64, 32) } else { (500, 256) };
 
     Python::attach(|py| {
         let env = GymEnv::new(py, "Pendulum-v1");
@@ -39,7 +43,7 @@ fn main() -> Result<(), GraphError> {
         let mut buffer = ReplayBuffer::new(100_000);
         let mut rng = rand::thread_rng();
         let mut ep_rewards: VecDeque<f32> = VecDeque::with_capacity(100);
-        for ep in 0..300 {
+        for ep in 0..max_ep {
             let t0 = std::time::Instant::now();
             let mut obs = env.reset(None)[0].clone();
             let (mut ep_r, mut ep_len) = (0.0f32, 0);
@@ -64,7 +68,7 @@ fn main() -> Result<(), GraphError> {
                     truncated,
                 });
 
-                if buffer.len() >= 500 {
+                if buffer.len() >= start_after {
                     let batch = buffer.sample(batch_sz, &mut rng);
                     let b = transitions_to_batch(&batch, obs_dim);
                     let act_norm = agent.unscale_action(&b.actions);
@@ -112,6 +116,13 @@ fn main() -> Result<(), GraphError> {
                     agent.log_alpha =
                         update_alpha(agent.log_alpha, agent.alpha_lr, avg_h, agent.target_entropy);
                     agent.soft_update_targets();
+
+                    if smoke {
+                        for (name, l) in [("c1", &c1_loss), ("c2", &c2_loss), ("a", &a_loss)] {
+                            let v = l.value()?.unwrap()[[0, 0]];
+                            assert!(v.is_finite(), "SMOKE: {name}_loss={v} 非有限");
+                        }
+                    }
                 }
 
                 if terminated || truncated {
@@ -134,12 +145,15 @@ fn main() -> Result<(), GraphError> {
                 agent.alpha(),
                 t0.elapsed().as_secs_f32()
             );
-            if ep_r >= -300.0 {
+            if !smoke && ep_r >= -300.0 {
                 println!("✅ 达标 R={ep_r:.1}");
                 break;
             }
         }
 
+        if smoke {
+            println!("[SMOKE] 通过");
+        }
         env.close();
         Ok(())
     })

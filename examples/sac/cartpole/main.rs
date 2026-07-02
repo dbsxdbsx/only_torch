@@ -3,6 +3,7 @@
 //! ```bash
 //! cargo run --example cartpole_sac --release
 //! SMOKE=1 cargo run --example cartpole_sac  # 管线验证（3 ep，不验收敛）
+//! SEED=43 cargo run --example cartpole_sac --release  # 多 seed 基线重测（默认 42）
 //! ```
 //!
 //! 达标：greedy(temp=0) eval 20 局（固定 seed）均值 ≥ 475（Gymnasium CartPole-v1 官方 solved）。
@@ -67,6 +68,11 @@ fn main() -> Result<(), GraphError> {
     let smoke = std::env::var("SMOKE").is_ok();
     // CartPole-v1 达标门槛（Gymnasium 官方 solved = greedy eval 均值 ≥ 475）。
     let solved = 475.0_f32;
+    // SEED：多 seed 基线重测协议（默认 42；权重初始化 / buffer 采样 / 首局 reset 均派生）。
+    let seed: u64 = std::env::var("SEED")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(42);
     let max_ep = if smoke {
         3
     } else {
@@ -83,7 +89,7 @@ fn main() -> Result<(), GraphError> {
         let obs_dim = env.get_flatten_observation_len();
         let action_dim = 2;
 
-        let graph = Graph::new_with_seed(42);
+        let graph = Graph::new_with_seed(seed);
         let mut agent = SacAgent::new(&graph, obs_dim, action_dim)?;
         agent.target_critic1.hard_update_from(&agent.critic1);
         agent.target_critic2.hard_update_from(&agent.critic2);
@@ -92,15 +98,15 @@ fn main() -> Result<(), GraphError> {
         let mut c1_opt = Adam::new(&graph, &agent.critic1.parameters(), lr);
         let mut c2_opt = Adam::new(&graph, &agent.critic2.parameters(), lr);
         let mut buffer = ReplayBuffer::new(100_000);
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = StdRng::seed_from_u64(seed);
         let mut ep_rewards: VecDeque<f32> = VecDeque::with_capacity(100);
         // 样本效率：累计真实 env-step + 首次达标的 (episode, env_step)
         let mut total_steps: u64 = 0;
         let mut hit_solved: Option<(usize, u64)> = None;
         for ep in 0..max_ep {
             let t0 = std::time::Instant::now();
-            let seed = if ep == 0 { Some(42) } else { None };
-            let mut obs = env.reset(seed)[0].clone();
+            let reset_seed = if ep == 0 { Some(seed) } else { None };
+            let mut obs = env.reset(reset_seed)[0].clone();
             let (mut ep_r, mut ep_len) = (0.0f32, 0);
 
             loop {

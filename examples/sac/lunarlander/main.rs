@@ -1,4 +1,9 @@
 //! LunarLander-v3 SAC-Discrete（`pip install "gymnasium[box2d]"`）
+//!
+//! ```bash
+//! cargo run --example lunarlander_sac --release
+//! SMOKE=1 cargo run --example lunarlander_sac  # 管线验证（3 ep 截短，不验收敛）
+//! ```
 mod model;
 
 use model::SacAgent;
@@ -15,6 +20,9 @@ use pyo3::Python;
 use std::collections::VecDeque;
 
 fn main() -> Result<(), GraphError> {
+    let smoke = std::env::var("SMOKE").is_ok();
+    let max_ep = if smoke { 3 } else { 1000 };
+    let (start_after, batch_sz) = if smoke { (64, 32) } else { (1000, 64) };
     Python::attach(|py| {
         let env = GymEnv::new(py, "LunarLander-v3");
         let (obs_dim, act_dim, gamma) = (env.get_flatten_observation_len(), 4, 0.99);
@@ -29,7 +37,7 @@ fn main() -> Result<(), GraphError> {
         let mut rng = rand::thread_rng();
         let mut hist: VecDeque<f32> = VecDeque::with_capacity(100);
 
-        for ep in 0..1000 {
+        for ep in 0..max_ep {
             let mut obs = env.reset(None)[0].clone();
             let mut ep_r = 0.0f32;
             loop {
@@ -45,8 +53,8 @@ fn main() -> Result<(), GraphError> {
                     terminated: term,
                     truncated: trunc,
                 });
-                if buf.len() >= 1000 {
-                    let batch = buf.sample(64, &mut rng);
+                if buf.len() >= start_after {
+                    let batch = buf.sample(batch_sz, &mut rng);
                     let b = transitions_to_batch(&batch, obs_dim);
                     let (np, nlp) = ag.actor.get_action_probs(&b.next_obs)?;
                     let tq = ag
@@ -85,6 +93,11 @@ fn main() -> Result<(), GraphError> {
                     a_opt.step()?;
                     ag.log_alpha = update_alpha(ag.log_alpha, ag.alpha_lr, h, ag.target_entropy);
                     ag.soft_update_targets();
+
+                    if smoke {
+                        let v = al.value()?.unwrap()[[0, 0]];
+                        assert!(v.is_finite(), "SMOKE: actor_loss={v} 非有限");
+                    }
                 }
                 if term || trunc {
                     break;
@@ -105,10 +118,13 @@ fn main() -> Result<(), GraphError> {
                     ag.alpha()
                 );
             }
-            if avg >= 200.0 {
+            if !smoke && avg >= 200.0 {
                 println!("✅ avg={avg:.1}");
                 break;
             }
+        }
+        if smoke {
+            println!("[SMOKE] 通过");
         }
         env.close();
         Ok(())

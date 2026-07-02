@@ -1,15 +1,17 @@
 ---
 status: active
 created: 2026-06-21
-updated: 2026-06-25
+updated: 2026-07-02
 ---
 
 # MyZero · 动作空间 / Sampled MuZero 决策备忘（B、K、连续、复合）
 
 > **用途**：接 Pendulum / Platform MyZero 前必读；避免把「论文 explicit」与「工程推断」混谈，避免 B/K 概念绑错。
 > **状态**：`active` —— 2026-06-24 审计发现并修复 `π̂_β` 实现公式错误；CartPole 因 K=N 退化全枚举未暴露，Pendulum B=7/K=5 会真实受影响。修复后须重跑 Pendulum P0/P1。
+> **⚠️ 口径提示（2026-07-02）**：文中 CartPole 实测数字为 pre-autograd-fix 旧口径；新口径（3-seed 中位 · release + MKL）下 **Sampled 在 K=N 退化时与无 Sampled 逐步等价**（v0.25 收口重测，3 seeds env-steps 完全一致），机制结论以 [CartPole 基准账本](../../examples/my_zero/cartpole/README.md) 为准。
+> **优先级提示（2026-07-01，纲领 §2.3）**：Pendulum / Platform 已降级为非关键路径；本 issue 的 B=7 / hybrid 决策**保留待用**，具体需求出现再推进。
 > **论文本地副本**：`AI论文/Muzero复合action.pdf`（= Hubert et al. ICML 2021 · Sampled MuZero · arXiv:2104.06303）
-> **关联**：[MyZero 纲领 §5](../../.doc/design/my_zero_algorithm_vision.md) · [RL 路线图 §2.5 / §5.10](../../.doc/design/rl_roadmap.md) · [Pendulum 诊断](./pendulum_failure_diagnosis.md) · [post_ez_v2 backlog §Sampled](./post_ez_v2_research_backlog.md)
+> **关联**：[MyZero 纲领 §5](../../.doc/design/my_zero_algorithm_vision.md) · [RL 路线图](../../.doc/design/rl_roadmap.md) · [Pendulum 诊断](./pendulum_failure_diagnosis.md) · [post_ez_v2 backlog §Sampled（已归档）](../_archive/post_ez_v2_research_backlog.md)
 
 ---
 

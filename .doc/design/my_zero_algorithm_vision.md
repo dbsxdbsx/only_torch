@@ -1,7 +1,7 @@
 # MyZero 算法纲领与路线决策
 
 > **定位**：记录 MyZero 及 RL 母算法选型的**战略层**结论——我们讨论过什么、为什么可能做、为什么大概率不做。  
-> **不是**实施 checklist（见 [RL 路线图 §8](./rl_roadmap.md#8-v025-myzero-统一算法2026-06-16-方向定稿)）；**不是**消融实测表（见 [MyZero 示例总览](../../examples/my_zero/README.md) — 组件×环境矩阵）。**组件→论文**对照见本文 §4.1。  
+> **不是**实施 checklist（见 [RL 路线图](./rl_roadmap.md)）；**不是**消融实测表（实测数字唯一账本：[CartPole 基准账本](../../examples/my_zero/cartpole/README.md)；组件×环境矩阵：[MyZero 示例总览](../../examples/my_zero/README.md)）。**组件→论文**对照见本文 §4.1。  
 > **创建日期**：2026-06-20 · **状态**：讨论沉淀，条目可随新证据修订
 
 ---
@@ -10,9 +10,10 @@
 
 | 文档 | 回答什么 |
 |------|----------|
-| **本文** | 算法哲学、文献谱系、做/不做决策、环境选型；**组件→论文**见 §4.1 |
-| [rl_roadmap.md §8](./rl_roadmap.md#8-v025-myzero-统一算法2026-06-16-方向定稿) | v0.25 阶段、代码组织、消融顺序、改动纪律 |
+| **本文** | 算法哲学、战略目标、文献谱系、做/不做决策；**组件→论文**见 §4.1 |
+| [rl_roadmap.md](./rl_roadmap.md) | 当前状态、验收协议、v0.25 结果、v0.26 方向 |
 | [examples/my_zero/README.md](../../examples/my_zero/README.md) | 组件×环境实测矩阵、命令、门禁 |
+| [examples/my_zero/cartpole/README.md](../../examples/my_zero/cartpole/README.md) | **基准账本**（benchmark 数字唯一事实源；本文不维护数字） |
 | [rl.instructions.md](../../.github/instructions/rl.instructions.md) | 改 RL 代码时的 agent 约束（含搬运≠改进） |
 
 ---
@@ -35,7 +36,25 @@
 **env-steps-to-solved**：达到同一性能门槛所需的真实环境交互（env-steps）**越少越好**。
 
 - **wall-clock**：研究迭代速度的约束，**不是**评价算法优劣的第一标尺。
-- 三条推论（模型侧开销可压、红利前提是模型够准等）：见 [MyZero README — 评判口径](../../examples/my_zero/README.md#评判口径所有环境通用)。
+- 官方统计口径：**3-seed 中位 env-steps + 达标率**（单 seed 数字只作方向参考；v0.25 autograd 修复后定稿）。
+- 三条推论（模型侧开销可压、红利前提是模型够准等）：见 [MyZero README — 评判口径](../../examples/my_zero/README.md#评判口径)。
+
+### 2.3 战略目标与优先轴（2026-07-01 定稿）
+
+MyZero 的两个**真实落地目标**，及其对路线优先级的含义：
+
+| 目标 | 特性 | 命中的算法本命田 |
+|------|------|------------------|
+| **中国象棋** | 离散、完美信息、self-play | AlphaZero 系正是为此发明；MCTS + self-play + legal_mask 是标准答案 |
+| **商业图像游戏** | 图像 obs、实时（环境不等 agent）、样本贵 | EfficientZero 立身之本（Atari-100k：极少样本掌握图像游戏）；自监督表征（consistency + reconstruction）是命门组件 |
+
+由此得出的路线裁决：
+
+1. **A 路定锚**：坚持 EZ-V2 / MCTS 谱系（样本效率 + 棋类能力），**不转向** DreamerV3 派（world model + imagination、无 MCTS）——后者在棋类/纯离散非 SOTA，与象棋目标相悖。文献依据：EZ-V2（ICML 2024）已证明 Zero 系可跨离散+连续+视觉+低维（66 任务 50 胜 DreamerV3）。
+2. **优先轴转向**：两个目标都不在「动作空间广度」轴上（象棋=离散、图像游戏≈离散），而在**观测空间（图像/CNN）与训练范式（self-play）**轴上。因此 CNN 表征 + 图像基准、Gomoku self-play **升为高优先**；Pendulum（连续）/ Platform（混合）**降级**为「具体需求出现再做」。
+3. **acting / reanalyze 解耦**（应对「环境不等你」）：实时决策用轻量 acting（Gumbel 少 sim 或 policy 先验，毫秒级）；样本榨取放离线 reanalyze（buffer 上重跑完整 MCTS 刷新 target）。文献依据：规划的主要价值在训练期 target 质量而非部署期前瞻（Hamrick et al. 2020 arXiv:2011.04021；De Vries et al. 2023 arXiv:2306.00840）。**reanalyze 由此升为战略组件**（CartPole 负结果不构成否定）。
+4. **CartPole 定位收紧**：它是「叠组件不崩」的 sanity 哨兵，**不是**组件价值证明台（规划红利在简单稠密奖励任务上本就近乎为零，见上引文献）；更不拿 wall-clock 判生死（§2.2）。
+5. **一级风险显式管理**：CPU-only × 图像 CNN × MCTS × 实时存在结构性冲突（学界加速方案 TransZero/SpeedyZero 均依赖 GPU）——见 [.issue/items/cpu_only_mcts_image_realtime_risk.md](../../.issue/items/cpu_only_mcts_image_realtime_risk.md)；象棋（低维盘面）不受此约束，图像游戏推进前须重估。
 
 ---
 
@@ -111,14 +130,14 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 | 项 | 裁决 | 理由 |
 |----|------|------|
 | consistency | ✅ CartPole 已验收 | EfficientZero（Ye et al. 2021）+ SimSiam（Chen & He 2020） |
-| reconstruction | ✅ CartPole 已验收 | Scholz et al. 2021 *Improving Model-Based RL with Internal State Representations through Self-Supervision*（arXiv:2102.05599）；seed=42 ~12.2k env-steps @ sims=20 |
+| reconstruction | ✅ CartPole 已验收 | Scholz et al. 2021 *Improving Model-Based RL with Internal State Representations through Self-Supervision*（arXiv:2102.05599）；实测见[账本](../../examples/my_zero/cartpole/README.md) |
 | value_prefix / target_net | ✅ 已在库，消融驱动 | EZ 谱系；CartPole value_prefix ❌ |
 | SVE | ✅ 已在库，消融驱动 | 现固定权重 blend stale target；CartPole 训练循环待接 |
 | SVE 自适应 mixed target | 🔲 Phase 2 改进候选 | EZ 论文为自适应 mixed target，非固定权重；须单独消融 |
 | consistency 正规化（SimSiam target encoder + EMA） | 🔲 Phase 2 改进候选 | 现简化实现 CartPole 有效；见 [Pendulum 诊断 issue](../../.issue/items/pendulum_failure_diagnosis.md) §六 |
 | value head 上游 target（Pendulum 坍缩） | 🔲 Phase 2 改进候选 | head 容量已证伪；根因在上游 n-step / 搜索，见同上 issue |
-| completedQ / Gumbel-root | ❌ CartPole 实测失败；⏸ 复测留 `\|A\| > n` 环境 | 见 [issue](../../.issue/items/my_zero_gumbel_completedq_cartpole_negative.md)；库内已实现 |
-| Sampled MuZero（高维连续候选） | ✅ CartPole recipe 已开 + release 压测（2026-06-22）；⏸ factorized B=7 待 Pendulum | cons+recon+Sampled：greedy **491.6** @ ep300 · **15,193** env-steps（N=2 K_eff=2 退化全枚举，仍过 475）；**B/K/N 公式**见 [issue](../../.issue/items/my_zero_action_space_sampled_policy.md) |
+| completedQ / Gumbel-root | ❌ CartPole 实测失败；⏸ 复测留 `\|A\| > n` 环境与低延迟 acting 场景（§2.3） | 见 [issue](../../.issue/items/my_zero_gumbel_completedq_cartpole_negative.md)；库内已实现 |
+| Sampled MuZero（高维连续候选） | ✅ CartPole recipe 已开（N=2 退化全枚举、接入不回归）；⏸ factorized B=7 待连续环境 | 实测见[账本](../../examples/my_zero/cartpole/README.md)；**B/K/N 公式**见 [issue](../../.issue/items/my_zero_action_space_sampled_policy.md) |
 | BTS/DENTS 式 backup | 🔲 仅当动 `SearchPolicy` | 避免 MENTS 式「max-entropy 最优 ≠ 回报最优」 |
 | ANTS 自适应温度闭环 | ⏸ 借鉴思想，不搬整套 | 与 MuZero 训练循环结构不同 |
 | Stochastic dynamics 头 | ⏸ Platform / 随机 env 需要时 | Stochastic MuZero 路线 |
@@ -172,16 +191,17 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 
 ## 6. 环境 × 默认算法 × 插件位（规划）
 
-> 默认算法 = **首选验证/MyZero 推进**；基线 = 应对照。Platform MyZero 子目录待建。
+> 默认算法 = **首选验证/MyZero 推进**；基线 = 应对照。优先级按 §2.3 战略轴排序（观测空间 + self-play 优先，动作空间广度降级）；实测数字一律见[基准账本](../../examples/my_zero/cartpole/README.md)。
 
-| 环境 | 观测 | 动作 | MyZero 状态 | 默认对照 | 远期插件位 |
-|------|------|------|-------------|----------|------------|
-| CartPole-v1 | 向量 | 离散 | ✅ 回归哨兵 ~**12.2k** steps（cons+recon · PUCT · sims=20） | SAC ~82k | completedQ / Gumbel ❌ CartPole · [issue](../../.issue/items/my_zero_gumbel_completedq_cartpole_negative.md) |
-| Pendulum-v1 | 向量 | 连续 | ⏳ 失败区间，先诊断可学习性 | SAC | Gumbel-root、连续候选 |
-| Platform-v0 | 向量 | 混合 Tuple | — 未实现 | Hybrid SAC ✅ | `ActionAdapter` Tuple、混合 MCTS |
-| Gomoku | 离散棋盘 | 离散 |  backlog | — | self-play、legal_mask |
-| 随机转移 / 长 horizon | — | — | ⏸ | — | stochastic dynamics |
-| 部分可观测 | — | — | 🔲 | — | history / 帧堆叠（**非** BetaZero） |
+| 优先 | 环境 | 观测 | 动作 | MyZero 状态 | 默认对照 | 远期插件位 |
+|------|------|------|------|-------------|----------|------------|
+| 哨兵 | CartPole-v1 | 向量 | 离散 | ✅ 回归哨兵（cons+recon+Sampled · PUCT · sims=20，数字见账本） | SAC / PPO（同账本） | completedQ / Gumbel ❌ CartPole · [issue](../../.issue/items/my_zero_gumbel_completedq_cartpole_negative.md) |
+| **P0** | 图像离散（Atari-100k 类） | **图像** | 离散 | — v0.26 主推（商业游戏代理） | — | CNN 表征、帧堆叠、reanalyze、Gumbel 少 sim acting |
+| **P1** | Gomoku（→ 象棋） | 离散棋盘 | 离散 | — v0.26 主推（self-play 踏脚石） | — | self-play、legal_mask、negamax backup |
+| 降级 | Pendulum-v1 | 向量 | 连续 | ⏳ 诊断中（[issue](../../.issue/items/pendulum_failure_diagnosis.md)），非门禁 | SAC | Gumbel-root、连续候选 B=7 |
+| 降级 | Platform-v0 | 向量 | 混合 Tuple | — 待具体需求 | Hybrid SAC ✅ | `ActionAdapter` Tuple、混合 MCTS |
+| ⏸ | 随机转移 / 长 horizon | — | — | ⏸ | — | stochastic dynamics |
+| 🔲 | 部分可观测 | — | — | 🔲 | — | history / 帧堆叠（**非** BetaZero） |
 
 **Platform 阻塞点（已知）**：MyZero `ActionAdapter` 仅 Auto/Discretize，Tuple 混合未支持——扩 Platform 前先扩动作适配层，而非换 SAC 母算法。
 
@@ -189,9 +209,9 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 
 ## 7. 推荐阅读顺序（接手 RL 战略时）
 
-1. 本文 §2–§5（5 分钟）
-2. [MyZero README 矩阵](../../examples/my_zero/README.md) + CartPole/Pendulum 子 README
-3. [rl_roadmap.md §8](./rl_roadmap.md#8-v025-myzero-统一算法2026-06-16-方向定稿) 实施顺序
+1. 本文 §2–§5（5 分钟；§2.3 战略目标先看）
+2. [MyZero README 矩阵](../../examples/my_zero/README.md) + [CartPole 基准账本](../../examples/my_zero/cartpole/README.md)
+3. [rl_roadmap.md](./rl_roadmap.md) 当前状态与 v0.26 方向
 4. 若动搜索：**Gumbel MuZero (2022)** → 若考虑熵 backup：**DENTS (2023)**，**不是**先读 ANTS
 5. 若理解 POMDP 与 MyZero 边界：本文 **§5.3**（BetaZero **不学**）+ 教科书 POMDP（Tiger 等反例）
 6. 若理解为何要随机策略：**Eysenbach & Levine 2021**（meta-POMDP，与 MCTS 正交）
@@ -204,7 +224,8 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 |------|------|
 | 2026-06-20 | 初版：沉淀 SAC vs MyZero、MaxEnt 谱系、ANTS/BTS/Gumbel/BetaZero、POMDP/greedy 口径、Klein 论文评估、双轨决策 |
 | 2026-06-20 | §2 用语：「北极星」拆为 **核心原则** + **首要评价指标**（env-steps-to-solved） |
-| 2026-06-21 | §5.1 / §6：CartPole reconstruction 验收 ~11.7k env-steps（consistency + reconstruction） |
+| 2026-06-21 | §5.1 / §6：CartPole reconstruction 验收（当时口径 ~11.7k env-steps，consistency + reconstruction） |
 | 2026-06-21 | §5.1：拆分 SVE / 补 Phase 2 改进候选（SVE 自适应、consistency 正规化、value 上游 target） |
 | 2026-06-21 | §4.1：组件文献对照迁入本文（单一事实源）；示例 README 改链入 |
 | 2026-06-21 | §5.3：BetaZero 论文已读，**❌ 不学**（已知 \(T,O\) belief 规划 vs 黑盒 MyZero）；POMDP 默认 history |
+| 2026-07-02 | **§2.3 战略目标定稿**（象棋 + 商业图像游戏；A 路定锚不转 Dreamer；优先轴转向观测空间 + self-play；acting/reanalyze 解耦；CPU-only 风险 issue 化）。**本文去数字化**：§5.1/§6 实测数字移除，唯一账本为 cartpole README；官方口径改 3-seed 中位（autograd 修复后历史单 seed 数字失效） |

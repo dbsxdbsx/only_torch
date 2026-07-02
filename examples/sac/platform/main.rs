@@ -2,7 +2,8 @@
 //!
 //! ```bash
 //! pip install hybrid-platform
-//! cargo run --example platform_sac
+//! cargo run --example platform_sac --release
+//! SMOKE=1 cargo run --example platform_sac  # 管线验证（3 ep 截短，不验收敛）
 //! ```
 
 mod model;
@@ -20,7 +21,10 @@ use pyo3::Python;
 use std::collections::VecDeque;
 
 fn main() -> Result<(), GraphError> {
-    let (actor_lr, critic_lr, gamma, tau, hidden, batch_sz) = (3e-4, 1e-3, 0.99, 0.005, 128, 128);
+    let smoke = std::env::var("SMOKE").is_ok();
+    let (actor_lr, critic_lr, gamma, tau, hidden) = (3e-4, 1e-3, 0.99, 0.005, 128);
+    let max_ep = if smoke { 3 } else { 2000 };
+    let (start_after, batch_sz) = if smoke { (32, 32) } else { (500, 128) };
 
     Python::attach(|py| {
         let env = GymEnv::new(py, "Platform-v0");
@@ -39,7 +43,7 @@ fn main() -> Result<(), GraphError> {
         let mut ep_rewards: VecDeque<f32> = VecDeque::with_capacity(50);
         let mut steps = 0usize;
 
-        for ep in 0..2000 {
+        for ep in 0..max_ep {
             let mut obs = env.flatten_obs(&env.reset(None));
             let mut ep_r = 0.0f32;
 
@@ -61,7 +65,7 @@ fn main() -> Result<(), GraphError> {
                     truncated,
                 });
 
-                if buffer.len() >= 500 {
+                if buffer.len() >= start_after {
                     let batch = buffer.sample(batch_sz, &mut rng);
                     let b = transitions_to_batch(&batch, obs_dim);
 
@@ -128,6 +132,13 @@ fn main() -> Result<(), GraphError> {
                     a_loss.backward()?;
                     a_opt.step()?;
 
+                    if smoke {
+                        for (name, l) in [("c1", &c1_loss), ("c2", &c2_loss), ("a", &a_loss)] {
+                            let v = l.value()?.unwrap()[[0, 0]];
+                            assert!(v.is_finite(), "SMOKE: {name}_loss={v} 非有限");
+                        }
+                    }
+
                     // Alpha 更新
                     let avg_h_d = -(&np * &nlp).sum_axis_keepdims(1).mean()[[0, 0]];
                     agent.log_alpha_d = update_alpha(
@@ -157,7 +168,7 @@ fn main() -> Result<(), GraphError> {
             if ep_rewards.len() > 50 {
                 ep_rewards.pop_front();
             }
-            if (ep + 1) % 50 == 0 {
+            if !smoke && (ep + 1) % 50 == 0 {
                 let avg = ep_rewards.iter().sum::<f32>() / ep_rewards.len() as f32;
                 println!(
                     "Ep {:>4} | steps {:>6} | R={:.2} | avg50={:.2} | αd={:.4} αc={:.4}",
@@ -175,6 +186,9 @@ fn main() -> Result<(), GraphError> {
             }
         }
 
+        if smoke {
+            println!("[SMOKE] 通过");
+        }
         env.close();
         Ok(())
     })

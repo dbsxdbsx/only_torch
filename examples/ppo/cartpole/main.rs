@@ -3,6 +3,7 @@
 //! ```bash
 //! cargo run --example ppo_cartpole --release
 //! SMOKE=1 cargo run --example ppo_cartpole        # 管线验证
+//! SEED=43 cargo run --example ppo_cartpole --release  # 多 seed 基线重测（默认 42）
 //! ```
 //!
 //! 达标：greedy(temp=0) eval 20 局（固定 seed）均值 ≥ 475（Gymnasium CartPole-v1 官方 solved）。
@@ -65,6 +66,11 @@ fn main() -> Result<(), GraphError> {
     let smoke = std::env::var("SMOKE").is_ok();
     // CartPole-v1 达标门槛（Gymnasium 官方 solved = greedy eval 均值 ≥ 475）。
     let solved = 475.0_f32;
+    // SEED：多 seed 基线重测协议（默认 42；权重初始化 / rollout shuffle / 首局 reset 均派生）。
+    let seed: u64 = std::env::var("SEED")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(42);
 
     let n_steps: usize = if smoke { 64 } else { 2048 };
     let max_updates: usize = if smoke {
@@ -85,7 +91,7 @@ fn main() -> Result<(), GraphError> {
         let obs_dim = env.get_flatten_observation_len();
         let action_dim = 2;
 
-        let graph = Graph::new_with_seed(42);
+        let graph = Graph::new_with_seed(seed);
         let actor = PpoActor::new(&graph, obs_dim, action_dim)?;
         let critic = PpoCritic::new(&graph, obs_dim)?;
 
@@ -93,7 +99,7 @@ fn main() -> Result<(), GraphError> {
         let mut critic_opt = Adam::new(&graph, &critic.parameters(), lr);
 
         let mut ep_rewards: VecDeque<f32> = VecDeque::with_capacity(100);
-        let mut obs = env.reset(Some(42))[0].clone();
+        let mut obs = env.reset(Some(seed))[0].clone();
         let mut ep_r = 0.0f32;
         // 样本效率：PPO rollout 连续跨 update，用独立 eval env 以免打断 obs 连续性。
         let mut total_steps: u64 = 0;
@@ -174,7 +180,7 @@ fn main() -> Result<(), GraphError> {
             let n = steps.len();
 
             // PPO 更新（多 epoch，每 epoch shuffle 索引）
-            let mut rng = StdRng::seed_from_u64(42 + update as u64);
+            let mut rng = StdRng::seed_from_u64(seed + update as u64);
             for _epoch in 0..ppo_epochs {
                 let mut indices: Vec<usize> = (0..n).collect();
                 indices.shuffle(&mut rng);

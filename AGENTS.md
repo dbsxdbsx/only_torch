@@ -17,15 +17,16 @@ only_torch 是一个纯 Rust 的 PyTorch 风格玩具框架，当前重点是：
 
 | 项 | 内容 |
 |----|------|
-| **版本** | `0.24.0`（2026-06-16；本地可能超前 `origin/master`，以 `git log` / `CHANGELOG.md` 为准） |
-| **刚闭环** | **MyZero 统一 + 旧 `*Zero` 清除**（v0.25 开发中）：MyZero 算法主体（模型 + 训练循环 + self-play）+ 全部组件统一进库 `src/rl/algo/my_zero/`（自包含）；**删除**旧 `muzero/` + `efficientzero/` 模块与示例，MyZero 成为项目**唯一**的 `*Zero` 实现。CartPole-v1 回归哨兵 greedy 500；continuation backbone（search discount = binary `γ·(1−done)`）+ cons+recon+Sampled · sims=20 · **默认 td_steps=5 → ~13.1k env-steps**（seed=42 单 seed；soft `γ·c` 旧实现曾退化 30.2k，已修）/ 历史无 continuation ~12.2k / PPO ~82k / SAC ~105k |
-| **当前主线** | **强化学习** v0.25.0：**MyZero 统一算法**——CartPole 回归哨兵 **cons+recon+Sampled+continuation 二值门 · PUCT · sims=20 · td=5**（~13.1k env-steps）；**completedQ / Gumbel-root 在 CartPole 实测失败**（代码保留、recipe 关，见 `.issue/items/my_zero_gumbel_completedq_cartpole_negative.md`）。Pendulum / 更大动作空间再复测 Gumbel 线 |
+| **版本** | `0.25.0`（2026-07-02；本地可能超前 `origin/master`，以 `git log` / `CHANGELOG.md` 为准） |
+| **刚闭环** | **v0.25 MyZero 统一 + 全量重定基线收口**：① MyZero 算法主体 + 全部组件统一进库 `src/rl/algo/my_zero/`（自包含），删除旧 `muzero/` + `efficientzero/`，MyZero 成为**唯一** `*Zero` 实现；② 框架级 autograd 修复（MSE 系 loss 反向 `upstream_grad`、非连续张量守卫）使历史 RL 数字失效 → **官方哨兵口径改 3-seed 中位 env-steps + 达标率**并全量重测（MyZero promoted 中位 **~66.2k**、PPO ~81.9k、SAC ~152.2k，均 3/3 达标，口径 release+MKL，唯一账本 [cartpole README](examples/my_zero/cartpole/README.md)）；③ RL 文档信息架构重构（roadmap 拆归档 + 薄版当前态、vision 去数字化、`smoke-rl` 聚合关卡） |
+| **当前主线** | **强化学习** v0.26（[路线图 §5](.doc/design/rl_roadmap.md#5-v026-方向2026-07-01-战略转向定稿)）：战略转向「磨观测空间 + self-play」——P0 loss 系数重标定消融 + CNN 图像表征（商业游戏代理）；P1 Gomoku self-play（象棋踏脚石）+ reanalyze 复活（acting/reanalyze 解耦）。**completedQ / Gumbel-root CartPole 负结果**（代码保留、recipe 关，`.issue/items/my_zero_gumbel_completedq_cartpole_negative.md`）；Pendulum/Platform 已降级非关键路径 |
 | **刻意暂缓** | 演化 **阶段 D**（`CellAttention` ONNX、`Attention` Net2Net 函数保持、Conv2d Attention、3D batched MatMul）——与 RL 零耦合，见 [记忆机制设计 — Phase D](.doc/design/memory_mechanism_design.md#-后续-phase-d刻意未做) |
-| **路线展望** | v0.25 **MyZero**（`src/rl/algo/my_zero/`）：项目**唯一**的 `*Zero` 实现，消融驱动迭代。从 CartPole 最简 base 开始，每叠一个增量组件做 A/B 消融对比、记录 benchmark，逐步覆盖全动作/状态类型。详见 [RL 路线图](.doc/design/rl_roadmap.md) |
+| **一级风险** | CPU-only × 图像 CNN × MCTS × 实时结构性冲突：[.issue/items/cpu_only_mcts_image_realtime_risk.md](.issue/items/cpu_only_mcts_image_realtime_risk.md)（图像线推进前必读） |
+| **路线展望** | 真实目标 = **中国象棋** + **商业图像游戏**（[纲领 §2.3](.doc/design/my_zero_algorithm_vision.md#23-战略目标与优先轴2026-07-01-定稿)）；MyZero 消融驱动迭代，基准判据「变慢 ≠ 失败，新实测即新基线；仅不收敛才记 issue」 |
 
 **进度符号**（设计文档统一口径）：✅ Phase 验收范围内已完成 · ⏳ 已识别、留后续 Phase · 🔲 可选增强 · 📦 已归档历史路径。
 
-**接手 RL 时建议顺序**：读 `rl_roadmap.md` → 配环境 [`.doc/rl_python_env_setup.md`](.doc/rl_python_env_setup.md)（**仅 Gymnasium**）→ `just test-filter rl`（60+ 测试确认 buffer + algo helper + MCTS）→ `just smoke-cartpole-sac`（SAC 管线验证）→ `just smoke-cartpole-ppo`（PPO 管线验证）→ 推进 v0.25（MyZero 统一算法，从 CartPole 消融起步）。
+**接手 RL 时建议顺序**：读 `rl_roadmap.md`（薄版当前态）→ 配环境 [`.doc/rl_python_env_setup.md`](.doc/rl_python_env_setup.md)（**仅 Gymnasium**）→ `just test-filter rl`（~229 测试确认 buffer + algo helper + MCTS + MyZero）→ `just smoke-rl`（7 目标 RL 管线聚合验证）→ 推进 v0.26（先 P0 loss 系数重标定，见路线图 §5）。
 
 **接手 Attention 阶段 D 时**：先读 [记忆机制设计 — 实现状态速览](.doc/design/memory_mechanism_design.md#-实现状态速览)（含 105 个相关单元测试与 IT-* 示例表），勿假设「打勾 = ONNX 也做完」。
 
@@ -52,6 +53,7 @@ just example-xor           # 最小传统示例
 just example-evolution-mnist   # 演化版 MNIST 示例
 just examples-memory-unit      # parity RNN/LSTM/GRU/Transformer + 演化序列示例聚合
 just example-cartpole-sac      # RL 示例，需 Python + gymnasium
+just smoke-rl                  # 全部 RL smoke 聚合（发版固定关卡，需 Python 依赖齐全）
 ```
 
 除非用户明确要求，否则不要默认运行耗时 bench、RL 示例或 `test-all`。
@@ -107,10 +109,10 @@ just example-cartpole-sac      # RL 示例，需 Python + gymnasium
 3. 确保 `parameters()` 返回完整可训练参数。
 
 ### 修改 RL
-1. 改前读 [RL 路线图 §7](.doc/design/rl_roadmap.md#7-v0200-实施计划) 与 [`.github/instructions/rl.instructions.md`](.github/instructions/rl.instructions.md)。
-2. **Phase 0 优先**：`GymEnv` 仅 `gymnasium.make`，禁止 `import gym`；**Phase 0b**：混合动作用 **`Platform-v0`**（`hybrid-platform`），不用 gym-hybrid / Moving。
-3. v0.20.0 入库 `Transition` + `ReplayBuffer`（删 `Step`）；`SacAgent` 仍只在示例。
-4. 验证：`just test-filter rl`；训练 `just example-cartpole-sac`；发版前 `SMOKE=1` / smoke just 目标（见路线图 §7.4）。
+1. 改前读 [RL 路线图](.doc/design/rl_roadmap.md)（含验收协议与改动纪律）与 [`.github/instructions/rl.instructions.md`](.github/instructions/rl.instructions.md)。
+2. 环境铁律：`GymEnv` 仅 `gymnasium.make`，禁止 `import gym`；混合动作用 **`Platform-v0`**（`hybrid-platform`），不用 gym-hybrid / Moving。
+3. 改基线数字只改唯一账本 [examples/my_zero/cartpole/README.md](examples/my_zero/cartpole/README.md)（带口径列），其余文档链入；「搬运 ≠ 改进」：改行为必须一次一项 + 3-seed 消融。
+4. 验证：`just test-filter rl` → `just smoke-rl`；改 MyZero 行为后跑 `SEEDS=3 cargo run --example my_zero_cartpole --release` 过哨兵。
 
 ### 修改 Evolution
 1. 保持主流程稳定：build → restore weights → train → capture → evaluate → accept/rollback → mutate。

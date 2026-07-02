@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-06-18
-updated: 2026-06-25
+updated: 2026-07-02
 owners: []
 reviewers: []
 ---
@@ -9,6 +9,7 @@ reviewers: []
 # MyZero · Pendulum-v1 失败诊断（进行中，求专家审阅）
 
 > **状态**：active —— 诊断实验跑了一半（base + 臂 A 完成，臂 B/C 未跑）。
+> **优先级提示（2026-07-02，纲领 §2.3 战略转向）**：Pendulum 已降级为**非关键路径**（真实目标为象棋 + 图像游戏，均不在连续动作轴上）；本 issue 保持诊断态、不作发版门禁，value-head 坍缩根因待有余力或连续需求出现时再推进。文中 CartPole 数字为 pre-autograd-fix 旧口径（新基线见[账本](../../examples/my_zero/cartpole/README.md)）。
 > **审阅结论（2026-06-18）**：方法论成立——失败区间内不下组件裁决。已据此把两份 README 的 Pendulum `➖` 改回 `⏳`（无信号），保留诊断旋钮，删除原始日志。
 > **诊断更新（2026-06-18，dynamics 探针）**：base 150ep 跑 dynamics 诊断（对比 model 想象 vs 真实）——**reward head 健康**（预测 std 1.86 ≈ 真实 1.87），**value head 坍缩成常数**（预测 std 26 vs 真实 MC return std 175；episode 末尾真实剩余 −10 仍预测 −500）。**病根精确锁定在 value 学习**，不在 reward / 搜索 / 离散粒度——这也再次**证伪**「reward 分辨率头号嫌疑」。下一步：先区分 value target 本身坍缩（`td_steps`/`gamma`）vs head 学不动（网络/loss/lr），再对症，不盲改。
 > **背景对话**：本 issue 源于一次对话中关于"consistency 在 Pendulum 上是否为中性"的争论。原作者认为：当前 Pendulum 所有配置都在"失败区间"（−353 ~ −1445，门禁 −200），在模型根本没学会的任务上做组件消融，➖ 裁决全是噪声，不足以回答中性问题。故转向"先查清为什么学不会"。

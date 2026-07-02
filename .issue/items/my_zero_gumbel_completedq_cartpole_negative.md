@@ -1,14 +1,15 @@
 ---
 status: active
 created: 2026-06-21
-updated: 2026-06-21
+updated: 2026-07-02
 owners: []
 reviewers: []
 ---
 
 # MyZero · completedQ / Gumbel-root：CartPole 消融失败（暂缓 promote）
 
-> **状态**：active —— 库内已实现 `completed_q_target` / `GumbelPolicy` + bench 用例；CartPole recipe **保持关**，当前基线为 **consistency + reconstruction · PUCT · sims=20**（~12.2k env-steps）。
+> **状态**：active —— 库内已实现 `completed_q_target` / `GumbelPolicy` + bench 用例；CartPole recipe **保持关**，当前 recipe 为 **consistency + reconstruction + Sampled · PUCT · sims=20 · td=5**（基线数字见 [CartPole 基准账本](../../examples/my_zero/cartpole/README.md)）。
+> **⚠️ 口径提示（2026-07-02）**：下文全部实测数字为 **pre-autograd-fix 旧口径**（MSE 系 loss 反向忽略 `upstream_grad` 时代 + 纯 Rust BLAS + 单 seed 为主）。v0.25 修复后官方口径改 **3-seed 中位（release + MKL）** 且全量重测（见账本）；本文数字仅保留**方向性结论**（completedQ / Gumbel 系统性慢于 visit），复测（v0.26+，`|A| > sims` 或低延迟 acting 场景）时须按新口径重跑。
 > **关联**：[CartPole README](../../examples/my_zero/cartpole/README.md) · [MyZero 总览](../../examples/my_zero/README.md) · [算法纲领 §5.1](../../.doc/design/my_zero_algorithm_vision.md#51-组件与方向)
 > **代码**：`src/rl/mcts/gumbel.rs` · `search_policy.rs` · `target.rs`（completedQ）· `tests/completed_q_cartpole_bench.rs`
 > **tree-level σ 归一化修复实测（2026-06-25）**：定位并修复 completedQ σ 归一化的 `|A|=2` 退化 bug（局部 over-children min-max → tree-level 全局 Q range），默认回 `50/1.0`。CartPole 3-seed：seed42 **16.7k**、seed43 **95k** 达标，**seed44 232k+ 仍未达标（手动停）** vs visit 13.1k/55.9k/11.7k——修复让旧版「全 seed 灾难」改善到「两 seed 达标」，但**仍系统性慢于 visit、未达 never-worse**。代码保留（对 `|A|≫n` 环境有益），CartPole 仍不 promote。详见 §六。

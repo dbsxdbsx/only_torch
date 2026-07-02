@@ -1,14 +1,16 @@
 ---
 status: active
 created: 2026-06-20
-updated: 2026-06-20
+updated: 2026-07-02
 owners: []
 reviewers: []
 ---
 
 # MyZero · Reanalyze + 写回：CartPole 学习失效（暂缓 promote）
 
-> **状态**：active —— 写回闭环已实现并单测覆盖；CartPole recipe **已关** `reanalyze`，当前基线为 **consistency + reconstruction**（2026-06-21 验收 ~12.2k env-steps · sims=20）。
+> **状态**：active —— 写回闭环已实现并单测覆盖；CartPole recipe **已关** `reanalyze`，当前 recipe 为 **consistency + reconstruction + Sampled**（基线数字见 [CartPole 基准账本](../../examples/my_zero/cartpole/README.md)）。
+> **⚠️ 口径提示（2026-07-02）**：下文实测数字为 pre-autograd-fix 旧口径，仅保留方向性结论（当前 reanalyze 实现在 CartPole 上有害而非单纯变慢）。
+> **战略升级（2026-07-01，纲领 §2.3）**：reanalyze 已定为 v0.26 **战略组件**（「实时轻 acting + 离线重 reanalyze」解耦是商业游戏路线核心）；本 issue 的负结果不构成否定——复活时先查 §三假设（早期弱网写回污染 / partial window 覆盖 / 缺 target net），并按新口径重测。
 > **关联**：[CartPole README](../../examples/my_zero/cartpole/README.md) · [MyZero 总览](../../examples/my_zero/README.md) · [RL 路线图](../../.doc/design/rl_roadmap.md)
 > **代码**：`src/rl/algo/my_zero/reanalyze.rs` · `runner.rs`（`prepare_train_batch` / `writeback_reanalyzed_samples`）· `buffer/replay.rs`（`sample_indexed` / `update_at`）
 > **日志**：`.bench/my_zero_cartpole_cons_only.log` · `.bench/my_zero_cartpole_cons_reanalyze.log`
@@ -59,14 +61,14 @@ seed=42 · release · CartPole-v1 · recipe **consistency + reanalyze + 写回**
 
 ## 四、恢复条件（promote 前）
 
-- [ ] 至少一条：CartPole greedy ≥475 且 env-steps **不劣于** 当前 recipe 基线（**~12,186**，consistency + reconstruction · sims=20）
-- [ ] 或：Atari / 数据受限 env 上证明 reanalyze+写回有增益（CartPole 可永久 ⏸）
+- [ ] 至少一条：CartPole greedy ≥475 且 3-seed 中位 env-steps **不劣于** 当前 recipe 基线（数字见[账本](../../examples/my_zero/cartpole/README.md)）
+- [ ] 或：Atari / 数据受限 env 上证明 reanalyze+写回有增益（CartPole 可永久 ⏸）——v0.26 图像线的**优先验证项**（纲领 §2.3）
 - [ ] 若接 target net：训练循环接线 + 与 reanalyze 联调
 
 ---
 
 ## 五、当前决策
 
-- `recipe.rs`：`CartPole-v1` = **consistency + reconstruction**（内置），`reanalyze = false`
+- `recipe.rs`：`CartPole-v1` = **consistency + reconstruction + Sampled**（内置），`reanalyze = false`
 - 写回路径保留；`Components.reanalyze` 仍可用于内部消融 / 其他 env
 - 不在此 issue 内改 train_batch 真 batched unroll 或 Rayon 并行（正交）

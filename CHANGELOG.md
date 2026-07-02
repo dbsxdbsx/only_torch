@@ -2,10 +2,19 @@
 
 ## [Unreleased]
 
-> **v0.25 MyZero 统一算法（Phase 0/1）**：算法主体统一进库 + 全部组件吸收，MyZero 自包含；**旧 `muzero/` + `efficientzero/` 已整体删除，MyZero 成为项目唯一的 `*Zero` 实现**。CartPole-v1 回归哨兵全程 greedy 500 不变。
+## [0.25.0] - 2026-07-02
+
+> **v0.25 MyZero 统一算法 + 全量重定基线收口**：① 算法主体统一进库 + 全部组件吸收，MyZero 自包含；**旧 `muzero/` + `efficientzero/` 已整体删除，MyZero 成为项目唯一的 `*Zero` 实现**。② 框架级 autograd 修复（MSE 系 loss 反向 `upstream_grad`、非连续张量守卫）使历史 RL benchmark 数字失效——**官方哨兵口径定为 3-seed（42/43/44）中位 env-steps + 达标率（release + MKL）并全量重测**：MyZero promoted 中位 **~66.2k**（3/3 达标、领先 PPO 1.2× / SAC 2.3×；旧 6–8× 领先部分依赖 bug 放大辅助 loss，本版为诚实基线）、PPO ~81.9k、SAC ~152.2k；基线判据定稿「**变慢 ≠ 失败**，新实测即新基线，仅不收敛/不达标才记 known-fail issue」。③ RL 文档信息架构重构：数字唯一账本 = `examples/my_zero/cartpole/README.md`；`rl_roadmap.md` 拆分（v0.20–v0.24 归档 + 薄版当前态）；vision 去数字化并落入 §2.3 战略转向（A 路定锚、优先磨观测空间 CNN/图像 + self-play、Pendulum/Platform 降级、reanalyze 升战略组件、CPU-only×MCTS 一级风险 issue 化）。
 
 ### Added
 
+- **test(rl): 发版基线增量链 bench `my_zero::tests::baseline_matrix_bench`**（4 档 × 3 seeds，`--ignored` 手动）
+  - t0 base（组件全关，负对照，1000 局内 1/3 达标）→ t1 +consistency（中位 17.5k，3/3）→ t2 +cons+recon（中位 66.2k，3/3）→ t3 promoted +Sampled（中位 66.2k，3/3）
+  - 新证据：**t2 与 t3 三 seed env-steps 完全一致**——CartPole `K_eff=N=2` 全枚举时 Sampled 与标准 PUCT 逐步等价（π̂_β 修复后的自洽性实证）；t1 中位优于 t2 但 seed 方差极大（3.5k–151k），reconstruction 排序复裁排入 v0.26 P0（loss 系数重标定），收口期 recipe 不动
+- **chore(just): `smoke-rl` 聚合目标**（7 个 RL smoke：MyZero cartpole/pendulum + PPO + SAC ×4，发版固定关卡）；补齐 `smoke-pendulum-sac` / `smoke-platform-sac` / `smoke-lunarlander-sac`，对应 SAC 示例接入 `SMOKE=1`（截短局数 + loss 有限断言）
+- **feat(rl): PPO / SAC CartPole 示例 `SEED` 旋钮**（权重初始化 / 采样 / 首局 reset 统一派生），支撑多 seed 基线重测协议
+- **docs(rl): `.issue/items/cpu_only_mcts_image_realtime_risk.md` 一级风险条目**（CPU-only × 图像 CNN × MCTS × 实时结构性冲突：缓解清单 + 触发重估条件）
+- **docs(rl): `examples/ppo/cartpole/README.md`**（新基线 + GAE truncated 边界与独立 eval env 实现注意点）
 - **feat(rl): MyZero 训练改 batch-native（`train_unroll_batch`）**
   - `train_batch` 按 `(actual_k, next_obs 步数)` 分组（`BTreeMap` 确定性），每组一次 `[G,X]` 前向+backward、组 loss × `G/batch_size`，替代逐样本梯度累积；`min_max_normalize` / `negative_cosine_similarity` 改 batch-general（逐样本沿特征维），新增 `two_hot_batch`
   - 与逐样本**数学等价**（`tests/batch_train_equivalence`：G=1 forward + 每参数梯度逐 bit 一致；G=2 全栈 max_abs_diff≈2e-7）；micro-bench `benches/my_zero_train_batch` 实测 train step **batch=8 快 2.2×、batch=32 快 8×**（batch 耗时近乎与 batch size 无关 → `batch_size` 成为一处旋钮）
@@ -43,7 +52,7 @@
   - 四个 loss 节点历史上把自己当**终端 loss**（upstream=1）、反向省略上游梯度；只有 `SoftmaxCrossEntropy` 正确处理。作为**中间 loss 项**（组合 + `scale_gradient` + 系数缩放，如 MyZero 的 continuation / reconstruction MSE）时会丢链式法则缩放因子，且 batch 化后 `numel` 随 batch 变化 → 逐样本 / 批量梯度发散
   - 修复：`calc_grad_to_parent` 乘 `upstream_grad[[0,0]]`（对齐 `SoftmaxCrossEntropy`）
   - 补齐回归测试 `node_{mse,mae,bce,huber}::*_respects_upstream_grad_when_non_terminal`（非终端 loss × SCALE 后梯度应线性缩放）
-  - 影响：MyZero 辅助 loss 梯度回到正确量级；CartPole 哨兵改**统计口径**（seed 42 solved 10553→21928；3 seed 中位 env-steps 21928、**3/3 达标**、median greedy 495.4）。旧 10553 部分依赖该 bug 使辅助 loss 偏强
+  - 影响：MyZero 辅助 loss 梯度回到正确量级；CartPole 哨兵改**统计口径**（修复当日实测：seed 42 solved 10553→21928；3 seed 中位 env-steps 21928、**3/3 达标**、median greedy 495.4——该组数字为当时"纯 Rust BLAS + 修复前 MCTS 前向路径"口径，**v0.25 最终官方基线以收口重测的 ~66.2k 为准**，见发版摘要与账本）。旧 10553 部分依赖该 bug 使辅助 loss 偏强
 - **fix(my_zero): continuation 搜索折扣改 binary gate + `td_steps` 默认 50→5**
   - `dynamics.rs`：MCTS imagined edge 的 discount 由 soft `γ·predicted_continuation` 改为 binary `γ·(1−done)`（`done` 由 continuation 头阈值化）。理由独立于跑分：与 n-step value target 的**二值** continuation 口径一致；CartPole 确定性终止 / Pendulum 无终止并无「分数式终止概率」，软折扣只注方差并系统性压低好状态 value。CartPole 样本效率从 **30.2k**（td=5）修回 **~13.1k**（seed=42 单 seed）；Pendulum best greedy −1085→−959（仍在失败区间，主瓶颈在上游 value 头）
   - `config.rs`：`td_steps` 默认 **50→5**，对齐 canonical MuZero/EfficientZero（与 `k_unroll=5` 一致）、低方差、对随机环境稳健。50 是旧 muzero 压「no-terminal 价值膨胀」的遗留，终止已由 continuation/absorbing 正确接管后无需大 n（CartPole 确定性 reward 下 td=50 略快 10.3k，但非稳健通用默认）
@@ -64,9 +73,13 @@
   - `my_zero` 模块单测 31 个全绿；旧 `muzero/` + `efficientzero/` 模块与示例已删除（见下方 Removed）
 - **test(rl): MyZero value-head 容量诊断单测**
   - `my_zero::tests::value_head_capacity`：喂高方差可分 value 目标，head 把高/低组预测间隔训到精确 **14.0** → 证伪「value head 学不动」，Pendulum value 坍缩根因缩到上游 target/搜索（见 [`pendulum_failure_diagnosis.md`](.issue/items/pendulum_failure_diagnosis.md)）
-
-### Changed
-
+- **docs(rl): RL 文档信息架构重构（v0.25 收口，2026-07-02）**——核心原则「每类信息只有一个 owner」
+  - **基准账本唯一 owner** = `examples/my_zero/cartpole/README.md`：新官方基线表（增量链 + 跨算法，带口径列 profile/BLAS/seeds/日期）+ 口径变更史；旧消融表整体标注「pre-autograd-fix 历史，仅方向性参考」
+  - **`rl_roadmap.md` 拆分**：v0.20–v0.24 历史（599 行：实施计划、SAC 技术笔记、MCTS 接缝设计等）整体归档至 `.doc/design/archive/rl_roadmap_v020_v024.md`；主文件重写为薄版「文档分工 + 当前状态 + 验收协议 + v0.25 结果 + v0.26 方向」
+  - **`my_zero_algorithm_vision.md` 去数字化 + §2.3 战略目标定稿**：实测数字全部改链账本；新增战略裁决——真实目标 = 中国象棋 + 商业图像游戏，A 路（EZ-V2/MCTS 谱系）定锚不转 Dreamer，优先轴从「动作空间广度」转向「观测空间（CNN/图像）+ self-play」，Pendulum/Platform 降级，reanalyze 升战略组件（acting/reanalyze 解耦），CartPole 严格定位 sanity 哨兵
+  - **`.issue/` 维护**：归档 `post_ez_v2_research_backlog.md`（角色被 vision/roadmap 取代）；3 个 my_zero issue 补口径提示（旧数字 pre-autograd-fix）与战略优先级注记；**新增一级风险条目 `cpu_only_mcts_image_realtime_risk.md`**
+  - **修过期与死链**：roadmap/env-setup/backlog 中 4+ 处本机 plan 绝对路径清除；`rl_python_env_setup.md` 架构图删 gym 兼容层、五子棋章节从「TODO 迁移」改为已落地的 `python/gym_env/gomoku/` 口径；根 README RL 示例段 Moving-v0 → Platform-v0 并补 MyZero 条目、TODO 段从 v0.19 旧任务表刷新为 v0.26 方向
+  - AGENTS.md / rl.instructions.md 同步：哨兵新口径、测试数（60+ → 实际 ~229）、`smoke-rl` 关卡、账本纪律
 - **refactor(rl): MyZero 示例瘦身为 thin `main.rs`**：`cartpole` 663→41 行、`pendulum` 842→45 行（只填 config + 调 `run`）；删 `examples/my_zero/cartpole/model.rs`（并入库 `network.rs`），移除 pendulum 的 `#[path]` 复用
 - **refactor(rl): MyZero 配置命名归位**：`FeatureSet`→`ComponentConfig`（对齐文档「组件」术语）；示例侧 `MuZeroConfig` 依赖 → my_zero 自有 `TrainConfig`（告别 MuZero 名）；字段统一 `*_config: *Config`
 - **refactor(rl): MyZero 命名清理（去 EZ/MuZero 残留）**：`support.rs`→`value_encoding.rs`（自报「value/reward 分类编码层」用途，"support" 退为模块内术语）；消融环境变量去 `EZ_` 前缀、改用组件名 `CONSISTENCY` / `VALUE_PREFIX` / `TARGET_NET` / `SVE`（`TARGET_NET` 刻意避开 Rust 构建系统占用的 `TARGET`）；9 个组件文件头「吸收自 MuZero/EfficientZero」改为纯描述 + 论文引用（保留 `canonical MuZero` / Schrittwieser 等**学术溯源**）

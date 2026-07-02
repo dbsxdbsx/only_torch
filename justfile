@@ -305,13 +305,28 @@ example-pendulum-sac:
     @echo "=== Running Pendulum SAC [{{_blas_name}}] (requires Python + gymnasium) ==="
     cargo run --example pendulum_sac --release {{_blas_flag}}
 
+# Pendulum SAC smoke（2 ep 截短 + loss 有限，不验收敛）
+smoke-pendulum-sac:
+    @echo "=== Pendulum SAC SMOKE [{{_blas_name}}] ==="
+    SMOKE=1 cargo run --example pendulum_sac {{_blas_flag}}
+
 example-platform-sac:
     @echo "=== Running Platform Hybrid SAC [{{_blas_name}}] (requires Python + gymnasium + hybrid-platform) ==="
     cargo run --example platform_sac --release {{_blas_flag}}
 
+# Platform Hybrid SAC smoke（3 ep 截短 + loss 有限，不验收敛；需 hybrid-platform）
+smoke-platform-sac:
+    @echo "=== Platform Hybrid SAC SMOKE [{{_blas_name}}] ==="
+    SMOKE=1 cargo run --example platform_sac {{_blas_flag}}
+
 example-lunarlander-sac:
     @echo "=== Running LunarLander-v3 SAC-Discrete [{{_blas_name}}] (requires Python + gymnasium[box2d]) ==="
     cargo run --example lunarlander_sac --release {{_blas_flag}}
+
+# LunarLander SAC smoke（3 ep 截短 + loss 有限，不验收敛；需 gymnasium[box2d]）
+smoke-lunarlander-sac:
+    @echo "=== LunarLander SAC SMOKE [{{_blas_name}}] ==="
+    SMOKE=1 cargo run --example lunarlander_sac {{_blas_flag}}
 
 # ---------- RL 聚合 ----------
 
@@ -347,6 +362,10 @@ example-pendulum-my-zero:
 
 # 运行所有 RL examples（需 Python + gymnasium + extras）
 examples-rl: example-cartpole-sac example-pendulum-sac example-platform-sac example-lunarlander-sac example-cartpole-ppo example-cartpole-my-zero
+
+# 全部 RL smoke（管线验证聚合；发版固定关卡。需 Python + gymnasium + box2d + hybrid-platform）
+smoke-rl: smoke-my-zero-cartpole smoke-my-zero-pendulum smoke-cartpole-ppo smoke-cartpole-sac smoke-pendulum-sac smoke-platform-sac smoke-lunarlander-sac
+    @echo "=== smoke-rl 全部通过 ==="
 
 # 验证 Platform-v0 Python 环境可用
 py-gym-platform:
