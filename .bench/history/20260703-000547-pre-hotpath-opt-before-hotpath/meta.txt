@@ -1,0 +1,9 @@
+baseline: pre-hotpath-opt
+label: before-hotpath
+archived_at: 20260703-000547
+git_commit: 40fff36058446aabb973ee2de53eaadf50c90fb1
+git_dirty: yes
+rustc: rustc 1.95.0 (59807616e 2026-04-14)
+blas: Intel MKL
+os: MINGW64_NT-10.0-19045 3.3.6-bec3d608-341.x86_64
+cases: 104

@@ -79,32 +79,58 @@ bench-smoke:
     cargo bench --bench smoke {{_blas_flag}}
 
 # 保存 Criterion baseline（用法: just bench-save before-change）
+#
+# 单次 cargo 调用：全部 bench 目标在开跑前**一次性编译**（同一份源码快照），
+# 中途源码变动不会被后续组悄悄编进来（旧的逐组枚举形式每组都是一个
+# 重编译检查点，且枚举列表会随新增 bench 漂移——曾漏掉 my_zero_* 两组）。
+# `--benches` 只选 bench 目标，避免 lib 的 libtest harness 吃不下 Criterion 参数。
 bench-save baseline:
-    cargo bench --bench tensor_ops {{_blas_flag}} -- --save-baseline {{baseline}}
-    cargo bench --bench conv2d {{_blas_flag}} -- --save-baseline {{baseline}}
-    cargo bench --bench backward {{_blas_flag}} -- --save-baseline {{baseline}}
-    cargo bench --bench end_to_end {{_blas_flag}} -- --save-baseline {{baseline}}
-    cargo bench --bench smoke {{_blas_flag}} -- --save-baseline {{baseline}}
-    cargo bench --bench pool2d {{_blas_flag}} -- --save-baseline {{baseline}}
-    cargo bench --bench optimizer {{_blas_flag}} -- --save-baseline {{baseline}}
-    cargo bench --bench normalization {{_blas_flag}} -- --save-baseline {{baseline}}
-    cargo bench --bench loss {{_blas_flag}} -- --save-baseline {{baseline}}
-    cargo bench --bench rnn {{_blas_flag}} -- --save-baseline {{baseline}}
-    cargo bench --bench attention {{_blas_flag}} -- --save-baseline {{baseline}}
+    cargo bench --benches {{_blas_flag}} -- --save-baseline {{baseline}}
 
 # 与 Criterion baseline 对比（用法: just bench-compare before-change）
 bench-compare baseline:
-    cargo bench --bench tensor_ops {{_blas_flag}} -- --baseline {{baseline}}
-    cargo bench --bench conv2d {{_blas_flag}} -- --baseline {{baseline}}
-    cargo bench --bench backward {{_blas_flag}} -- --baseline {{baseline}}
-    cargo bench --bench end_to_end {{_blas_flag}} -- --baseline {{baseline}}
-    cargo bench --bench smoke {{_blas_flag}} -- --baseline {{baseline}}
-    cargo bench --bench pool2d {{_blas_flag}} -- --baseline {{baseline}}
-    cargo bench --bench optimizer {{_blas_flag}} -- --baseline {{baseline}}
-    cargo bench --bench normalization {{_blas_flag}} -- --baseline {{baseline}}
-    cargo bench --bench loss {{_blas_flag}} -- --baseline {{baseline}}
-    cargo bench --bench rnn {{_blas_flag}} -- --baseline {{baseline}}
-    cargo bench --bench attention {{_blas_flag}} -- --baseline {{baseline}}
+    cargo bench --benches {{_blas_flag}} -- --baseline {{baseline}}
+
+# 归档 Criterion baseline 快照入仓（用法: just bench-archive <baseline名> [label]）
+#
+# target/criterion 是构建产物（不入仓、just clean 即删），长期趋势会随清理丢失。
+# 本配方把指定 baseline 的 estimates.json / benchmark.json 拷进 .bench/history/，
+# 并写 meta.txt 记录 commit + 环境指纹（跨环境点不可直接比百分比，看趋势时对照 meta）。
+bench-archive baseline label="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    src="target/criterion"
+    [ -d "$src" ] || { echo "找不到 $src，请先 just bench-save {{baseline}}"; exit 1; }
+    ts=$(date +%Y%m%d-%H%M%S)
+    suffix="{{baseline}}"
+    [ -n "{{label}}" ] && suffix="{{baseline}}-{{label}}"
+    dst=".bench/history/${ts}-${suffix}"
+    mkdir -p "$dst"
+    # 递归找到该 baseline 下所有 case（扁平 smoke_* 与嵌套 group/case 两种结构都覆盖），
+    # 保留相对 case 层级拷贝核心 JSON。
+    found=0
+    while IFS= read -r d; do
+        [ -d "$d" ] || continue
+        rel=$(dirname "${d#"$src"/}")   # 去掉 $src 前缀与末层 baseline 名 → case 层级路径
+        mkdir -p "$dst/$rel"
+        cp "$d"/estimates.json "$dst/$rel/" 2>/dev/null || true
+        cp "$d"/benchmark.json "$dst/$rel/" 2>/dev/null || true
+        found=$((found+1))
+    done < <(find "$src" -type d -name "{{baseline}}")
+    [ "$found" -gt 0 ] || { echo "baseline '{{baseline}}' 下无数据，请先 just bench-save {{baseline}}"; rmdir "$dst"; exit 1; }
+    # 环境指纹
+    {
+        echo "baseline: {{baseline}}"
+        echo "label: {{label}}"
+        echo "archived_at: $ts"
+        echo "git_commit: $(git rev-parse HEAD 2>/dev/null || echo unknown)"
+        echo "git_dirty: $([ -n "$(git status --porcelain 2>/dev/null)" ] && echo yes || echo no)"
+        echo "rustc: $(rustc -V 2>/dev/null || echo unknown)"
+        echo "blas: {{_blas_name}}"
+        echo "os: $(uname -sr 2>/dev/null || echo unknown)"
+        echo "cases: $found"
+    } > "$dst/meta.txt"
+    echo "已归档 $found 个 case 到 $dst"
 
 # 运行特定 benchmark（用法: just bench-filter <pattern>）
 bench-filter pattern:

@@ -12,6 +12,13 @@
 
     keywords=["machine-learning", "logic", "AI", "torch", "NEAT"]
 
+# 关闭 lib 目标的默认 libtest bench harness：
+# 使 `cargo bench --benches -- --save-baseline <名>` 等 Criterion 参数可在
+# 单次 cargo 调用中传给全部 bench 目标（libtest 不认识这些参数会直接报错）。
+# Criterion 官方推荐配置；对 `cargo test` 无影响。
+[lib]
+    bench=false
+
 # 快迭代运行档：RL 长训练等 release 运行走这里。thin LTO + 多 codegen unit + 增量编译，
 # 单文件改动重编译从 ~1m30s（fat LTO + cg=1）降到十几秒；运行时代价见 bench 口径说明。
 # 注意：profile 不随 crate 发布，只影响本仓库本地构建。
