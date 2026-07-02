@@ -13,7 +13,7 @@
 
 | 环境 | 动作类型 | 门禁 | 状态 |
 |------|---------|------|------|
-| [**CartPole-v1**](cartpole/README.md) | 离散（2） | greedy eval ≥ 475 | ✅ 回归哨兵（官方口径 3-seed 中位 env-steps，数字见[账本](cartpole/README.md#基线v025-收口--官方口径)） |
+| [**CartPole-v1**](cartpole/README.md) | 离散（2） | greedy eval ≥ 475 | ✅ 回归哨兵（官方口径 3-seed 中位 env-steps，数字见[账本](cartpole/README.md)） |
 | [**Pendulum-v1**](pendulum/README.md) | 纯连续（1） | return ≥ -200 | 诊断中·已降级（当前 recipe 复用 CartPole 栈作诊断，不代表组件已裁决；[issue](../../.issue/items/pendulum_failure_diagnosis.md)） |
 | 图像离散（Atari-100k 类） | 离散 | 任务指标 | v0.26 P0（[路线图 §5](../../.doc/design/rl_roadmap.md#5-v026-方向2026-07-01-战略转向定稿)） |
 | Gomoku（→ 象棋） | 离散棋盘 | 胜率 | v0.26 P1（self-play 踏脚石；环境已备 `python/gym_env/gomoku/`） |

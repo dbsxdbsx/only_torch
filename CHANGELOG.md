@@ -15,6 +15,13 @@
 - **feat(rl): PPO / SAC CartPole 示例 `SEED` 旋钮**（权重初始化 / 采样 / 首局 reset 统一派生），支撑多 seed 基线重测协议
 - **docs(rl): `.issue/items/cpu_only_mcts_image_realtime_risk.md` 一级风险条目**（CPU-only × 图像 CNN × MCTS × 实时结构性冲突：缓解清单 + 触发重估条件）
 - **docs(rl): `examples/ppo/cartpole/README.md`**（新基线 + GAE truncated 边界与独立 eval env 实现注意点）
+- **feat(rl): v0.25 MyZero 骨架 + CartPole 首轮消融 S0/S1/S2**（2026-06-16，v0.25 起步）
+  - `MyZeroConfig` + 组件开关雏形（全关 = canonical MuZero），消融驱动 / 奥卡姆剃刀方法论定调
+  - 首轮结论（当时口径）：S1 consistency 显著有益（loss 降一个数量级、双 seed greedy 满分）→ promote；S2 value_prefix 在 CartPole 稠密 reward 下退化为步数计数 → 有害、默认关；CartPole 转回归哨兵并引入多 seed 中位数模式
+  - Pendulum-v1 骨架：连续力矩离散化复用离散 MCTS，管线打通（后转入诊断，见 issue）
+- **feat(rl): completedQ 策略训练目标入库**（2026-06-16；Danihelka 2022 Eq.10–12）
+  - `target.rs`：`completed_q_policy_target` 闭式改进策略 π′=softmax(logits+σ(completedQ))（无需 Grill 二分搜索；未访问动作补 v_π）+ 组件开关
+  - 后续 CartPole 消融为**负结果**（系统性慢于 visit-count target）→ recipe 保持关，详见 Changed 与 `.issue/items/my_zero_gumbel_completedq_cartpole_negative.md`
 - **feat(rl): MyZero 训练改 batch-native（`train_unroll_batch`）**
   - `train_batch` 按 `(actual_k, next_obs 步数)` 分组（`BTreeMap` 确定性），每组一次 `[G,X]` 前向+backward、组 loss × `G/batch_size`，替代逐样本梯度累积；`min_max_normalize` / `negative_cosine_similarity` 改 batch-general（逐样本沿特征维），新增 `two_hot_batch`
   - 与逐样本**数学等价**（`tests/batch_train_equivalence`：G=1 forward + 每参数梯度逐 bit 一致；G=2 全栈 max_abs_diff≈2e-7）；micro-bench `benches/my_zero_train_batch` 实测 train step **batch=8 快 2.2×、batch=32 快 8×**（batch 耗时近乎与 batch size 无关 → `batch_size` 成为一处旋钮）
@@ -79,7 +86,7 @@
   - **`my_zero_algorithm_vision.md` 去数字化 + §2.3 战略目标定稿**：实测数字全部改链账本；新增战略裁决——真实目标 = 中国象棋 + 商业图像游戏，A 路（EZ-V2/MCTS 谱系）定锚不转 Dreamer，优先轴从「动作空间广度」转向「观测空间（CNN/图像）+ self-play」，Pendulum/Platform 降级，reanalyze 升战略组件（acting/reanalyze 解耦），CartPole 严格定位 sanity 哨兵
   - **`.issue/` 维护**：归档 `post_ez_v2_research_backlog.md`（角色被 vision/roadmap 取代）；3 个 my_zero issue 补口径提示（旧数字 pre-autograd-fix）与战略优先级注记；**新增一级风险条目 `cpu_only_mcts_image_realtime_risk.md`**
   - **修过期与死链**：roadmap/env-setup/backlog 中 4+ 处本机 plan 绝对路径清除；`rl_python_env_setup.md` 架构图删 gym 兼容层、五子棋章节从「TODO 迁移」改为已落地的 `python/gym_env/gomoku/` 口径；根 README RL 示例段 Moving-v0 → Platform-v0 并补 MyZero 条目、TODO 段从 v0.19 旧任务表刷新为 v0.26 方向
-  - AGENTS.md / rl.instructions.md 同步：哨兵新口径、测试数（60+ → 实际 ~229）、`smoke-rl` 关卡、账本纪律
+  - AGENTS.md / rl.instructions.md 同步：哨兵新口径、测试数（60+ → 实际 230+）、`smoke-rl` 关卡、账本纪律
 - **refactor(rl): MyZero 示例瘦身为 thin `main.rs`**：`cartpole` 663→41 行、`pendulum` 842→45 行（只填 config + 调 `run`）；删 `examples/my_zero/cartpole/model.rs`（并入库 `network.rs`），移除 pendulum 的 `#[path]` 复用
 - **refactor(rl): MyZero 配置命名归位**：`FeatureSet`→`ComponentConfig`（对齐文档「组件」术语）；示例侧 `MuZeroConfig` 依赖 → my_zero 自有 `TrainConfig`（告别 MuZero 名）；字段统一 `*_config: *Config`
 - **refactor(rl): MyZero 命名清理（去 EZ/MuZero 残留）**：`support.rs`→`value_encoding.rs`（自报「value/reward 分类编码层」用途，"support" 退为模块内术语）；消融环境变量去 `EZ_` 前缀、改用组件名 `CONSISTENCY` / `VALUE_PREFIX` / `TARGET_NET` / `SVE`（`TARGET_NET` 刻意避开 Rust 构建系统占用的 `TARGET`）；9 个组件文件头「吸收自 MuZero/EfficientZero」改为纯描述 + 论文引用（保留 `canonical MuZero` / Schrittwieser 等**学术溯源**）

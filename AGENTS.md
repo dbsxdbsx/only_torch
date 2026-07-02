@@ -26,7 +26,7 @@ only_torch 是一个纯 Rust 的 PyTorch 风格玩具框架，当前重点是：
 
 **进度符号**（设计文档统一口径）：✅ Phase 验收范围内已完成 · ⏳ 已识别、留后续 Phase · 🔲 可选增强 · 📦 已归档历史路径。
 
-**接手 RL 时建议顺序**：读 `rl_roadmap.md`（薄版当前态）→ 配环境 [`.doc/rl_python_env_setup.md`](.doc/rl_python_env_setup.md)（**仅 Gymnasium**）→ `just test-filter rl`（~229 测试确认 buffer + algo helper + MCTS + MyZero）→ `just smoke-rl`（7 目标 RL 管线聚合验证）→ 推进 v0.26（先 P0 loss 系数重标定，见路线图 §5）。
+**接手 RL 时建议顺序**：读 `rl_roadmap.md`（薄版当前态）→ 配环境 [`.doc/rl_python_env_setup.md`](.doc/rl_python_env_setup.md)（**仅 Gymnasium**）→ `just test-filter rl`（230+ 测试确认 buffer + algo helper + MCTS + MyZero）→ `just smoke-rl`（7 目标 RL 管线聚合验证）→ 推进 v0.26（先 P0 loss 系数重标定，见路线图 §5）。
 
 **接手 Attention 阶段 D 时**：先读 [记忆机制设计 — 实现状态速览](.doc/design/memory_mechanism_design.md#-实现状态速览)（含 105 个相关单元测试与 IT-* 示例表），勿假设「打勾 = ONNX 也做完」。
 

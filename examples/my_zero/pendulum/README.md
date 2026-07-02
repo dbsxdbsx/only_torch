@@ -1,10 +1,10 @@
 # MyZero · Pendulum-v1
 
-> [← 返回 MyZero 总览](../README.md)｜组件裁决见总览「组件 × 环境 效果矩阵」
+> [← 返回 MyZero 总览](../README.md)｜组件裁决见总览「内部组件进展」矩阵
 
 - **规格**：纯连续（1 维）· 门禁 greedy return ≥ -200 · 当前诊断栈 B=7 连续候选 · 默认 `gamma=0.997`，`sims=20`
-- **状态**：**诊断中**——当前 best greedy 约 −942，仍在失败区间（门禁 −200），属「还没学会」。先查可学习性，暂不对组件下裁决
-- **定位**：**判别环境**——CartPole 分辨不出的组件（value_prefix / completedQ / Gumbel-root）在此见真章
+- **状态**：**诊断中**——best greedy 仍在失败区间（门禁 −200），属「还没学会」。先查可学习性，暂不对组件下裁决（[诊断 issue](../../../.issue/items/pendulum_failure_diagnosis.md)）
+- **优先级**：**已降级为非关键路径**（2026-07 战略转向：优先磨观测空间 + self-play，见[纲领 §2.3](../../../.doc/design/my_zero_algorithm_vision.md#23-战略目标与优先轴2026-07-01-定稿)）；保留诊断态，连续需求出现时再推进。届时它仍是连续动作组件（Gumbel-root / Sampled B=7）的判别环境
 
 ## 运行
 
@@ -31,6 +31,7 @@ TD_STEPS=5 cargo run --example my_zero_pendulum --release
 ## 实测（seed=42，门禁 −200）
 
 > ⚠️ 下列数字都落在**失败区间**（远未达 −200），所以「观察」列只是诊断记录，**不是对组件的 ✅/➖/❌ 裁决**——在还没学会的任务上比组件好坏没有判别力。
+> ⚠️ **口径提示（2026-07-02）**：以下均为 pre-autograd-fix 旧口径（v0.25 修复了 MSE 系 loss 反向 `upstream_grad`）；「全部落在失败区间」的定性结论不受影响，绝对数值复跑会漂移。
 
 ### sims=50
 

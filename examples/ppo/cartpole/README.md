@@ -1,7 +1,7 @@
 # PPO · CartPole-v1
 
 > on-policy model-free 基线（与 SAC 同为 MyZero 的对照算法，见 [算法纲领 §3 双轨架构](../../../.doc/design/my_zero_algorithm_vision.md#3-双轨架构已定)）。
-> 跨算法样本效率对照表见 [CartPole 基准账本](../../my_zero/cartpole/README.md#参照跨算法)。
+> 跨算法样本效率对照表见 [CartPole 基准账本](../../my_zero/cartpole/README.md)。
 
 ## 运行
 

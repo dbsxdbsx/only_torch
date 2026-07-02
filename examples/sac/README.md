@@ -2,6 +2,7 @@
 
 > 本目录包含基于 SAC 算法的强化学习示例，以及 SAC 核心概念的系统讲解。
 > 训练逻辑复用 `only_torch::rl::algo::sac` 函数式 helper（TD target / V 值 / alpha 更新 / batch 转换）。
+> 定位：MyZero 主线的 **model-free 对照基线**（[RL 路线图](../../.doc/design/rl_roadmap.md)）；CartPole 跨算法样本效率对照见[基准账本](../my_zero/cartpole/README.md)。
 
 ## 目录
 
