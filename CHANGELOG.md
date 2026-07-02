@@ -4,6 +4,11 @@
 
 ### Changed
 
+- **test(rl): 内嵌测试归位 `tests/` 子目录**（2026-07-02）——对齐 AGENTS 测试约定（源码旁内嵌仅限 ≤2 test / ≤30 行）
+  - my_zero 16 个源文件 + mcts 4 个源文件共 **103 个测试**迁至 `src/rl/algo/my_zero/tests/`（一文件对应一源模块）与 `src/rl/tests/mcts_*.rs`；约 1600 行测试代码移出生产文件（`target.rs` 原测试占比 62%）
+  - 被测私有 API 最小可见性放宽：`v_mix` / `idx_to_continuous` / `BestTracker` 两字段 → `pub(super)`；`sampled_puct_priors` / `sample_dirichlet` / `GumbelRootScheduler`（含 `new`/`init`/`active`）→ `pub(in crate::rl)`；行为零变化
+  - 豁免保留（约定线内）：`reconstruction.rs`（2 test/27 行）、`mcts/search.rs`（1/24 行）、`action.rs` 的 `discrete_for_test` test-only 构造
+  - 验证：`just test-filter rl` 241 通过 / 0 失败，迁移前后测试数一致
 - **feat(rl): v0.26 P0 loss 系数重标定——reconstruction coef 1→16 promote，官方哨兵中位 66.2k → ~9.8k**（2026-07-02）
   - **系数旋钮重构（行为零变化）**：`Components` 新增 `consistency_coef / reconstruction_coef / continuation_coef` 字段（默认取 `loss.rs` 常量，用户 API 不暴露），`runner/network` 传导；`train_unroll(_batch)` 增 `continuation_coef` 参数。等价性由 101 个 my_zero 单元测试 + release 单 seed 逐 bit 复现（seed42=45,308）验证
   - **消融裁决（预注册协议，见 `tests/loss_coef_ablation_bench.rs`）**：autograd `upstream_grad` 修复只影响 MSE 系反向 → 仅 reconstruction/continuation 曾被隐式放大（等效 ≈ K×B=40）；对数网格 {1,4,16,64} 实测 recon 单调改善至 16（中位 66.2k→21.2k→9.8k）、64 过冲（2/3 达标）；cont 两档均无稳定收益（保持 1.0）；cons 从未被放大（保持 2.0）

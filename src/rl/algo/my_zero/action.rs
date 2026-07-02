@@ -9,7 +9,7 @@ use crate::rl::GymEnv;
 use crate::rl::mcts::ActionPayload;
 
 /// 离散候选 idx → 连续控制量（等宽 bin **中点**，对齐 Sampled MuZero categorical）。
-fn idx_to_continuous(idx: usize, lo: f32, hi: f32, buckets: usize) -> f32 {
+pub(super) fn idx_to_continuous(idx: usize, lo: f32, hi: f32, buckets: usize) -> f32 {
     if buckets <= 1 {
         return 0.5 * (lo + hi);
     }
@@ -124,23 +124,5 @@ impl ActionAdapter {
                 format!("连续→离散 {buckets} 档 ∈[{lo:.2},{hi:.2}]")
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn discretize_uses_bin_centers() {
-        // [0, 10] × 10 档 → 中点 0.5, 1.5, …, 9.5
-        assert!((idx_to_continuous(0, 0.0, 10.0, 10) - 0.5).abs() < 1e-5);
-        assert!((idx_to_continuous(9, 0.0, 10.0, 10) - 9.5).abs() < 1e-5);
-        assert!((idx_to_continuous(4, 0.0, 10.0, 10) - 4.5).abs() < 1e-5);
-    }
-
-    #[test]
-    fn discretize_single_bucket_is_midpoint() {
-        assert!((idx_to_continuous(0, -2.0, 2.0, 1) - 0.0).abs() < 1e-5);
     }
 }
