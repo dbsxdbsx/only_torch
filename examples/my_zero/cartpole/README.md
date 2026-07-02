@@ -6,7 +6,7 @@
 
 离散 2 动作 · 门禁 **greedy eval ≥ 475** · **官方口径：3-seed（42/43/44）中位 env-steps-to-solved + 达标率**
 
-组件组合由库内 [`recipe.rs`](../../../src/rl/algo/my_zero/recipe.rs) 按 `CartPole-v1` 自动注入（当前：consistency + reconstruction + Sampled · PUCT · sims=20 · td=5）；示例只写训练契约。论文全称见 [算法纲领 §4.1](../../../.doc/design/my_zero_algorithm_vision.md#41-组件文献对照单一事实源)。
+组件组合由库内 [`recipe.rs`](../../../src/rl/algo/my_zero/recipe.rs) 按 `CartPole-v1` 自动注入（当前：consistency(coef 2) + reconstruction(**coef 16**，v0.26 P0 重标定) + Sampled · PUCT · sims=20 · td=5）；示例只写训练契约。论文全称见 [算法纲领 §4.1](../../../.doc/design/my_zero_algorithm_vision.md#41-组件文献对照单一事实源)。
 
 ## 运行
 
@@ -24,13 +24,58 @@ cargo test --release --features blas-mkl cartpole_baseline_t3_promoted -- --igno
 cargo test --release --features blas-mkl cartpole_baseline_t2_cons_recon -- --ignored --nocapture
 cargo test --release --features blas-mkl cartpole_baseline_t1_cons -- --ignored --nocapture
 cargo test --release --features blas-mkl cartpole_baseline_t0_base -- --ignored --nocapture
+
+# v0.26 P0 loss 系数重标定消融（预注册协议见测试文件 doc 注释）
+cargo test --release --features blas-mkl cartpole_coef -- --ignored --nocapture --test-threads=1
+cargo test --release --features blas-mkl cartpole_seedext -- --ignored --nocapture --test-threads=1
 ```
 
 训练日志：**`len`** = 本局步数；**`total_env_steps`** = 累计真实环境交互（首要评价指标）。
 
 ---
 
+## v0.26 P0：loss 系数重标定（2026-07-02 · **当前官方哨兵**）
+
+**口径**：`release`（thin LTO + cg16）+ Intel MKL · 2026-07-02 · 与 v0.25 收口口径同批代码 + 系数旋钮重构（行为零变化已由 101 单元测试 + seed42 逐 bit 复现 45,308 验证）。预注册协议（档位、裁决规则）见 [`loss_coef_ablation_bench.rs`](../../../src/rl/algo/my_zero/tests/loss_coef_ablation_bench.rs) doc 注释。
+
+**背景**：autograd `upstream_grad` 修复只影响 MSE 系反向 → MyZero 中仅 **reconstruction / continuation** 曾被隐式放大（等效 ≈ K×B = 40）；consistency（余弦）与 policy/value/reward（CE）一直正确，无重标定理由。档位取对数网格 {1, 4, 16}（锚点 = 论文默认 1 ↔ bug 等效 ~40），16 触边后补 64 边界核查。
+
+### 消融臂（promoted recipe 为底，单变量，seeds 42/43/44）
+
+| 臂 | seed42 / 43 / 44 env-steps | **中位** | 达标率 | 裁决（预注册规则） |
+|----|----------------------------|----------|--------|--------------------|
+| baseline（recon=1 · cont=1，= v0.25 t3） | 45,308 / 82,720 / 66,166 | 66,166 | 3/3 | 对照 |
+| recon=4 | 11,020 / 57,613 / 21,196 | 21,196 | 3/3 | 与 baseline range 轻微重叠，单独不 promote |
+| **recon=16** | **12,519 / 8,643 / 9,826** | **9,826** | **3/3** | **range 完全不重叠且全面更优 → promote** |
+| recon=64（边界核查） | 12,193 / 未达标 / 14,948 | — | 2/3 | 过冲（方差+失败 seed 回归）→ 16 为平台点 |
+| cont=4 | 6,499 / 92,407 / 未达标 | — | 2/3 | 达标率不足 → 保持 1.0 |
+| cont=16 | 15,385 / 32,385 / 180,847 | 32,385 | 3/3 | range 与 baseline 重叠 → 无差异，保持 1.0 |
+
+### 5-seed 扩展（补 seeds 45/46，与上表 42/43/44 合并；recon 去留复裁）
+
+| 配置 | 5-seed env-steps（升序） | **中位** | 达标率 |
+|------|--------------------------|----------|--------|
+| t1 +consistency | 3,536 / 17,535 / 18,573 / 22,982 / 151,362 | 18,573 | 5/5 |
+| t3 promoted · recon=1 | 9,793 / 45,308 / 66,166 / 82,720 / 未达标(s45) | 55,737 | **4/5** |
+| **promoted · recon=16（新 recipe）** | 8,643 / 9,826 / 12,519 / 44,694 / 79,466 | **12,519** | **5/5** |
+
+### 哨兵定格（recipe 默认已改 `RECONSTRUCTION_LOSS_COEF = 16.0`）
+
+`SEEDS=3` 官方哨兵（example + recipe 路径）逐 bit 复现消融臂：**12,519 / 8,643 / 9,826，中位 ~9.8k，3/3 达标**。对照同口径 model-free：领先 PPO（81.9k）**8.3×**、SAC（152.2k）**15.5×**。
+
+### 结论
+
+1. **recon 系数是真信号、已 promote**：1 → 4 → 16 单调改善（66.2k → 21.2k → 9.8k），16 处 seed 方差极小；64 过冲（2/3）。逐 seed 配对（vs recon=1）：42/43/44/45 四胜（含救活 s45 不达标）、仅 s46 反转。中位超过 bug 时代 13.1k——丢失的样本效率已收回且有富余。
+2. **修复后的 recon=1 实测有害**：5-seed 4/5 达标、中位 55.7k，比纯 consistency（18.6k、5/5）差——弱 recon 梯度不足以塑造 latent、只在共享表征上制造干扰；v0.25 的"t1 优于 t2 悬案"两侧同时解释闭合。
+3. **cont 系数保持 1.0**：两档均无稳定收益且注入方差（cont=4 一个 seed 不收敛）；binary gate 语义不需要更大权重。
+4. **recon(16) vs 纯 consistency 在 CartPole 分不出高下**（中位 12.5k vs 18.6k，逐 seed 2/5，尾部更好 79k vs 151k）——哨兵分辨率极限；recon 的最终价值裁决留给图像环境（自监督本命田），CartPole 保留其回归覆盖。
+5. **临时值声明**：recon_coef=16 为 CartPole 单环境证据 + 框架级放大倍数推导（K×B）联合支持的临时默认；图像线 obs 归一化后量纲变化，须复验后定稿。
+
+---
+
 ## 基线（v0.25 收口 · 官方口径）
+
+> ⚠️ 本节 promoted/t2/t3 行为 **recon_coef=1 时代**数字，已被上节 v0.26 P0 哨兵（中位 ~9.8k）取代；t0/t1 与跨算法对照仍有效。
 
 **口径**：`release`（thin LTO + cg16）+ **Intel MKL** + seeds 42/43/44 · 2026-07-02 · autograd `upstream_grad` 修复后 + batch-native 训练 + MCTS 单趟前向。判据：greedy(temp=0) eval ≥ 475；env-steps 为「首次达标时累计真实交互」。
 
@@ -107,4 +152,4 @@ cargo test --release --features blas-mkl cartpole_baseline_t0_base -- --ignored 
 
 - `k_unroll=5` 是 **dynamics 想象空间** 的 unroll 深度；`td_steps=5` 是 value target 在 **真实环境轨迹** 上的 n-step 步数——两者正交。
 - 基础 transition 语义：真终止（杆倒）后 `continuation=0`，time-limit truncation 仍 `continuation=1` 并 bootstrap。
-- 组件 loss 权重（写死在 `loss.rs` / `runner.rs`，非用户可调）：consistency coef **2.0** · reconstruction coef **1.0**（v0.26 P0 将重标定并暴露消融）。
+- 组件 loss 权重（默认在 `loss.rs`，经 `Components` 系数字段传导，用户 API 不暴露）：consistency coef **2.0** · reconstruction coef **16.0**（v0.26 P0 重标定，见上方消融）· continuation coef **1.0**。

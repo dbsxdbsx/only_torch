@@ -295,9 +295,13 @@ pub(crate) fn train_batch(
     }
 
     let batch_size = samples.len() as f32;
-    let consistency_coef = if components.consistency { 2.0 } else { 0.0 };
+    let consistency_coef = if components.consistency {
+        components.consistency_coef
+    } else {
+        0.0
+    };
     let reconstruction_coef = if components.reconstruction {
-        super::loss::RECONSTRUCTION_LOSS_COEF
+        components.reconstruction_coef
     } else {
         0.0
     };
@@ -400,6 +404,7 @@ pub(crate) fn train_batch(
             &items,
             consistency_coef,
             reconstruction_coef,
+            components.continuation_coef,
             components.value_prefix,
         )?;
         total_loss_val += (&loss * scale).backward()?;

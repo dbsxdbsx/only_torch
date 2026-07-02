@@ -19,14 +19,14 @@ only_torch 是一个纯 Rust 的 PyTorch 风格玩具框架，当前重点是：
 |----|------|
 | **版本** | `0.25.0`（2026-07-02；本地可能超前 `origin/master`，以 `git log` / `CHANGELOG.md` 为准） |
 | **刚闭环** | **v0.25 MyZero 统一 + 全量重定基线收口**：① MyZero 算法主体 + 全部组件统一进库 `src/rl/algo/my_zero/`（自包含），删除旧 `muzero/` + `efficientzero/`，MyZero 成为**唯一** `*Zero` 实现；② 框架级 autograd 修复（MSE 系 loss 反向 `upstream_grad`、非连续张量守卫）使历史 RL 数字失效 → **官方哨兵口径改 3-seed 中位 env-steps + 达标率**并全量重测（MyZero promoted 中位 **~66.2k**、PPO ~81.9k、SAC ~152.2k，均 3/3 达标，口径 release+MKL，唯一账本 [cartpole README](examples/my_zero/cartpole/README.md)）；③ RL 文档信息架构重构（roadmap 拆归档 + 薄版当前态、vision 去数字化、`smoke-rl` 聚合关卡） |
-| **当前主线** | **强化学习** v0.26（[路线图 §5](.doc/design/rl_roadmap.md#5-v026-方向2026-07-01-战略转向定稿)）：战略转向「磨观测空间 + self-play」——P0 loss 系数重标定消融 + CNN 图像表征（商业游戏代理）；P1 Gomoku self-play（象棋踏脚石）+ reanalyze 复活（acting/reanalyze 解耦）。**completedQ / Gumbel-root CartPole 负结果**（代码保留、recipe 关，`.issue/items/my_zero_gumbel_completedq_cartpole_negative.md`）；Pendulum/Platform 已降级非关键路径 |
+| **当前主线** | **强化学习** v0.26（[路线图 §5](.doc/design/rl_roadmap.md#5-v026-方向2026-07-01-战略转向定稿)）：战略转向「磨观测空间 + self-play」——**P0 loss 系数重标定已完成（2026-07-02）：recon_coef 1→16 promote，官方哨兵中位 66.2k → ~9.8k env-steps（3/3），超过 bug 时代 13.1k**；下一步 P0 CNN 图像表征（商业游戏代理）；P1 Gomoku self-play（象棋踏脚石）+ reanalyze 复活（acting/reanalyze 解耦）。**completedQ / Gumbel-root CartPole 负结果**（代码保留、recipe 关，`.issue/items/my_zero_gumbel_completedq_cartpole_negative.md`）；Pendulum/Platform 已降级非关键路径 |
 | **刻意暂缓** | 演化 **阶段 D**（`CellAttention` ONNX、`Attention` Net2Net 函数保持、Conv2d Attention、3D batched MatMul）——与 RL 零耦合，见 [记忆机制设计 — Phase D](.doc/design/memory_mechanism_design.md#-后续-phase-d刻意未做) |
 | **一级风险** | CPU-only × 图像 CNN × MCTS × 实时结构性冲突：[.issue/items/cpu_only_mcts_image_realtime_risk.md](.issue/items/cpu_only_mcts_image_realtime_risk.md)（图像线推进前必读） |
 | **路线展望** | 真实目标 = **中国象棋** + **商业图像游戏**（[纲领 §2.3](.doc/design/my_zero_algorithm_vision.md#23-战略目标与优先轴2026-07-01-定稿)）；MyZero 消融驱动迭代，基准判据「变慢 ≠ 失败，新实测即新基线；仅不收敛才记 issue」 |
 
 **进度符号**（设计文档统一口径）：✅ Phase 验收范围内已完成 · ⏳ 已识别、留后续 Phase · 🔲 可选增强 · 📦 已归档历史路径。
 
-**接手 RL 时建议顺序**：读 `rl_roadmap.md`（薄版当前态）→ 配环境 [`.doc/rl_python_env_setup.md`](.doc/rl_python_env_setup.md)（**仅 Gymnasium**）→ `just test-filter rl`（230+ 测试确认 buffer + algo helper + MCTS + MyZero）→ `just smoke-rl`（7 目标 RL 管线聚合验证）→ 推进 v0.26（先 P0 loss 系数重标定，见路线图 §5）。
+**接手 RL 时建议顺序**：读 `rl_roadmap.md`（薄版当前态）→ 配环境 [`.doc/rl_python_env_setup.md`](.doc/rl_python_env_setup.md)（**仅 Gymnasium**）→ `just test-filter rl`（230+ 测试确认 buffer + algo helper + MCTS + MyZero）→ `just smoke-rl`（7 目标 RL 管线聚合验证）→ 推进 v0.26（P0 系数重标定已完成，下一步 P0 CNN 图像线，见路线图 §5）。
 
 **接手 Attention 阶段 D 时**：先读 [记忆机制设计 — 实现状态速览](.doc/design/memory_mechanism_design.md#-实现状态速览)（含 105 个相关单元测试与 IT-* 示例表），勿假设「打勾 = ONNX 也做完」。
 

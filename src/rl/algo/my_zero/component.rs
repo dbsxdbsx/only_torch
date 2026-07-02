@@ -11,8 +11,14 @@
 pub(crate) struct Components {
     /// 自监督 consistency loss（SimSiam stop-grad）
     pub consistency: bool,
+    /// consistency 系数（仅 `consistency=true` 时生效；默认 [`loss::CONSISTENCY_LOSS_COEF`](super::loss::CONSISTENCY_LOSS_COEF)）
+    pub consistency_coef: f32,
     /// 自监督 reconstruction loss（latent → obs MSE；Scholz et al. 2021，见 examples/my_zero/README 文献对照表）
     pub reconstruction: bool,
+    /// reconstruction 系数（仅 `reconstruction=true` 时生效；默认 [`loss::RECONSTRUCTION_LOSS_COEF`](super::loss::RECONSTRUCTION_LOSS_COEF)）
+    pub reconstruction_coef: f32,
+    /// continuation 头 MSE 系数（恒生效，基础终止语义监督；默认 [`loss::CONTINUATION_LOSS_COEF`](super::loss::CONTINUATION_LOSS_COEF)）
+    pub continuation_coef: f32,
     /// value prefix（LSTM 累计 reward 前缀，hidden 穿 MCTS 树）
     pub value_prefix: bool,
     /// 训练前对 sample 的 unroll 窗口重跑 MCTS 刷新标签（MuZero Reanalyze）
@@ -42,7 +48,10 @@ impl Default for Components {
     fn default() -> Self {
         Self {
             consistency: false,
+            consistency_coef: super::loss::CONSISTENCY_LOSS_COEF,
             reconstruction: false,
+            reconstruction_coef: super::loss::RECONSTRUCTION_LOSS_COEF,
+            continuation_coef: super::loss::CONTINUATION_LOSS_COEF,
             value_prefix: false,
             reanalyze: false,
             target_net: false,
@@ -91,5 +100,22 @@ mod tests {
         let c = Components::default();
         assert!((c.cq_c_visit - 50.0).abs() < 1e-6);
         assert!((c.cq_c_scale - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn loss_coef_defaults_match_constants() {
+        let c = Components::default();
+        assert!(
+            (c.consistency_coef - 2.0).abs() < 1e-6,
+            "consistency 默认 2.0"
+        );
+        assert!(
+            (c.reconstruction_coef - 16.0).abs() < 1e-6,
+            "reconstruction 默认 16.0（v0.26 P0 重标定；论文 lg=1.0 已被消融证伪）"
+        );
+        assert!(
+            (c.continuation_coef - 1.0).abs() < 1e-6,
+            "continuation 默认 1.0"
+        );
     }
 }

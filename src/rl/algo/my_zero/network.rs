@@ -539,6 +539,7 @@ impl MyZeroModel {
         next_obs_list: Option<&[Vec<f32>]>,
         consistency_coef: f32,
         reconstruction_coef: f32,
+        continuation_coef: f32,
         use_value_prefix: bool,
     ) -> Result<Var, GraphError> {
         let k = actions.len();
@@ -607,7 +608,7 @@ impl MyZeroModel {
             let mut step_loss = &step_policy_loss
                 + &(&step_value_loss * loss::VALUE_LOSS_COEF)
                 + &(&step_reward_loss * loss::REWARD_LOSS_COEF)
-                + &(&step_continuation_loss * loss::CONTINUATION_LOSS_COEF);
+                + &(&step_continuation_loss * continuation_coef);
 
             // consistency：dynamics 预测的 next_latent 与 repr 编码的真实 next_obs 对齐
             if consistency_coef > 0.0
@@ -658,6 +659,7 @@ impl MyZeroModel {
         items: &[UnrollItem],
         consistency_coef: f32,
         reconstruction_coef: f32,
+        continuation_coef: f32,
         use_value_prefix: bool,
     ) -> Result<Var, GraphError> {
         let g = items.len();
@@ -767,7 +769,7 @@ impl MyZeroModel {
             let mut step_loss = &step_policy_loss
                 + &(&step_value_loss * loss::VALUE_LOSS_COEF)
                 + &(&step_reward_loss * loss::REWARD_LOSS_COEF)
-                + &(&step_continuation_loss * loss::CONTINUATION_LOSS_COEF);
+                + &(&step_continuation_loss * continuation_coef);
 
             // consistency / reconstruction：仅在该步有真实 next_obs 时（组内 i<n_next 统一成立）
             if i < n_next {

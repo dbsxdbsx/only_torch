@@ -89,6 +89,7 @@ fn value_head_can_separate_high_low_targets() {
                     None,
                     0.0,
                     0.0,
+                    1.0,
                     false,
                 )
                 .unwrap()

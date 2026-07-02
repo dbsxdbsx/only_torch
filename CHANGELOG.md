@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **feat(rl): v0.26 P0 loss 系数重标定——reconstruction coef 1→16 promote，官方哨兵中位 66.2k → ~9.8k**（2026-07-02）
+  - **系数旋钮重构（行为零变化）**：`Components` 新增 `consistency_coef / reconstruction_coef / continuation_coef` 字段（默认取 `loss.rs` 常量，用户 API 不暴露），`runner/network` 传导；`train_unroll(_batch)` 增 `continuation_coef` 参数。等价性由 101 个 my_zero 单元测试 + release 单 seed 逐 bit 复现（seed42=45,308）验证
+  - **消融裁决（预注册协议，见 `tests/loss_coef_ablation_bench.rs`）**：autograd `upstream_grad` 修复只影响 MSE 系反向 → 仅 reconstruction/continuation 曾被隐式放大（等效 ≈ K×B=40）；对数网格 {1,4,16,64} 实测 recon 单调改善至 16（中位 66.2k→21.2k→9.8k）、64 过冲（2/3 达标）；cont 两档均无稳定收益（保持 1.0）；cons 从未被放大（保持 2.0）
+  - **新官方哨兵**：promoted recipe（recon_coef=16）3-seed **12,519 / 8,643 / 9,826，中位 ~9.8k、3/3**——超过 bug 时代 13.1k，领先 PPO 8.3× / SAC 15.5×；5-seed 扩展（+45/46）中位 12.5k、5/5
+  - **recon 去留复裁（v0.25 悬案闭合）**：5-seed 下 recon=1 实测**有害**（4/5 达标、中位 55.7k，比纯 consistency 18.6k 差）——弱 recon 梯度只制造表征干扰；recon=16 vs 纯 cons 在 CartPole 分辨率内无法分出（中位 12.5k vs 18.6k、逐 seed 2/5、尾部更优），终审留图像环境
+  - recon_coef=16 标注**临时值**：CartPole 单环境证据 + 框架级放大倍数推导联合支持；图像线 obs 归一化后须复验。唯一账本同步：[cartpole README](examples/my_zero/cartpole/README.md)
+
 ### Added
 
 - **docs: CPU 优化 + RL 样本效率论文批次清账（7 篇）**（2026-07-02）

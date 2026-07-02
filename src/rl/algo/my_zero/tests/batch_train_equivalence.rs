@@ -92,8 +92,8 @@ fn bitexact_g1_without_consistency() {
     let model = MyZeroModel::new(&graph, OBS_DIM, ACTION_DIM, LATENT_DIM).unwrap();
     let (obs, actions, tps, tvs, trs, tcs, next_obs) = sample();
 
-    // consistency=0，reconstruction=1.0，value_prefix=false
-    let (cons, recon, vp) = (0.0f32, 1.0f32, false);
+    // consistency=0，reconstruction=1.0，continuation=1.0，value_prefix=false
+    let (cons, recon, cont, vp) = (0.0f32, 1.0f32, 1.0f32, false);
 
     let ref_loss = model
         .train_unroll(
@@ -106,13 +106,16 @@ fn bitexact_g1_without_consistency() {
             Some(&next_obs),
             cons,
             recon,
+            cont,
             vp,
         )
         .unwrap();
     let ref_val = ref_loss.value().unwrap().unwrap().data_as_slice()[0];
 
     let item = to_item(&obs, &actions, &tps, &tvs, &trs, &tcs, &next_obs);
-    let batch_loss = model.train_unroll_batch(&[item], cons, recon, vp).unwrap();
+    let batch_loss = model
+        .train_unroll_batch(&[item], cons, recon, cont, vp)
+        .unwrap();
     let batch_val = batch_loss.value().unwrap().unwrap().data_as_slice()[0];
 
     assert_eq!(
@@ -129,8 +132,8 @@ fn grad_equivalence_g1_full_stack() {
     let params = model.parameters();
     let (obs, actions, tps, tvs, trs, tcs, next_obs) = sample();
 
-    // 完整 CartPole 栈：consistency=2.0，reconstruction=1.0，value_prefix=false
-    let (cons, recon, vp) = (2.0f32, 1.0f32, false);
+    // 完整 CartPole 栈：consistency=2.0，reconstruction=1.0，continuation=1.0，value_prefix=false
+    let (cons, recon, cont, vp) = (2.0f32, 1.0f32, 1.0f32, false);
 
     // 逐样本参考（forward + backward，快照梯度）
     graph.zero_grad().unwrap();
@@ -145,6 +148,7 @@ fn grad_equivalence_g1_full_stack() {
             Some(&next_obs),
             cons,
             recon,
+            cont,
             vp,
         )
         .unwrap();
@@ -155,7 +159,9 @@ fn grad_equivalence_g1_full_stack() {
     // batch 路径（G=1，forward + backward）
     graph.zero_grad().unwrap();
     let item = to_item(&obs, &actions, &tps, &tvs, &trs, &tcs, &next_obs);
-    let batch_loss = model.train_unroll_batch(&[item], cons, recon, vp).unwrap();
+    let batch_loss = model
+        .train_unroll_batch(&[item], cons, recon, cont, vp)
+        .unwrap();
     let batch_val = batch_loss.value().unwrap().unwrap().data_as_slice()[0];
     batch_loss.backward().unwrap();
     let batch_grads = grad_snapshot(&params);
@@ -232,6 +238,7 @@ fn g2_grad_max_diff(cons: f32, recon: f32) -> (f32, usize) {
     let s1 = sample();
     let s2 = sample2();
     let batch_size = 2.0f32;
+    let cont = 1.0f32;
     let vp = false;
 
     graph.zero_grad().unwrap();
@@ -248,6 +255,7 @@ fn g2_grad_max_diff(cons: f32, recon: f32) -> (f32, usize) {
                 Some(next_obs),
                 cons,
                 recon,
+                cont,
                 vp,
             )
             .unwrap()
@@ -262,7 +270,10 @@ fn g2_grad_max_diff(cons: f32, recon: f32) -> (f32, usize) {
         to_item(&s2.0, &s2.1, &s2.2, &s2.3, &s2.4, &s2.5, &s2.6),
     ];
     let g = items.len() as f32;
-    let loss = model.train_unroll_batch(&items, cons, recon, vp).unwrap() * (g / batch_size);
+    let loss = model
+        .train_unroll_batch(&items, cons, recon, cont, vp)
+        .unwrap()
+        * (g / batch_size);
     loss.backward().unwrap();
     let batch_grads = grad_snapshot(&params);
 

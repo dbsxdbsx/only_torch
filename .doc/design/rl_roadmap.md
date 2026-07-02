@@ -38,7 +38,7 @@
 
 | 状态 | 组件 |
 |------|------|
-| ✅ CartPole promoted | consistency + reconstruction + Sampled（PUCT · sims=20 · td=5 · continuation 二值门） |
+| ✅ CartPole promoted | consistency(coef 2) + reconstruction(**coef 16**，v0.26 P0 重标定) + Sampled（PUCT · sims=20 · td=5 · continuation 二值门） |
 | ❌ CartPole 负结果（代码保留、recipe 关） | completedQ / Gumbel-root（[issue](../../.issue/items/my_zero_gumbel_completedq_cartpole_negative.md)）、reanalyze 写回（[issue](../../.issue/items/my_zero_reanalyze_cartpole_regression.md)）、value_prefix |
 | ⏳ 已入库待接/待测 | target_net、SVE |
 
@@ -84,7 +84,7 @@
 
 | 优先级 | 方向 | 说明 |
 |--------|------|------|
-| **P0** | loss 系数重标定消融 | 旧基线部分依赖 autograd bug 放大辅助 loss；修复后显式调大 cons/recon 系数有望收回样本效率——v0.26 第一个消融 |
+| **P0 ✅（2026-07-02 完成）** | loss 系数重标定消融 | 已裁决：**recon_coef 1→16 promote**（新哨兵中位 **~9.8k** env-steps、3/3，超过 bug 时代 13.1k；cont 保持 1.0，cons 无重标定理由）；同批 5-seed 复裁「recon=1 有害、recon 去留终审留图像环境」。数字与预注册协议见[基准账本](../../examples/my_zero/cartpole/README.md#v026-p0loss-系数重标定2026-07-02--当前官方哨兵) |
 | **P0** | CNN 图像表征 + 图像离散基准（Atari-100k 类） | 商业游戏直接代理；复用已验收 consistency + reconstruction（自监督正是图像+少样本的命门组件） |
 | **P1** | Gomoku self-play → 象棋踏脚石 | `SelfPlayGame` / negamax backup / legal_mask 地基已在库；环境 `python/gym_env/gomoku/` 已备 |
 | **P1** | reanalyze 复活 + acting/reanalyze 解耦 | 「实时轻 acting（少 sim / policy 先验）+ 离线重 reanalyze（榨样本）」是商业游戏路线的战略组件；CartPole 负结果不构成否定 |

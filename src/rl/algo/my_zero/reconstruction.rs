@@ -14,10 +14,10 @@ mod tests {
     use crate::tensor::Tensor;
 
     #[test]
-    fn reconstruction_coef_matches_paper_default() {
+    fn reconstruction_coef_matches_calibrated_default() {
         assert!(
-            (RECONSTRUCTION_LOSS_COEF - 1.0).abs() < 1e-6,
-            "论文 lg 默认权重 1.0"
+            (RECONSTRUCTION_LOSS_COEF - 16.0).abs() < 1e-6,
+            "v0.26 P0 重标定默认 16.0（论文 lg=1.0 在 autograd 修复后实测有害，见 loss.rs 注释）"
         );
     }
 
