@@ -116,3 +116,19 @@ completedQ 的 σ 归一化（[target.rs](../../src/rl/algo/my_zero/target.rs) `
 ### 决策
 - 代码**保留**（tree-level range 是正确方向，对 `|A|≫n` 环境有益）；CartPole recipe **仍不 promote**。
 - 复测时机：Pendulum 离散化（|A|=9/25）/ Platform / Atari 类 `|A|≫n`；届时顺带修 `gumbel.rs::q_range` 同源 bug。
+
+---
+
+## 七、Gumbel 复裁前置修复清单（2026-07-02 补记，防丢失）
+
+> 复测排期已定：[收口规划 Phase 2](../../.doc/design/rl_closure_plan.md)（Gomoku，|A|=225 ≫ sims）。**下述两项不修，复裁结果无效。**
+
+### 7.1 greedy eval 注入 Gumbel 噪声 bug（已核实存在，无修复）
+
+[gumbel.rs](../../src/rl/mcts/gumbel.rs) 的 `GumbelRootScheduler::final_recommendation` 用 `gumbel_halving_score(..., &self.gumbel, ...)` 打分出动作——`self.gumbel` 是本次搜索**现采的 Gumbel(0,1) 噪声**，且该函数**完全无视 `temperature=0`**。greedy eval 路径（`runner.rs::greedy_one_episode` → `MyZeroSearchPolicy` → `final_recommendation`）因此被注入探索噪声：CartPole `|A|=2` 时 σ 项 ≈ 1.2 而 Gumbel 噪声 std ≈ 1.28，**噪声尺度不小于 Q 信号差**——所谓 greedy eval 近半随机。这几乎就是上文「Gumbel greedy 峰值 123/154、从未收敛」的疑似真因（Gumbel 噪声本应只在 self-play 探索用）。
+
+**修法**：eval（temperature=0）路径退回无噪 `argmax(visit)` 或无噪 `argmax(logits + σ(q̂))`；self-play 保留噪声。补单测：固定 children stats 下 greedy 推荐必须确定（不随 rng 变）。测试落点 `src/rl/tests/mcts_gumbel.rs`（现有 `final_recommendation_is_deterministic_with_seed` 只验"同 seed 同结果"，遮不住本 bug）。
+
+### 7.2 `q_range` 局部归一化同源 bug
+
+§六已留档：completedQ 侧已改 tree-level range，`gumbel.rs::q_range` 仍是局部 over-children min-max（`|A|=2` 退化同病）。修复时直接复用 `SearchResult.q_range`。
