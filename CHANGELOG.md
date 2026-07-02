@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- **docs: CPU 优化 + RL 样本效率论文批次清账（7 篇）**（2026-07-02）
+  - 新增 `.doc/paper/reading_log.md` 累积论文阅读日志：Winograd / 手写 GEMM / Strassen 系内核级优化路线**整体否决盖棺**（含"未来图像线网络变大"场景，理由逐条留档），唯一采纳项 Simulus（arXiv 2502.11537）
+  - 新增 `.doc/design/my_zero_simulus_ablation_plan.md`：HL-Gauss value 编码（two-hot 升级，挂 P0）、辅助 loss stop-gradient 解耦实验（挂 P0）、loss 优先回放（挂 P1 reanalyze）三项消融候选的映射与执行顺序；`rl_roadmap.md` §5 链入
+  - `optimization_candidates.md`：已否决项补"内核级优化路线"；待优化项补 #3"推理模式中间节点 value 及早释放（liveness，YAGNI 暂缓）"（源自 arXiv 2308.13898 思想）
+  - `cpu_only_mcts_image_realtime_risk.md` 补 §三b：planning-free 世界模型作为「图像 × 实时 × MCTS」不可行时的实证退路（Simulus 数据支撑）
+
 ## [0.25.0] - 2026-07-02
 
 > **v0.25 MyZero 统一算法 + 全量重定基线收口**：① 算法主体统一进库 + 全部组件吸收，MyZero 自包含；**旧 `muzero/` + `efficientzero/` 已整体删除，MyZero 成为项目唯一的 `*Zero` 实现**。② 框架级 autograd 修复（MSE 系 loss 反向 `upstream_grad`、非连续张量守卫）使历史 RL benchmark 数字失效——**官方哨兵口径定为 3-seed（42/43/44）中位 env-steps + 达标率（release + MKL）并全量重测**：MyZero promoted 中位 **~66.2k**（3/3 达标、领先 PPO 1.2× / SAC 2.3×；旧 6–8× 领先部分依赖 bug 放大辅助 loss，本版为诚实基线）、PPO ~81.9k、SAC ~152.2k；基线判据定稿「**变慢 ≠ 失败**，新实测即新基线，仅不收敛/不达标才记 known-fail issue」。③ RL 文档信息架构重构：数字唯一账本 = `examples/my_zero/cartpole/README.md`；`rl_roadmap.md` 拆分（v0.20–v0.24 归档 + 薄版当前态）；vision 去数字化并落入 §2.3 战略转向（A 路定锚、优先磨观测空间 CNN/图像 + self-play、Pendulum/Platform 降级、reanalyze 升战略组件、CPU-only×MCTS 一级风险 issue 化）。

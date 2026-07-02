@@ -40,6 +40,10 @@ reviewers: []
 - 训练/部署非对称：训练期不限 wall-clock，部署期只跑 policy 网络
 - BLAS（MKL）已接通；必要时评估 int8 / 量化推理
 
+## 三b、有据可查的路线级退路：planning-free 世界模型（2026-07-02 补）
+
+若上述缓解逐项压测后「图像 + 实时 + MCTS」仍不可行，**免规划世界模型家族是实证退路**：Simulus（arXiv 2502.11537，[阅读日志](../../.doc/paper/reading_log.md)）证明 planning-free WM 在 Atari-100K 达人类水平 IQM（该口径首个），样本效率打平多数带规划方法；acting 期只跑 policy 网络、零 MCTS 开销，正对本 issue 的实时预算约束。且其可拆组件（RaC、loss 优先回放，见[消融计划](../../.doc/design/my_zero_simulus_ablation_plan.md)）在 MCTS / planning-free 两条路线上通用——现在做不白做，切换成本被压低。
+
 ## 四、触发重估的条件
 
 - [ ] v0.26 图像基准（Atari-100k 类）首个 spike：实测「CNN 前向 × sims」单步 wall-clock，对照 16–33ms 实时预算

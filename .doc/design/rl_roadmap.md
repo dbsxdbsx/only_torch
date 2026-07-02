@@ -91,7 +91,9 @@
 | **P2** | Gumbel 少 sim acting 复测 | 在 `|A| > sims` 或低延迟场景重估（CartPole `sims ≫ |A|` 不构成否定） |
 | **降级** | Pendulum / Platform | 不在两大目标关键路径；Pendulum 保留诊断态，Platform 待具体需求再排 |
 
-**一级风险**（显式管理）：CPU-only × 图像 CNN × MCTS × 实时的结构性冲突——见 [.issue/items/cpu_only_mcts_image_realtime_risk.md](../../.issue/items/cpu_only_mcts_image_realtime_risk.md)。
+**一级风险**（显式管理）：CPU-only × 图像 CNN × MCTS × 实时的结构性冲突——见 [.issue/items/cpu_only_mcts_image_realtime_risk.md](../../.issue/items/cpu_only_mcts_image_realtime_risk.md)（§三b 已录 planning-free 退路）。
+
+**P0/P1 消融候选补充**（2026-07-02 论文清账产出）：HL-Gauss value 编码、辅助 loss stop-gradient 解耦（挂 P0 批次）、loss 优先回放（挂 P1 reanalyze）——组件映射与执行顺序见 [Simulus 组件采纳消融计划](./my_zero_simulus_ablation_plan.md)。
 
 ## 6. 长期 backlog（可能做，不承诺）
 
