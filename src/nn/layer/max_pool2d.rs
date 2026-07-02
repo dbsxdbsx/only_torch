@@ -37,7 +37,7 @@ use crate::nn::{IntoVar, Var};
 /// let h = pool.forward(&x);  // 下采样
 /// ```
 pub struct MaxPool2d {
-    /// Graph 引用（用于 IntoVar 转换）
+    /// Graph 引用（用于 `IntoVar` 转换）
     graph: Graph,
     /// 池化窗口大小 (`kernel_h`, `kernel_w`)
     kernel_size: (usize, usize),
@@ -45,7 +45,7 @@ pub struct MaxPool2d {
     stride: Option<(usize, usize)>,
     /// 对称填充 (`pad_h`, `pad_w`)，等价于四角各填 (`pad_h`, `pad_h`, `pad_w`, `pad_w`)
     padding: (usize, usize),
-    /// ONNX 风格 ceil_mode：true 用 ceil 计算输出尺寸
+    /// ONNX 风格 `ceil_mode：true` 用 ceil 计算输出尺寸
     ceil_mode: bool,
     /// 层名称（用于节点命名）
     name: String,
@@ -60,7 +60,7 @@ impl MaxPool2d {
     /// - `stride`: 步长 (sH, sW)，若为 None 则默认等于 `kernel_size`
     /// - `name`: 层名称前缀
     ///
-    /// 需要 padding / ceil_mode 时用 [`MaxPool2d::with_padding`]
+    /// 需要 padding / `ceil_mode` 时用 [`MaxPool2d::with_padding`]
     pub fn new(
         graph: &Graph,
         kernel_size: (usize, usize),
@@ -77,9 +77,9 @@ impl MaxPool2d {
         }
     }
 
-    /// 创建带对称 padding / ceil_mode 的 `MaxPool2d` 层
+    /// 创建带对称 padding / `ceil_mode` 的 `MaxPool2d` 层
     ///
-    /// 主要用于 ONNX 导入路径（如 YOLOv5 SPPF 模块的 `MaxPool(k=5, pads=2, stride=1)`，
+    /// 主要用于 ONNX 导入路径（如 `YOLOv5` SPPF 模块的 `MaxPool(k=5, pads=2, stride=1)`，
     /// 输出与输入同尺寸）。
     ///
     /// `padding` 是对称的 `(pad_h, pad_w)`,与 [`Conv2d`](super::Conv2d) 一致。
@@ -140,7 +140,7 @@ impl MaxPool2d {
         self.padding
     }
 
-    /// 获取 ceil_mode
+    /// 获取 `ceil_mode`
     pub const fn ceil_mode(&self) -> bool {
         self.ceil_mode
     }

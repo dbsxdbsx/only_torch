@@ -17,7 +17,7 @@ use crate::tensor::Tensor;
 /// SortNode：沿指定轴排序，返回排序后的值（可微）
 ///
 /// 前向：`(sorted_values, indices) = input.sort_along_axis(axis, descending)`
-///       输出 sorted_values，indices 缓存供反向使用
+///       输出 `sorted_values，indices` 缓存供反向使用
 /// 反向：`grad_input[indices[i]] += upstream_grad[i]`（沿排序轴的逆置换）
 #[derive(Clone)]
 pub(crate) struct SortNode {
@@ -48,7 +48,7 @@ impl SortNode {
         self.descending
     }
 
-    /// 创建 SortNode
+    /// 创建 `SortNode`
     ///
     /// # 参数
     /// - `parent_shape`: 父节点形状
@@ -122,7 +122,7 @@ impl TraitNode for SortNode {
         use crate::nn::nodes::raw_node::hash_dedup_params;
         Some(hash_dedup_params(&[
             self.axis as u64,
-            self.descending as u64,
+            u64::from(self.descending),
         ]))
     }
 

@@ -5,9 +5,9 @@
 //! ## 模块结构
 //!
 //! - [`classification`] - 分类指标（Accuracy, Precision, Recall 等）
-//! - [`detection`] - 目标检测指标（bbox IoU 等）
+//! - [`detection`] - 目标检测指标（bbox `IoU` 等）
 //! - [`regression`] - 回归指标（R², MSE, MAE 等）
-//! - [`segmentation`] - 分割指标（Pixel Accuracy, IoU 等）
+//! - [`segmentation`] - 分割指标（Pixel Accuracy, `IoU` 等）
 //! - [`traits`] - 输入类型转换 Trait
 //!
 //! ## 设计理念

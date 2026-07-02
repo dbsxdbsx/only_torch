@@ -57,50 +57,50 @@ impl ReportMetric {
     /// 稳定的机器可读名称，用于日志、序列化后的展示与用户查询。
     pub const fn name(&self) -> &'static str {
         match self {
-            ReportMetric::Accuracy => "accuracy",
-            ReportMetric::Precision => "precision",
-            ReportMetric::Recall => "recall",
-            ReportMetric::F1 => "f1",
-            ReportMetric::R2 => "r2",
-            ReportMetric::MeanSquaredError => "mse",
-            ReportMetric::MeanAbsoluteError => "mae",
-            ReportMetric::RootMeanSquaredError => "rmse",
-            ReportMetric::MultiLabelLooseAccuracy => "multilabel_loose_accuracy",
-            ReportMetric::MultiLabelStrictAccuracy => "multilabel_strict_accuracy",
-            ReportMetric::PixelAccuracy => "pixel_accuracy",
-            ReportMetric::BinaryIoU => "binary_iou",
-            ReportMetric::Dice => "dice",
-            ReportMetric::MeanIoU => "mean_iou",
+            Self::Accuracy => "accuracy",
+            Self::Precision => "precision",
+            Self::Recall => "recall",
+            Self::F1 => "f1",
+            Self::R2 => "r2",
+            Self::MeanSquaredError => "mse",
+            Self::MeanAbsoluteError => "mae",
+            Self::RootMeanSquaredError => "rmse",
+            Self::MultiLabelLooseAccuracy => "multilabel_loose_accuracy",
+            Self::MultiLabelStrictAccuracy => "multilabel_strict_accuracy",
+            Self::PixelAccuracy => "pixel_accuracy",
+            Self::BinaryIoU => "binary_iou",
+            Self::Dice => "dice",
+            Self::MeanIoU => "mean_iou",
         }
     }
 
     /// 该报告指标是否适用于当前任务主指标。
-    pub fn is_compatible_with(&self, task_metric: &TaskMetric) -> bool {
+    pub const fn is_compatible_with(&self, task_metric: &TaskMetric) -> bool {
         match task_metric {
             TaskMetric::Accuracy => matches!(
                 self,
-                ReportMetric::Accuracy
-                    | ReportMetric::Precision
-                    | ReportMetric::Recall
-                    | ReportMetric::F1
+                Self::Accuracy
+                    | Self::Precision
+                    | Self::Recall
+                    | Self::F1
             ),
             TaskMetric::R2 => matches!(
                 self,
-                ReportMetric::R2
-                    | ReportMetric::MeanSquaredError
-                    | ReportMetric::MeanAbsoluteError
-                    | ReportMetric::RootMeanSquaredError
+                Self::R2
+                    | Self::MeanSquaredError
+                    | Self::MeanAbsoluteError
+                    | Self::RootMeanSquaredError
             ),
             TaskMetric::MultiLabelAccuracy => matches!(
                 self,
-                ReportMetric::MultiLabelLooseAccuracy | ReportMetric::MultiLabelStrictAccuracy
+                Self::MultiLabelLooseAccuracy | Self::MultiLabelStrictAccuracy
             ),
             TaskMetric::BinaryIoU => matches!(
                 self,
-                ReportMetric::PixelAccuracy | ReportMetric::BinaryIoU | ReportMetric::Dice
+                Self::PixelAccuracy | Self::BinaryIoU | Self::Dice
             ),
             TaskMetric::MeanIoU => {
-                matches!(self, ReportMetric::PixelAccuracy | ReportMetric::MeanIoU)
+                matches!(self, Self::PixelAccuracy | Self::MeanIoU)
             }
         }
     }
@@ -108,27 +108,27 @@ impl ReportMetric {
     pub(crate) fn defaults_for_task(task_metric: &TaskMetric) -> Vec<Self> {
         match task_metric {
             TaskMetric::Accuracy => vec![
-                ReportMetric::Accuracy,
-                ReportMetric::Precision,
-                ReportMetric::Recall,
-                ReportMetric::F1,
+                Self::Accuracy,
+                Self::Precision,
+                Self::Recall,
+                Self::F1,
             ],
             TaskMetric::R2 => vec![
-                ReportMetric::R2,
-                ReportMetric::MeanSquaredError,
-                ReportMetric::MeanAbsoluteError,
-                ReportMetric::RootMeanSquaredError,
+                Self::R2,
+                Self::MeanSquaredError,
+                Self::MeanAbsoluteError,
+                Self::RootMeanSquaredError,
             ],
             TaskMetric::MultiLabelAccuracy => vec![
-                ReportMetric::MultiLabelLooseAccuracy,
-                ReportMetric::MultiLabelStrictAccuracy,
+                Self::MultiLabelLooseAccuracy,
+                Self::MultiLabelStrictAccuracy,
             ],
             TaskMetric::BinaryIoU => vec![
-                ReportMetric::PixelAccuracy,
-                ReportMetric::BinaryIoU,
-                ReportMetric::Dice,
+                Self::PixelAccuracy,
+                Self::BinaryIoU,
+                Self::Dice,
             ],
-            TaskMetric::MeanIoU => vec![ReportMetric::PixelAccuracy, ReportMetric::MeanIoU],
+            TaskMetric::MeanIoU => vec![Self::PixelAccuracy, Self::MeanIoU],
         }
     }
 }
@@ -168,7 +168,7 @@ pub struct MetricReport {
 }
 
 impl MetricReport {
-    pub fn new(entries: Vec<MetricValue>) -> Self {
+    pub const fn new(entries: Vec<MetricValue>) -> Self {
         Self { entries }
     }
 
@@ -176,7 +176,7 @@ impl MetricReport {
         Self::default()
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
@@ -227,9 +227,9 @@ fn push_report_metric(
 ///
 /// 策略：
 /// - n ≤ 128: full-batch（小数据集，mini-batch 梯度噪声有害）
-/// - 128 < n ≤ 10000: batch_size = 64
-/// - n > 10000: batch_size = 256
-pub fn auto_batch_size(n_samples: usize) -> usize {
+/// - 128 < n ≤ 10000: `batch_size` = 64
+/// - n > 10000: `batch_size` = 256
+pub const fn auto_batch_size(n_samples: usize) -> usize {
     if n_samples <= 128 {
         n_samples
     } else if n_samples <= 10000 {
@@ -244,7 +244,7 @@ pub fn auto_batch_size(n_samples: usize) -> usize {
 /// 适应度分数
 ///
 /// `primary` 保持纯粹的用户指标值（Accuracy / R² / Reward），
-/// 不融合任何 tiebreak 信息——日志、target_metric 比较、用户回调
+/// 不融合任何 tiebreak `信息——日志、target_metric` 比较、用户回调
 /// 看到的都是干净的指标。
 ///
 /// `tiebreak_loss` 用于离散指标（如 Accuracy）的同分比较：
@@ -254,7 +254,7 @@ pub fn auto_batch_size(n_samples: usize) -> usize {
 /// `primary_proxy` 是 F3 引入的"学习速度"代理（越高越好）：
 /// 仅当用户显式启用（`Evolution::with_primary_proxy`）才会有值；
 /// 当 primary 处于 plateau（同 rank 同 crowding distance）时，
-/// NSGA-II 的 tiebreak 会优先比较 proxy，再回退到 tiebreak_loss。
+/// NSGA-II 的 tiebreak 会优先比较 proxy，再回退到 `tiebreak_loss`。
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct FitnessScore {
     /// 主目标（越高越好），如 Accuracy / R² / Reward
@@ -358,7 +358,7 @@ pub(crate) fn compute_loss_slope_proxy(curve: &[f32]) -> Option<f32> {
 
 /// 演化任务 trait（所有学习范式的统一接口）
 ///
-/// 接收 BuildResult（包含 input/output/layer_params），
+/// 接收 BuildResult（包含 `input/output/layer_params`），
 /// 无需单独传递 Graph（Var 内部已持有图引用，Graph 由 BuildResult.graph 保活）。
 ///
 /// rng 由 Evolution 主循环传入，用于训练/评估中的随机性（Dropout mask、
@@ -399,7 +399,7 @@ pub trait EvolutionTask {
 
     /// 创建仅用于可视化的 Loss 节点（默认返回 None，子类可覆盖）
     ///
-    /// 返回的 Var 包含 TargetInput + Loss 节点，用于 snapshot 时
+    /// 返回的 Var 包含 `TargetInput` + Loss 节点，用于 snapshot 时
     /// 呈现完整的 "输入 → 网络 → Loss" 计算图（八角形 Loss + 橙色 Target）。
     /// 不需要设置实际数据——仅用于拓扑快照。
     fn create_visualization_loss(
@@ -426,7 +426,7 @@ pub struct SupervisedSpec {
 }
 
 impl SupervisedSpec {
-    pub fn new(train_inputs: Vec<Tensor>, test_inputs: Vec<Tensor>) -> Self {
+    pub const fn new(train_inputs: Vec<Tensor>, test_inputs: Vec<Tensor>) -> Self {
         Self {
             train_inputs,
             test_inputs,
@@ -660,14 +660,13 @@ impl SupervisedTask {
             } else {
                 head.train_targets[0].size()
             };
-            if let Some(loss) = &head.loss_override {
-                if !compatible_losses(&head.metric, output_dim).contains(loss) {
+            if let Some(loss) = &head.loss_override
+                && !compatible_losses(&head.metric, output_dim).contains(loss) {
                     return Err(EvolutionError::InvalidData(format!(
                         "head '{}' 的 loss_override {:?} 与 metric {:?} / output_dim {} 不兼容",
                         head.name, loss, head.metric, output_dim
                     )));
                 }
-            }
             let train_refs: Vec<&Tensor> = head.train_targets.iter().collect();
             let test_refs: Vec<&Tensor> = head.test_targets.iter().collect();
             let report_metrics = ReportMetric::defaults_for_task(&head.metric);
@@ -768,7 +767,7 @@ impl EvolutionTask for SupervisedTask {
                     .training_config
                     .loss_override
                     .as_ref()
-                    .map_or(true, |loss| {
+                    .is_none_or(|loss| {
                         compatible_losses(&head.meta.metric, head.meta.output_dim).contains(loss)
                     }),
                 "loss_override {:?} 与 head '{}' 不兼容（metric={:?}, output_dim={}，兼容列表={:?}）",
@@ -1167,7 +1166,7 @@ fn train_one_batch(
     Ok(loss_val)
 }
 
-/// 按 TaskMetric 计算主指标值
+/// 按 `TaskMetric` 计算主指标值
 pub(crate) fn compute_primary_metric(
     metric: &TaskMetric,
     predictions: &Tensor,
@@ -1354,14 +1353,14 @@ pub(crate) fn binary_decode(tensor: &Tensor, loss_type: &LossType) -> Vec<usize>
     tensor
         .to_vec()
         .iter()
-        .map(|&v| if v >= threshold { 1 } else { 0 })
+        .map(|&v| usize::from(v >= threshold))
         .collect()
 }
 
 /// 计算所有可训练参数的梯度 L2 范数
 ///
-/// `minimize()` 内部执行 zero_grad → backward → step，
-/// step() 只更新参数值不清除梯度，因此 `minimize()` 返回后梯度仍可读取。
+/// `minimize()` 内部执行 `zero_grad` → backward → step，
+/// `step()` 只更新参数值不清除梯度，因此 `minimize()` 返回后梯度仍可读取。
 pub(crate) fn compute_grad_norm(params: &[Var]) -> Result<f32, GraphError> {
     let mut sum_sq = 0.0f32;
     for param in params {

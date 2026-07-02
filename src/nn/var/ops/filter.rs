@@ -27,7 +27,7 @@ pub trait VarFilterOps {
     /// 条件选择（类似 `torch.where(condition, x, y)`）
     ///
     /// condition 是布尔掩码张量（非零为 true），不参与梯度。
-    /// if_true 和 if_false 是参与计算图的 Var。
+    /// `if_true` 和 `if_false` 是参与计算图的 Var。
     ///
     /// # 参数
     /// - `condition`: 条件张量（非零为 true）
@@ -56,6 +56,6 @@ impl VarFilterOps for Var {
             None,
         )?;
 
-        Ok(Var::new_with_rc_graph(node, &graph))
+        Ok(Self::new_with_rc_graph(node, &graph))
     }
 }

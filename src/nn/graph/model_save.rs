@@ -50,7 +50,7 @@ pub(crate) struct OtmMetadata {
     /// 演化元数据（仅演化模型存在）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub evolution: Option<serde_json::Value>,
-    /// MyZero 运行契约（仅 MyZero 模型存在）
+    /// `MyZero` 运行契约（仅 `MyZero` 模型存在）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) myzero: Option<serde_json::Value>,
 }
@@ -60,12 +60,12 @@ pub(crate) struct OtmMetadata {
 /// 将参数写入 writer（不含 magic/version，纯数据）
 ///
 /// 格式：
-///   [4 bytes] param_count: u32
+///   [4 bytes] `param_count`: u32
 ///   for each param:
-///     [4 bytes] name_len: u32
-///     [name_len bytes] name (UTF-8)
-///     [4 bytes] shape_dims: u32
-///     [shape_dims * 4 bytes] each dim: u32
+///     [4 bytes] `name_len`: u32
+///     [`name_len` bytes] name (UTF-8)
+///     [4 bytes] `shape_dims`: u32
+///     [`shape_dims` * 4 bytes] each dim: u32
 ///     [product(shape) * 4 bytes] f32 data (little-endian)
 pub(crate) fn write_params(
     writer: &mut impl Write,
@@ -156,7 +156,7 @@ pub(crate) fn read_params(reader: &mut impl Read) -> Result<HashMap<String, Tens
 
 // ==================== 通用 .otm 文件 I/O ====================
 
-/// 写入 .otm 文件（供 Graph::save_model 和 EvolutionResult::save 共用）
+/// 写入 .otm 文件（供 `Graph::save_model` 和 `EvolutionResult::save` 共用）
 pub(crate) fn write_otm_file<P: AsRef<Path>>(
     path: P,
     metadata: &OtmMetadata,
@@ -165,13 +165,12 @@ pub(crate) fn write_otm_file<P: AsRef<Path>>(
     let path = path.as_ref().with_extension("otm");
 
     // 确保父目录存在
-    if let Some(parent) = path.parent() {
-        if !parent.exists() {
+    if let Some(parent) = path.parent()
+        && !parent.exists() {
             std::fs::create_dir_all(parent).map_err(|e| {
                 GraphError::ComputationError(format!("无法创建目录 {}: {e}", parent.display()))
             })?;
         }
-    }
 
     let file = File::create(&path).map_err(|e| {
         GraphError::ComputationError(format!("无法创建文件 {}: {e}", path.display()))
@@ -305,7 +304,7 @@ impl Graph {
     ///
     /// `path` 不含文件后缀，自动添加 `.otm`。
     /// 返回 `RebuildResult`，包含重建后的图、输入/输出 Var。
-    /// 加载后自动设为 inference 上下文（eval 行为 + no_grad 缓存策略）。
+    /// 加载后自动设为 inference 上下文（eval 行为 + `no_grad` 缓存策略）。
     ///
     /// # 示例
     /// ```ignore
@@ -319,7 +318,7 @@ impl Graph {
         let (metadata, params) = read_otm_file(path)?;
 
         // 从 GraphDescriptor 重建计算图
-        let result = Graph::from_descriptor(&metadata.graph)?;
+        let result = Self::from_descriptor(&metadata.graph)?;
 
         // 加载权重
         apply_params_to_graph(&result.graph, &params)?;
@@ -332,7 +331,7 @@ impl Graph {
     /// 从 .onnx 文件导入模型（重建拓扑 + 恢复权重）
     ///
     /// 返回 `RebuildResult`，包含重建后的图、输入/输出 Var。
-    /// 加载后自动设为 inference 上下文（eval 行为 + no_grad 缓存策略）。
+    /// 加载后自动设为 inference 上下文（eval 行为 + `no_grad` 缓存策略）。
     ///
     /// # 示例
     /// ```ignore
@@ -365,7 +364,7 @@ impl Graph {
     fn from_onnx_result(
         import_result: super::onnx_import::OnnxImportResult,
     ) -> Result<RebuildResult, GraphError> {
-        let mut result = Graph::from_descriptor(&import_result.descriptor)?;
+        let mut result = Self::from_descriptor(&import_result.descriptor)?;
 
         // ONNX 权重按 descriptor node ID 索引 → 转换为按名称索引
         let name_params: HashMap<String, Tensor> = import_result
@@ -412,7 +411,7 @@ impl Graph {
             .map_err(|e| GraphError::ComputationError(format!("ONNX 导出失败: {e}")))
     }
 
-    /// 从注册参数表中收集权重 → HashMap<String, Tensor>
+    /// 从注册参数表中收集权重 → `HashMap`<String, Tensor>
     fn collect_weight_map(&self) -> HashMap<String, Tensor> {
         let inner = self.inner();
         let params = inner.get_all_parameters();

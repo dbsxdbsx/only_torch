@@ -9,10 +9,10 @@
 //! 计划但**尚未实现**的版本（按需添加）：
 //!
 //! - YOLOv3/v4：`[N, 3, 5+nc, H, W]` 多尺度 anchor head
-//! - YOLOv8/v11：`[N, 4+nc, 8400]`，无 obj_conf，DFL 解码
+//! - YOLOv8/v11：`[N, 4+nc, 8400]`，无 `obj_conf，DFL` 解码
 //! - YOLOX：anchor-free + decoupled head
 //!
-//! 训练时 assigner（grid / SimOTA / TaskAlignedAssigner 等）按需驱动添加，
+//! 训练时 assigner（grid / `SimOTA` / `TaskAlignedAssigner` 等）按需驱动添加，
 //! 落到 [`crate::vision::detection::contract::Assigner`] trait。
 
 pub mod v5;

@@ -6,7 +6,7 @@
 /// - `ActionId` 是策略 head / target 向量里的**槽位号**，回答“概率写到第几格”；
 /// - `ActionPayload` 是执行内容，回答“选中这条边后实际执行什么动作”。
 ///
-/// 当前 CartPole 和 Pendulum 桶化路径里二者一一对应：`ActionId(3)` 通常配
+/// 当前 `CartPole` 和 Pendulum 桶化路径里二者一一对应：`ActionId(3)` 通常配
 /// `ActionPayload::Discrete(3)`。Pendulum 的 `Discrete(3)` 不是原生离散力矩，
 /// 而是“第 3 个离散化桶”；执行前由 action adapter 还原成该桶的连续中点。
 /// 未来连续 / 混合动作可保持同一个 slot 语义，同时让 payload 直接携带
@@ -35,7 +35,7 @@ pub enum ActionPayload {
 pub struct ActionId(pub usize);
 
 impl ActionId {
-    pub fn index(self) -> usize {
+    pub const fn index(self) -> usize {
         self.0
     }
 }
@@ -60,14 +60,14 @@ pub struct ActionCandidate {
     pub payload: ActionPayload,
     /// 当前候选进入树搜索时使用的 prior。
     ///
-    /// 普通 MuZero 中等于网络策略 prior；Sampled MuZero 中可被修正为 `π̂_β`。
+    /// 普通 `MuZero` 中等于网络策略 prior；Sampled `MuZero` 中可被修正为 `π̂_β`。
     pub policy_prior: f32,
     /// proposal β；`None` 表示与 `policy_prior` 同源。
     pub proposal_prior: Option<f32>,
 }
 
 impl ActionCandidate {
-    pub fn new(id: ActionId, payload: ActionPayload, policy_prior: f32) -> Self {
+    pub const fn new(id: ActionId, payload: ActionPayload, policy_prior: f32) -> Self {
         Self {
             id,
             payload,
@@ -76,7 +76,7 @@ impl ActionCandidate {
         }
     }
 
-    pub fn with_policy_prior(mut self, policy_prior: f32) -> Self {
+    pub const fn with_policy_prior(mut self, policy_prior: f32) -> Self {
         self.policy_prior = policy_prior;
         self
     }
@@ -89,7 +89,7 @@ pub struct CandidateSet {
 }
 
 impl CandidateSet {
-    pub fn empty() -> Self {
+    pub const fn empty() -> Self {
         Self {
             candidates: Vec::new(),
         }
@@ -114,11 +114,11 @@ impl CandidateSet {
         Self { candidates }
     }
 
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.candidates.len()
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.candidates.is_empty()
     }
 
@@ -159,7 +159,7 @@ pub struct RecurrentOut<S> {
     pub discount: f32,
 }
 
-/// 子节点统计信息（暴露给 SearchPolicy）
+/// 子节点统计信息（暴露给 `SearchPolicy`）
 #[derive(Debug, Clone)]
 pub struct ChildStat {
     /// 策略 / target 使用的稳定动作 id
@@ -174,7 +174,7 @@ pub struct ChildStat {
     pub prior: f32,
     /// 从父到此子的即时奖励
     pub reward: f32,
-    /// 子节点的 to_play（用于视角翻转：与父同 → +1，与父异 → -1）
+    /// 子节点的 `to_play（用于视角翻转：与父同` → +1，与父异 → -1）
     pub to_play: u8,
     /// 子节点的折扣因子
     pub discount: f32,
@@ -189,7 +189,7 @@ pub struct SearchResult {
     pub recommended: ActionPayload,
     /// 学习用策略目标（visit count 归一化）
     pub learn_policy: Vec<f32>,
-    /// root 推理时 value network 对当前状态的估计 `vπ`（Gumbel MuZero completedQ 未访问动作回填）
+    /// root 推理时 value network 对当前状态的估计 `vπ`（Gumbel `MuZero` completedQ 未访问动作回填）
     pub network_value: f32,
     /// 搜索树 tree-level Q 值范围 `(min, max)`；`None` = 无有效范围（空搜索/未更新）。
     /// completedQ 的 σ 归一化用此全局范围替代局部 over-children min-max（见 [`crate::rl::mcts::MinMaxStats::range`]）。
@@ -200,10 +200,10 @@ impl SearchResult {
     /// 根节点 value 估计：visit 加权的子节点动作价值
     /// `Q(a) = reward(a) + discount(a)·V(child(a))`，`V(child) = value_sum/visit_count`。
     ///
-    /// 这是 MuZero self-play 记录 `root_value` 与 reanalyze 重算 value 目标共用的口径，
+    /// 这是 `MuZero` self-play 记录 `root_value` 与 reanalyze 重算 value 目标共用的口径，
     /// 抽到此处避免两边公式漂移。
     ///
-    /// 单智能体口径（不翻转视角）；双人零和的 negamax 视角翻转待 AlphaZero 用到时再扩展。
+    /// 单智能体口径（不翻转视角）；双人零和的 negamax 视角翻转待 `AlphaZero` 用到时再扩展。
     /// 无子节点或零访问时返回 `0.0`。
     pub fn root_value(&self) -> f32 {
         let total_visits: u32 = self.children.iter().map(|c| c.visit_count).sum();
@@ -215,7 +215,7 @@ impl SearchResult {
             .filter(|c| c.visit_count > 0)
             .map(|c| {
                 let child_v = c.value_sum / c.visit_count as f32;
-                let q = c.reward + c.discount * child_v;
+                let q = c.discount.mul_add(child_v, c.reward);
                 q * c.visit_count as f32
             })
             .sum::<f32>()
@@ -228,9 +228,9 @@ impl SearchResult {
 pub struct MctsConfig {
     /// 模拟次数
     pub num_simulations: u32,
-    /// PUCT 公式 c_base 参数
+    /// PUCT 公式 `c_base` 参数
     pub pb_c_base: f32,
-    /// PUCT 公式 c_init 参数
+    /// PUCT 公式 `c_init` 参数
     pub pb_c_init: f32,
     /// 根节点 Dirichlet 噪声 alpha
     pub root_dirichlet_alpha: f32,
@@ -240,7 +240,7 @@ pub struct MctsConfig {
     pub temperature: f32,
     /// 折扣因子（单智能体使用）
     pub discount: f32,
-    /// Sampled MuZero：每节点展开采 K 个候选；`None` = 全量枚举（标准 MuZero）。
+    /// Sampled MuZero：每节点展开采 K 个候选；`None` = 全量枚举（标准 `MuZero`）。
     pub sampled_k: Option<usize>,
 }
 
@@ -266,7 +266,7 @@ pub struct RootDirichletConfig {
     pub exploration_fraction: f32,
 }
 
-/// Sampled MuZero 候选展开参数。
+/// Sampled `MuZero` 候选展开参数。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SampledConfig {
     pub k: usize,
@@ -297,7 +297,7 @@ impl Default for MctsConfig {
 }
 
 impl MctsConfig {
-    pub fn budget(&self) -> SearchBudget {
+    pub const fn budget(&self) -> SearchBudget {
         SearchBudget {
             num_simulations: self.num_simulations,
             temperature: self.temperature,
@@ -305,14 +305,14 @@ impl MctsConfig {
         }
     }
 
-    pub fn puct(&self) -> PuctConfig {
+    pub const fn puct(&self) -> PuctConfig {
         PuctConfig {
             pb_c_base: self.pb_c_base,
             pb_c_init: self.pb_c_init,
         }
     }
 
-    pub fn root_dirichlet(&self) -> RootDirichletConfig {
+    pub const fn root_dirichlet(&self) -> RootDirichletConfig {
         RootDirichletConfig {
             alpha: self.root_dirichlet_alpha,
             exploration_fraction: self.root_exploration_fraction,

@@ -28,7 +28,7 @@ pub const fn stacked_obs_dim() -> usize {
     STACK * frame_len()
 }
 
-/// BT.601 灰度系数（与 `image::to_luma8` / OpenCV 一致）
+/// BT.601 灰度系数（与 `image::to_luma8` / `OpenCV` 一致）
 const LUMA_R: f32 = 0.299;
 const LUMA_G: f32 = 0.587;
 const LUMA_B: f32 = 0.114;
@@ -140,12 +140,12 @@ impl ImagePipe {
                 &raw[2 * plane..3 * plane],
             );
             for (i, px) in gray.iter_mut().enumerate() {
-                *px = LUMA_R * r[i] + LUMA_G * g[i] + LUMA_B * b[i];
+                *px = LUMA_R.mul_add(r[i], LUMA_G * g[i]) + LUMA_B * b[i];
             }
         } else {
             // HWC：逐像素连续取 RGB
             for (px, rgb) in gray.iter_mut().zip(raw.chunks_exact(self.in_c)) {
-                *px = LUMA_R * rgb[0] + LUMA_G * rgb[1] + LUMA_B * rgb[2];
+                *px = LUMA_R.mul_add(rgb[0], LUMA_G * rgb[1]) + LUMA_B * rgb[2];
             }
         }
         gray
@@ -166,12 +166,12 @@ pub(crate) fn bilinear_resize(
     let scale_x = src_w as f32 / dst_w as f32;
     for dy in 0..dst_h {
         // 像素中心映射：src_y = (dy + 0.5)·scale − 0.5
-        let sy = ((dy as f32 + 0.5) * scale_y - 0.5).max(0.0);
+        let sy = (dy as f32 + 0.5).mul_add(scale_y, -0.5).max(0.0);
         let y0 = (sy as usize).min(src_h - 1);
         let y1 = (y0 + 1).min(src_h - 1);
         let fy = sy - y0 as f32;
         for dx in 0..dst_w {
-            let sx = ((dx as f32 + 0.5) * scale_x - 0.5).max(0.0);
+            let sx = (dx as f32 + 0.5).mul_add(scale_x, -0.5).max(0.0);
             let x0 = (sx as usize).min(src_w - 1);
             let x1 = (x0 + 1).min(src_w - 1);
             let fx = sx - x0 as f32;
@@ -179,9 +179,9 @@ pub(crate) fn bilinear_resize(
             let p01 = src[y0 * src_w + x1];
             let p10 = src[y1 * src_w + x0];
             let p11 = src[y1 * src_w + x1];
-            let top = p00 + (p01 - p00) * fx;
-            let bot = p10 + (p11 - p10) * fx;
-            out[dy * dst_w + dx] = top + (bot - top) * fy;
+            let top = (p01 - p00).mul_add(fx, p00);
+            let bot = (p11 - p10).mul_add(fx, p10);
+            out[dy * dst_w + dx] = (bot - top).mul_add(fy, top);
         }
     }
     out

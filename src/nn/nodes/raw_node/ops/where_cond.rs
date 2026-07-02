@@ -5,7 +5,7 @@ use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
-/// WhereCond 节点：条件选择（类似 `torch.where(condition, x, y)`）
+/// `WhereCond` 节点：条件选择（类似 `torch.where(condition, x, y)`）
 ///
 /// condition 是构建时传入的布尔掩码张量（不参与梯度），
 /// x（parent 0）和 y（parent 1）是参与计算图的 Var 父节点。
@@ -33,11 +33,11 @@ pub(crate) struct WhereCond {
 
 impl WhereCond {
     /// 获取条件掩码
-    pub(crate) fn condition(&self) -> &crate::tensor::Tensor {
+    pub(crate) const fn condition(&self) -> &crate::tensor::Tensor {
         &self.condition
     }
 
-    /// 从父节点形状和 condition 张量创建 WhereCond 节点
+    /// 从父节点形状和 condition 张量创建 `WhereCond` 节点
     ///
     /// # 参数
     /// - `x_shape`: x（parent 0）的形状
@@ -136,8 +136,7 @@ impl TraitNode for WhereCond {
                 self.condition.zip_map(upstream_grad, |c, g| (1.0 - c) * g),
             )),
             _ => Err(GraphError::InvalidOperation(format!(
-                "WhereCond: parent_index {} 无效（应为 0 或 1）",
-                target_parent_index
+                "WhereCond: parent_index {target_parent_index} 无效（应为 0 或 1）"
             ))),
         }
     }

@@ -1,10 +1,10 @@
-//! MyZero 模型定义（categorical value/reward + latent min-max 归一化）
+//! `MyZero` 模型定义（categorical value/reward + latent min-max 归一化）
 //!
 //! 三网络架构：
 //! - Representation h: obs → latent，输出经 **min-max 归一化到 [0,1]**
-//! - Dynamics g: (latent, action_onehot) → (next_latent, reward_logits, continuation_logit)
-//!   next_latent 同样 min-max 归一化
-//! - Prediction f: latent → (policy_logits, value_logits)
+//! - Dynamics g: (latent, `action_onehot`) → (`next_latent`, `reward_logits`, `continuation_logit`)
+//!   `next_latent` 同样 min-max 归一化
+//! - Prediction f: latent → (`policy_logits`, `value_logits`)
 //!
 //! value/reward 采用 **categorical 表示**（canonical MuZero）：head 输出 support 上的
 //! logits，训练用 two-hot 目标 + 交叉熵，搜索期取 softmax 期望并 h⁻¹ 还原标量。
@@ -92,7 +92,7 @@ impl Module for ValuePrefixLstm {
 /// `h(333)≈17.6`）的目标范围且留有余量。
 pub const SUPPORT_HALF: usize = 20;
 
-/// 全局 support 配置（value 与 reward 共用，对齐 canonical MuZero）。
+/// 全局 support 配置（value 与 reward 共用，对齐 canonical `MuZero`）。
 pub const SUPPORT: SupportConfig = SupportConfig::new(SUPPORT_HALF);
 
 /// continuation head 的解码偏置：随机初始化时默认接近「继续」，避免早期搜索过度截断。
@@ -136,7 +136,7 @@ pub(super) fn softmax_row(logits: &[f32]) -> Vec<f32> {
     out
 }
 
-/// latent min-max 归一化到 [0,1]（canonical MuZero，**逐样本**沿特征维）
+/// latent min-max 归一化到 [0,1]（canonical `MuZero`，**逐样本**沿特征维）
 ///
 /// `s_norm = (s - min(s)) / (max(s) - min(s) + eps)`，每行（样本）独立取 min/max。
 /// batch 从 `latent` 的静态期望形状推断（`[B, dim]`），故同一份代码 batch=1（搜索/推理）
@@ -347,7 +347,7 @@ impl DynamicsNet {
         })
     }
 
-    /// (latent, action_onehot) → (next_latent[min-max], reward_logits, continuation_logit)
+    /// (latent, `action_onehot`) → (`next_latent`[min-max], `reward_logits`, `continuation_logit`)
     pub fn forward(
         &self,
         latent: &Var,
@@ -394,7 +394,7 @@ impl PredictionNet {
         })
     }
 
-    /// latent → (policy_logits, value_logits)
+    /// latent → (`policy_logits`, `value_logits`)
     pub fn forward(&self, latent: &Var) -> (Var, Var) {
         let h = self.fc1.forward(latent).relu();
         let policy = self.fc_policy.forward(&h);
@@ -640,7 +640,7 @@ impl MyZeroModel {
     ///
     /// 与权重/图结构无关（纯目标构造分支），故可在构造后任意时点设置；
     /// 加载旧 checkpoint 推理不受影响（解码端两种编码相同）。
-    pub(crate) fn with_value_encoding(mut self, hl_gauss: bool) -> Self {
+    pub(crate) const fn with_value_encoding(mut self, hl_gauss: bool) -> Self {
         self.value_hl_gauss = hl_gauss;
         self
     }
@@ -649,7 +649,7 @@ impl MyZeroModel {
     ///
     /// 数据空间纯函数变换（进图前作用于 f32 切片），不改图结构与持久化子图；
     /// 训练 / 搜索 / 推理共用本开关，须与权重的训练口径一致。
-    pub(crate) fn with_obs_symlog(mut self, on: bool) -> Self {
+    pub(crate) const fn with_obs_symlog(mut self, on: bool) -> Self {
         self.obs_symlog = on;
         self
     }
@@ -695,7 +695,7 @@ impl MyZeroModel {
         oh
     }
 
-    /// 标量 value/reward → two-hot 目标张量 [1, support_size]
+    /// 标量 value/reward → two-hot 目标张量 [1, `support_size`]
     /// 标量 → categorical 软标签向量（按 [`Self::value_hl_gauss`] 选 two-hot / HL-Gauss）。
     fn encode_scalar(&self, x: f32) -> Vec<f32> {
         if self.value_hl_gauss {
@@ -731,7 +731,7 @@ impl MyZeroModel {
     /// K 步 unroll 训练，返回总损失 Var
     ///
     /// value/reward 用 **categorical 交叉熵**（two-hot 目标），policy 用交叉熵，
-    /// 与 canonical MuZero 一致。
+    /// 与 canonical `MuZero` 一致。
     ///
     /// # 梯度缩放（canonical MuZero，附录 G）
     /// 两处 `scale_gradient`，均只改反传、不改前向损失值：
@@ -740,7 +740,7 @@ impl MyZeroModel {
     /// 2. **recurrent loss ×(1/K)**：每个 recurrent step 的 loss 梯度按 `1/K` 缩放，
     ///    初始步权重 1.0、K 个 recurrent 步合计 1.0（梯度总权重恒 2.0，与 K 无关）。
     ///
-    /// # absorbing state（终止处理，canonical MuZero）
+    /// # absorbing state（终止处理，canonical `MuZero`）
     /// 终止后的 unroll 位置由调用方填入 **absorbing 目标**：
     /// `reward=0 / value=0 / policy=uniform / continuation=0`。模型据此学到「终局之后
     /// 回报恒 0 且不再传播未来 value」，掐断 no-terminal 价值膨胀。
@@ -1038,7 +1038,7 @@ impl MyZeroModel {
 /// batch-native 训练的单条样本（已展开好各步目标）。
 ///
 /// 同一组（传入 [`MyZeroModel::train_unroll_batch`]）内所有 `UnrollItem` 须满足：
-/// `actions.len()`（= actual_k）与 `next_obs.len()`（= consistency/recon 有效步数）一致，
+/// `actions.len()`（= `actual_k）与` `next_obs.len()`（= consistency/recon 有效步数）一致，
 /// 从而组内结构逐样本对齐、可直接堆叠成 batch 而无需 padding。
 pub(crate) struct UnrollItem {
     pub obs_t: Vec<f32>,

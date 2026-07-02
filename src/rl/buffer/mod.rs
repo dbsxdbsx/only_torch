@@ -5,7 +5,7 @@
 //! - [`SelfPlayGame`]：整局 self-play 样本（planning 族：AlphaZero/MuZero/EZ-V2）
 //! - [`BufferItem`]：缓冲区元素约束 trait
 //! - [`ReplayBuffer`]：泛型 FIFO + 有放回随机采样
-//! - [`RolloutBuffer`]：固定 n_steps 的 on-policy 采集缓冲区
+//! - [`RolloutBuffer`]：固定 `n_steps` 的 on-policy 采集缓冲区
 
 mod replay;
 mod rollout;

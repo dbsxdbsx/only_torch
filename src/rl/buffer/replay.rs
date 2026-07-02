@@ -60,7 +60,7 @@ impl<T: BufferItem> ReplayBuffer<T> {
 
     /// 有放回随机抽样，额外返回每个样本在 buffer 中的**存储下标**。
     ///
-    /// 与 [`sample`](Self::sample) 的唯一区别是带回下标，供 MyZero reanalyze 写回
+    /// 与 [`sample`](Self::sample) 的唯一区别是带回下标，供 `MyZero` reanalyze 写回
     ///（配合 [`update_at`](Self::update_at)）及未来 PER priority 更新。
     pub fn sample_indexed(&self, batch_size: usize, rng: &mut impl Rng) -> Vec<(usize, T)> {
         if batch_size == 0 || self.buffer.is_empty() {
@@ -103,7 +103,7 @@ impl<T: BufferItem> ReplayBuffer<T> {
         self.buffer.is_empty()
     }
 
-    pub fn capacity(&self) -> usize {
+    pub const fn capacity(&self) -> usize {
         self.capacity
     }
 

@@ -8,13 +8,13 @@ use super::sampled_params::DEFAULT_CONTINUOUS_BUCKETS;
 use crate::rl::GymEnv;
 use crate::rl::mcts::ActionPayload;
 
-/// 离散候选 idx → 连续控制量（等宽 bin **中点**，对齐 Sampled MuZero categorical）。
+/// 离散候选 idx → 连续控制量（等宽 bin **中点**，对齐 Sampled `MuZero` categorical）。
 pub(super) fn idx_to_continuous(idx: usize, lo: f32, hi: f32, buckets: usize) -> f32 {
     if buckets <= 1 {
         return 0.5 * (lo + hi);
     }
     let width = (hi - lo) / buckets as f32;
-    lo + (idx as f32 + 0.5) * width
+    (idx as f32 + 0.5).mul_add(width, lo)
 }
 
 #[derive(Debug, Clone)]
@@ -102,7 +102,7 @@ impl ActionAdapter {
     }
 
     /// 动作维度（= 候选数；模型输出层宽度）。
-    pub fn action_dim(&self) -> usize {
+    pub const fn action_dim(&self) -> usize {
         self.candidates.len()
     }
 

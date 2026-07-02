@@ -93,7 +93,7 @@ impl Amin {
 
     /// 获取 axis
     #[allow(dead_code)]
-    pub(crate) fn axis(&self) -> usize {
+    pub(crate) const fn axis(&self) -> usize {
         self.axis
     }
 }

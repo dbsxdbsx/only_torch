@@ -71,8 +71,8 @@ pub struct GraphInner {
     /// 节点类型计数器：用于同批次内区分同类型节点
     /// key: 节点类型字符串, value: 当前计数
     pub(in crate::nn::graph) node_type_counts: HashMap<String, u64>,
-    /// 上次重置计数器时的 forward_pass_id
-    /// 当 forward 完成后，下一次创建节点时会检测到 pass_id 变化并重置计数器
+    /// 上次重置计数器时的 `forward_pass_id`
+    /// 当 forward 完成后，下一次创建节点时会检测到 `pass_id` 变化并重置计数器
     pub(in crate::nn::graph) counts_reset_pass_id: u64,
 
     // ========== 节点分组上下文 ==========
@@ -89,13 +89,13 @@ pub struct GraphInner {
     // ========== CSE 去重缓存 ==========
     /// CSE（公共子表达式消除）节点去重缓存
     ///
-    /// key: (node_type_str, parent_node_ids, fingerprint, group_context)
+    /// key: (`node_type_str`, `parent_node_ids`, fingerprint, `group_context`)
     /// value: `Weak<NodeInner>`（不阻止节点被 Rc 回收）
     ///
     /// 随 `forward_pass_id` 变化自动清空（同 `node_type_counts` 机制）。
     pub(in crate::nn::graph) cse_cache:
         HashMap<(String, Vec<NodeId>, u64, Option<NodeGroupTag>), Weak<NodeInner>>,
-    /// CSE 缓存上次重置时的 forward_pass_id
+    /// CSE 缓存上次重置时的 `forward_pass_id`
     pub(in crate::nn::graph) cse_cache_reset_pass_id: u64,
 
     // ========== 可视化快照 ==========

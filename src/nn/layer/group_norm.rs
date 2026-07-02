@@ -32,11 +32,11 @@ pub struct GroupNorm {
 }
 
 impl GroupNorm {
-    /// 创建 GroupNorm 层
+    /// 创建 `GroupNorm` 层
     ///
     /// # 参数
     /// - `graph`: 计算图
-    /// - `num_groups`: 分组数（num_channels 必须能被 num_groups 整除）
+    /// - `num_groups`: `分组数（num_channels` 必须能被 `num_groups` 整除）
     /// - `num_channels`: 通道数
     /// - `eps`: 数值稳定性常数
     /// - `name`: 层名称
@@ -48,7 +48,7 @@ impl GroupNorm {
         name: &str,
     ) -> Result<Self, GraphError> {
         assert!(
-            num_channels % num_groups == 0,
+            num_channels.is_multiple_of(num_groups),
             "GroupNorm: num_channels={num_channels} 必须能被 num_groups={num_groups} 整除"
         );
 
@@ -70,7 +70,7 @@ impl GroupNorm {
 
     /// 前向传播
     ///
-    /// 输入 [N, C, ...] → 分组归一化 → gamma * x_hat + beta
+    /// 输入 [N, C, ...] → 分组归一化 → gamma * `x_hat` + beta
     pub fn forward(&self, x: impl IntoVar) -> Var {
         let x = x
             .into_var(&self.gamma.get_graph())

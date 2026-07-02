@@ -112,7 +112,7 @@ fn adjust_contrast(tensor: &Tensor, factor: f32) -> Tensor {
             (0..spatial_size).map(|i| flat[offset + i]).sum::<f32>() / spatial_size as f32;
 
         for i in 0..spatial_size {
-            data[offset + i] = factor * flat[offset + i] + (1.0 - factor) * mean;
+            data[offset + i] = factor.mul_add(flat[offset + i], (1.0 - factor) * mean);
         }
     }
 
@@ -143,11 +143,11 @@ fn adjust_saturation(tensor: &Tensor, factor: f32) -> Tensor {
         let r = flat[i];
         let g = flat[hw + i];
         let b = flat[2 * hw + i];
-        let gray = wr * r + wg * g + wb * b;
+        let gray = wr.mul_add(r, wg * g) + wb * b;
 
-        data[i] = factor * r + (1.0 - factor) * gray;
-        data[hw + i] = factor * g + (1.0 - factor) * gray;
-        data[2 * hw + i] = factor * b + (1.0 - factor) * gray;
+        data[i] = factor.mul_add(r, (1.0 - factor) * gray);
+        data[hw + i] = factor.mul_add(g, (1.0 - factor) * gray);
+        data[2 * hw + i] = factor.mul_add(b, (1.0 - factor) * gray);
     }
 
     Tensor::new(&data, shape)

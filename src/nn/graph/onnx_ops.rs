@@ -18,9 +18,9 @@ use onnx_rs::ast::{Attribute, OpType};
 
 // ==================== 导入方向：ONNX → NodeTypeDescriptor ====================
 
-/// 将 ONNX 算子映射为一个或多个 NodeTypeDescriptor。
+/// 将 ONNX 算子映射为一个或多个 `NodeTypeDescriptor`。
 ///
-/// 返回 `Vec` 是因为 Gemm 需要展开为 MatMul + Add 两个节点。
+/// 返回 `Vec` 是因为 Gemm 需要展开为 `MatMul` + Add 两个节点。
 /// 大多数算子返回恰好一个元素。
 pub fn onnx_op_to_descriptors(
     op_type: &OpType,
@@ -369,7 +369,7 @@ pub struct OnnxExportOp {
 }
 
 impl OnnxExportOp {
-    fn simple(op_type: &'static str) -> Self {
+    const fn simple(op_type: &'static str) -> Self {
         Self {
             op_type,
             float_attrs: vec![],
@@ -396,7 +396,7 @@ pub enum ExportCategory {
     Unsupported(String),
 }
 
-/// 将 NodeTypeDescriptor 映射为导出分类。
+/// 将 `NodeTypeDescriptor` 映射为导出分类。
 pub fn descriptor_to_export_category(desc: &NodeTypeDescriptor) -> ExportCategory {
     match desc {
         // ─── 图输入 ───
@@ -757,16 +757,16 @@ pub(crate) fn find_attr_ints(attrs: &[Attribute], name: &str) -> Vec<i64> {
         .unwrap_or_default()
 }
 
-/// 解析 ONNX 2D `pads` 属性为对称 (pad_h, pad_w)
+/// 解析 ONNX 2D `pads` 属性为对称 (`pad_h`, `pad_w`)
 ///
 /// ONNX pads 布局：`[H_begin, W_begin, H_end, W_end]`
 ///
-/// 当前 only_torch Conv2d / ConvTranspose2d 只支持对称四角 padding
-/// （即 H_begin == H_end && W_begin == W_end）。
+/// 当前 `only_torch` Conv2d / `ConvTranspose2d` 只支持对称四角 padding
+/// （即 `H_begin` == `H_end` && `W_begin` == `W_end`）。
 /// 非对称四角（如 `pads=[1,2,3,4]`）属罕见情形（PyTorch 默认对称导出，
-/// HuggingFace 等第三方模型偶有），需要在导入端用 Pad 节点 + Conv(p=0) 组合
+/// `HuggingFace` 等第三方模型偶有），需要在导入端用 Pad 节点 + Conv(p=0) 组合
 /// 表达——当前不支持，遇到时返回 actionable 错误，提示用户用 onnxsim 预处理
-/// 或在 PyTorch 端用 `nn.ZeroPad2d` 显式拆开。
+/// 或在 `PyTorch` 端用 `nn.ZeroPad2d` 显式拆开。
 ///
 /// 返回值：
 /// - `pads.len() == 0`：默认 `(0, 0)`

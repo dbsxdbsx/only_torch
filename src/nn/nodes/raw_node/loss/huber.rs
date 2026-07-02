@@ -69,7 +69,7 @@ pub const DEFAULT_HUBER_DELTA: f32 = 1.0;
 impl Huber {
     /// 获取 reduction 模式
     #[allow(dead_code)]
-    pub(crate) fn reduction(&self) -> Reduction {
+    pub(crate) const fn reduction(&self) -> Reduction {
         self.reduction
     }
 

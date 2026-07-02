@@ -1,4 +1,4 @@
-//! Gumbel MuZero 根搜索（Danihelka et al. 2022 · 标准版，非 Full）。
+//! Gumbel `MuZero` 根搜索（Danihelka et al. 2022 · 标准版，非 Full）。
 //!
 //! - 根：Gumbel-Top-k + Sequential Halving（Algorithm 2）
 //! - 非根：仍 PUCT（[`PuctPolicy`]）
@@ -12,7 +12,7 @@ use super::puct::PuctPolicy;
 use super::traits::{RootScheduler, RootStrategy, SelectionRule, TargetRule};
 use super::types::{ChildStat, MctsConfig};
 
-/// Gumbel MuZero 搜索策略（标准版：仅改根，非根 PUCT）。
+/// Gumbel `MuZero` 搜索策略（标准版：仅改根，非根 PUCT）。
 #[derive(Debug, Clone)]
 pub struct GumbelPolicy {
     puct: PuctPolicy,
@@ -40,7 +40,7 @@ impl GumbelPolicy {
         }
     }
 
-    pub fn with_halving_scale(mut self, c_visit: f32, c_scale: f32) -> Self {
+    pub const fn with_halving_scale(mut self, c_visit: f32, c_scale: f32) -> Self {
         self.c_visit = c_visit;
         self.c_scale = c_scale;
         self
@@ -106,7 +106,7 @@ pub(in crate::rl) struct GumbelRootScheduler {
 }
 
 impl GumbelRootScheduler {
-    pub(in crate::rl) fn new(max_considered: usize, c_visit: f32, c_scale: f32) -> Self {
+    pub(in crate::rl) const fn new(max_considered: usize, c_visit: f32, c_scale: f32) -> Self {
         Self {
             max_considered,
             c_visit,
@@ -300,7 +300,7 @@ fn gumbel_halving_score(
     let logit = c.prior.max(1e-12).ln();
     let q_hat = if c.visit_count > 0 {
         let child_v = c.value_sum / c.visit_count as f32;
-        c.reward + c.discount * child_v
+        c.discount.mul_add(child_v, c.reward)
     } else {
         v_pi
     };
@@ -318,7 +318,7 @@ fn q_range(children: &[ChildStat], v_pi: f32) -> (f32, f32) {
     for c in children {
         let q = if c.visit_count > 0 {
             let child_v = c.value_sum / c.visit_count as f32;
-            c.reward + c.discount * child_v
+            c.discount.mul_add(child_v, c.reward)
         } else {
             v_pi
         };

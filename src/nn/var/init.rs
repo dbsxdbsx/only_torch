@@ -19,10 +19,10 @@ pub enum Init {
     Xavier,
 }
 
-/// 计算 fan_in 和 fan_out（PyTorch 兼容）
+/// 计算 `fan_in` 和 `fan_out（PyTorch` 兼容）
 ///
-/// 遵循 PyTorch `torch.nn.init._calculate_fan_in_and_fan_out` 的逻辑，
-/// 但需适配本框架 Linear 层 weight layout `[in, out]`（PyTorch 为 `[out, in]`）。
+/// 遵循 `PyTorch` `torch.nn.init._calculate_fan_in_and_fan_out` 的逻辑，
+/// 但需适配本框架 Linear 层 weight layout `[in, out]`（`PyTorch` 为 `[out, in]`）。
 ///
 /// - **Conv 权重 (≥3D)** `[C_out, C_in, kH, kW, ...]`:
 ///   - `fan_in  = C_in  × receptive_field_size`（即 `shape[1] × prod(shape[2..])`）
@@ -31,8 +31,8 @@ pub enum Init {
 /// - **Linear 权重 (2D)** `[in_features, out_features]`:
 ///   - `fan_in  = in_features`（`shape[0]`）
 ///   - `fan_out = out_features`（`shape[1]`）
-///   - 注意：PyTorch Linear 的 layout 是 `[out, in]`，fan_in = `shape[1]`；
-///     本框架 layout 是 `[in, out]`，fan_in = `shape[0]`，结果相同。
+///   - 注意：PyTorch Linear 的 layout 是 `[out, in]`，`fan_in` = `shape[1]`；
+///     本框架 layout 是 `[in, out]`，`fan_in` = `shape[0]`，结果相同。
 fn calculate_fan_in_and_fan_out(shape: &[usize]) -> (usize, usize) {
     assert!(
         shape.len() >= 2,

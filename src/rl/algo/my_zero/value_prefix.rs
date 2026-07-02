@@ -1,4 +1,4 @@
-//! MyZero value prefix 目标（LSTM 累计 reward 前缀，Ye et al. 2021）。
+//! `MyZero` value prefix 目标（LSTM 累计 reward 前缀，Ye et al. 2021）。
 //!
 //! 把「逐步精确预测 reward」改为「预测从子根到第 k 步的累计 reward 前缀和」，规避 reward
 //! 落点的 state-aliasing，使监督更稳。

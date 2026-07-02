@@ -23,8 +23,8 @@ pub(crate) struct Selu {
     supports_dynamic: bool,
 }
 
-const SELU_LAMBDA: f32 = 1.0507009873554805;
-const SELU_ALPHA: f32 = 1.6732632423543772;
+const SELU_LAMBDA: f32 = 1.050_701;
+const SELU_ALPHA: f32 = 1.673_263_2;
 
 impl Selu {
     pub(in crate::nn) fn new(

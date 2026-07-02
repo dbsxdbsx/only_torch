@@ -18,7 +18,7 @@
 use crate::nn::graph::NodeGroupContext;
 use crate::nn::{Graph, GraphError, Init, IntoVar, Module, Var};
 
-/// ConvTranspose2d (2D 转置卷积 / 反卷积) 层
+/// `ConvTranspose2d` (2D 转置卷积 / 反卷积) 层
 ///
 /// `PyTorch` 风格：`output = conv_transpose2d(x, K) + b`
 ///
@@ -45,7 +45,7 @@ pub struct ConvTranspose2d {
 }
 
 impl ConvTranspose2d {
-    /// 创建新的 ConvTranspose2d 层
+    /// 创建新的 `ConvTranspose2d` 层
     ///
     /// # 参数
     /// - `graph`: 计算图句柄

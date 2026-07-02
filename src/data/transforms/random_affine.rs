@@ -1,7 +1,7 @@
 //! 随机仿射变换
 //!
 //! 对图像应用随机的旋转、平移、缩放、剪切组合变换，使用双线性插值。
-//! 对应 PyTorch `torchvision.transforms.RandomAffine`。
+//! 对应 `PyTorch` `torchvision.transforms.RandomAffine`。
 //!
 //! 同时为 `ClassificationSample` / `DetectionSample` / `SegmentationSample`
 //! 实现 [`SampleTransform`]——所有 paired 路径下 image / mask / bbox 必须
@@ -24,7 +24,7 @@ use rand::Rng;
 ///
 /// # 参数
 /// - `degrees`: 旋转角度范围 [-degrees, +degrees]（度）
-/// - `translate`: 平移范围 (max_dx, max_dy)，以图像尺寸的比例表示
+/// - `translate`: 平移范围 (`max_dx`, `max_dy)，以图像尺寸的比例表示`
 /// - `scale`: 缩放范围 (min, max)
 /// - `shear`: 剪切角度范围 [-shear, +shear]（度）
 ///
@@ -100,7 +100,7 @@ impl RandomAffine {
     }
 
     /// 设置超出边界的填充值
-    pub fn fill_value(mut self, value: f32) -> Self {
+    pub const fn fill_value(mut self, value: f32) -> Self {
         self.fill_value = value;
         self
     }
@@ -108,7 +108,7 @@ impl RandomAffine {
     /// 设置 detection label 过滤规则；仅在 `SampleTransform<DetectionSample>`
     /// 路径下生效。仿射后的 bbox 会先 clip 到图像边界，再按此 filter 丢弃
     /// 面积过小的框（典型：大幅缩小或移到图外）。
-    pub fn with_label_filter(mut self, filter: DetectionLabelFilter) -> Self {
+    pub const fn with_label_filter(mut self, filter: DetectionLabelFilter) -> Self {
         self.label_filter = filter;
         self
     }
@@ -227,8 +227,7 @@ fn image_h_w(tensor: &Tensor) -> (usize, usize) {
         2 => (shape[0], shape[1]),
         3 => (shape[1], shape[2]),
         _ => panic!(
-            "RandomAffine: 期望图像形状 [H, W] 或 [C, H, W]，得到 {:?}",
-            shape
+            "RandomAffine: 期望图像形状 [H, W] 或 [C, H, W]，得到 {shape:?}"
         ),
     }
 }

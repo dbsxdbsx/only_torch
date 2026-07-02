@@ -1,4 +1,4 @@
-//! Net2Net: 函数保持（function-preserving）的神经元扩宽。
+//! `Net2Net`: 函数保持（function-preserving）的神经元扩宽。
 //!
 //! # 基本思想
 //!
@@ -102,7 +102,7 @@ fn block_param_ids(genome: &NetworkGenome, block: &NodeBlock) -> Vec<u64> {
         .collect()
 }
 
-/// 定位 Linear 块的 W 参数（通过 MatMul 的父节点关系），返回 `(W_id, b_id)`
+/// 定位 Linear 块的 W 参数（通过 `MatMul` 的父节点关系），返回 `(W_id, b_id)`
 fn locate_linear_params(genome: &NetworkGenome, block: &NodeBlock) -> Option<(u64, u64)> {
     let nodes = genome.nodes();
     let bid_set: std::collections::HashSet<u64> = block.node_ids.iter().copied().collect();
@@ -154,7 +154,7 @@ fn locate_recurrent_cell_params(
             )
     })?;
     let param_ids: Vec<u64> = cell.parents.iter().skip(1).copied().collect();
-    if param_ids.is_empty() || param_ids.len() % 3 != 0 {
+    if param_ids.is_empty() || !param_ids.len().is_multiple_of(3) {
         return None;
     }
     let mut gates = Vec::with_capacity(param_ids.len() / 3);
@@ -165,7 +165,7 @@ fn locate_recurrent_cell_params(
 }
 
 /// 判断是否是 "不影响特征维度" 的纯透传块
-fn is_pass_through(kind: &NodeBlockKind) -> bool {
+const fn is_pass_through(kind: &NodeBlockKind) -> bool {
     matches!(
         kind,
         NodeBlockKind::Activation | NodeBlockKind::Dropout | NodeBlockKind::Pool2d

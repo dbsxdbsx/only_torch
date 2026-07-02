@@ -68,7 +68,7 @@ pub(super) fn assemble_reshape_with_const_fold<'a>(
     Ok(())
 }
 
-/// 把 ONNX 风格的 i64 shape 转为 only_torch 的 `Vec<usize>`
+/// 把 ONNX 风格的 i64 shape 转为 `only_torch` 的 `Vec<usize>`
 ///
 /// ONNX shape 允许两种特殊值：
 /// - `-1`(推导)：根据 `parent.numel() / 其他维度乘积` 算出,最多一个
@@ -132,7 +132,7 @@ pub(super) fn convert_onnx_shape_to_usize(
     // 推导优先级：
     //   1. parent_shape 全静态 + known_product>0 → total / known
     //   2. parent_shape 含动态维度 → 占位 1(让 Reshape 动态 batch 接管)
-    let parent_total: Option<usize> = if parent_shape.iter().any(|&d| d == 0) {
+    let parent_total: Option<usize> = if parent_shape.contains(&0) {
         None
     } else {
         Some(parent_shape.iter().product())

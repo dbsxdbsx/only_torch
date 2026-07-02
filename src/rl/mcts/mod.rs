@@ -1,6 +1,6 @@
 //! MCTS（蒙特卡洛树搜索）内核
 //!
-//! 提供与 AlphaZero / MuZero 兼容的单线程 MCTS 搜索引擎。
+//! 提供与 `AlphaZero` / `MuZero` 兼容的单线程 MCTS 搜索引擎。
 //!
 //! ## 模块结构
 //!

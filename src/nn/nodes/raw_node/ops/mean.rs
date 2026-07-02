@@ -33,7 +33,7 @@ use crate::tensor::Tensor;
 /// - 按轴模式：原 shape 中第 axis 维变为 1
 ///
 /// ## 梯度计算
-/// 对于 y = mean(x)，∂y/∂x_i = 1/n，反向传播时将上游梯度除以 n 后广播回输入形状
+/// 对于 y = `mean(x)，∂y/∂x_i` = 1/n，反向传播时将上游梯度除以 n 后广播回输入形状
 #[derive(Clone)]
 pub(crate) struct Mean {
     id: Option<NodeId>,
@@ -63,15 +63,14 @@ impl Mean {
         axis: Option<usize>,
     ) -> Result<Self, GraphError> {
         // 验证 axis 有效性
-        if let Some(ax) = axis {
-            if ax >= input_shape.len() {
+        if let Some(ax) = axis
+            && ax >= input_shape.len() {
                 return Err(GraphError::InvalidOperation(format!(
                     "Mean: axis {} 超出输入维度范围 {}",
                     ax,
                     input_shape.len()
                 )));
             }
-        }
 
         // 计算输出形状
         let fixed_shape = match axis {
@@ -114,7 +113,7 @@ impl Mean {
 
     /// 获取 axis 配置
     #[allow(dead_code)]
-    pub fn axis(&self) -> Option<usize> {
+    pub const fn axis(&self) -> Option<usize> {
         self.axis
     }
 }
@@ -180,9 +179,9 @@ impl TraitNode for Mean {
     /// Mean 反向传播的 VJP 计算
     ///
     /// 对于 y = mean(x) = sum(x) / n，有：
-    /// ∂y/∂x_i = 1/n
+    /// ∂`y/∂x_i` = 1/n
     ///
-    /// VJP: grad_to_parent = broadcast(upstream_grad, input_shape) / n
+    /// VJP: `grad_to_parent` = `broadcast(upstream_grad`, `input_shape`) / n
     fn calc_grad_to_parent(
         &self,
         _target_parent_index: usize,

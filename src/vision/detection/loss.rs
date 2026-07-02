@@ -6,14 +6,14 @@
 //! 属于通用算子层（`src/nn/nodes/raw_node/loss/`），由 `Var` 用户 API 层
 //! （`src/nn/var/ops/loss.rs`）通过 `mse_loss / bce_loss` 等链式方法暴露；
 //! detection 专属的 IoU-family bbox loss 走拼接式实现，由本子模块的同侪
-//! [`super::iou_loss`] 用基础算子 + autograd 拼出（不在 raw_node 节点层）。
+//! [`super::iou_loss`] 用基础算子 + autograd 拼出（不在 `raw_node` 节点层）。
 //! 本文件只负责 detection 任务**特有的 loss 周边工具**：
 //!
 //! - 已实现：[`DetectionLossComponents`] / [`DetectionLossWeights`]——把已经
 //!   完成正负样本匹配后的 bbox / objectness / class loss 按权重组合成单个总
 //!   loss。**它本身没有新的反向逻辑**，只是 `Var` 算术运算的薄包装。
 //! - 未来可能扩充（按需引入，不强求都是"多任务加权"形态）：assignment cost
-//!   matrix（如 SimOTA / DSL）、quality / distribution target 构造（QFL / VFL
+//!   matrix（如 `SimOTA` / DSL）、quality / distribution target 构造（QFL / VFL
 //!   / DFL）、heatmap target 构造（CenterNet）等。这些都属于 detection 任务级、
 //!   不应污染通用算子层的 loss 周边工具。
 //!
@@ -59,7 +59,7 @@ pub struct DetectionLossComponents {
 }
 
 impl DetectionLossComponents {
-    pub fn new(bbox: Option<Var>, objectness: Option<Var>, class: Option<Var>) -> Self {
+    pub const fn new(bbox: Option<Var>, objectness: Option<Var>, class: Option<Var>) -> Self {
         Self {
             bbox,
             objectness,

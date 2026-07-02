@@ -57,7 +57,7 @@ pub enum Reduction {
 impl MSE {
     /// 获取 reduction 模式
     #[allow(dead_code)]
-    pub(crate) fn reduction(&self) -> Reduction {
+    pub(crate) const fn reduction(&self) -> Reduction {
         self.reduction
     }
 
@@ -151,7 +151,7 @@ impl TraitNode for MSE {
     /// - Sum: `dL/d_input` = 2 * (input - target) * upstream
     ///
     /// **必须乘上游梯度 `upstream`**：MSE 常作终端 loss（upstream=1）故历史上可省略，
-    /// 但一旦作为中间 loss 项（如 MyZero 把 continuation/reconstruction MSE 与其它 loss
+    /// 但一旦作为中间 loss 项（如 `MyZero` 把 continuation/reconstruction MSE 与其它 loss
     /// 组合、再经 `scale_gradient` / `* coef` 缩放），省略 upstream 会丢失链式法则的缩放因子，
     /// 导致梯度量级错误（尤其 batch 化后 `numel` 随 batch 变化，逐样本/批量结果发散）。
     fn calc_grad_to_parent(

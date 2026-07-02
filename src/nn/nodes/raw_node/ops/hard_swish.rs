@@ -5,7 +5,7 @@ use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
-/// HardSwish 激活函数节点
+/// `HardSwish` 激活函数节点
 ///
 /// forward: 分段 — 0 if x <= -3, x if x >= 3, x*(x+3)/6 otherwise
 /// backward: 分段 — 0 if x <= -3, 1 if x >= 3, (2x+3)/6 otherwise
@@ -84,7 +84,7 @@ impl TraitNode for HardSwish {
                 if x_val >= 3.0 {
                     1.0
                 } else {
-                    (2.0 * x_val + 3.0) / 6.0
+                    2.0f32.mul_add(x_val, 3.0) / 6.0
                 }
             },
             |_| 0.0,

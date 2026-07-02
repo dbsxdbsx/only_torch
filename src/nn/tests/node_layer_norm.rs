@@ -13,7 +13,7 @@
  */
 
 use crate::nn::Mode;
-use crate::nn::{Graph, GraphError, Init, VarLossOps, VarReduceOps, VarShapeOps};
+use crate::nn::{Graph, GraphError, Init, VarLossOps, VarShapeOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -211,7 +211,6 @@ fn test_layer_norm_backward_noncontiguous_upstream() {
 /// 张量**，前向输出必须逐元素一致（非连续被按内存序误读会得到不同结果，正是 conv2d 曾暴露的坑）。
 #[test]
 fn test_layer_norm_forward_noncontiguous_input() {
-    use std::rc::Rc;
     // [2,3] 原始值；permute[1,0] → [3,2]
     let base = Tensor::new(&[1.0, 2.0, 3.0, 0.5, -1.0, 4.0], &[2, 3]);
     let permuted_contig = base.permute(&[1, 0]).into_contiguous();

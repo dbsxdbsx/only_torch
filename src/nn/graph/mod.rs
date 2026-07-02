@@ -40,9 +40,9 @@ use std::rc::Rc;
 /// 节点分组上下文 RAII guard
 ///
 /// 在 guard 存活期间，通过 `create_node_inner` 创建的**计算节点**会自动打上分组标签。
-/// Input / Parameter / TargetInput 等数据节点不受影响。
+/// Input / Parameter / `TargetInput` 等数据节点不受影响。
 ///
-/// 采用"外层优先"策略：如果已有活跃的分组上下文（如 TanhNormal 调用 Normal），
+/// 采用"外层优先"策略：如果已有活跃的分组上下文（如 `TanhNormal` 调用 Normal），
 /// 内层 guard 不会覆盖外层标签，确保所有节点统一归属到最外层分布。
 ///
 /// # 示例
@@ -56,7 +56,7 @@ pub(crate) struct NodeGroupContext {
     graph: Rc<RefCell<GraphInner>>,
     /// 是否真正 push 了上下文（外层优先：已有上下文时为 false）
     did_push: bool,
-    /// 之前的 include_params 值（drop 时恢复）
+    /// 之前的 `include_params` 值（drop 时恢复）
     prev_include_params: bool,
 }
 
@@ -156,8 +156,8 @@ impl NodeGroupContext {
                 g.node_group_context = Some(NodeGroupTag {
                     group_type: group_type.to_string(),
                     instance_id,
-                    display_name: display_name.map(|s| s.to_string()),
-                    description: description.map(|s| s.to_string()),
+                    display_name: display_name.map(std::string::ToString::to_string),
+                    description: description.map(std::string::ToString::to_string),
                     style,
                     hidden: false,
                 });

@@ -86,7 +86,7 @@ pub fn letterbox_with_fill_to(
     let pad_y = (out_h.saturating_sub(new_h)) / 2;
     let mut canvas: ImageBuffer<Rgb<u8>, Vec<u8>> =
         ImageBuffer::from_pixel(out_w, out_h, Rgb(fill));
-    image::imageops::overlay(&mut canvas, &resized_rgb, pad_x as i64, pad_y as i64);
+    image::imageops::overlay(&mut canvas, &resized_rgb, i64::from(pad_x), i64::from(pad_y));
 
     LetterboxResult {
         image: DynamicImage::ImageRgb8(canvas),
@@ -127,9 +127,9 @@ pub fn image_to_nchw_normalized_data_size(img: &DynamicImage, width: u32, height
     let plane = (width * height) as usize;
     for (x, y, p) in rgb.enumerate_pixels() {
         let idx = (y * width + x) as usize;
-        out[idx] = p.0[0] as f32 / 255.0;
-        out[plane + idx] = p.0[1] as f32 / 255.0;
-        out[2 * plane + idx] = p.0[2] as f32 / 255.0;
+        out[idx] = f32::from(p.0[0]) / 255.0;
+        out[plane + idx] = f32::from(p.0[1]) / 255.0;
+        out[2 * plane + idx] = f32::from(p.0[2]) / 255.0;
     }
     out
 }

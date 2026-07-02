@@ -28,7 +28,7 @@ fn resolve_best_base(base: &Path, seed: u64, seed_runs: u64) -> PathBuf {
     let parent = base.parent().unwrap_or_else(|| Path::new("."));
     let name = base
         .file_name()
-        .map(|s| s.to_owned())
+        .map(std::borrow::ToOwned::to_owned)
         .unwrap_or_else(|| std::ffi::OsString::from("best"));
     parent.join(format!("seed_{seed}")).join(name)
 }
@@ -49,7 +49,7 @@ impl BestTracker {
             .unwrap_or_default();
         let seed_dir = best_base
             .parent()
-            .map(|p| p.to_path_buf())
+            .map(std::path::Path::to_path_buf)
             .unwrap_or_default();
         Self {
             enabled,
@@ -64,11 +64,11 @@ impl BestTracker {
         }
     }
 
-    pub fn best_score(&self) -> f32 {
+    pub const fn best_score(&self) -> f32 {
         self.best_score
     }
 
-    pub fn best_episode(&self) -> Option<usize> {
+    pub const fn best_episode(&self) -> Option<usize> {
         if self.best_score.is_finite() {
             Some(self.best_episode)
         } else {

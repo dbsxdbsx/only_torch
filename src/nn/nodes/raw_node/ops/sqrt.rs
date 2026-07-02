@@ -103,7 +103,7 @@ impl TraitNode for Sqrt {
     /// 对于 y = √x，有：
     /// dy/dx = 1 / (2√x) = 0.5 / y
     ///
-    /// VJP: grad_to_parent = upstream_grad * 0.5 / √x
+    /// VJP: `grad_to_parent` = `upstream_grad` * 0.5 / √x
     ///
     /// 注意：利用前向输出 y=√x 避免重复计算
     fn calc_grad_to_parent(

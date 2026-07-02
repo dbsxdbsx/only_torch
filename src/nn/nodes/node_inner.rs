@@ -45,23 +45,23 @@ pub struct NodeInner {
 
     // === 父节点引用（强引用，保证反向传播时存活）===
     /// 父节点列表，顺序与 `raw_node.calc_value_by_parents` 的参数顺序一致
-    parents: Vec<Rc<NodeInner>>,
+    parents: Vec<Rc<Self>>,
 
     // === 节点分组标签（用于可视化 cluster）===
     /// 如果该节点是在某个分组上下文中创建的，则记录所属分组。
-    /// 使用 RefCell 支持后补标签（如 Layer 的 Parameter 节点在 guard 之前创建）。
+    /// 使用 `RefCell` 支持后补标签（如 Layer 的 Parameter 节点在 guard 之前创建）。
     node_group_tag: RefCell<Option<NodeGroupTag>>,
 
     // === ONNX 来源追溯（provenance）===
     /// 如果节点由 ONNX 导入而来，记录原 ONNX 模型的节点名链路
     /// （详见 `NodeDescriptor::origin_onnx_nodes`）。
     /// 演化、单元测试、Layer API 等非 ONNX 路径下默认空 `Vec`。
-    /// 使用 `RefCell` 支持后补（rebuild_node 创建完 NodeInner 后再注入）。
+    /// 使用 `RefCell` `支持后补（rebuild_node` 创建完 `NodeInner` 后再注入）。
     origin_onnx_nodes: RefCell<Vec<String>>,
 }
 
 impl NodeInner {
-    /// 创建新的 NodeInner
+    /// 创建新的 `NodeInner`
     ///
     /// # 参数
     /// - `id`: 节点 ID（用于可视化/调试）
@@ -69,11 +69,11 @@ impl NodeInner {
     /// - `raw_node`: 节点类型（包含 value/grad）
     /// - `parents`: 父节点列表（强引用）
     #[allow(private_interfaces)]
-    pub fn new(
+    pub const fn new(
         id: NodeId,
         name: Option<String>,
         raw_node: NodeType,
-        parents: Vec<Rc<NodeInner>>,
+        parents: Vec<Rc<Self>>,
     ) -> Self {
         Self {
             id,
@@ -97,7 +97,7 @@ impl NodeInner {
     // ==================== 基本访问器 ====================
 
     /// 获取节点 ID
-    pub fn id(&self) -> NodeId {
+    pub const fn id(&self) -> NodeId {
         self.id
     }
 
@@ -107,19 +107,19 @@ impl NodeInner {
     }
 
     /// 获取父节点列表
-    pub fn parents(&self) -> &[Rc<NodeInner>] {
+    pub fn parents(&self) -> &[Rc<Self>] {
         &self.parents
     }
 
     /// 是否是叶子节点（无父节点）
-    pub fn is_leaf(&self) -> bool {
+    pub const fn is_leaf(&self) -> bool {
         self.parents.is_empty()
     }
 
     // ==================== 前向/反向传播标记 ====================
 
     /// 获取最后一次前向传播 ID
-    pub fn last_forward_pass_id(&self) -> u64 {
+    pub const fn last_forward_pass_id(&self) -> u64 {
         self.last_forward_pass_id.get()
     }
 
@@ -129,7 +129,7 @@ impl NodeInner {
     }
 
     /// 获取最后一次反向传播 ID
-    pub fn last_backward_pass_id(&self) -> u64 {
+    pub const fn last_backward_pass_id(&self) -> u64 {
         self.last_backward_pass_id.get()
     }
 
@@ -141,7 +141,7 @@ impl NodeInner {
     // ==================== Detach 状态 ====================
 
     /// 是否被 detach（梯度截断）
-    pub fn is_detached(&self) -> bool {
+    pub const fn is_detached(&self) -> bool {
         self.is_detached.get()
     }
 
@@ -152,7 +152,7 @@ impl NodeInner {
 
     // ==================== 节点分组标签 ====================
 
-    /// 获取节点分组标签的克隆（通过 RefCell 借用）
+    /// 获取节点分组标签的克隆（通过 `RefCell` 借用）
     pub fn node_group_tag(&self) -> Option<NodeGroupTag> {
         self.node_group_tag.borrow().clone()
     }
@@ -172,7 +172,7 @@ impl NodeInner {
     }
 
     /// 设置 ONNX 来源节点名（由 `descriptor_rebuild::rebuild_node` 在创建完
-    /// NodeInner 后从 NodeDescriptor 注入）。
+    /// `NodeInner` 后从 `NodeDescriptor` 注入）。
     pub fn set_origin_onnx_nodes(&self, names: Vec<String>) {
         *self.origin_onnx_nodes.borrow_mut() = names;
     }
@@ -337,7 +337,7 @@ impl NodeInner {
     /// 收集父节点的值，调用 `raw_node.calc_value_by_parents()`
     ///
     /// # 性能优化
-    /// 直接借用父节点的 raw_node，避免通过 `value()` 方法 clone Tensor
+    /// 直接借用父节点的 `raw_node，避免通过` `value()` 方法 clone Tensor
     fn calc_value_from_parents(&self, mode: Mode) -> Result<(), GraphError> {
         // 1. 借用所有父节点的 raw_node（保持 borrow 存活直到计算完成）
         let parent_borrows: Vec<std::cell::Ref<NodeType>> =
@@ -432,7 +432,7 @@ impl NodeInner {
     /// `GradResult` 枚举，调用方根据变体选择零拷贝或分配策略
     ///
     /// # 性能优化
-    /// 直接借用父节点的 raw_node，避免 clone Tensor
+    /// 直接借用父节点的 `raw_node，避免` clone Tensor
     pub(in crate::nn) fn calc_grad_to_parent_index(
         &self,
         target_index: usize,
@@ -542,7 +542,7 @@ impl NodeInner {
     ///
     /// # 返回
     /// 拓扑逆序的节点列表，用于反向传播遍历
-    pub fn backward_topo_order(self: &Rc<Self>) -> Vec<Rc<NodeInner>> {
+    pub fn backward_topo_order(self: &Rc<Self>) -> Vec<Rc<Self>> {
         let mut result = Vec::new();
         let mut visited = HashSet::new();
 
@@ -594,7 +594,7 @@ impl NodeInner {
     /// # 逻辑
     /// 1. 收集拓扑顺序
     /// 2. 遍历每个节点：
-    ///    - 跳过已处理的节点（pass_id 检查）
+    ///    - `跳过已处理的节点（pass_id` 检查）
     ///    - 获取节点梯度，调用 `propagate_grad_to_parents`
     ///    - 更新 `last_backward_pass_id`
     pub fn backward_propagate(self: &Rc<Self>, pass_id: u64) -> Result<(), GraphError> {
@@ -605,9 +605,9 @@ impl NodeInner {
     /// 用已构建好的反向拓扑序执行反向传播
     ///
     /// 供调用方在同一次 backward 中复用拓扑序（如 `backward_via_node_inner`
-    /// 先用它清中间梯度，再传播），避免重复 DFS + HashSet + `Vec<Rc>` 构建。
+    /// 先用它清中间梯度，再传播），避免重复 DFS + `HashSet` + `Vec<Rc>` 构建。
     pub fn backward_propagate_with_order(
-        topo_order: &[Rc<NodeInner>],
+        topo_order: &[Rc<Self>],
         pass_id: u64,
     ) -> Result<(), GraphError> {
         for node in topo_order {

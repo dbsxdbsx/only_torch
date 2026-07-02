@@ -7,7 +7,7 @@ use image::{DynamicImage, GenericImageView, imageops::FilterType};
 
 /// 不保留宽高比，直接拉伸到目标尺寸。
 ///
-/// 对应 PyTorch `torchvision.transforms.functional.resize` 的非保留宽高比模式。
+/// 对应 `PyTorch` `torchvision.transforms.functional.resize` 的非保留宽高比模式。
 pub fn resize_exact(image: &DynamicImage, width: u32, height: u32) -> DynamicImage {
     assert!(width > 0 && height > 0, "resize_exact: 目标尺寸必须大于 0");
     image.resize_exact(width, height, FilterType::Triangle)
@@ -27,7 +27,7 @@ pub fn resize_keep_ratio(image: &DynamicImage, width: u32, height: u32) -> Dynam
 
 /// 中心裁剪到 `(width, height)`。
 ///
-/// 目标尺寸必须不超过原图，否则会 panic（与 PyTorch
+/// 目标尺寸必须不超过原图，否则会 panic（与 `PyTorch`
 /// `torchvision.transforms.functional.center_crop` 在 PIL 模式下的语义一致）。
 pub fn center_crop(image: &DynamicImage, width: u32, height: u32) -> DynamicImage {
     let (orig_w, orig_h) = image.dimensions();

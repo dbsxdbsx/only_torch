@@ -57,15 +57,15 @@ pub struct MultiHeadAttention {
     w_v: Linear,
     /// 输出投影
     w_o: Linear,
-    /// 输入特征维（Q/K/V 的输入维度，可与 embed_dim 不同）
+    /// 输入特征维（Q/K/V 的输入维度，可与 `embed_dim` 不同）
     input_size: usize,
     /// 嵌入维度
     embed_dim: usize,
     /// 头数
     num_heads: usize,
-    /// 每头维度 d_k = embed_dim / num_heads
+    /// 每头维度 `d_k` = `embed_dim` / `num_heads`
     head_dim: usize,
-    /// 缩放因子 1/sqrt(d_k)
+    /// 缩放因子 `1/sqrt(d_k)`
     scale: f32,
     /// 层名称
     name: String,
@@ -78,7 +78,7 @@ impl MultiHeadAttention {
     ///
     /// # 参数
     /// - `graph`: 计算图
-    /// - `embed_dim`: 嵌入维度（必须能被 num_heads 整除）
+    /// - `embed_dim`: 嵌入维度（必须能被 `num_heads` 整除）
     /// - `num_heads`: 注意力头数
     /// - `name`: 层名称前缀
     pub fn new(
@@ -90,15 +90,15 @@ impl MultiHeadAttention {
         Self::new_with_input_size(graph, embed_dim, embed_dim, num_heads, name)
     }
 
-    /// 创建多头注意力层（允许 input_size 与 embed_dim 不同）
+    /// 创建多头注意力层（允许 `input_size` 与 `embed_dim` 不同）
     ///
-    /// 演化系统的 `CellAttention` 直接接在 input 后时 input_size 可能很小（例如 1），
-    /// 此时 W_q/W_k/W_v 的形状为 `[input_size, embed_dim]`、W_o 仍为 `[embed_dim, embed_dim]`。
+    /// 演化系统的 `CellAttention` 直接接在 input 后时 `input_size` 可能很小（例如 1），
+    /// 此时 `W_q/W_k/W_v` 的形状为 `[input_size, embed_dim]`、`W_o` 仍为 `[embed_dim, embed_dim]`。
     ///
     /// # 参数
     /// - `graph`: 计算图
     /// - `input_size`: Q/K/V 的输入特征维（即上游节点最后一维）
-    /// - `embed_dim`: attention 内部嵌入维度（必须能被 num_heads 整除）
+    /// - `embed_dim`: attention 内部嵌入维度（必须能被 `num_heads` 整除）
     /// - `num_heads`: 注意力头数
     /// - `name`: 层名称前缀
     pub fn new_with_input_size(
@@ -109,7 +109,7 @@ impl MultiHeadAttention {
         name: &str,
     ) -> Result<Self, GraphError> {
         assert!(
-            embed_dim % num_heads == 0,
+            embed_dim.is_multiple_of(num_heads),
             "MultiHeadAttention: embed_dim={embed_dim} 必须能被 num_heads={num_heads} 整除"
         );
 
@@ -138,7 +138,7 @@ impl MultiHeadAttention {
         })
     }
 
-    /// 从已有参数 Var 构造（演化 NodeLevel rebuild 路径专用）
+    /// 从已有参数 Var 构造（演化 `NodeLevel` rebuild 路径专用）
     ///
     /// 不创建新参数节点，直接复用传入的 8 个 Var。
     ///
@@ -165,7 +165,7 @@ impl MultiHeadAttention {
         b_o: Var,
     ) -> Self {
         assert!(
-            embed_dim % num_heads == 0,
+            embed_dim.is_multiple_of(num_heads),
             "MultiHeadAttention::from_vars: embed_dim={embed_dim} 必须能被 num_heads={num_heads} 整除"
         );
 
@@ -198,12 +198,12 @@ impl MultiHeadAttention {
     /// 前向传播（无 mask） — Scaled Dot-Product Multi-Head Attention
     ///
     /// # 参数
-    /// - `query`: 查询 [N, T_q, input_size]
-    /// - `key`: 键 [N, T_k, input_size]
-    /// - `value`: 值 [N, T_k, input_size]
+    /// - `query`: 查询 [N, `T_q`, `input_size`]
+    /// - `key`: 键 [N, `T_k`, `input_size`]
+    /// - `value`: 值 [N, `T_k`, `input_size`]
     ///
     /// # 返回
-    /// - output: [N, T_q, embed_dim]
+    /// - output: [N, `T_q`, `embed_dim`]
     ///
     /// # 说明
     /// self-attention: `forward(&x, &x, &x)`，
@@ -215,9 +215,9 @@ impl MultiHeadAttention {
     /// 前向传播（带 mask） — Scaled Dot-Product Multi-Head Attention
     ///
     /// # 参数
-    /// - `query`: 查询 [N, T_q, input_size]
-    /// - `key`: 键 [N, T_k, input_size]
-    /// - `value`: 值 [N, T_k, input_size]
+    /// - `query`: 查询 [N, `T_q`, `input_size`]
+    /// - `key`: 键 [N, `T_k`, `input_size`]
+    /// - `value`: 值 [N, `T_k`, `input_size`]
     /// - `attn_mask`: 注意力 mask
     ///   - shape `[T_q, T_k]`：全 batch、全 head 共享
     ///   - shape `[N, T_q, T_k]`：每 batch 独立
@@ -268,13 +268,11 @@ impl MultiHeadAttention {
             match m_shape.len() {
                 2 => assert!(
                     m_shape[0] == t_q && m_shape[1] == t_k,
-                    "attn_mask [T_q, T_k] 形状 {:?} 与 (T_q={t_q}, T_k={t_k}) 不匹配",
-                    m_shape
+                    "attn_mask [T_q, T_k] 形状 {m_shape:?} 与 (T_q={t_q}, T_k={t_k}) 不匹配"
                 ),
                 3 => assert!(
                     m_shape[0] == n && m_shape[1] == t_q && m_shape[2] == t_k,
-                    "attn_mask [N, T_q, T_k] 形状 {:?} 与 (N={n}, T_q={t_q}, T_k={t_k}) 不匹配",
-                    m_shape
+                    "attn_mask [N, T_q, T_k] 形状 {m_shape:?} 与 (N={n}, T_q={t_q}, T_k={t_k}) 不匹配"
                 ),
                 _ => panic!(
                     "attn_mask 必须为 2D [T_q, T_k] 或 3D [N, T_q, T_k]，得到 {}D",

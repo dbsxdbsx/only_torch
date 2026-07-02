@@ -1,9 +1,9 @@
 use super::Tensor;
 
 impl Tensor {
-    /// 按掩码张量逐元素选择：condition 为非零时取 true_values，否则取 false_values
+    /// 按掩码张量逐元素选择：condition 为非零时取 `true_values，否则取` `false_values`
     ///
-    /// 等价于 PyTorch 的 `torch.where(condition, x, y)`。
+    /// 等价于 `PyTorch` 的 `torch.where(condition, x, y)`。
     /// 三个张量形状必须完全相同。
     ///
     /// # 参数
@@ -20,7 +20,7 @@ impl Tensor {
     /// let result = Tensor::where_mask(&cond, &x, &y);
     /// // result = [10.0, 200.0, 30.0]
     /// ```
-    pub fn where_mask(condition: &Tensor, true_values: &Tensor, false_values: &Tensor) -> Tensor {
+    pub fn where_mask(condition: &Self, true_values: &Self, false_values: &Self) -> Self {
         assert!(
             condition.is_same_shape(true_values) && condition.is_same_shape(false_values),
             "where_mask: 三个张量形状必须相同，condition={:?}, true_values={:?}, false_values={:?}",
@@ -34,10 +34,10 @@ impl Tensor {
             .iter()
             .zip(true_values.data.iter())
             .zip(false_values.data.iter())
-            .map(|((&c, &t), &f)| if c != 0.0 { t } else { f })
+            .map(|((&c, &t), &f)| if c == 0.0 { f } else { t })
             .collect();
 
-        Tensor::new(&result, condition.shape())
+        Self::new(&result, condition.shape())
     }
 
     /// 通用的条件过滤函数，可以灵活处理张量中的元素

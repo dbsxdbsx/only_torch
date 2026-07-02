@@ -42,10 +42,10 @@ pub(crate) struct MaxPool2d {
     stride: (usize, usize),      // (sH, sW)
     /// 填充 (top, bottom, left, right)
     ///
-    /// MaxPool 的 padding 用 `f32::NEG_INFINITY` 填充（避免污染 max 结果）。
+    /// `MaxPool` 的 padding 用 `f32::NEG_INFINITY` 填充（避免污染 max 结果）。
     /// 对称 padding 用 (p, p, p, p)，单边非对称用 (1, 0, 0, 0) 等。
     padding: (usize, usize, usize, usize),
-    /// ONNX 风格 ceil_mode：true 用 ceil 计算输出尺寸，false 用 floor
+    /// ONNX 风格 `ceil_mode：true` 用 ceil 计算输出尺寸，false 用 floor
     ceil_mode: bool,
 
     // 缓存（用于反向传播）
@@ -76,19 +76,19 @@ impl MaxPool2d {
         self.padding
     }
 
-    /// 获取 ceil_mode
+    /// 获取 `ceil_mode`
     #[allow(dead_code)]
     pub(in crate::nn) const fn ceil_mode(&self) -> bool {
         self.ceil_mode
     }
 
-    /// 从父节点形状信息创建 MaxPool2d 节点（核心实现）
+    /// 从父节点形状信息创建 `MaxPool2d` 节点（核心实现）
     ///
     /// # 参数
     /// - `parent_shape`: 输入形状 [batch, C, H, W]
     /// - `parent_dynamic_shape`: 父节点的动态形状
     /// - `kernel_size`: 池化窗口大小 (kH, kW)
-    /// - `stride`: 步长 (sH, sW)，None 则默认等于 kernel_size
+    /// - `stride`: 步长 (sH, sW)，None 则默认等于 `kernel_size`
     /// - `padding`: 填充 (top, bottom, left, right)，对称 padding 用 (p,p,p,p)
     /// - `ceil_mode`: true 用 ceil 计算输出尺寸，false 用 floor
     pub(in crate::nn) fn new(
@@ -232,7 +232,7 @@ impl TraitNode for MaxPool2d {
             self.padding.1 as u64,
             self.padding.2 as u64,
             self.padding.3 as u64,
-            self.ceil_mode as u64,
+            u64::from(self.ceil_mode),
         ]))
     }
 

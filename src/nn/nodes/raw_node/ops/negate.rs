@@ -8,7 +8,7 @@ use crate::tensor::Tensor;
 /// Negate 取反节点
 ///
 /// forward: negate(x) = -x
-/// backward: d(negate)/dx = -1，即 grad = -upstream_grad
+/// backward: d(negate)/dx = -1，即 grad = -`upstream_grad`
 ///
 /// 最简单的一元算术运算节点，补全 Add/Subtract/Multiply/Divide 的算术操作对称性。
 /// 无需缓存父节点值，反向传播仅需对上游梯度取反。
@@ -86,7 +86,7 @@ impl TraitNode for Negate {
         self.value.as_ref()
     }
 
-    /// Negate 的梯度：grad = -upstream_grad
+    /// Negate 的梯度：grad = -`upstream_grad`
     ///
     /// 无需缓存父节点值，直接对上游梯度取反即可。
     fn calc_grad_to_parent(

@@ -1,6 +1,6 @@
 //! 循环单元类型切换（RNN ↔ LSTM ↔ GRU）的权重迁移。
 //!
-//! 和 Net2Net 不同，这里无法做到严格的函数保持（RNN/LSTM/GRU 的门/状态维数
+//! 和 `Net2Net` 不同，这里无法做到严格的函数保持（RNN/LSTM/GRU 的门/状态维数
 //! 不同，信息量不对等），只能做 **informed initialization**：
 //! 通过让新 cell 的无关门饱和为 0 或 1，使信号路径尽可能接近原 cell 的计算，
 //! 为后续训练提供比纯随机初始化更好的起点。
@@ -27,7 +27,7 @@
 //! | GRU  → LSTM | `g ← n`; `f ← z`; `i, o` 饱和=1                         |
 //!
 //! 所有权重 `W_i*` 形状 `[in_dim, hidden]`，`W_h*` 形状 `[hidden, hidden]`，
-//! `b_*` 形状 `[1, hidden]`。`MutateCellType` 保持 in_dim 和 hidden_size 不变，
+//! `b_*` 形状 `[1, hidden]`。`MutateCellType` 保持 `in_dim` 和 `hidden_size` 不变，
 //! 所以无需重新 reshape，只需"搬运+构造饱和"。
 
 use std::collections::HashMap;
@@ -49,11 +49,11 @@ pub(crate) enum CellKind {
 
 impl CellKind {
     /// 每种 cell 的参数张量数量。
-    pub(crate) fn param_count(self) -> usize {
+    pub(crate) const fn param_count(self) -> usize {
         match self {
-            CellKind::Rnn => 3,
-            CellKind::Lstm => 12,
-            CellKind::Gru => 9,
+            Self::Rnn => 3,
+            Self::Lstm => 12,
+            Self::Gru => 9,
         }
     }
 }
@@ -66,7 +66,7 @@ struct Gate {
     b: Tensor,
 }
 
-/// 根据现有 W_ih 形状构造一个"零权重 + 饱和 bias"的门。
+/// 根据现有 `W_ih` 形状构造一个"零权重 + 饱和 bias"的门。
 ///
 /// 用于把某个门饱和成 sigmoid≈1 或 ≈0，从而在前向过程中让该门接近恒等/关闭。
 fn saturated_gate(w_ih_shape: &[usize], hidden: usize, bias_value: f32) -> Gate {
@@ -162,7 +162,7 @@ fn build_new_gates(
 /// - `old_snaps`：旧参数节点的快照，按 `expand_*` 的参数顺序排列（长度 = `old_kind.param_count()`）。
 ///   `None` 表示该参数无快照（被跳过，整个迁移将返回 `None`）。
 /// - `new_param_ids`：新参数节点 id，按 `expand_*` 的顺序（长度 = `new_kind.param_count()`）。
-/// - `hidden`：hidden_size（恒等迁移，不变）。
+/// - `hidden`：`hidden_size（恒等迁移，不变`）。
 ///
 /// 成功返回 `Some(HashMap<new_param_id, Tensor>)`；任何信息缺失时返回 `None`，调用方
 /// 应直接放弃写快照，让新参数走随机初始化。

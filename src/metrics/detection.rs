@@ -15,7 +15,7 @@ pub const COCO_IOU_THRESHOLDS: &[f32] =
 
 /// 多目标检测评估选项。
 ///
-/// 当前实现使用 VOC 风格 all-points interpolation，并支持 COCO-style 的多 IoU
+/// 当前实现使用 VOC 风格 all-points interpolation，并支持 COCO-style 的多 `IoU`
 /// 阈值集合；它不完整复刻 pycocotools 的 crowd / area range / 101-point 细节。
 #[derive(Debug, Clone, PartialEq)]
 pub struct DetectionMetricOptions {
@@ -41,12 +41,12 @@ impl DetectionMetricOptions {
         Self::new(COCO_IOU_THRESHOLDS)
     }
 
-    pub fn with_score_threshold(mut self, score_threshold: f32) -> Self {
+    pub const fn with_score_threshold(mut self, score_threshold: f32) -> Self {
         self.score_threshold = score_threshold;
         self
     }
 
-    pub fn with_max_detections(mut self, max_detections: usize) -> Self {
+    pub const fn with_max_detections(mut self, max_detections: usize) -> Self {
         self.max_detections = Some(max_detections);
         self
     }
@@ -63,7 +63,7 @@ pub struct DetectionMapMetric {
 }
 
 impl DetectionMapMetric {
-    pub(crate) fn new(
+    pub(crate) const fn new(
         mean_ap: f32,
         num_ground_truths: usize,
         iou_thresholds: Vec<f32>,
@@ -80,7 +80,7 @@ impl DetectionMapMetric {
     }
 
     /// 获取 mAP 主值。
-    pub fn value(&self) -> f32 {
+    pub const fn value(&self) -> f32 {
         self.mean_ap
     }
 
@@ -99,12 +99,12 @@ impl DetectionMapMetric {
         self.mean_ap * self.num_ground_truths as f32
     }
 
-    /// 每个 IoU 阈值上的 AP。
+    /// 每个 `IoU` 阈值上的 AP。
     pub fn per_threshold_ap(&self) -> &[f32] {
         &self.per_threshold_ap
     }
 
-    /// 每个阈值对应的 IoU threshold。
+    /// 每个阈值对应的 `IoU` threshold。
     pub fn iou_thresholds(&self) -> &[f32] {
         &self.iou_thresholds
     }
@@ -114,7 +114,7 @@ impl DetectionMapMetric {
         &self.per_class_ap
     }
 
-    /// 指定 IoU 阈值上的 mAP。
+    /// 指定 `IoU` 阈值上的 mAP。
     pub fn map_at(&self, iou_threshold: f32) -> Option<f32> {
         self.iou_thresholds
             .iter()
@@ -128,7 +128,7 @@ impl DetectionMapMetric {
     }
 
     /// 当前阈值集合上的平均值，COCO-style 调用时即 `mAP@0.5:0.95`。
-    pub fn map_50_95(&self) -> f32 {
+    pub const fn map_50_95(&self) -> f32 {
         self.mean_ap
     }
 }
@@ -208,7 +208,7 @@ impl DetectionPrMetric {
     }
 }
 
-/// 计算配对 `BBox` 的平均 IoU。
+/// 计算配对 `BBox` 的平均 `IoU`。
 ///
 /// `predictions[i]` 与 `actuals[i]` 必须形成 1-1 配对，常用于单框回归 / 单目标
 /// 检测的 toy benchmark；多目标检测请使用 [`mean_average_precision`]。
@@ -320,7 +320,7 @@ pub fn mean_average_precision_with_options(
     )
 }
 
-/// 在单个 IoU 阈值上计算 micro precision / recall。
+/// 在单个 `IoU` 阈值上计算 micro precision / recall。
 ///
 /// 与 mAP 不同，空类别上的预测会计入 false positive，便于暴露误检问题。
 pub fn precision_recall_at_iou(
@@ -338,7 +338,7 @@ pub fn precision_recall_at_iou(
     )
 }
 
-/// 在单个 IoU 阈值上按显式评估选项计算 micro precision / recall。
+/// 在单个 `IoU` 阈值上按显式评估选项计算 micro precision / recall。
 pub fn precision_recall_at_iou_with_options(
     predictions: &[Vec<Detection>],
     ground_truths: &[Vec<GroundTruthBox>],

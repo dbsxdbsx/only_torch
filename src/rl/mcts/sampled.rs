@@ -1,7 +1,7 @@
-//! Sampled MuZero 动作采样与 PUCT 先验修正（Hubert et al. ICML 2021）。
+//! Sampled `MuZero` 动作采样与 PUCT 先验修正（Hubert et al. ICML 2021）。
 //!
 //! - 展开时从 proposal β（默认 = 网络 prior π）无放回采 K 个候选；
-//! - PUCT 探索项用 π̂_β ∝ (β̂ / β) · π，K ≥ |A| 时退化为标准 MuZero prior（无回归）。
+//! - PUCT 探索项用 `π̂_β` ∝ (β̂ / β) · π，K ≥ |A| 时退化为标准 `MuZero` prior（无回归）。
 
 use rand::RngCore;
 
@@ -74,7 +74,7 @@ pub fn sample_root_for_expansion(
     sample_for_expansion(&noisy_candidates, k, rng)
 }
 
-/// π̂_β(a) ∝ (β̂ / β)(a) · π(a)，β̂ 为采样子集上的经验分布（无放回 → 各 1/K）。
+/// `π̂_β(a)` ∝ (β̂ / β)(a) · π(a)，β̂ 为采样子集上的经验分布（无放回 → 各 1/K）。
 pub(in crate::rl) fn sampled_puct_priors(beta: &[f32], pi: &[f32], indices: &[usize]) -> Vec<f32> {
     let k = indices.len().max(1) as f32;
     let mut raw: Vec<f32> = indices

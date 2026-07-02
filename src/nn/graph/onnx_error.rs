@@ -53,16 +53,16 @@ pub enum OnnxError {
         node_name: String,
     },
 
-    /// GraphDescriptor 构建/转换错误
+    /// `GraphDescriptor` 构建/转换错误
     DescriptorError(String),
 }
 
 impl fmt::Display for OnnxError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            OnnxError::Io(e) => write!(f, "ONNX I/O 错误: {e}"),
-            OnnxError::ParseError(msg) => write!(f, "ONNX 解析错误: {msg}"),
-            OnnxError::UnsupportedOpsetVersion {
+            Self::Io(e) => write!(f, "ONNX I/O 错误: {e}"),
+            Self::ParseError(msg) => write!(f, "ONNX 解析错误: {msg}"),
+            Self::UnsupportedOpsetVersion {
                 version,
                 min_supported,
                 max_supported,
@@ -70,35 +70,35 @@ impl fmt::Display for OnnxError {
                 f,
                 "不支持的 ONNX opset 版本: {version}（支持范围: {min_supported}–{max_supported}）"
             ),
-            OnnxError::UnsupportedOperator { op_type, node_name } => write!(
+            Self::UnsupportedOperator { op_type, node_name } => write!(
                 f,
                 "不支持的 ONNX 算子: op_type=\"{op_type}\"（节点: \"{node_name}\"）"
             ),
-            OnnxError::UnsupportedDataType { data_type, context } => write!(
+            Self::UnsupportedDataType { data_type, context } => write!(
                 f,
                 "不支持的数据类型: {data_type}（仅支持 float32）（{context}）"
             ),
-            OnnxError::UnsupportedAttribute {
+            Self::UnsupportedAttribute {
                 op_type,
                 attribute,
                 reason,
             } => write!(f, "不支持的属性: {op_type}.{attribute} — {reason}"),
-            OnnxError::UnsupportedConvConfig { op_type, reason } => {
+            Self::UnsupportedConvConfig { op_type, reason } => {
                 write!(f, "不支持的卷积/池化配置: {op_type} — {reason}")
             }
-            OnnxError::InvalidGraph(msg) => write!(f, "无效的 ONNX 图结构: {msg}"),
-            OnnxError::WeightError {
+            Self::InvalidGraph(msg) => write!(f, "无效的 ONNX 图结构: {msg}"),
+            Self::WeightError {
                 tensor_name,
                 reason,
             } => write!(f, "权重错误: \"{tensor_name}\" — {reason}"),
-            OnnxError::TrainingNodeInExportPath {
+            Self::TrainingNodeInExportPath {
                 node_type,
                 node_name,
             } => write!(
                 f,
                 "导出路径中包含训练专用节点: {node_type}（\"{node_name}\"）— 请仅导出推理子图"
             ),
-            OnnxError::DescriptorError(msg) => write!(f, "GraphDescriptor 错误: {msg}"),
+            Self::DescriptorError(msg) => write!(f, "GraphDescriptor 错误: {msg}"),
         }
     }
 }
@@ -106,7 +106,7 @@ impl fmt::Display for OnnxError {
 impl std::error::Error for OnnxError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            OnnxError::Io(e) => Some(e),
+            Self::Io(e) => Some(e),
             _ => None,
         }
     }
@@ -114,6 +114,6 @@ impl std::error::Error for OnnxError {
 
 impl From<std::io::Error> for OnnxError {
     fn from(e: std::io::Error) -> Self {
-        OnnxError::Io(e)
+        Self::Io(e)
     }
 }

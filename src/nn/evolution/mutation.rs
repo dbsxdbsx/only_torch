@@ -54,9 +54,9 @@ pub enum MutationError {
 impl fmt::Display for MutationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            MutationError::NotApplicable(msg) => write!(f, "变异不适用: {msg}"),
-            MutationError::ConstraintViolation(msg) => write!(f, "违反约束: {msg}"),
-            MutationError::InternalError(msg) => write!(f, "内部错误: {msg}"),
+            Self::NotApplicable(msg) => write!(f, "变异不适用: {msg}"),
+            Self::ConstraintViolation(msg) => write!(f, "违反约束: {msg}"),
+            Self::InternalError(msg) => write!(f, "内部错误: {msg}"),
         }
     }
 }
@@ -76,7 +76,7 @@ pub enum SizeStrategy {
 
 /// 序列任务允许的算子集合
 ///
-/// 用于在 InsertLayer / 初始化序列模型时限制可用的循环 / 注意力算子。
+/// 用于在 `InsertLayer` / 初始化序列模型时限制可用的循环 / 注意力算子。
 /// 默认 `Recurrent`：保持向后兼容（只用 RNN/LSTM/GRU），不会自动引入 Attention，
 /// 用户可显式切换到 `RecurrentWithAttention` 让演化在序列任务中尝试 attention。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -91,22 +91,22 @@ pub enum SequenceOpSet {
 
 impl Default for SequenceOpSet {
     fn default() -> Self {
-        SequenceOpSet::Recurrent
+        Self::Recurrent
     }
 }
 
 impl SequenceOpSet {
-    pub fn allow_recurrent(&self) -> bool {
+    pub const fn allow_recurrent(&self) -> bool {
         matches!(
             self,
-            SequenceOpSet::Recurrent | SequenceOpSet::RecurrentWithAttention
+            Self::Recurrent | Self::RecurrentWithAttention
         )
     }
 
-    pub fn allow_attention(&self) -> bool {
+    pub const fn allow_attention(&self) -> bool {
         matches!(
             self,
-            SequenceOpSet::AttentionOnly | SequenceOpSet::RecurrentWithAttention
+            Self::AttentionOnly | Self::RecurrentWithAttention
         )
     }
 }
@@ -121,7 +121,7 @@ pub struct SizeConstraints {
     pub size_strategy: SizeStrategy,
     /// 序列任务允许的算子集合（默认仅 RNN/LSTM/GRU）
     pub sequence_ops: SequenceOpSet,
-    /// Attention 候选 num_heads 列表（embed_dim 必须能被其中至少一个值整除）
+    /// Attention 候选 `num_heads` `列表（embed_dim` 必须能被其中至少一个值整除）
     ///
     /// 默认 `[2, 4, 8]`：覆盖常见嵌入维度对齐方案；演化采样时会过滤掉
     /// 不满足整除关系的取值。
@@ -166,7 +166,7 @@ impl SizeConstraints {
             // 参考基线："Conv(ch→32,k=3) + Conv(32→64,k=3) + 2×Pool + FC(pooled→64) + FC(64→out)"
             // 假设至少 2 次 stride-2 pool 降低空间分辨率，FC 隐藏层 64 即可
             let conv_base = 32 * input_dim * 9 + 64 * 32 * 9; // ~20K conv params
-            let spatial_after_pool = spatial_hw.map(|(h, w)| (h / 4) * (w / 4)).unwrap_or(49);
+            let spatial_after_pool = spatial_hw.map_or(49, |(h, w)| (h / 4) * (w / 4));
             let fc_base = 64 * spatial_after_pool * 64 + 64 * output_dim;
             (conv_base + fc_base).max(50_000)
         } else {
@@ -237,6 +237,12 @@ pub struct MutationRegistry {
     entries: Vec<(f32, Box<dyn Mutation>)>,
 }
 
+impl Default for MutationRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MutationRegistry {
     pub fn new() -> Self {
         Self {
@@ -305,8 +311,8 @@ impl MutationRegistry {
 
     /// 默认注册表（向后兼容，等价于 `phase1_registry`）
     ///
-    /// `is_sequential`: 序列模式时额外注册 MutateCellType。
-    /// `is_spatial`: 空间模式时额外注册 MutateKernelSize。
+    /// `is_sequential`: 序列模式时额外注册 `MutateCellType`。
+    /// `is_spatial`: 空间模式时额外注册 `MutateKernelSize`。
     pub fn default_registry(metric: &TaskMetric, is_sequential: bool, is_spatial: bool) -> Self {
         Self::phase1_registry(metric, is_sequential, is_spatial)
     }
@@ -353,7 +359,7 @@ impl MutationRegistry {
             } else {
                 reg.register(0.06, MutateStrideMutation);
                 // FM 级别变异：结构探索偏重拓扑（Add/Split），参数调整适度降权
-                use super::fm_mutation::*;
+                use super::fm_mutation::{AddFeatureMapMutation, RemoveFeatureMapMutation, AddFMEdgeMutation, RemoveFMEdgeMutation, SplitFMEdgeMutation, ChangeFMEdgeTypeMutation, MutateFMEdgeKernelSizeMutation, MutateFMEdgeStrideMutation, MutateFMEdgeDilationMutation, ChangeFeatureMapSizeMutation};
                 reg.register(0.12, AddFeatureMapMutation);
                 reg.register(0.04, RemoveFeatureMapMutation);
                 reg.register(0.10, AddFMEdgeMutation);
@@ -411,7 +417,7 @@ impl MutationRegistry {
             } else {
                 reg.register(0.06, MutateStrideMutation);
                 // FM 级别变异（Phase 2 偏向参数调整，结构探索适度保留）
-                use super::fm_mutation::*;
+                use super::fm_mutation::{AddFeatureMapMutation, RemoveFeatureMapMutation, AddFMEdgeMutation, RemoveFMEdgeMutation, SplitFMEdgeMutation, ChangeFMEdgeTypeMutation, MutateFMEdgeKernelSizeMutation, MutateFMEdgeStrideMutation, MutateFMEdgeDilationMutation, ChangeFeatureMapSizeMutation};
                 reg.register(0.06, AddFeatureMapMutation);
                 reg.register(0.04, RemoveFeatureMapMutation);
                 reg.register(0.06, AddFMEdgeMutation);
@@ -526,8 +532,8 @@ fn default_activations() -> Vec<ActivationType> {
     ]
 }
 
-/// 判断层配置是否包含可变异的连续参数（供 MutateLayerParamMutation 使用）
-fn is_parameterized_layer(config: &LayerConfig) -> bool {
+/// 判断层配置是否包含可变异的连续参数（供 `MutateLayerParamMutation` 使用）
+const fn is_parameterized_layer(config: &LayerConfig) -> bool {
     matches!(
         config,
         LayerConfig::Activation {
@@ -536,8 +542,8 @@ fn is_parameterized_layer(config: &LayerConfig) -> bool {
     )
 }
 
-/// 获取可调整尺寸的层的当前大小（Linear out_features 或 RNN hidden_size）
-fn get_resizable_size(config: &LayerConfig) -> Option<usize> {
+/// 获取可调整尺寸的层的当前大小（Linear `out_features` 或 RNN `hidden_size`）
+const fn get_resizable_size(config: &LayerConfig) -> Option<usize> {
     match config {
         LayerConfig::Linear { out_features } => Some(*out_features),
         LayerConfig::Rnn { hidden_size }
@@ -549,7 +555,7 @@ fn get_resizable_size(config: &LayerConfig) -> Option<usize> {
 }
 
 /// 设置可调整尺寸层的新大小
-fn set_resizable_size(config: &mut LayerConfig, new_size: usize) {
+const fn set_resizable_size(config: &mut LayerConfig, new_size: usize) {
     match config {
         LayerConfig::Linear { out_features } => *out_features = new_size,
         LayerConfig::Rnn { hidden_size }
@@ -560,7 +566,7 @@ fn set_resizable_size(config: &mut LayerConfig, new_size: usize) {
     }
 }
 
-/// 将采样尺寸约束到当前 SizeStrategy
+/// 将采样尺寸约束到当前 `SizeStrategy`
 fn sample_size_in_range(
     min: usize,
     max: usize,
@@ -586,10 +592,10 @@ fn sample_size_in_range(
     }
 }
 
-/// 根据 SizeStrategy 计算增长后的值
+/// 根据 `SizeStrategy` 计算增长后的值
 ///
 /// Free 模式：40% +step（至少 25%）、40% ×1.5、20% ×2
-/// AlignTo 模式：跳到下一个对齐值
+/// `AlignTo` 模式：跳到下一个对齐值
 fn grow_size(current: usize, max: usize, strategy: &SizeStrategy, rng: &mut StdRng) -> usize {
     let new_size = match strategy {
         SizeStrategy::Free => {
@@ -607,17 +613,17 @@ fn grow_size(current: usize, max: usize, strategy: &SizeStrategy, rng: &mut StdR
             }
         }
         SizeStrategy::AlignTo(align) => {
-            let next = ((current / align) + 1) * align;
-            next
+            
+            ((current / align) + 1) * align
         }
     };
     new_size.min(max)
 }
 
-/// 根据 SizeStrategy 计算缩小后的值
+/// 根据 `SizeStrategy` 计算缩小后的值
 ///
 /// Free 模式：40% -step（缩小至少 20%）、40% ×0.67、20% ÷2
-/// AlignTo 模式：退到上一个对齐值
+/// `AlignTo` 模式：退到上一个对齐值
 fn shrink_size(current: usize, min: usize, strategy: &SizeStrategy, rng: &mut StdRng) -> usize {
     let new_size = match strategy {
         SizeStrategy::Free => {
@@ -650,14 +656,14 @@ pub struct InsertLayerMutation {
 }
 
 impl InsertLayerMutation {
-    pub fn new(available_activations: Vec<ActivationType>) -> Self {
+    pub const fn new(available_activations: Vec<ActivationType>) -> Self {
         Self {
             available_activations,
             allow_spatial_pooling: true,
         }
     }
 
-    pub fn spatial_preserving(available_activations: Vec<ActivationType>) -> Self {
+    pub const fn spatial_preserving(available_activations: Vec<ActivationType>) -> Self {
         Self {
             available_activations,
             allow_spatial_pooling: false,
@@ -672,7 +678,7 @@ impl Default for InsertLayerMutation {
 }
 
 impl Mutation for InsertLayerMutation {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "InsertLayer"
     }
 
@@ -719,7 +725,7 @@ struct EncoderDecoderInsertPoint {
 }
 
 impl Mutation for InsertEncoderDecoderSkipMutation {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "InsertEncoderDecoderSkip"
     }
 
@@ -896,8 +902,8 @@ fn encoder_decoder_insert_points(genome: &NetworkGenome) -> Vec<EncoderDecoderIn
             if channels == 0
                 || spatial.0 < 4
                 || spatial.1 < 4
-                || spatial.0 % 2 != 0
-                || spatial.1 % 2 != 0
+                || !spatial.0.is_multiple_of(2)
+                || !spatial.1.is_multiple_of(2)
             {
                 return None;
             }
@@ -930,7 +936,7 @@ fn sample_encoder_decoder_channels(
 pub struct RemoveLayerMutation;
 
 impl Mutation for RemoveLayerMutation {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "RemoveLayer"
     }
 
@@ -1001,7 +1007,7 @@ pub struct ReplaceLayerTypeMutation {
 }
 
 impl ReplaceLayerTypeMutation {
-    pub fn new(available_activations: Vec<ActivationType>) -> Self {
+    pub const fn new(available_activations: Vec<ActivationType>) -> Self {
         Self {
             available_activations,
         }
@@ -1015,7 +1021,7 @@ impl Default for ReplaceLayerTypeMutation {
 }
 
 impl Mutation for ReplaceLayerTypeMutation {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "ReplaceLayerType"
     }
 
@@ -1091,7 +1097,7 @@ impl Mutation for ReplaceLayerTypeMutation {
 pub struct GrowHiddenSizeMutation;
 
 impl Mutation for GrowHiddenSizeMutation {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "GrowHiddenSize"
     }
 
@@ -1101,15 +1107,13 @@ impl Mutation for GrowHiddenSizeMutation {
                 b.kind.is_resizable()
                     && b.kind
                         .current_size()
-                        .map(|s| s < constraints.max_hidden_size)
-                        .unwrap_or(false)
+                        .is_some_and(|s| s < constraints.max_hidden_size)
             });
         }
         let hidden = hidden_layer_indices(genome);
         hidden.iter().any(|&i| {
             get_resizable_size(&genome.layers()[i].layer_config)
-                .map(|s| s < constraints.max_hidden_size)
-                .unwrap_or(false)
+                .is_some_and(|s| s < constraints.max_hidden_size)
         })
     }
 
@@ -1127,8 +1131,7 @@ impl Mutation for GrowHiddenSizeMutation {
             .into_iter()
             .filter(|&i| {
                 get_resizable_size(&genome.layers()[i].layer_config)
-                    .map(|s| s < constraints.max_hidden_size)
-                    .unwrap_or(false)
+                    .is_some_and(|s| s < constraints.max_hidden_size)
             })
             .collect();
 
@@ -1178,7 +1181,7 @@ impl Mutation for GrowHiddenSizeMutation {
 pub struct ShrinkHiddenSizeMutation;
 
 impl Mutation for ShrinkHiddenSizeMutation {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "ShrinkHiddenSize"
     }
 
@@ -1188,15 +1191,13 @@ impl Mutation for ShrinkHiddenSizeMutation {
                 b.kind.is_resizable()
                     && b.kind
                         .current_size()
-                        .map(|s| s > constraints.min_hidden_size)
-                        .unwrap_or(false)
+                        .is_some_and(|s| s > constraints.min_hidden_size)
             });
         }
         let hidden = hidden_layer_indices(genome);
         hidden.iter().any(|&i| {
             get_resizable_size(&genome.layers()[i].layer_config)
-                .map(|s| s > constraints.min_hidden_size)
-                .unwrap_or(false)
+                .is_some_and(|s| s > constraints.min_hidden_size)
         })
     }
 
@@ -1214,8 +1215,7 @@ impl Mutation for ShrinkHiddenSizeMutation {
             .into_iter()
             .filter(|&i| {
                 get_resizable_size(&genome.layers()[i].layer_config)
-                    .map(|s| s > constraints.min_hidden_size)
-                    .unwrap_or(false)
+                    .is_some_and(|s| s > constraints.min_hidden_size)
             })
             .collect();
 
@@ -1251,7 +1251,7 @@ impl Mutation for ShrinkHiddenSizeMutation {
 pub struct MutateLayerParamMutation;
 
 impl Mutation for MutateLayerParamMutation {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "MutateLayerParam"
     }
 
@@ -1318,7 +1318,7 @@ pub struct MutateLossFunctionMutation {
 }
 
 impl Mutation for MutateLossFunctionMutation {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "MutateLossFunction"
     }
 
@@ -1404,7 +1404,7 @@ pub(crate) fn snap_to_nearest_in_band(lr: f32, band: (f32, f32), ladder: &[f32])
 pub struct MutateLearningRateMutation;
 
 impl Mutation for MutateLearningRateMutation {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "MutateLearningRate"
     }
 
@@ -1439,7 +1439,7 @@ impl Mutation for MutateLearningRateMutation {
 pub struct MutateOptimizerMutation;
 
 impl Mutation for MutateOptimizerMutation {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "MutateOptimizer"
     }
 
@@ -1470,12 +1470,12 @@ impl Mutation for MutateOptimizerMutation {
 
 /// 循环层类型切换（Rnn ↔ Lstm ↔ Gru）
 ///
-/// 保持 hidden_size 不变，仅切换 cell 类型。
+/// 保持 `hidden_size` 不变，仅切换 cell 类型。
 /// 权重快照失效后由 builder 重新初始化。
 pub struct MutateCellTypeMutation;
 
 impl Mutation for MutateCellTypeMutation {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "MutateCellType"
     }
 
@@ -1549,14 +1549,13 @@ impl Mutation for MutateCellTypeMutation {
                 .cloned()
                 .and_then(|snap| migrate_layer_cell_weights_vec(&snap, ok, nk, hidden));
             genome.remove_layer_weight_snapshot(inn);
-            if let Some(new_snap) = migrated {
-                if let GenomeRepr::LayerLevel {
+            if let Some(new_snap) = migrated
+                && let GenomeRepr::LayerLevel {
                     weight_snapshots, ..
                 } = &mut genome.repr
                 {
                     weight_snapshots.insert(inn, new_snap);
                 }
-            }
         } else {
             genome.remove_layer_weight_snapshot(inn);
         }
@@ -1578,13 +1577,13 @@ impl Mutation for MutateCellTypeMutation {
 
 // ==================== MutateCellType NodeLevel 辅助 ====================
 
-/// NodeLevel 循环单元类型切换：替换 Cell* 节点（及其参数节点）为新类型
+/// `NodeLevel` 循环单元类型切换：替换 Cell* 节点（及其参数节点）为新类型
 ///
 /// 流程：
 /// 1. 找到含有 CellRnn/CellLstm/CellGru 的块
 /// 2. 随机选择一个
 /// 3. 移除旧的参数节点 + Cell 节点
-/// 4. 用新类型的 expand_rnn/lstm/gru 重新插入
+/// 4. 用新类型的 `expand_rnn/lstm/gru` 重新插入
 fn node_level_mutate_cell_type_apply(
     genome: &mut NetworkGenome,
     rng: &mut StdRng,
@@ -1672,11 +1671,7 @@ fn node_level_mutate_cell_type_apply(
             }
         }
         NT::CellGru { .. } => {
-            if rng.gen_bool(0.5) {
-                0
-            } else {
-                1
-            }
+            u8::from(!rng.gen_bool(0.5))
         }
         _ => unreachable!(),
     };
@@ -1773,7 +1768,7 @@ fn node_level_mutate_cell_type_apply(
 
     // 将后续节点中引用 old_output_id 的父节点全部替换为 new_output_id
     for node in genome.nodes_mut().iter_mut() {
-        for pid in node.parents.iter_mut() {
+        for pid in &mut node.parents {
             if *pid == old_output_id {
                 *pid = new_output_id;
             }
@@ -1781,8 +1776,8 @@ fn node_level_mutate_cell_type_apply(
     }
 
     // 写入迁移快照（仅 NodeLevel + 新旧快照都齐全时才生效）
-    if let (true, Some(old_kind)) = (genome.is_node_level(), old_cell_kind) {
-        if let Some(migrated) = migrate_cell_weights(
+    if let (true, Some(old_kind)) = (genome.is_node_level(), old_cell_kind)
+        && let Some(migrated) = migrate_cell_weights(
             old_kind,
             &old_param_snapshots,
             new_cell_kind,
@@ -1794,7 +1789,6 @@ fn node_level_mutate_cell_type_apply(
                 snaps.insert(id, t);
             }
         }
-    }
 
     // 重新推导计算节点形状
     sync_computation_shapes(genome);
@@ -1807,7 +1801,7 @@ pub struct MutateKernelSizeMutation;
 const KERNEL_SIZES: &[usize] = &[1, 3, 5, 7];
 
 impl Mutation for MutateKernelSizeMutation {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "MutateKernelSize"
     }
 
@@ -1853,15 +1847,14 @@ impl Mutation for MutateKernelSizeMutation {
                 .copied()
                 .filter(|&k| k != *current_k)
                 .collect();
-            if let Some(&new_k) = alternatives.choose(rng) {
-                if let LayerConfig::Conv2d {
+            if let Some(&new_k) = alternatives.choose(rng)
+                && let LayerConfig::Conv2d {
                     ref mut kernel_size,
                     ..
                 } = genome.layers_mut()[idx].layer_config
                 {
                     *kernel_size = new_k;
                 }
-            }
         }
         Ok(())
     }
@@ -1869,8 +1862,8 @@ impl Mutation for MutateKernelSizeMutation {
 
 // ==================== NodeLevel 变异分派实现 ====================
 
-/// 内部辅助：将 NodeLevel 基因组的 next_innovation 前进 by 步
-fn advance_node_counter(genome: &mut NetworkGenome, by: u64) {
+/// 内部辅助：将 `NodeLevel` 基因组的 `next_innovation` 前进 by 步
+const fn advance_node_counter(genome: &mut NetworkGenome, by: u64) {
     use super::gene::GenomeRepr;
     if let GenomeRepr::NodeLevel {
         next_innovation, ..
@@ -1880,8 +1873,8 @@ fn advance_node_counter(genome: &mut NetworkGenome, by: u64) {
     }
 }
 
-/// 内部辅助：将 NodeLevel 基因组的 next_innovation 重置为 to
-fn reset_node_counter(genome: &mut NetworkGenome, to: u64) {
+/// 内部辅助：将 `NodeLevel` 基因组的 `next_innovation` 重置为 to
+const fn reset_node_counter(genome: &mut NetworkGenome, to: u64) {
     use super::gene::GenomeRepr;
     if let GenomeRepr::NodeLevel {
         next_innovation, ..
@@ -1891,7 +1884,7 @@ fn reset_node_counter(genome: &mut NetworkGenome, to: u64) {
     }
 }
 
-/// InsertLayer 的 NodeLevel 实现
+/// `InsertLayer` 的 `NodeLevel` 实现
 ///
 /// 在主路径中某个非末尾块的输出节点之后插入新节点组，并检查参数量约束。
 /// 若参数量超标，回滚插入操作。
@@ -1935,7 +1928,7 @@ fn node_level_insert_apply(
     .ok_or_else(|| MutationError::NotApplicable("无法生成插入节点".into()))?;
 
     let n = new_nodes.len() as u64;
-    insert_after(genome, after_id, new_nodes).map_err(|e| MutationError::InternalError(e))?;
+    insert_after(genome, after_id, new_nodes).map_err(MutationError::InternalError)?;
     advance_node_counter(genome, n);
     repair_param_input_dims(genome);
 
@@ -1944,7 +1937,7 @@ fn node_level_insert_apply(
         let new_node_ids: std::collections::HashSet<u64> = (start_inn..start_inn + n).collect();
         let new_output_id = start_inn + n - 1;
         for node in genome.nodes_mut().iter_mut() {
-            for pid in node.parents.iter_mut() {
+            for pid in &mut node.parents {
                 if *pid == new_output_id {
                     *pid = after_id;
                 }
@@ -1967,7 +1960,7 @@ fn node_level_insert_apply(
         let new_node_ids: std::collections::HashSet<u64> = (start_inn..start_inn + n).collect();
         let new_output_id = start_inn + n - 1;
         for node in genome.nodes_mut().iter_mut() {
-            for pid in node.parents.iter_mut() {
+            for pid in &mut node.parents {
                 if *pid == new_output_id {
                     *pid = after_id;
                 }
@@ -1988,9 +1981,9 @@ fn node_level_insert_apply(
     Ok(())
 }
 
-/// RemoveLayer 的 NodeLevel 实现
+/// `RemoveLayer` 的 `NodeLevel` 实现
 ///
-/// 移除主路径中一个非末尾的、有具体 block_id 的块，并重新连线。
+/// 移除主路径中一个非末尾的、有具体 `block_id` 的块，并重新连线。
 fn node_level_remove_apply(
     genome: &mut NetworkGenome,
     rng: &mut StdRng,
@@ -2033,10 +2026,10 @@ fn node_level_remove_apply(
     Ok(())
 }
 
-/// GrowHiddenSize / ShrinkHiddenSize 的 NodeLevel 共用实现
+/// `GrowHiddenSize` / `ShrinkHiddenSize` 的 `NodeLevel` 共用实现
 ///
 /// `is_grow=true` → 增大，`is_grow=false` → 缩小。
-/// 增大时检查 max_total_params 并可回滚。
+/// 增大时检查 `max_total_params` 并可回滚。
 fn is_fm_edge_block(genome: &NetworkGenome, block: &NodeBlock) -> bool {
     let nodes = genome.nodes();
     block.node_ids.iter().any(|&nid| {
@@ -2080,14 +2073,12 @@ fn node_level_grow_apply(
                 b.kind.is_resizable()
                     && b.kind
                         .current_size()
-                        .map(|s| s < constraints.max_hidden_size)
-                        .unwrap_or(false)
+                        .is_some_and(|s| s < constraints.max_hidden_size)
             } else {
                 b.kind.is_resizable()
                     && b.kind
                         .current_size()
-                        .map(|s| s > constraints.min_hidden_size)
-                        .unwrap_or(false)
+                        .is_some_and(|s| s > constraints.min_hidden_size)
             }
         })
         .collect();
@@ -2142,15 +2133,15 @@ fn node_level_grow_apply(
     // 执行 resize
     match &block.kind {
         NodeBlockKind::Linear { .. } => resize_linear_out(genome, &block, new_size)
-            .map_err(|e| MutationError::InternalError(e))?,
+            .map_err(MutationError::InternalError)?,
         NodeBlockKind::Conv2d { .. } => resize_conv2d_out(genome, &block, new_size)
-            .map_err(|e| MutationError::InternalError(e))?,
+            .map_err(MutationError::InternalError)?,
         NodeBlockKind::Rnn { .. } | NodeBlockKind::Lstm { .. } | NodeBlockKind::Gru { .. } => {
             resize_recurrent_out(genome, &block, new_size)
-                .map_err(|e| MutationError::InternalError(e))?
+                .map_err(MutationError::InternalError)?
         }
         NodeBlockKind::Attention { .. } => resize_attention_out(genome, &block, new_size)
-            .map_err(|e| MutationError::InternalError(e))?,
+            .map_err(MutationError::InternalError)?,
         _ => return Err(MutationError::NotApplicable("不可调整大小的块类型".into())),
     }
 
@@ -2195,7 +2186,7 @@ fn node_level_grow_apply(
     Ok(())
 }
 
-/// MutateLayerParam 的 NodeLevel 实现
+/// `MutateLayerParam` 的 `NodeLevel` 实现
 ///
 /// 变异 Dropout 节点的丢弃率 `p`。
 fn node_level_mutate_param_apply(
@@ -2227,7 +2218,7 @@ fn node_level_mutate_param_apply(
     Ok(())
 }
 
-/// ReplaceLayerType 的 NodeLevel 实现
+/// `ReplaceLayerType` 的 `NodeLevel` 实现
 ///
 /// 随机选择一个激活节点，将其替换为另一种激活函数。
 fn node_level_replace_activation_apply(
@@ -2261,9 +2252,9 @@ fn node_level_replace_activation_apply(
     Ok(())
 }
 
-/// MutateKernelSize 的 NodeLevel 实现
+/// `MutateKernelSize` 的 `NodeLevel` 实现
 ///
-/// 在主路径 Conv2d 块中随机切换 kernel_size，同步更新 padding 和空间形状。
+/// 在主路径 Conv2d 块中随机切换 `kernel_size，同步更新` padding 和空间形状。
 fn node_level_mutate_kernel_size_apply(
     genome: &mut NetworkGenome,
     rng: &mut StdRng,
@@ -2332,14 +2323,13 @@ fn node_level_mutate_kernel_size_apply(
 
     // 更新 Conv2d op 节点的 padding
     for node in genome.nodes_mut().iter_mut() {
-        if bid_set.contains(&node.innovation_number) {
-            if let NodeTypeDescriptor::Conv2d {
+        if bid_set.contains(&node.innovation_number)
+            && let NodeTypeDescriptor::Conv2d {
                 ref mut padding, ..
             } = node.node_type
             {
                 *padding = (new_padding, new_padding);
             }
-        }
     }
 
     sync_computation_shapes(genome);
@@ -2354,7 +2344,7 @@ fn node_level_mutate_kernel_size_apply(
 pub struct MutateStrideMutation;
 
 impl Mutation for MutateStrideMutation {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "MutateStride"
     }
 
@@ -2389,11 +2379,10 @@ impl Mutation for MutateStrideMutation {
             .nodes()
             .iter()
             .find_map(|n| {
-                if bid_set.contains(&n.innovation_number) {
-                    if let NodeTypeDescriptor::Conv2d { stride, .. } = &n.node_type {
+                if bid_set.contains(&n.innovation_number)
+                    && let NodeTypeDescriptor::Conv2d { stride, .. } = &n.node_type {
                         return Some(*stride);
                     }
-                }
                 None
             })
             .unwrap_or((1, 1));
@@ -2401,7 +2390,7 @@ impl Mutation for MutateStrideMutation {
         let new_stride = if current_stride == (1, 1) {
             // stride=1 → stride=2：需要空间尺寸 >= 2
             let spatial = node_spatial_at(genome, block.input_id);
-            if spatial.map(|(h, w)| h >= 2 && w >= 2).unwrap_or(false) {
+            if spatial.is_some_and(|(h, w)| h >= 2 && w >= 2) {
                 (2, 2)
             } else {
                 return Err(MutationError::NotApplicable(
@@ -2414,11 +2403,10 @@ impl Mutation for MutateStrideMutation {
 
         // 更新 Conv2d op 节点的 stride
         for node in genome.nodes_mut().iter_mut() {
-            if bid_set.contains(&node.innovation_number) {
-                if let NodeTypeDescriptor::Conv2d { ref mut stride, .. } = node.node_type {
+            if bid_set.contains(&node.innovation_number)
+                && let NodeTypeDescriptor::Conv2d { ref mut stride, .. } = node.node_type {
                     *stride = new_stride;
                 }
-            }
         }
 
         sync_computation_shapes(genome);
@@ -2429,15 +2417,15 @@ impl Mutation for MutateStrideMutation {
 
 // ==================== AddConnectionMutation / RemoveConnectionMutation ====================
 
-/// 为 NodeLevel 基因组添加一条跨层跳跃连接（Add 聚合，可选投影）
+/// 为 `NodeLevel` 基因组添加一条跨层跳跃连接（Add 聚合，可选投影）
 ///
 /// 在主路径的任意两个非直接相邻节点之间加入前向 Add 连接。
 /// 形状不兼容时自动插入投影块（Flat: Linear；Spatial: 1×1 Conv2d）。
-/// 仅适用于 NodeLevel 且非序列模式的基因组。
+/// 仅适用于 `NodeLevel` 且非序列模式的基因组。
 pub struct AddConnectionMutation;
 
 impl Mutation for AddConnectionMutation {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "AddConnection"
     }
 
@@ -2468,21 +2456,21 @@ impl Mutation for AddConnectionMutation {
         let mut counter = make_counter(genome);
 
         add_skip_connection(genome, &pair, &mut counter)
-            .map_err(|e| MutationError::InternalError(e))?;
+            .map_err(MutationError::InternalError)?;
 
         commit_counter(genome, &counter);
         Ok(())
     }
 }
 
-/// 移除 NodeLevel 基因组中一条已有的跳跃连接
+/// 移除 `NodeLevel` 基因组中一条已有的跳跃连接
 ///
 /// 删除由 `AddConnectionMutation` 添加的 Add 聚合节点，
 /// 并通过 `cleanup_orphan_nodes` 自动清理孤立的投影块（若有）。
 pub struct RemoveConnectionMutation;
 
 impl Mutation for RemoveConnectionMutation {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "RemoveConnection"
     }
 
@@ -2508,7 +2496,7 @@ impl Mutation for RemoveConnectionMutation {
         }
 
         let &agg_id = candidates.choose(rng).unwrap();
-        remove_skip_connection(genome, agg_id).map_err(|e| MutationError::InternalError(e))
+        remove_skip_connection(genome, agg_id).map_err(MutationError::InternalError)
     }
 }
 
@@ -2516,14 +2504,14 @@ impl Mutation for RemoveConnectionMutation {
 
 /// 在主路径的两个块之间插入**单个**激活函数节点（NEAT "Add Node" 的等价操作）
 ///
-/// 与 InsertLayerMutation 的区别：
-/// - InsertLayer 插入完整层块（多节点，共享 block_id）
-/// - InsertAtomicNode 只插入一个激活函数节点（block_id = None，零参数）
+/// 与 `InsertLayerMutation` 的区别：
+/// - `InsertLayer` 插入完整层块（多节点，共享 `block_id`）
+/// - `InsertAtomicNode` `只插入一个激活函数节点（block_id` = None，零参数）
 ///
 /// 合法性保障：
 /// - 不在两个相邻的激活函数之间插入（避免连续激活）
 /// - 不在输出头之后插入
-/// - 通过 analyze() 验证形状合法性，失败则回滚
+/// - 通过 `analyze()` 验证形状合法性，失败则回滚
 pub struct InsertAtomicNodeMutation {
     available_activations: Vec<ActivationType>,
 }
@@ -2537,7 +2525,7 @@ impl Default for InsertAtomicNodeMutation {
 }
 
 impl Mutation for InsertAtomicNodeMutation {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "InsertAtomicNode"
     }
 
@@ -2596,7 +2584,7 @@ impl Mutation for InsertAtomicNodeMutation {
         };
 
         let n = new_nodes.len() as u64; // 始终为 1
-        insert_after(genome, after_id, new_nodes).map_err(|e| MutationError::InternalError(e))?;
+        insert_after(genome, after_id, new_nodes).map_err(MutationError::InternalError)?;
         advance_node_counter(genome, n);
 
         let analysis = genome.analyze();
@@ -2604,7 +2592,7 @@ impl Mutation for InsertAtomicNodeMutation {
             // 回滚
             let new_output_id = start_inn;
             for node in genome.nodes_mut().iter_mut() {
-                for pid in node.parents.iter_mut() {
+                for pid in &mut node.parents {
                     if *pid == new_output_id {
                         *pid = after_id;
                     }
@@ -2654,14 +2642,12 @@ fn atomic_insert_candidates(blocks: &[NodeBlock], genome: &NetworkGenome) -> Vec
         let next_is_act = if block_idx < blocks.len().saturating_sub(1) {
             blocks
                 .get(block_idx + 1)
-                .map(|b| b.kind.is_activation())
-                .unwrap_or(false)
+                .is_some_and(|b| b.kind.is_activation())
         } else if block_idx == usize::MAX {
             // INPUT 后面第一个块
             blocks
                 .first()
-                .map(|b| b.kind.is_activation())
-                .unwrap_or(false)
+                .is_some_and(|b| b.kind.is_activation())
         } else {
             false
         };
@@ -2677,20 +2663,18 @@ fn atomic_insert_candidates(blocks: &[NodeBlock], genome: &NetworkGenome) -> Vec
     candidates
 }
 
-/// 检查 after_id 后面的下一个块是否为 Dropout
+/// 检查 `after_id` 后面的下一个块是否为 Dropout
 fn is_next_dropout(genome: &NetworkGenome, after_id: u64) -> bool {
     let blocks = node_main_path(genome);
-    if let Some(idx) = blocks.iter().position(|b| b.output_id == after_id) {
-        if let Some(next) = blocks.get(idx + 1) {
+    if let Some(idx) = blocks.iter().position(|b| b.output_id == after_id)
+        && let Some(next) = blocks.get(idx + 1) {
             return matches!(next.kind, NodeBlockKind::Dropout);
         }
-    }
     // INPUT 后的第一个块
     if after_id == INPUT_INNOVATION {
         return blocks
             .first()
-            .map(|b| matches!(b.kind, NodeBlockKind::Dropout))
-            .unwrap_or(false);
+            .is_some_and(|b| matches!(b.kind, NodeBlockKind::Dropout));
     }
     false
 }
@@ -2712,7 +2696,7 @@ fn is_next_dropout(genome: &NetworkGenome, after_id: u64) -> bool {
 pub struct AddRecurrentEdgeMutation;
 
 impl Mutation for AddRecurrentEdgeMutation {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "AddRecurrentEdge"
     }
 
@@ -2862,7 +2846,7 @@ impl Mutation for AddRecurrentEdgeMutation {
 pub struct RemoveRecurrentEdgeMutation;
 
 impl Mutation for RemoveRecurrentEdgeMutation {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "RemoveRecurrentEdge"
     }
 
@@ -2888,7 +2872,7 @@ impl Mutation for RemoveRecurrentEdgeMutation {
     ) -> Result<(), MutationError> {
         // 收集所有 (target_id, edge_index) 对
         let mut candidates: Vec<(u64, usize)> = Vec::new();
-        for node in genome.nodes().iter() {
+        for node in genome.nodes() {
             if node.enabled && !node.recurrent_parents.is_empty() {
                 for (i, _) in node.recurrent_parents.iter().enumerate() {
                     candidates.push((node.innovation_number, i));
@@ -2949,7 +2933,7 @@ impl Mutation for RemoveRecurrentEdgeMutation {
 
 // ==================== LayerLevel Net2Net 扩宽辅助 ====================
 
-/// LayerLevel 路径的 Net2Net 扩宽：对层级快照就地更新，使权重与新 hidden_size 兼容。
+/// `LayerLevel` 路径的 `Net2Net` 扩宽：对层级快照就地更新，使权重与新 `hidden_size` 兼容。
 ///
 /// 对 `target_idx` 所指向层的快照做 owner 扩宽（输出维度），
 /// 并对下一个有参数的层做 consumer 缩放（输入维度）。
@@ -2992,33 +2976,28 @@ fn widen_layer_snapshots(
     });
 
     // 扩宽 owner 快照
-    if let Some(mut snap) = owner_snap_opt {
-        if layer_widen_owner_snap(&mut snap, &owner_config, &mapping, &counts) {
-            if let GenomeRepr::LayerLevel {
+    if let Some(mut snap) = owner_snap_opt
+        && layer_widen_owner_snap(&mut snap, &owner_config, &mapping, &counts)
+            && let GenomeRepr::LayerLevel {
                 weight_snapshots, ..
             } = &mut genome.repr
             {
                 weight_snapshots.insert(owner_inn, snap);
             }
-        }
-    }
 
     // 扩宽 consumer 快照（输入维度）
-    if let Some((consumer_inn, consumer_config)) = consumer {
-        if let Some((_, mut csnap)) = consumer_snap_opt {
-            if layer_widen_consumer_snap(&mut csnap, &consumer_config, &mapping, &counts) {
-                if let GenomeRepr::LayerLevel {
+    if let Some((consumer_inn, consumer_config)) = consumer
+        && let Some((_, mut csnap)) = consumer_snap_opt
+            && layer_widen_consumer_snap(&mut csnap, &consumer_config, &mapping, &counts)
+                && let GenomeRepr::LayerLevel {
                     weight_snapshots, ..
                 } = &mut genome.repr
                 {
                     weight_snapshots.insert(consumer_inn, csnap);
                 }
-            }
-        }
-    }
 }
 
-/// owner 快照就地扩宽：输出维度从 old_size 扩展到 new_size（faithful copy）。
+/// owner 快照就地扩宽：输出维度从 `old_size` 扩展到 `new_size（faithful` copy）。
 /// 失败时返回 false，快照保持不变。
 fn layer_widen_owner_snap(
     snap: &mut Vec<Tensor>,
@@ -3040,7 +3019,7 @@ fn layer_widen_owner_snap(
         LayerConfig::Rnn { .. } | LayerConfig::Lstm { .. } | LayerConfig::Gru { .. } => {
             // 每门 3 个参数: (W_ih[in,old], W_hh[old,old], b[1,old])
             let n = snap.len();
-            if n % 3 != 0 {
+            if !n.is_multiple_of(3) {
                 return false;
             }
             let mut new_snap = Vec::with_capacity(n);
@@ -3063,7 +3042,7 @@ fn layer_widen_owner_snap(
     }
 }
 
-/// consumer 快照就地更新：输入维度从 old_size 扩展（按 counts 缩放）。
+/// consumer 快照就地更新：输入维度从 `old_size` 扩展（按 counts 缩放）。
 /// 失败时返回 false，快照保持不变。
 fn layer_widen_consumer_snap(
     snap: &mut Vec<Tensor>,
@@ -3084,7 +3063,7 @@ fn layer_widen_consumer_snap(
         LayerConfig::Rnn { .. } | LayerConfig::Lstm { .. } | LayerConfig::Gru { .. } => {
             // 每门 3 参数: W_ih[old,h] axis=0 缩放，W_hh 和 b 不变
             let n = snap.len();
-            if n % 3 != 0 {
+            if !n.is_multiple_of(3) {
                 return false;
             }
             for i in (0..n).step_by(3) {
@@ -3097,7 +3076,7 @@ fn layer_widen_consumer_snap(
 }
 
 /// 判断层是否有输入侧参数（需要处理 consumer 扩宽）
-fn layer_has_input_params(cfg: &LayerConfig) -> bool {
+const fn layer_has_input_params(cfg: &LayerConfig) -> bool {
     matches!(
         cfg,
         LayerConfig::Linear { .. }
@@ -3109,7 +3088,7 @@ fn layer_has_input_params(cfg: &LayerConfig) -> bool {
 
 // ==================== LayerLevel cell 迁移辅助 ====================
 
-/// 将 LayerLevel 层级快照（Vec<Tensor>）从旧 cell 类型迁移到新类型。
+/// 将 `LayerLevel` 层级快照（Vec<Tensor>）从旧 cell 类型迁移到新类型。
 /// 失败返回 None（调用方应清空快照，让 builder 走随机初始化）。
 fn migrate_layer_cell_weights_vec(
     old_snap: &[Tensor],
@@ -3128,8 +3107,8 @@ fn migrate_layer_cell_weights_vec(
     dummy_ids.iter().map(|k| migrated.get(k).cloned()).collect()
 }
 
-/// 从 LayerConfig 提取 CellKind（非循环层返回 None）
-fn layer_cell_kind(config: &LayerConfig) -> Option<CellKind> {
+/// 从 `LayerConfig` 提取 CellKind（非循环层返回 None）
+const fn layer_cell_kind(config: &LayerConfig) -> Option<CellKind> {
     match config {
         LayerConfig::Rnn { .. } => Some(CellKind::Rnn),
         LayerConfig::Lstm { .. } => Some(CellKind::Lstm),

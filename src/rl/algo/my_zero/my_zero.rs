@@ -1,4 +1,4 @@
-//! MyZero 运行体：Graph + 模型 + 动作适配 + 各尾缀报告。
+//! `MyZero` 运行体：Graph + 模型 + 动作适配 + 各尾缀报告。
 
 use super::action::ActionAdapter;
 use super::config::{MyZeroConfig, greedy_episode_seed};
@@ -35,7 +35,7 @@ impl MyZero {
         }
     }
 
-    pub(crate) fn from_parts(
+    pub(crate) const fn from_parts(
         cfg: MyZeroConfig,
         model: MyZeroModel,
         adapter: ActionAdapter,
@@ -55,19 +55,19 @@ impl MyZero {
         self
     }
 
-    fn graph(&self) -> &Graph {
+    const fn graph(&self) -> &Graph {
         &self.model.graph
     }
 
-    pub fn train_report(&self) -> Option<&TrainReport> {
+    pub const fn train_report(&self) -> Option<&TrainReport> {
         self.train_report.as_ref()
     }
 
-    pub fn eval_report(&self) -> Option<&EvalReport> {
+    pub const fn eval_report(&self) -> Option<&EvalReport> {
         self.eval_report.as_ref()
     }
 
-    pub fn run_report(&self) -> Option<&RunReport> {
+    pub const fn run_report(&self) -> Option<&RunReport> {
         self.run_report.as_ref()
     }
 
@@ -174,7 +174,7 @@ impl MyZero {
                 returns.iter().sum::<f32>() / completed as f32
             };
             if let Some(n) = episodes {
-                println!("[MyZero] run {env_id} ×{n}: mean={mean:.1} returns={returns:?}",);
+                println!("[MyZero] run {env_id} ×{n}: mean={mean:.1} returns={returns:?}");
             }
             self.run_report = Some(RunReport {
                 episodes_requested: episodes,

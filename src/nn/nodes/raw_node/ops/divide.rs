@@ -60,7 +60,7 @@ impl Divide {
         })?;
 
         // 3. 计算动态形状
-        let supports_dynamic = parent_dynamic_shapes.iter().any(|ds| ds.has_dynamic_dims());
+        let supports_dynamic = parent_dynamic_shapes.iter().any(crate::nn::shape::DynamicShape::has_dynamic_dims);
         let dynamic_shape = parent_dynamic_shapes[0].broadcast_with(&parent_dynamic_shapes[1]);
 
         // 4. 返回
@@ -132,8 +132,7 @@ impl TraitNode for Divide {
         // 获取目标父节点的值和形状
         let target_value = parent_values.get(target_parent_index).ok_or_else(|| {
             GraphError::ComputationError(format!(
-                "Divide 梯度计算时父节点索引 {} 超出范围",
-                target_parent_index
+                "Divide 梯度计算时父节点索引 {target_parent_index} 超出范围"
             ))
         })?;
         let target_shape = target_value.shape();
@@ -155,7 +154,7 @@ impl TraitNode for Divide {
         } else if target_parent_index == 1 {
             // target 是 right (B)，assistant 是 left (A)
             // ∂L/∂B = -upstream_grad * A / B²，然后 sum_to_shape
-            let a_value = parent_values.get(0).ok_or_else(|| {
+            let a_value = parent_values.first().ok_or_else(|| {
                 GraphError::ComputationError(format!("{} 的左父节点没有值", self.display_node()))
             })?;
             let b_value = *target_value;
@@ -172,8 +171,7 @@ impl TraitNode for Divide {
             }
         } else {
             Err(GraphError::ComputationError(format!(
-                "Divide 节点只有 2 个父节点，索引 {} 无效",
-                target_parent_index
+                "Divide 节点只有 2 个父节点，索引 {target_parent_index} 无效"
             )))
         }
     }

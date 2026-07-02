@@ -18,7 +18,7 @@ use crate::tensor::Tensor;
 /// 常量值填充节点
 ///
 /// forward: y = pad(x, paddings, value)
-/// backward: grad_to_parent = slice(upstream_grad, 原始区域)
+/// backward: `grad_to_parent` = `slice(upstream_grad`, 原始区域)
 ///
 /// ## 输入
 /// - 父节点：任意形状的张量
@@ -156,7 +156,7 @@ impl TraitNode for Pad {
     /// Pad 反向传播
     ///
     /// 填充区域对原始输入没有贡献，梯度为 0。
-    /// 因此只需将 upstream_grad 中对应原始区域的部分提取出来。
+    /// 因此只需将 `upstream_grad` 中对应原始区域的部分提取出来。
     fn calc_grad_to_parent(
         &self,
         _target_parent_index: usize,

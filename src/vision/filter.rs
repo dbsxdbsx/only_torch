@@ -7,21 +7,18 @@ use image::DynamicImage;
 
 /// 对 RGB / 灰度图像做 ksize×ksize 中值滤波。
 ///
-/// `ksize` 必须 ≥ 2；图像边缘 `ksize/2` 像素保持不变（行为与早期 OpenCV
+/// `ksize` 必须 ≥ 2；图像边缘 `ksize/2` 像素保持不变（行为与早期 `OpenCV`
 /// `medianBlur` 在边界的处理一致——不外推）。返回 RGB 或 Luma 图像，与输入
 /// 通道数一致；其他色彩模式会先转 RGB8。
 pub fn median_blur(image: &DynamicImage, ksize: u32) -> DynamicImage {
     assert!(ksize >= 2, "median_blur: ksize 必须 >= 2，得到 {ksize}");
 
-    match image {
-        DynamicImage::ImageLuma8(_) => {
-            let buf = image.to_luma8();
-            DynamicImage::ImageLuma8(median_blur_luma8(&buf, ksize))
-        }
-        _ => {
-            let buf = image.to_rgb8();
-            DynamicImage::ImageRgb8(median_blur_rgb8(&buf, ksize))
-        }
+    if let DynamicImage::ImageLuma8(_) = image {
+        let buf = image.to_luma8();
+        DynamicImage::ImageLuma8(median_blur_luma8(&buf, ksize))
+    } else {
+        let buf = image.to_rgb8();
+        DynamicImage::ImageRgb8(median_blur_rgb8(&buf, ksize))
     }
 }
 

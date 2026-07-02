@@ -19,7 +19,7 @@ use std::rc::Rc;
 /// 实现此 trait 的类型可以作为 Loss 函数的 target 参数。
 /// 支持以下类型：
 /// - `&Var`、`Var`：直接使用已有的计算图变量
-/// - `&Tensor`、`Tensor`：自动转换为 TargetInput 节点
+/// - `&Tensor`、`Tensor`：自动转换为 `TargetInput` 节点
 /// - 数值标量（`i32`/`i64`/`u32`/`u64`/`usize`/`isize`/`f32`/`f64`）：自动广播为与 source 同形状的张量
 ///
 /// # 标量广播示例
@@ -84,7 +84,7 @@ impl_loss_target_for_scalar!(f32, f64, i32, i64, u32, u64, usize, isize);
 ///
 /// 提供常用损失函数的链式调用，target 支持多种类型：
 /// - `&Var` / `Var`：使用已有的计算图变量
-/// - `&Tensor` / `Tensor`：自动转换为 TargetInput 节点
+/// - `&Tensor` / `Tensor`：自动转换为 `TargetInput` 节点
 /// - 数值标量（`i32`/`i64`/`u32`/`u64`/`usize`/`isize`/`f32`/`f64`）：自动广播为同形状张量
 ///
 /// 可用损失函数：
@@ -93,7 +93,7 @@ impl_loss_target_for_scalar!(f32, f64, i32, i64, u32, u64, usize, isize);
 /// - `mse_loss(target)`: 均方误差损失 - 用于回归
 /// - `mae_loss(target)`: 平均绝对误差损失 - 用于回归（对异常值更鲁棒）
 /// - `huber_loss(target)`: Huber 损失 - 用于强化学习 / 带离群值的回归
-/// - `bbox_loss(target, kind, format)`: BBox IoU-family 损失 - 用于检测框回归
+/// - `bbox_loss(target, kind, format)`: `BBox` IoU-family 损失 - 用于检测框回归
 ///
 /// # 使用示例
 /// ```ignore
@@ -133,7 +133,7 @@ pub trait VarLossOps {
     /// 是强化学习（DQN 等）的标准损失函数。
     fn huber_loss<T: LossTarget>(&self, target: T) -> Result<Var, GraphError>;
 
-    /// BBox IoU-family loss。
+    /// `BBox` IoU-family loss。
     ///
     /// `self` 和 `target` 必须同为 `[N, 4]`，坐标格式通过 `format` 显式指定。
     fn bbox_loss<T: LossTarget>(
