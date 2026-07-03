@@ -241,6 +241,68 @@ per-sample Rayon 并行策略在有无 BLAS 时完全一致。
 
 **设计结论**：卷积的数学前向在 Train / Inference 下相同，但执行引擎需要区分“是否要为 backward 保存缓存”。后续新增重算代价高、缓存占用大的节点时，应同时设计训练路径和推理路径，避免推理承担训练负担。
 
+### J. 热路径分配/拷贝消除批量优化（2026-07-03，commit `3fd498a`）
+
+**来源**：全库分配/拷贝审计（自审 + Reviewer 压力测试三轮收敛），动机是 MCTS 推理热路径
+（每次 recurrent 约 25~40 节点 × 50 sims，全是 [1,N] 小张量，分配开销占主导）与训练路径的无谓整块拷贝。
+
+**方法论**（与以往单项优化不同，本次为批量实施）：
+
+- **正确性逐项锁死**：所有行为敏感改动配「fused vs 旧链」逐 bit 金测试（共 9 个），
+  逐元素运算顺序刻意保持与旧张量表达式链一致 → 批量叠加不放大正确性风险；
+- **性能统一测量**：单项收益多在 Criterion 噪声底（2~5%）以下，仅聚合端到端 bench 可测；
+  bench 组与改动面近似对角映射（`adam_step`→优化器融合、`conv2d_*`→Conv2d 直写、
+  `my_zero_forward`→解码路径…），若某组回归可用定向 bench + 局部 revert 快速归因；
+- **行为改变类一律不混批**（如 min_max_normalize 去 repeat，见「待优化项 #3」C2）。
+
+| 类别 | 改动 | 关键点 |
+|------|------|--------|
+| MCTS 推理 | expand 去除子节点 latent 预克隆（值从未被读且语义错误） | 大动作空间免「候选数 × latent」白拷 |
+| MCTS 推理 | `softmax_row` / `decode_categorical_slice` 无 Tensor 解码 | 替代 `amax→sub→exp→sum→div` 链约 6 次小分配，逐 bit 一致 |
+| MCTS 推理 | 输出 `with_value` 借用单拷贝；输入 `Var::set_value_owned` move | 消双拷贝 |
+| 优化器 | Adam/SGD 单趟 Zip 融合原地更新（`apply_param_update` 单借用接口） | 每参数每步省 grad/value 整块 clone + ~6 个全尺寸临时 |
+| backward | 拓扑序建一次，清梯度与传播复用 | 省一轮 DFS + HashSet + Vec\<Rc\> |
+| MatMul 反向 | `mat_mul_nt` / `mat_mul_tn` 转置视图直入 GEMM | 免 transpose 整块物化，Linear backward 双热点 |
+| Conv2d | 前向/反向预分配 + `par_chunks_mut` 直写 + `general_mat_mul` 写 chunk 视图 | 消 Vec\<Vec\> collect/flatten/extend 多级拷贝 |
+| 张量层 | `Tensor::from_vec` 零拷贝构造替换热点；`zip_map` 融合 sigmoid/tanh/where_cond 反向；keepdims 归约 `insert_axis` | 全库「build Vec → `Tensor::new`」各省一次 memcpy |
+| bug 修复 | Add 广播顺序：被广播方在前（`bias + x`）旧实现 panic | 顺带补反转/三父单测 |
+
+**验证状态**：
+
+- 全量测试 3317 + doctest 通过；9 个逐 bit 金测试全绿；
+- 3-seed CartPole 哨兵：中位 **9826 env-steps**（3/3 达标），与改动前 ~9.8k 基线一致，无回归；
+- Criterion 对比基线 `pre-hotpath-opt`（104 case，已入仓 `.bench/history/`）。
+
+**bench 对比结果**（`just bench-compare pre-hotpath-opt`，2026-07-03 上午，blas-mkl；
+76 组有结论：41 改善 / 14 持平 / 21 名义回归）：
+
+| bench 组 | 中位变化 | 归因 |
+|---|---|---|
+| `adam_step` / `sgd_step` | **-73% ~ -88%** | 优化器融合 |
+| `my_zero_forward`（initial/recurrent） | **-66%** | 推理无 Tensor 解码 + set_value_owned |
+| `my_zero_train_batch` | -29% ~ -47% | 优化器 + backward + MatMul 叠加 |
+| `conv2d_full_step` / `mlp_train_step` | -13% ~ -34% | Conv2d 直写 + 拓扑序复用 |
+| `*_chain_backward` / `loss_backward` / `attention` / `rnn_backward` | -12% ~ -40% | backward 通用路径红利 |
+
+**名义回归的噪声鉴定**：基线录制于深夜安静环境，对比跑于次日上午，存在系统性
+~+10% 环境偏移。证据：① `tensor_clone` 实测 ~420 **ps**（空循环，代码影响为零）也
+"回归" +10~16%；② 未触碰路径（纯 MKL GEMM 的 `tensor_matmul`、`rnn_forward`、
+`mse/bce loss_forward` 等）整齐落在 +6~17% 同一噪声带；③ 初跑异常项复测全部翻转
+（`avg_pool2d_forward` +123% → **-24%**、`subtract_chain_backward/small` +64% →
+**-44%**、`conv2d_forward/1x1` +32% → **-25%**）。结论：改善数字实际被低估约 10%，
+噪声带内的名义回归不构成代码回归证据；跨环境百分比不混为同一趋势（见本文档开头原则）。
+
+**GroupNorm 回归定向二分（已闭环）**：初测 `group_norm_backward` +28%、forward +14%，
+超出噪声带。按对角映射逐项还原二分，**一轮命中**：Add 节点前向重写把「clone 首父 + 原地
+广播 `+=`」全量换成引用加法后，「大张量 + 小广播量」场景（GroupNorm 的
+`(x_hat*gamma) + beta`，beta 为 `[1,C,1,1]`）踩中 ndarray 引用加法广播分配路径的慢区——
+它明显慢于 memcpy + 原地广播 `+=`。修复：按形状分流三路（同形 → 引用加法单趟；
+大 + 小广播 → clone + 原地 `+=`；小在前 → 引用加法扩形，即原 bug 修复路径），
+三路与旧实现逐 bit 一致。修复后复测：`group_norm` forward **-7%**、backward 持平，
+`add_chain_backward` 三档全部改善（-4% ~ -22%），无新回归。
+教训：**「消 clone」不能想当然——memcpy + 原地向量化两趟可以快于一趟广播分配**，
+广播场景的等价改写必须分形状档实测。
+
 ---
 
 ## Benchmark 基础设施（✅ 已搭建）

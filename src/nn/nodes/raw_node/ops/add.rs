@@ -106,11 +106,12 @@ impl TraitNode for Add {
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         // 逐元素相加（支持广播）。
         //
-        // 不能以「clone 首父再 `+=`」作为累加方案：`+=` 不允许左操作数被扩形，
+        // 不能无条件以「clone 首父再 `+=`」累加：`+=` 不允许左操作数被扩形，
         // 若首父是被广播方（如 `bias[1,n] + x[m,n]`）会直接 panic，而 Add::new 的
         // 静态形状检查（广播后形状）是允许该父节点顺序的。
-        // 因此前两个父节点用引用加法（任意方向广播，单次分配直得广播后结果），
-        // 后续父节点在形状已覆盖时走原地 `+=`（零分配），否则继续引用加法扩形。
+        // 也不能无条件用引用加法：其广播分配路径在「大张量 + 小广播量」场景
+        // 明显慢于 memcpy + 原地广播 `+=`（GroupNorm bench 定向二分证实）。
+        // 因此按首父形状是否覆盖广播结果分流两条路径，两条与旧实现逐 bit 一致。
         let mut result = match parent_values {
             [] => {
                 return Err(GraphError::ComputationError(
@@ -118,7 +119,22 @@ impl TraitNode for Add {
                 ));
             }
             [only] => (*only).clone(),
-            [first, second, ..] => *first + *second,
+            [first, second, ..] => {
+                if first.shape() != second.shape() && first.can_assign_broadcast_from(second) {
+                    // 大 + 小广播（如 x[N,C,H,W] + bias[1,C,1,1]）：
+                    // clone（memcpy）+ 原地广播 `+=` 实测显著快于引用加法的
+                    // 广播分配路径（GroupNorm bench 曾因此 ~15-30% 回归），
+                    // 且与旧实现逐 bit 一致。
+                    let mut r = (*first).clone();
+                    r += *second;
+                    r
+                } else {
+                    // 同形（引用加法单趟单分配，快于 clone + 二趟 `+=`）
+                    // 或首父是被广播方（如 bias[1,n] + x[m,n]，旧实现在此 panic）：
+                    // 引用加法任意方向广播，单次分配直得结果。
+                    *first + *second
+                }
+            }
         };
         for &parent_value in parent_values.iter().skip(2) {
             if result.can_assign_broadcast_from(parent_value) {
