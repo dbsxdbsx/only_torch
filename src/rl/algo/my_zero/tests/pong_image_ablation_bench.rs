@@ -41,6 +41,10 @@ fn pong_ablation_cfg(seeds: u64) -> Result<MyZeroConfig, GraphError> {
             trains_per_episode: 64,
             buffer_capacity: 32,
             start_training_after: 2,
+            // 与基准（150 局）同一显式温度口径；旧「按预算比例退火」会让半额臂
+            // 静默用不同探索调度（预算耦合 bug），现统一为常数调度
+            temp_hold_episodes: 75,
+            temp_decay_episodes: 75,
         })
         .eval_every(10)
         .seeds(seeds)

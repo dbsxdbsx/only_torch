@@ -15,7 +15,8 @@
 use only_torch::nn::GraphError;
 use only_torch::rl::algo::my_zero::{MyZero, TrainSettings};
 
-const BEST: &str = "models/my_zero/Pong-v5/seed_42/best";
+// best 基名；多 seed 时库内自动插入 `seed_{seed}/` 子目录（见 checkpoint.rs）
+const BEST: &str = "models/my_zero/Pong-v5/best";
 
 fn main() -> Result<(), GraphError> {
     let smoke = std::env::var("SMOKE").is_ok();
@@ -31,6 +32,9 @@ fn main() -> Result<(), GraphError> {
         trains_per_episode: 64, // Pong 单局 ~900 步，按局训练需更高 replay ratio
         buffer_capacity: 32,    // 按局计;图像帧内存纪律（单帧存储 ≈ 28KB/步）
         start_training_after: 2,
+        // 与旧「按 150 局预算前 50% 恒温」行为等价的显式常数（退火解耦预算后需自带）
+        temp_hold_episodes: 75,
+        temp_decay_episodes: 75,
     };
 
     let max_ep: usize = std::env::var("MAX_EP")
@@ -54,7 +58,13 @@ fn main() -> Result<(), GraphError> {
     let mz = builder.train()?;
 
     if !smoke {
-        mz.load_model_if_exists(BEST)?.eval(10)?;
+        // 用本次训练实际落盘的 best 路径，避免多 seed 时加载错位
+        let best = mz.train_report().and_then(|r| r.model_path.clone());
+        let mz = match best {
+            Some(p) => mz.load_model_if_exists(p)?,
+            None => mz,
+        };
+        mz.eval(10)?;
     }
     Ok(())
 }

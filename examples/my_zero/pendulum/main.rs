@@ -8,9 +8,10 @@
 //! 运行命令、诊断与 benchmark 见同目录 [`README.md`](README.md)。
 
 use only_torch::nn::GraphError;
-use only_torch::rl::algo::my_zero::MyZero;
+use only_torch::rl::algo::my_zero::{MyZero, TrainSettings};
 
-const BEST: &str = "models/my_zero/Pendulum-v1/seed_42/best";
+// best 基名；多 seed 时库内自动插入 `seed_{seed}/` 子目录（见 checkpoint.rs）
+const BEST: &str = "models/my_zero/Pendulum-v1/best";
 
 fn main() -> Result<(), GraphError> {
     let smoke = std::env::var("SMOKE").is_ok();
@@ -21,6 +22,12 @@ fn main() -> Result<(), GraphError> {
         .reward_scale(0.1)
         .solved(-200.0)
         .max_episodes(if smoke { 3 } else { 600 })
+        // 与旧「按 600 局预算前 50% 恒温」行为等价的显式常数（退火解耦预算后需自带）
+        .train_settings(TrainSettings {
+            temp_hold_episodes: 300,
+            temp_decay_episodes: 300,
+            ..TrainSettings::default()
+        })
         .save_model_when_eval(BEST);
     if let Ok(v) = std::env::var("TD_STEPS") {
         builder = builder.td_steps(v.parse().expect("TD_STEPS 必须是正整数"));
@@ -35,7 +42,13 @@ fn main() -> Result<(), GraphError> {
     let mz = builder.train()?;
 
     if !smoke {
-        mz.load_model_if_exists(BEST)?.eval(10)?.run(Some(1))?;
+        // 用本次训练实际落盘的 best 路径，避免多 seed 时加载错位
+        let best = mz.train_report().and_then(|r| r.model_path.clone());
+        let mz = match best {
+            Some(p) => mz.load_model_if_exists(p)?,
+            None => mz,
+        };
+        mz.eval(10)?.run(Some(1))?;
     }
     Ok(())
 }

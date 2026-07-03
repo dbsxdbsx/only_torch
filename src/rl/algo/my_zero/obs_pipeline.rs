@@ -46,6 +46,8 @@ pub struct ImagePipe {
     in_w: usize,
     in_c: usize,
     channel_first: bool,
+    /// 首帧像素域校验是否已通过（仅在第一次 reset 时检查一次）
+    domain_checked: bool,
     /// 最近 STACK 个处理后量化单帧（老 → 新；与 buffer 存储同编码）
     frames: VecDeque<StoredObs>,
 }
@@ -75,12 +77,42 @@ impl ImagePipe {
             in_w,
             in_c,
             channel_first,
+            domain_checked: false,
             frames: VecDeque::with_capacity(STACK),
         })
     }
 
+    /// 首帧像素域校验：管线假定原始值为 **0–255 像素域**（u8 量化前提）。
+    ///
+    /// 若 env 已把图像归一化到 `[0,1]`（部分非 ALE 包装器会这么做），量化会把
+    /// 所有像素压成 0/1 再除以 255，输入尺度静默崩坏——在此显式 panic 拦截。
+    ///
+    /// # Panics
+    /// - 值域超出 `[0, 255]`（未知量纲）；
+    /// - 首帧最大值 ≤ 1.0（看似已归一化；真实像素首帧全黑的概率可忽略）。
+    pub(crate) fn validate_pixel_domain(raw: &[f32]) {
+        let (mut min, mut max) = (f32::INFINITY, f32::NEG_INFINITY);
+        for &v in raw {
+            min = min.min(v);
+            max = max.max(v);
+        }
+        assert!(
+            min >= 0.0 && max <= 255.0,
+            "ImagePipe: 图像 obs 值域 [{min}, {max}] 超出 0–255 像素域，无法按 u8 量化存储"
+        );
+        assert!(
+            max > 1.0,
+            "ImagePipe: 图像 obs 首帧最大值 {max} ≤ 1.0，疑似已归一化到 [0,1]；\
+             当前管线假定 0–255 像素域（如 ALE 原始帧），请去掉 env 侧归一化包装"
+        );
+    }
+
     /// episode 开始：处理首帧并将滑窗填满该帧（标准前向填充），返回处理后量化单帧。
     pub fn reset(&mut self, raw: &[f32]) -> StoredObs {
+        if !self.domain_checked {
+            Self::validate_pixel_domain(raw);
+            self.domain_checked = true;
+        }
         let frame = self.process_frame(raw);
         self.frames.clear();
         for _ in 0..STACK {

@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **fix(rl/nn): 哨兵退化审查落地六项逻辑改良（GroupNorm 梯度断流 / per-seed 独立性 / 温度调度解耦等）**（2026-07-03）
+  - 背景：CartPole 哨兵 ndarray 升级后达标率跌破门槛（5-seed 3/5），两轮独立只读审查排除「新逻辑 bug 直接致败」后，落地审查翻出的确定性改良（每项独立验证）：
+  - **GroupNorm 梯度断流（框架级 bug）**：旧实现在图外用纯 Tensor 算 `x_hat` 再包回 input 节点，上游梯度整体截断（gamma/beta 有梯度、上游层永远学不到）且重复 forward 不重算；重写为纯图内组合（reshape 分组 → mean/square/sqrt/repeat → 还原），`InstanceNorm` 一并受益；新增上游梯度非零 + 中心差分逐点吻合回归测试
+  - **多 seed 统计独立性**：self-play / eval 的 `env.reset` 种子从 base seed 改 per-seed 派生（旧实现所有 seed 共用同一条 env 初始状态流）；单 seed 行为逐 bit 不变，seed 43+ 轨迹自此变化
+  - **温度退火与预算解耦**：`ep / max_episodes` 比例调度（改预算 = 静默改探索行为，Pong 半额 A/B 臂曾因此吃了不同调度）改显式常数 `TrainSettings::temp_hold/decay_episodes`（默认 1000/1000，官方 CartPole 2000 局口径逐点等价有单测锤；Pong 75/75、Pendulum 300/300 示例显式带等价常数）
+  - **multi-seed best 路径修复**：示例 `BEST` 去掉硬编码 `seed_42/`（与库内自动插入的 `seed_{k}/` 叠出嵌套目录）；训后加载改用 `TrainReport::model_path`（本次实际落盘路径），不再固定加载可能过期/错位的文件
+  - **图像 obs 量纲守卫**：`ImagePipe` 首次 reset 校验 0–255 像素域，已归一化 [0,1] 的 env 显式 panic 拦截（旧行为静默量化成 0/1）
+  - **truncated 末步 reward 不对称**：核实为「需逐位置 loss mask 基建」而非可直接改（强行放宽会向非终止状态注入 absorbing 假目标），语义注释 + 修复方案落档 `.issue/items/my_zero_truncated_final_step_reward.md`
+  - **哨兵红灯登记**：修复批次前后两轮实测（3/5、1/3）+ 判读 + 复裁计划落档 [cartpole 账本](examples/my_zero/cartpole/README.md)与 `.issue/items/cartpole_sentinel_red_ndarray_drift.md`——seed 42 修复前后前 ~1170 局逐 bit 相同，坐实退化源于 ndarray BLAS 漂移而非本批改动；「逐 bit 复现」声明的有效域（同一二进制 + 同依赖栈）写入账本口径变更史
+  - 验证：全量测试 3331 全绿（含新增温度调度 3 项 / 像素域 3 项 / GroupNorm 梯度流 1 项）+ CartPole SMOKE + clippy 无新增
+
 ### Changed
 
 - **perf(nn/rl): 训练 batch 组装融合 + owned 入图路径（优化 N，组装/入图流量 2.2×）**（2026-07-03）

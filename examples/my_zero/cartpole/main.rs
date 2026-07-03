@@ -10,7 +10,8 @@
 use only_torch::nn::GraphError;
 use only_torch::rl::algo::my_zero::MyZero;
 
-const BEST: &str = "models/my_zero/CartPole-v1/seed_42/best";
+// best 基名；多 seed 时库内自动插入 `seed_{seed}/` 子目录（见 checkpoint.rs）
+const BEST: &str = "models/my_zero/CartPole-v1/best";
 
 fn main() -> Result<(), GraphError> {
     let smoke = std::env::var("SMOKE").is_ok();
@@ -37,7 +38,14 @@ fn main() -> Result<(), GraphError> {
     let mz = builder.train()?;
 
     if !smoke {
-        mz.load_model_if_exists(BEST)?.eval(10)?.run(Some(1))?;
+        // 用本次训练实际落盘的 best 路径（多 seed 时为最后一个 seed 的 seed_{k}/best），
+        // 而非固定路径——避免加载到旧文件或其他 seed 的模型。
+        let best = mz.train_report().and_then(|r| r.model_path.clone());
+        let mz = match best {
+            Some(p) => mz.load_model_if_exists(p)?,
+            None => mz,
+        };
+        mz.eval(10)?.run(Some(1))?;
     }
     Ok(())
 }

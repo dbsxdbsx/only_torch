@@ -20,6 +20,7 @@ mod sampled_params;
 mod sve;
 mod target;
 mod target_net;
+mod temperature;
 mod value_encoding;
 mod value_prefix;
 mod value_transform;

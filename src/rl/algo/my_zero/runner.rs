@@ -68,6 +68,22 @@ fn print_components(c: &Components) {
     }
 }
 
+/// self-play 温度调度：`[0, hold)` 恒 1.0 → `[hold, hold+decay)` 线性退火到 0.25 → 之后恒 0.25。
+///
+/// 显式常数（[`TrainSettings::temp_hold_episodes`](super::config::TrainSettings::temp_hold_episodes) /
+/// [`temp_decay_episodes`](super::config::TrainSettings::temp_decay_episodes)），
+/// 与 `max_episodes` 预算解耦。`decay=0` 时 hold 结束直接跳 0.25。
+pub(crate) fn self_play_temperature(ep: usize, hold: usize, decay: usize) -> f32 {
+    if ep < hold {
+        return 1.0;
+    }
+    if decay == 0 || ep >= hold + decay {
+        return 0.25;
+    }
+    let progress = (ep - hold) as f32 / decay as f32; // [0, 1)
+    1.0 - progress * 0.75
+}
+
 /// 由训练超参 + 组件开关 + joint 候选数 N 构造 MCTS 配置（Sampled 时 K 按公式解析）。
 fn my_zero_mcts_config(
     num_simulations: u32,
@@ -166,6 +182,12 @@ fn self_play_one_episode(
 }
 
 /// 给定起点 `start`，计算 K 步 unroll 实际步数（区分 terminated / truncated）。
+///
+/// **truncated 局刻意排除最后一个 transition**（`len - 1 - start`，而非 `len - start`）：
+/// 若纳入末步，unroll 末端位置的 value/policy 目标对应「truncation 之后的状态」——
+/// 该状态**非终止**（真值应为 bootstrap 而非 absorbing 0），当前训练器无逐位置 mask，
+/// 强行纳入会注入错误 value 监督。代价是末步 reward 少一次监督（与 terminated 局的
+/// absorbing padding 轻微不对称），见 `.issue/items/my_zero_truncated_final_step_reward.md`。
 fn unroll_len_at(steps: &[SelfPlayStep], start: usize, k_unroll: usize) -> usize {
     let len = steps.len();
     if len == 0 || start >= len {
@@ -920,13 +942,9 @@ fn train_one_seed(
         last_ep = ep + 1;
         let t0 = std::time::Instant::now();
 
-        // 温度退火：前 50% 局 t=1.0，后 50% 线性降到 0.25
-        let progress = ep as f32 / max_episodes as f32;
-        let temperature = if progress < 0.5 {
-            1.0
-        } else {
-            1.0 - (progress - 0.5) * 2.0 * 0.75
-        };
+        // 温度退火：显式常数调度（hold 段恒 1.0 → 线性退火到 0.25 → 恒 0.25），
+        // 与 max_episodes 预算解耦（改预算不再静默改变探索行为）。
+        let temperature = self_play_temperature(ep, t.temp_hold_episodes, t.temp_decay_episodes);
 
         let mcts_cfg = my_zero_mcts_config(
             t.num_simulations,
@@ -948,7 +966,8 @@ fn train_one_seed(
             gamma,
             cq,
             reward_scale,
-            self_play_episode_seed(cfg.eval.seed, ep),
+            // per-seed 派生：多 seed 时各 seed 拥有独立 env 初始状态流（统计独立性）
+            self_play_episode_seed(seed, ep),
             &mut rng,
         );
         prof_self_play += sp_t0.elapsed().as_secs_f32();
@@ -1049,7 +1068,7 @@ fn train_one_seed(
                 gamma,
                 cfg.eval.eval_episodes,
                 t.num_simulations,
-                cfg.eval.seed,
+                seed, // per-seed 派生（同 self-play）
             );
             prof_eval += eval_t0.elapsed().as_secs_f32();
             let recent: f32 = ep_rewards.iter().rev().take(20).sum::<f32>() / 20.0;
@@ -1079,7 +1098,7 @@ fn train_one_seed(
             gamma,
             cfg.eval.eval_episodes,
             t.num_simulations,
-            cfg.eval.seed,
+            seed, // per-seed 派生（同 self-play）
         );
         prof_eval += eval_t0.elapsed().as_secs_f32();
         r

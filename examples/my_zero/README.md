@@ -57,10 +57,17 @@ use only_torch::rl::algo::my_zero::MyZero;
 let mz = MyZero::new("CartPole-v1")
     .solved(475.0)
     .max_episodes(2000)
-    .save_model_when_eval("models/my_zero/CartPole-v1/seed_42/best")
+    // 多 seed 时库内自动插入 `seed_{seed}/` 子目录
+    .save_model_when_eval("models/my_zero/CartPole-v1/best")
     .train()?;
 
-mz.load_model_if_exists("models/my_zero/CartPole-v1/seed_42/best")?.eval(10)?;
+// 训后加载用本次实际落盘路径（TrainReport::model_path），避免多 seed 加载错位
+let best = mz.train_report().and_then(|r| r.model_path.clone());
+let mz = match best {
+    Some(p) => mz.load_model_if_exists(p)?,
+    None => mz,
+};
+mz.eval(10)?;
 ```
 
 ## 训练与推理生命周期

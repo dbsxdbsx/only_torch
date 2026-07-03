@@ -11,18 +11,25 @@
 //! use only_torch::rl::algo::my_zero::MyZero;
 //!
 //! // 训练（返回 latest）；eval 创新高时落盘须 .save_model_when_eval(path)
-//! let best = "models/my_zero/CartPole-v1/seed_42/best";
+//! // （多 seed 时库内自动插入 `seed_{seed}/` 子目录）
+//! let best = "models/my_zero/CartPole-v1/best";
 //! let mz = MyZero::new("CartPole-v1")
 //!     .solved(475.0)
 //!     .max_episodes(2000)
 //!     .save_model_when_eval(best)
 //!     .train()?;
 //!
-//! mz.load_model_if_exists(best)?.eval(10)?;
+//! // 训后加载用本次实际落盘路径（TrainReport::model_path），避免多 seed 加载错位
+//! let best_path = mz.train_report().and_then(|r| r.model_path.clone());
+//! let mz = match best_path {
+//!     Some(p) => mz.load_model_if_exists(p)?,
+//!     None => mz,
+//! };
+//! mz.eval(10)?;
 //!
 //! // 冷启动推理
 //! MyZero::new("CartPole-v1")
-//!     .load_model_if_exists("models/my_zero/CartPole-v1/seed_42/best")?
+//!     .load_model_if_exists("models/my_zero/CartPole-v1/best")?
 //!     .run(Some(10))?;
 //! ```
 //!

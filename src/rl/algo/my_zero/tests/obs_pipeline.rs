@@ -128,6 +128,31 @@ fn obs_source_stacked_matches_reference_bit_exact() {
     assert_eq!(out, v.to_f32_vec());
 }
 
+// ---- ImagePipe 像素域校验（0-255 前提守卫）----
+
+/// 正常像素域（0–255）通过校验
+#[test]
+fn pixel_domain_accepts_raw_pixels() {
+    use crate::rl::algo::my_zero::obs_pipeline::ImagePipe;
+    ImagePipe::validate_pixel_domain(&[0.0, 12.0, 236.0, 255.0]);
+}
+
+/// 已归一化 [0,1] 的图像 obs 应被拦截（量化会静默压成 0/1）
+#[test]
+#[should_panic(expected = "疑似已归一化")]
+fn pixel_domain_rejects_normalized_obs() {
+    use crate::rl::algo::my_zero::obs_pipeline::ImagePipe;
+    ImagePipe::validate_pixel_domain(&[0.0, 0.5, 1.0]);
+}
+
+/// 值域越界（负值 / >255）应被拦截
+#[test]
+#[should_panic(expected = "超出 0–255 像素域")]
+fn pixel_domain_rejects_out_of_range() {
+    use crate::rl::algo::my_zero::obs_pipeline::ImagePipe;
+    ImagePipe::validate_pixel_domain(&[-1.0, 100.0]);
+}
+
 // ---- ImagePipe 常量契约 ----
 
 #[test]

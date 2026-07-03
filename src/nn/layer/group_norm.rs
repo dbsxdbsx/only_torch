@@ -11,8 +11,9 @@
  */
 
 use crate::nn::graph::NodeGroupContext;
-use crate::nn::{Graph, GraphError, Init, IntoVar, Module, Var, VarShapeOps};
-use crate::tensor::Tensor;
+use crate::nn::{
+    Graph, GraphError, Init, IntoVar, Module, Var, VarActivationOps, VarReduceOps, VarShapeOps,
+};
 
 /// 分组归一化层
 ///
@@ -82,18 +83,12 @@ impl GroupNorm {
         _guard.tag_existing(&self.gamma);
         _guard.tag_existing(&self.beta);
 
-        // 手动实现 GroupNorm：
-        // 1. 获取输入 Tensor
-        // 2. 纯 Tensor 计算均值/方差/归一化
-        // 3. 结果包装回 Var 用于 gamma/beta 的乘加
-        // 前向按行主序手写索引 flat[idx]，要求连续；输入可能来自 permute 等非连续视图，
-        // 直接按内存序读会静默算错。已连续时 into_contiguous 为零拷贝。
-        let x_tensor = x
-            .value()
-            .expect("GroupNorm: 输入尚未计算")
-            .unwrap()
-            .into_contiguous();
-        let shape = x_tensor.shape();
+        // 可微分组合实现（全部走图内节点，梯度正确回传到 x）：
+        // [N, C, ...] → reshape [N·G, group_size] → 逐行 (x−mean)/sqrt(var+eps)
+        // → reshape 回原形 → gamma·x_hat + beta。
+        // 旧实现曾在图外用纯 Tensor 计算 x_hat 再包回 input 节点，导致输入侧梯度
+        // 被整体截断（gamma/beta 有梯度、上游层永远学不到）——已重写修复。
+        let shape = x.value_expected_shape();
         let ndim = shape.len();
         assert!(ndim >= 2, "GroupNorm: 输入至少 2D [N, C, ...]");
         let n = shape[0];
@@ -104,52 +99,24 @@ impl GroupNorm {
         let spatial_size: usize = shape[2..].iter().product::<usize>().max(1);
         let group_size = channels_per_group * spatial_size;
 
-        let flat = x_tensor.flatten_view();
-        let mut x_hat_data = vec![0.0f32; x_tensor.size()];
-
-        for b in 0..n {
-            for g in 0..self.num_groups {
-                // 计算均值
-                let mut mean = 0.0f32;
-                for ch_in_g in 0..channels_per_group {
-                    let ch = g * channels_per_group + ch_in_g;
-                    for s in 0..spatial_size {
-                        let idx = b * c * spatial_size + ch * spatial_size + s;
-                        mean += flat[idx];
-                    }
-                }
-                mean /= group_size as f32;
-
-                // 计算方差
-                let mut var = 0.0f32;
-                for ch_in_g in 0..channels_per_group {
-                    let ch = g * channels_per_group + ch_in_g;
-                    for s in 0..spatial_size {
-                        let idx = b * c * spatial_size + ch * spatial_size + s;
-                        let diff = flat[idx] - mean;
-                        var += diff * diff;
-                    }
-                }
-                var /= group_size as f32;
-
-                let inv_std = 1.0 / (var + self.eps).sqrt();
-
-                // 归一化
-                for ch_in_g in 0..channels_per_group {
-                    let ch = g * channels_per_group + ch_in_g;
-                    for s in 0..spatial_size {
-                        let idx = b * c * spatial_size + ch * spatial_size + s;
-                        x_hat_data[idx] = (flat[idx] - mean) * inv_std;
-                    }
-                }
-            }
-        }
-
-        let x_hat_tensor = Tensor::new(&x_hat_data, shape);
-        let graph_rc = self.gamma.get_graph();
-        let x_hat = graph_rc
-            .input(&x_hat_tensor)
-            .expect("GroupNorm: 创建 x_hat 节点失败");
+        // [N·G, group_size]：每行 = 一个 (样本, 组)
+        let x2 = x
+            .reshape(&[n * self.num_groups, group_size])
+            .expect("GroupNorm: 分组 reshape 失败");
+        let mean = x2.mean_axis(1); // [N·G, 1]（keepdims）
+        let mean_b = mean
+            .repeat(&[1, group_size])
+            .expect("GroupNorm: mean 广播失败");
+        let centered = &x2 - &mean_b;
+        // biased 方差（与 PyTorch GroupNorm 一致）
+        let var = centered.square().mean_axis(1); // [N·G, 1]
+        let std = (var + self.eps).sqrt();
+        let std_b = std
+            .repeat(&[1, group_size])
+            .expect("GroupNorm: std 广播失败");
+        let x_hat = (&centered / &std_b)
+            .reshape(&shape)
+            .expect("GroupNorm: 还原 reshape 失败");
 
         // gamma/beta 形状 [1, C]，需要 reshape 以匹配输入维度
         // [1, C] → [1, C, 1, 1, ...] 用于广播（使用 Var.reshape 保持梯度链）
