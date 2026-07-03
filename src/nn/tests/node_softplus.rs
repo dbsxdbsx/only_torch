@@ -39,12 +39,12 @@ fn test_softplus_forward() {
     let output = result.value().unwrap().unwrap();
     // softplus([[-1, 0, 1], [2, -2, 0.5]])
     // = [[0.31326169, 0.69314718, 1.31326163], [2.12692809, 0.12692800, 0.97407699]]
-    assert_abs_diff_eq!(output[[0, 0]], 0.31326169, epsilon = 1e-5);
+    assert_abs_diff_eq!(output[[0, 0]], 0.313_261_7, epsilon = 1e-5);
     assert_abs_diff_eq!(output[[0, 1]], std::f32::consts::LN_2, epsilon = 1e-5);
-    assert_abs_diff_eq!(output[[0, 2]], 1.31326163, epsilon = 1e-5);
-    assert_abs_diff_eq!(output[[1, 0]], 2.12692809, epsilon = 1e-5);
-    assert_abs_diff_eq!(output[[1, 1]], 0.12692800, epsilon = 1e-5);
-    assert_abs_diff_eq!(output[[1, 2]], 0.97407699, epsilon = 1e-5);
+    assert_abs_diff_eq!(output[[0, 2]], 1.313_261_6, epsilon = 1e-5);
+    assert_abs_diff_eq!(output[[1, 0]], 2.126_928, epsilon = 1e-5);
+    assert_abs_diff_eq!(output[[1, 1]], 0.126_928, epsilon = 1e-5);
+    assert_abs_diff_eq!(output[[1, 2]], 0.974_077, epsilon = 1e-5);
 }
 
 /// 测试 SoftPlus 数值稳定性（极端值）
@@ -114,7 +114,7 @@ fn test_softplus_vjp_unit_upstream() -> Result<(), GraphError> {
         .resolve(&upstream_grad);
 
     // grad = sigmoid(x) = [0.11920292, 0.26894143, 0.5, 0.73105860, 0.88079708]
-    let expected = [0.11920292, 0.26894143, 0.5, 0.73105860, 0.88079708];
+    let expected = [0.11920292, 0.26894143, 0.5, 0.731_058_6, 0.880_797_1];
     assert_eq!(grad.shape(), &[1, 5]);
     for i in 0..5 {
         assert_abs_diff_eq!(grad[[0, i]], expected[i], epsilon = 1e-5);
@@ -153,7 +153,12 @@ fn test_softplus_vjp_non_unit_upstream() -> Result<(), GraphError> {
     // sigmoid(x) = [0.26894143, 0.5, 0.73105860, 0.88079709, 0.11920292, 0.62245935]
     // grad = upstream ⊙ sigmoid
     let sigmoid_vals = [
-        0.26894143, 0.5, 0.73105860, 0.88079709, 0.11920292, 0.62245935,
+        0.26894143,
+        0.5,
+        0.731_058_6,
+        0.880_797_1,
+        0.11920292,
+        0.62245935,
     ];
     let upstream_vals = [2.0, 3.0, 1.0, 0.5, 4.0, 2.0];
     assert_eq!(grad.shape(), &[2, 3]);
@@ -192,15 +197,20 @@ fn test_softplus_backward_e2e() -> Result<(), GraphError> {
 
     // ∂loss/∂x = 2 * softplus * sigmoid / n
     let softplus_vals = [
-        0.31326169,
+        0.313_261_7,
         std::f32::consts::LN_2,
-        1.31326163,
-        2.12692809,
-        0.12692800,
-        0.97407699,
+        1.313_261_6,
+        2.126_928,
+        0.126_928,
+        0.974_077,
     ];
     let sigmoid_vals = [
-        0.26894143, 0.5, 0.73105860, 0.88079709, 0.11920292, 0.62245935,
+        0.26894143,
+        0.5,
+        0.731_058_6,
+        0.880_797_1,
+        0.11920292,
+        0.62245935,
     ];
     let n = 6.0;
     for i in 0..6 {

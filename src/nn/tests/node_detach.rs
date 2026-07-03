@@ -176,7 +176,7 @@ fn test_var_detach_original_unchanged() {
     let w = graph
         .parameter(&[1, 2], crate::nn::var::Init::Ones, "w")
         .unwrap();
-    let h = (&x).matmul(&w).unwrap();
+    let h = x.matmul(&w).unwrap();
 
     // 原节点不是 detached
     assert!(!h.is_detached(), "原节点应该是 attached 状态");

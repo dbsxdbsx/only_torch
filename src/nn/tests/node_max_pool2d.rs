@@ -790,7 +790,7 @@ fn test_max_pool2d_sppf_style_padding() -> Result<(), GraphError> {
         Some("pool"),
     )?;
 
-    let input_val = Tensor::new(&vec![1.0f32; 25], &[1, 1, 5, 5]);
+    let input_val = Tensor::new(vec![1.0f32; 25], &[1, 1, 5, 5]);
     input.set_value(Some(&input_val))?;
     pool.forward_recursive(1, Mode::Train)?;
 
@@ -835,7 +835,7 @@ fn test_max_pool2d_ceil_mode() -> Result<(), GraphError> {
         Some("pool_floor"),
     )?;
 
-    let input_val = Tensor::new(&vec![0.5f32; 64], &[1, 1, 8, 8]);
+    let input_val = Tensor::new(vec![0.5f32; 64], &[1, 1, 8, 8]);
     input_f.set_value(Some(&input_val))?;
     pool_f.forward_recursive(1, Mode::Train)?;
     assert_eq!(pool_f.value().unwrap().shape(), &[1, 1, 3, 3], "floor 模式");

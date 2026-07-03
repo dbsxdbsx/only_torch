@@ -74,10 +74,7 @@ fn test_avg_pool2d_forward_batch() -> Result<(), GraphError> {
             .borrow_mut()
             .create_avg_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
 
-    let tensor = Tensor::new(
-        &[vec![4.0f32; 16], vec![8.0f32; 16]].concat(),
-        &[2, 1, 4, 4],
-    );
+    let tensor = Tensor::new([vec![4.0f32; 16], vec![8.0f32; 16]].concat(), &[2, 1, 4, 4]);
 
     input.set_value(Some(&tensor))?;
     pool.forward_recursive(1, Mode::Train)?;
@@ -111,10 +108,7 @@ fn test_avg_pool2d_forward_multi_channel() -> Result<(), GraphError> {
             .borrow_mut()
             .create_avg_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
 
-    let tensor = Tensor::new(
-        &[vec![1.0f32; 16], vec![2.0f32; 16]].concat(),
-        &[1, 2, 4, 4],
-    );
+    let tensor = Tensor::new([vec![1.0f32; 16], vec![2.0f32; 16]].concat(), &[1, 2, 4, 4]);
 
     input.set_value(Some(&tensor))?;
     pool.forward_recursive(1, Mode::Train)?;

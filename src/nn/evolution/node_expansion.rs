@@ -175,8 +175,8 @@ pub fn expand_conv2d(
     let k = kernel_size;
     let padding = k / 2; // same padding
     let (h, w) = input_spatial;
-    let h_out = (h + 2 * padding - k) / 1 + 1;
-    let w_out = (w + 2 * padding - k) / 1 + 1;
+    let h_out = (h + 2 * padding - k) + 1;
+    let w_out = (w + 2 * padding - k) + 1;
 
     let kernel_id = counter.next();
     let conv_id = counter.next();
@@ -1186,7 +1186,7 @@ fn find_conv2d_blocks(nodes: &[NodeGene]) -> Vec<Conv2dBlock> {
         // 已经是 FM 边（fm_id = None 但上游是 FM 节点）的跳过
         if n.parents
             .iter()
-            .any(|&pid| node_map.get(&pid).map_or(false, |p| p.fm_id.is_some()))
+            .any(|&pid| node_map.get(&pid).is_some_and(|p| p.fm_id.is_some()))
         {
             continue;
         }

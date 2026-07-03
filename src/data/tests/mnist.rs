@@ -55,7 +55,9 @@ fn test_mnist_get_multiple_samples() {
 
     // 获取多个样本
     for i in [0, 100, 1000, 59999] {
-        let (image, label) = dataset.get(i).expect(&format!("获取样本 {} 失败", i));
+        let (image, label) = dataset
+            .get(i)
+            .unwrap_or_else(|_| panic!("获取样本 {} 失败", i));
         assert_eq!(image.shape(), &[1, 28, 28]);
         assert_eq!(label.shape(), &[10]);
     }
@@ -93,7 +95,9 @@ fn test_mnist_labels_valid() {
 
     // 检查前 100 个样本的标签
     for i in 0..100 {
-        let (_, label) = dataset.get(i).expect(&format!("获取样本 {} 失败", i));
+        let (_, label) = dataset
+            .get(i)
+            .unwrap_or_else(|_| panic!("获取样本 {} 失败", i));
 
         // 找到 one-hot 编码中为 1 的位置
         let mut class = None;

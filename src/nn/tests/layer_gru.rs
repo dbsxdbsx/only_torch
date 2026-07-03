@@ -311,15 +311,15 @@ fn test_gru_different_batch_size_same_seq_len() -> Result<(), GraphError> {
 
     // 第一个输入：batch_size=2, seq_len=3
     let x1 = graph.zeros(&[2, 3, 2])?;
-    x1.set_value(&Tensor::new(&vec![0.1f32; 12], &[2, 3, 2]))?;
+    x1.set_value(&Tensor::new(vec![0.1f32; 12], &[2, 3, 2]))?;
 
     // 第二个输入：batch_size=4, seq_len=3（相同 seq_len，不同 batch_size）
     let x2 = graph.zeros(&[4, 3, 2])?;
-    x2.set_value(&Tensor::new(&vec![0.1f32; 24], &[4, 3, 2]))?;
+    x2.set_value(&Tensor::new(vec![0.1f32; 24], &[4, 3, 2]))?;
 
     // 第三个输入：batch_size=2, seq_len=3，与 x1 相同值，用于验证相同输入产生相同输出
     let x3 = graph.zeros(&[2, 3, 2])?;
-    x3.set_value(&Tensor::new(&vec![0.1f32; 12], &[2, 3, 2]))?;
+    x3.set_value(&Tensor::new(vec![0.1f32; 12], &[2, 3, 2]))?;
 
     // 1. 验证不同 batch_size 下输出形状正确
     let h1 = gru.forward(&x1)?;

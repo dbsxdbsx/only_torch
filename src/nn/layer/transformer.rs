@@ -71,7 +71,7 @@ impl TransformerEncoderLayer {
         assert!(d_model > 0, "TransformerEncoderLayer: d_model 必须 > 0");
         assert!(num_heads > 0, "TransformerEncoderLayer: num_heads 必须 > 0");
         assert!(
-            d_model % num_heads == 0,
+            d_model.is_multiple_of(num_heads),
             "TransformerEncoderLayer: d_model={d_model} 必须被 num_heads={num_heads} 整除"
         );
         assert!(d_ff > 0, "TransformerEncoderLayer: d_ff 必须 > 0");

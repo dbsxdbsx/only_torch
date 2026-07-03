@@ -220,12 +220,11 @@ fn test_mcts_cartpole_env_episode() {
 ///
 /// CartPole 返回 shape=(4,) 的 numpy array，先 flatten 再 extract。
 fn extract_obs(_py: Python<'_>, obs_py: &Bound<'_, PyAny>) -> Vec<f32> {
-    if let Ok(flat_fn) = obs_py.getattr("flatten") {
-        if let Ok(flat) = flat_fn.call0() {
-            if let Ok(v) = flat.extract::<Vec<f32>>() {
-                return v;
-            }
-        }
+    if let Ok(flat_fn) = obs_py.getattr("flatten")
+        && let Ok(flat) = flat_fn.call0()
+        && let Ok(v) = flat.extract::<Vec<f32>>()
+    {
+        return v;
     }
     obs_py
         .extract::<Vec<f32>>()

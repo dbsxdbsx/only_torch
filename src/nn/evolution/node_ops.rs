@@ -189,10 +189,10 @@ pub fn node_main_path(genome: &NetworkGenome) -> Vec<NodeBlock> {
     // 预先收集各 layer block 的全部节点（按拓扑序）
     let mut layer_block_nodes: HashMap<u64, Vec<u64>> = HashMap::new();
     for &id in topo_order {
-        if let Some(node) = node_map.get(&id) {
-            if let Some(bid) = node.block_id {
-                layer_block_nodes.entry(bid).or_default().push(id);
-            }
+        if let Some(node) = node_map.get(&id)
+            && let Some(bid) = node.block_id
+        {
+            layer_block_nodes.entry(bid).or_default().push(id);
         }
     }
     for &id in topo_order {
@@ -223,13 +223,13 @@ pub fn node_main_path(genome: &NetworkGenome) -> Vec<NodeBlock> {
             // input_id：该块中第一个非叶节点的外部父节点
             let mut input_id = INPUT_INNOVATION;
             'find: for &nid in &ids {
-                if let Some(node) = node_map.get(&nid) {
-                    if !node.is_leaf() {
-                        for &pid in &node.parents {
-                            if !bid_set.contains(&pid) {
-                                input_id = pid;
-                                break 'find;
-                            }
+                if let Some(node) = node_map.get(&nid)
+                    && !node.is_leaf()
+                {
+                    for &pid in &node.parents {
+                        if !bid_set.contains(&pid) {
+                            input_id = pid;
+                            break 'find;
                         }
                     }
                 }
@@ -325,18 +325,18 @@ fn infer_block_kind(node_ids: &[u64], node_map: &HashMap<u64, &NodeGene>) -> Nod
         // （不能用 shape[0] > 1 启发式——当 in_features=1 时 W 和 bias 形状相同）
         let bid_set: HashSet<u64> = node_ids.iter().copied().collect();
         for &id in node_ids {
-            if let Some(n) = node_map.get(&id) {
-                if matches!(n.node_type, NT::MatMul) {
-                    for &pid in &n.parents {
-                        if bid_set.contains(&pid) {
-                            if let Some(p) = node_map.get(&pid) {
-                                if p.is_parameter() && p.output_shape.len() == 2 {
-                                    return NodeBlockKind::Linear {
-                                        out_features: p.output_shape[1],
-                                    };
-                                }
-                            }
-                        }
+            if let Some(n) = node_map.get(&id)
+                && matches!(n.node_type, NT::MatMul)
+            {
+                for &pid in &n.parents {
+                    if bid_set.contains(&pid)
+                        && let Some(p) = node_map.get(&pid)
+                        && p.is_parameter()
+                        && p.output_shape.len() == 2
+                    {
+                        return NodeBlockKind::Linear {
+                            out_features: p.output_shape[1],
+                        };
                     }
                 }
             }
@@ -346,18 +346,18 @@ fn infer_block_kind(node_ids: &[u64], node_map: &HashMap<u64, &NodeGene>) -> Nod
     if has_deform {
         let bid_set_deform: HashSet<u64> = node_ids.iter().copied().collect();
         for &id in node_ids {
-            if let Some(n) = node_map.get(&id) {
-                if matches!(n.node_type, NT::DeformableConv2d { .. }) {
-                    for &pid in &n.parents {
-                        if bid_set_deform.contains(&pid) {
-                            if let Some(p) = node_map.get(&pid) {
-                                if p.is_parameter() && p.output_shape.len() == 4 {
-                                    return NodeBlockKind::DeformableConv2d {
-                                        out_channels: p.output_shape[0],
-                                    };
-                                }
-                            }
-                        }
+            if let Some(n) = node_map.get(&id)
+                && matches!(n.node_type, NT::DeformableConv2d { .. })
+            {
+                for &pid in &n.parents {
+                    if bid_set_deform.contains(&pid)
+                        && let Some(p) = node_map.get(&pid)
+                        && p.is_parameter()
+                        && p.output_shape.len() == 4
+                    {
+                        return NodeBlockKind::DeformableConv2d {
+                            out_channels: p.output_shape[0],
+                        };
                     }
                 }
             }
@@ -368,18 +368,18 @@ fn infer_block_kind(node_ids: &[u64], node_map: &HashMap<u64, &NodeGene>) -> Nod
         // 通过 Conv2d 节点的父节点关系精确定位 kernel 参数
         let bid_set_conv: HashSet<u64> = node_ids.iter().copied().collect();
         for &id in node_ids {
-            if let Some(n) = node_map.get(&id) {
-                if matches!(n.node_type, NT::Conv2d { .. }) {
-                    for &pid in &n.parents {
-                        if bid_set_conv.contains(&pid) {
-                            if let Some(p) = node_map.get(&pid) {
-                                if p.is_parameter() && p.output_shape.len() == 4 {
-                                    return NodeBlockKind::Conv2d {
-                                        out_channels: p.output_shape[0],
-                                    };
-                                }
-                            }
-                        }
+            if let Some(n) = node_map.get(&id)
+                && matches!(n.node_type, NT::Conv2d { .. })
+            {
+                for &pid in &n.parents {
+                    if bid_set_conv.contains(&pid)
+                        && let Some(p) = node_map.get(&pid)
+                        && p.is_parameter()
+                        && p.output_shape.len() == 4
+                    {
+                        return NodeBlockKind::Conv2d {
+                            out_channels: p.output_shape[0],
+                        };
                     }
                 }
             }
@@ -390,18 +390,18 @@ fn infer_block_kind(node_ids: &[u64], node_map: &HashMap<u64, &NodeGene>) -> Nod
         // ConvTranspose2d kernel 形状为 [in_channels, out_channels, k, k]
         let bid_set_deconv: HashSet<u64> = node_ids.iter().copied().collect();
         for &id in node_ids {
-            if let Some(n) = node_map.get(&id) {
-                if matches!(n.node_type, NT::ConvTranspose2d { .. }) {
-                    for &pid in &n.parents {
-                        if bid_set_deconv.contains(&pid) {
-                            if let Some(p) = node_map.get(&pid) {
-                                if p.is_parameter() && p.output_shape.len() == 4 {
-                                    return NodeBlockKind::ConvTranspose2d {
-                                        out_channels: p.output_shape[1],
-                                    };
-                                }
-                            }
-                        }
+            if let Some(n) = node_map.get(&id)
+                && matches!(n.node_type, NT::ConvTranspose2d { .. })
+            {
+                for &pid in &n.parents {
+                    if bid_set_deconv.contains(&pid)
+                        && let Some(p) = node_map.get(&pid)
+                        && p.is_parameter()
+                        && p.output_shape.len() == 4
+                    {
+                        return NodeBlockKind::ConvTranspose2d {
+                            out_channels: p.output_shape[1],
+                        };
                     }
                 }
             }
@@ -494,11 +494,11 @@ pub fn make_counter(genome: &NetworkGenome) -> InnovationCounter {
 
 /// 将计数器状态写回 genome 的 next_innovation
 pub fn commit_counter(genome: &mut NetworkGenome, counter: &InnovationCounter) {
-    match &mut genome.repr {
-        GenomeRepr::NodeLevel {
-            next_innovation, ..
-        } => *next_innovation = counter.peek(),
-        _ => {}
+    if let GenomeRepr::NodeLevel {
+        next_innovation, ..
+    } = &mut genome.repr
+    {
+        *next_innovation = counter.peek()
     }
 }
 
@@ -622,10 +622,10 @@ fn is_adjacent_normalization(genome: &NetworkGenome, after_id: u64) -> bool {
         if blocks[idx].kind.is_normalization() {
             return true;
         }
-        if let Some(next) = blocks.get(idx + 1) {
-            if next.kind.is_normalization() {
-                return true;
-            }
+        if let Some(next) = blocks.get(idx + 1)
+            && next.kind.is_normalization()
+        {
+            return true;
         }
     }
 
@@ -649,10 +649,10 @@ pub fn sync_computation_shapes(genome: &mut NetworkGenome) {
     let analysis =
         GenomeAnalysis::compute(genome.nodes(), INPUT_INNOVATION, input_shape, input_domain);
     for node in genome.nodes_mut().iter_mut() {
-        if !node.is_leaf() {
-            if let Some(s) = analysis.shape_of(node.innovation_number) {
-                node.output_shape = s.clone();
-            }
+        if !node.is_leaf()
+            && let Some(s) = analysis.shape_of(node.innovation_number)
+        {
+            node.output_shape = s.clone();
         }
     }
 }
@@ -919,16 +919,15 @@ fn repair_param_input_dims_inner(genome: &mut NetworkGenome) {
                 if let Some(cell) = cell_node {
                     // 同步 descriptor 的 input_size（必须，否则 GenomeAnalysis 会与参数形状对不上）
                     for node in genome.nodes_mut().iter_mut() {
-                        if node.innovation_number == cell.innovation_number {
-                            if let NodeTypeDescriptor::CellAttention {
+                        if node.innovation_number == cell.innovation_number
+                            && let NodeTypeDescriptor::CellAttention {
                                 input_size,
                                 embed_dim: cell_embed,
                                 ..
                             } = &mut node.node_type
-                            {
-                                *input_size = prev_out;
-                                *cell_embed = out;
-                            }
+                        {
+                            *input_size = prev_out;
+                            *cell_embed = out;
                         }
                     }
 
@@ -1175,12 +1174,13 @@ pub fn resize_linear_out(
 
     // 更新本块的所有 2D 参数形状（W 和 b 都需要更新 dim[1] = new_out）
     for node in genome.nodes_mut().iter_mut() {
-        if bid_set.contains(&node.innovation_number) && node.is_parameter() {
-            if node.output_shape.len() == 2 {
-                // W: [in, old_out] → [in, new_out]
-                // b: [1, old_out] → [1, new_out]
-                node.output_shape[1] = new_out;
-            }
+        if bid_set.contains(&node.innovation_number)
+            && node.is_parameter()
+            && node.output_shape.len() == 2
+        {
+            // W: [in, old_out] → [in, new_out]
+            // b: [1, old_out] → [1, new_out]
+            node.output_shape[1] = new_out;
         }
     }
 
@@ -1275,10 +1275,10 @@ pub fn resize_conv2d_out(
 
     // 更新同块内的 BatchNormOp.num_features
     for node in genome.nodes_mut().iter_mut() {
-        if bid_set.contains(&node.innovation_number) {
-            if let NodeTypeDescriptor::BatchNormOp { num_features, .. } = &mut node.node_type {
-                *num_features = new_ch;
-            }
+        if bid_set.contains(&node.innovation_number)
+            && let NodeTypeDescriptor::BatchNormOp { num_features, .. } = &mut node.node_type
+        {
+            *num_features = new_ch;
         }
     }
 
@@ -1402,23 +1402,23 @@ pub fn resize_attention_out(
         .cloned()
         .ok_or_else(|| "注意力块中缺少 CellAttention 节点".to_string())?;
 
-    if let NodeTypeDescriptor::CellAttention { num_heads, .. } = cell_node.node_type {
-        if new_embed % num_heads != 0 {
-            return Err(format!(
-                "embed_dim={} 不能被 num_heads={} 整除",
-                new_embed, num_heads
-            ));
-        }
+    if let NodeTypeDescriptor::CellAttention { num_heads, .. } = cell_node.node_type
+        && !new_embed.is_multiple_of(num_heads)
+    {
+        return Err(format!(
+            "embed_dim={} 不能被 num_heads={} 整除",
+            new_embed, num_heads
+        ));
     }
 
     // 跳过 input，剩 8 个为参数：W_q/b_q/W_k/b_k/W_v/b_v/W_o/b_o
     let param_ids: Vec<u64> = cell_node.parents.iter().skip(1).copied().collect();
 
     for node in genome.nodes_mut().iter_mut() {
-        if node.innovation_number == cell_node.innovation_number {
-            if let NodeTypeDescriptor::CellAttention { embed_dim, .. } = &mut node.node_type {
-                *embed_dim = new_embed;
-            }
+        if node.innovation_number == cell_node.innovation_number
+            && let NodeTypeDescriptor::CellAttention { embed_dim, .. } = &mut node.node_type
+        {
+            *embed_dim = new_embed;
         }
     }
 
@@ -1621,7 +1621,7 @@ pub fn create_insert_nodes(
                 .attention_num_heads_candidates
                 .iter()
                 .copied()
-                .filter(|&h| h > 0 && embed % h == 0)
+                .filter(|&h| h > 0 && embed.is_multiple_of(h))
                 .collect();
             candidates.choose(rng).copied()
         };
@@ -1742,10 +1742,11 @@ pub struct ConnectablePair {
 /// 找目标块的入口节点：块内第一个非叶节点，且其父节点列表中包含 `block.input_id`
 fn find_entry_node(block: &NodeBlock, genome: &NetworkGenome) -> Option<u64> {
     for &nid in &block.node_ids {
-        if let Some(node) = genome.nodes().iter().find(|n| n.innovation_number == nid) {
-            if !node.is_leaf() && node.parents.contains(&block.input_id) {
-                return Some(nid);
-            }
+        if let Some(node) = genome.nodes().iter().find(|n| n.innovation_number == nid)
+            && !node.is_leaf()
+            && node.parents.contains(&block.input_id)
+        {
+            return Some(nid);
         }
     }
     None
@@ -2176,11 +2177,11 @@ pub fn cleanup_orphan_nodes(genome: &mut NetworkGenome) {
     let mut queue: VecDeque<u64> = terminal_ids.into_iter().collect();
 
     while let Some(id) = queue.pop_front() {
-        if reachable.insert(id) {
-            if let Some(node) = nodes.iter().find(|n| n.innovation_number == id) {
-                for &pid in &node.parents {
-                    queue.push_back(pid);
-                }
+        if reachable.insert(id)
+            && let Some(node) = nodes.iter().find(|n| n.innovation_number == id)
+        {
+            for &pid in &node.parents {
+                queue.push_back(pid);
             }
         }
     }
@@ -2301,7 +2302,7 @@ pub fn repair_skip_connections(genome: &mut NetworkGenome) {
         // 1. block 内包含 MatMul 或 Conv2d 计算节点（是 Linear/Conv2d 块）
         // 2. skip_parent（block 输出节点）的所有下游都是 SkipAgg 节点
         //    （排除主路径上普通的 Linear/Conv2d 块被误判为投影块）
-        let is_projection = skip_node.as_ref().map_or(false, |n| {
+        let is_projection = skip_node.as_ref().is_some_and(|n| {
             if let Some(bid) = n.block_id {
                 let has_computation = genome.nodes().iter().any(|sibling| {
                     sibling.block_id == Some(bid)
@@ -2371,15 +2372,14 @@ pub fn repair_skip_connections(genome: &mut NetworkGenome) {
                                 node.output_shape[1] = target_shape[1]; // 输出维 = 主路径特征维
                             }
                         }
-                        (4, 4) => {
+                        (4, 4)
                             // Conv2d 1x1 projection kernel: [out_ch, in_ch, 1, 1]
-                            if node.output_shape[2] == 1 && node.output_shape[3] == 1 {
+                            if node.output_shape[2] == 1 && node.output_shape[3] == 1 => {
                                 node.output_shape[0] = target_shape[1]; // out_ch = 目标通道
                                 if let Some(ref src) = source_shape {
                                     node.output_shape[1] = src[1]; // in_ch = 源通道
                                 }
                             }
-                        }
                         _ => {}
                     }
                 }

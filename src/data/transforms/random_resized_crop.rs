@@ -156,7 +156,7 @@ fn get_crop_params(
 
     // Fallback: 中心裁切，保持宽高比
     let in_ratio = w as f64 / h as f64;
-    let mid_ratio = ((ratio.0 * ratio.1) as f64).sqrt();
+    let mid_ratio = (ratio.0 * ratio.1).sqrt();
 
     let (crop_h, crop_w) = if in_ratio < mid_ratio {
         // 原图太窄，以宽度为准

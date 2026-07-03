@@ -190,20 +190,19 @@ fn grow_attention_block_aligns_to_num_heads_and_remains_buildable() {
             } else {
                 None
             }
-        }) {
-            if new_embed != initial_embed {
-                // 校验对齐：必须能被 num_heads=4 整除
-                assert!(
-                    new_embed % 4 == 0,
-                    "新 embed_dim={} 必须能被 num_heads=4 整除",
-                    new_embed
-                );
-                // 校验新 genome 仍可构图
-                let mut local_rng = StdRng::seed_from_u64(99);
-                genome.build(&mut local_rng).expect("Grow 后应能构图");
-                grew_attention = true;
-                break;
-            }
+        }) && new_embed != initial_embed
+        {
+            // 校验对齐：必须能被 num_heads=4 整除
+            assert!(
+                new_embed % 4 == 0,
+                "新 embed_dim={} 必须能被 num_heads=4 整除",
+                new_embed
+            );
+            // 校验新 genome 仍可构图
+            let mut local_rng = StdRng::seed_from_u64(99);
+            genome.build(&mut local_rng).expect("Grow 后应能构图");
+            grew_attention = true;
+            break;
         }
         // 还没改到 attention 块？回滚继续尝试
         genome = snapshot;

@@ -43,7 +43,7 @@ fn elapsed_ms(start: Instant) -> f64 {
 }
 
 fn dummy_input() -> Tensor {
-    Tensor::new(&vec![0.5f32; 3 * TARGET * TARGET], &[1, 3, TARGET, TARGET])
+    Tensor::new(vec![0.5f32; 3 * TARGET * TARGET], &[1, 3, TARGET, TARGET])
 }
 
 fn measure_predict(model: &only_torch::nn::RebuildResult, input: &Tensor) -> (f64, f64) {

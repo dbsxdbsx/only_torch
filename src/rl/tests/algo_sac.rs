@@ -203,7 +203,7 @@ fn v_hybrid_basic() {
     //   = 0.5*(2+0.0693) + 0.5*(4+0.0693) = 3.0693
     // hybrid V = discrete_V - 0.2 * (-1) = 3.0693 + 0.2 = 3.2693
     let dv = 0.5 * (2.0 - 0.1 * 0.5_f32.ln()) + 0.5 * (4.0 - 0.1 * 0.5_f32.ln());
-    let expected = dv - 0.2 * (-1.0);
+    let expected = dv - -0.2;
     assert!((v[[0, 0]] - expected).abs() < 1e-3);
 }
 

@@ -261,10 +261,10 @@ fn ensure_recurrent_input_value(input_var: &Var, shape: &[usize]) -> Result<(), 
     if let Ok(Some(_)) = input_var.value() {
         return Ok(());
     }
-    if input_var.forward().is_ok() {
-        if let Ok(Some(_)) = input_var.value() {
-            return Ok(());
-        }
+    if input_var.forward().is_ok()
+        && let Ok(Some(_)) = input_var.value()
+    {
+        return Ok(());
     }
     input_var.set_value(&Tensor::zeros(shape))
 }

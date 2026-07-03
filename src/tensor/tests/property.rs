@@ -360,9 +360,9 @@ fn test_sum_to_shape() {
     ];
 
     for (input_shape, target_shape, input_data, expected_data) in test_cases {
-        let tensor = Tensor::new(*input_data, *input_shape);
-        let result = tensor.sum_to_shape(*target_shape);
-        let expected = Tensor::new(*expected_data, *target_shape);
+        let tensor = Tensor::new(*input_data, input_shape);
+        let result = tensor.sum_to_shape(target_shape);
+        let expected = Tensor::new(*expected_data, target_shape);
 
         assert_eq!(
             result, expected,

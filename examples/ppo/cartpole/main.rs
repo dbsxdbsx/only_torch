@@ -37,7 +37,7 @@ fn eval_cartpole(
         let mut obs = env.reset(seed_base.map(|b| b + i as u64))[0].clone();
         let mut ep_r = 0.0f32;
         loop {
-            let logits = actor.forward(&Tensor::new(&obs, &[1, obs_dim]))?;
+            let logits = actor.forward(Tensor::new(&obs, &[1, obs_dim]))?;
             let logits_val = logits.value()?.unwrap();
             let probs = logits_val.softmax(1);
             let action = probs

@@ -28,7 +28,7 @@ fn test_batch_forward_equals_single() -> Result<(), GraphError> {
     let output_dim = 2;
 
     // 创建测试数据
-    let samples = vec![
+    let samples = [
         Tensor::normal_seeded(0.0, 1.0, &[1, input_dim], seed),
         Tensor::normal_seeded(0.0, 1.0, &[1, input_dim], seed + 1),
         Tensor::normal_seeded(0.0, 1.0, &[1, input_dim], seed + 2),
@@ -103,12 +103,12 @@ fn test_batch_gradient_equals_accumulated_single() -> Result<(), GraphError> {
     let output_dim = 2;
 
     // 创建测试数据
-    let samples = vec![
+    let samples = [
         Tensor::normal_seeded(0.0, 1.0, &[1, input_dim], seed),
         Tensor::normal_seeded(0.0, 1.0, &[1, input_dim], seed + 1),
         Tensor::normal_seeded(0.0, 1.0, &[1, input_dim], seed + 2),
     ];
-    let labels = vec![
+    let labels = [
         Tensor::new(&[1.0, 0.0], &[1, output_dim]),
         Tensor::new(&[0.0, 1.0], &[1, output_dim]),
         Tensor::new(&[1.0, 0.0], &[1, output_dim]),
@@ -181,10 +181,10 @@ fn test_batch_gradient_equals_accumulated_single() -> Result<(), GraphError> {
 
         // 累加梯度
         if let Some(grad) = w1_s.grad() {
-            accumulated_grad_w1 = accumulated_grad_w1 + grad;
+            accumulated_grad_w1 += grad;
         }
         if let Some(grad) = w2_s.grad() {
-            accumulated_grad_w2 = accumulated_grad_w2 + grad;
+            accumulated_grad_w2 += grad;
         }
     }
 
@@ -216,13 +216,13 @@ fn test_batch_parameter_update_equals_accumulated_single() -> Result<(), GraphEr
     let learning_rate = 0.1;
 
     // 创建测试数据
-    let samples = vec![
+    let samples = [
         Tensor::normal_seeded(0.0, 1.0, &[1, input_dim], seed),
         Tensor::normal_seeded(0.0, 1.0, &[1, input_dim], seed + 1),
         Tensor::normal_seeded(0.0, 1.0, &[1, input_dim], seed + 2),
         Tensor::normal_seeded(0.0, 1.0, &[1, input_dim], seed + 3),
     ];
-    let labels = vec![
+    let labels = [
         Tensor::new(&[1.0, 0.0], &[1, output_dim]),
         Tensor::new(&[0.0, 1.0], &[1, output_dim]),
         Tensor::new(&[1.0, 0.0], &[1, output_dim]),
@@ -284,7 +284,7 @@ fn test_batch_parameter_update_equals_accumulated_single() -> Result<(), GraphEr
 
         // 累加梯度
         if let Some(grad) = w_s.grad() {
-            accumulated_grad = accumulated_grad + grad;
+            accumulated_grad += grad;
         }
     }
 

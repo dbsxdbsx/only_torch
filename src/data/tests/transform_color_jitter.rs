@@ -80,7 +80,7 @@ fn test_color_jitter_output_clamped() {
         let output = jitter.apply(&input);
         let flat = output.flatten_view();
         for &v in flat.iter() {
-            assert!(v >= 0.0 && v <= 1.0, "输出应在 [0, 1] 范围内，得到 {v}");
+            assert!((0.0..=1.0).contains(&v), "输出应在 [0, 1] 范围内，得到 {v}");
         }
     }
 
@@ -91,7 +91,7 @@ fn test_color_jitter_output_clamped() {
         let flat = output.flatten_view();
         for &v in flat.iter() {
             assert!(
-                v >= 0.0 && v <= 1.0,
+                (0.0..=1.0).contains(&v),
                 "暗像素输出应在 [0, 1] 范围内，得到 {v}"
             );
         }

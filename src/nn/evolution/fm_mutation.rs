@@ -204,12 +204,11 @@ impl Mutation for AddFeatureMapMutation {
         if let Some(dst_node) = nodes
             .iter_mut()
             .find(|n| n.innovation_number == dst_output_id)
+            && matches!(dst_node.node_type, NodeTypeDescriptor::Add)
         {
-            if matches!(dst_node.node_type, NodeTypeDescriptor::Add) {
-                // 需要创建新的 Add 来包含 conv_2 和原 dst 输出
-                // 简单做法：让 conv_2 作为额外 parent 添加到 dst 的 parents
-                // 但 Add 只支持 2 个 parent，所以创建新 Add
-            }
+            // 需要创建新的 Add 来包含 conv_2 和原 dst 输出
+            // 简单做法：让 conv_2 作为额外 parent 添加到 dst 的 parents
+            // 但 Add 只支持 2 个 parent，所以创建新 Add
         }
 
         // 用更通用的方式：创建新 Add 聚合节点，parent = [dst_output_id, conv_2_id]
@@ -352,10 +351,10 @@ impl Mutation for RemoveFeatureMapMutation {
             if to_disable.contains(&n.innovation_number) {
                 n.enabled = false;
             }
-            if let Some(bid) = n.block_id {
-                if edge_block_ids.contains(&bid) {
-                    n.enabled = false;
-                }
+            if let Some(bid) = n.block_id
+                && edge_block_ids.contains(&bid)
+            {
+                n.enabled = false;
             }
         }
 
@@ -925,20 +924,21 @@ impl Mutation for MutateFMEdgeStrideMutation {
         let op_set: std::collections::HashSet<u64> = block_op_ids.iter().copied().collect();
 
         // 根据目标边的当前 stride 决定新 stride
-        let new_stride =
-            {
-                let target_node = genome
-                    .nodes()
-                    .iter()
-                    .find(|n| n.innovation_number == edge.op_node_id);
-                match target_node.map(|n| &n.node_type) {
-                    Some(NodeTypeDescriptor::Conv2d { stride, .. })
-                    | Some(NodeTypeDescriptor::ConvTranspose2d { stride, .. }) => {
-                        if *stride == (1, 1) { (2, 2) } else { (1, 1) }
-                    }
-                    _ => (1, 1),
+        let new_stride = {
+            let target_node = genome
+                .nodes()
+                .iter()
+                .find(|n| n.innovation_number == edge.op_node_id);
+            match target_node.map(|n| &n.node_type) {
+                Some(NodeTypeDescriptor::Conv2d { stride, .. })
+                | Some(NodeTypeDescriptor::ConvTranspose2d { stride, .. })
+                    if *stride == (1, 1) =>
+                {
+                    (2, 2)
                 }
-            };
+                _ => (1, 1),
+            }
+        };
 
         let nodes = genome.nodes_mut();
         for conv_node in nodes

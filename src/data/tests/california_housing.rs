@@ -49,7 +49,9 @@ fn test_california_housing_get_multiple_samples() {
 
     // 随机获取几个样本
     for i in [0, 100, 1000, 10000] {
-        let (features, target) = dataset.get(i).expect(&format!("获取样本 {} 失败", i));
+        let (features, target) = dataset
+            .get(i)
+            .unwrap_or_else(|_| panic!("获取样本 {} 失败", i));
         assert_eq!(features.shape(), &[8]);
         assert_eq!(target.shape(), &[1]);
     }

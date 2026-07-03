@@ -91,7 +91,7 @@ fn test_repeat_backward() -> Result<(), GraphError> {
 fn test_repeat_backward_noncontiguous_upstream() {
     // repeat 输出 [4,6]；target 同形，permute[1,0] → [6,4]
     let target_ref = Tensor::new(
-        &(0..24).map(|i| (i as f32) * 0.1 - 1.0).collect::<Vec<_>>(),
+        (0..24).map(|i| (i as f32) * 0.1 - 1.0).collect::<Vec<_>>(),
         &[4, 6],
     );
     let target_perm = target_ref.permute(&[1, 0]).into_contiguous();

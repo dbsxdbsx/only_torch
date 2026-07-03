@@ -140,8 +140,8 @@ fn bench_conv_full_step(c: &mut Criterion) {
         .unwrap();
         let input = Tensor::random(0.0, 1.0, &[batch, in_c, h, w]);
         // 构造 target 用于 mse_loss
-        let out_h = (h + 2 * pad - k) / 1 + 1;
-        let out_w = (w + 2 * pad - k) / 1 + 1;
+        let out_h = (h + 2 * pad - k) + 1;
+        let out_w = (w + 2 * pad - k) + 1;
         let target = Tensor::random(0.0, 1.0, &[batch, out_c, out_h, out_w]);
 
         let mut opt = SGD::new(&graph, &conv.parameters(), 0.01);

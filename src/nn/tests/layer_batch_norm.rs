@@ -265,7 +265,7 @@ fn test_batch_norm_layer_running_stats_across_forwards() -> Result<(), GraphErro
     graph.train();
     for _ in 0..10 {
         let x = graph.input(&Tensor::new(
-            &(1..=12).map(|v| v as f32).collect::<Vec<_>>(),
+            (1..=12).map(|v| v as f32).collect::<Vec<_>>(),
             &[4, 3],
         ))?;
         let y = bn.forward(&x);
@@ -275,7 +275,7 @@ fn test_batch_norm_layer_running_stats_across_forwards() -> Result<(), GraphErro
     // eval 模式：用新输入 forward
     graph.inference();
     let x_eval = graph.input(&Tensor::new(
-        &(1..=12).map(|v| v as f32).collect::<Vec<_>>(),
+        (1..=12).map(|v| v as f32).collect::<Vec<_>>(),
         &[4, 3],
     ))?;
     let y_eval = bn.forward(&x_eval);

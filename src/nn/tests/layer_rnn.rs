@@ -302,7 +302,7 @@ fn test_rnn_seq_len_one() -> Result<(), GraphError> {
     let rnn = Rnn::new(&graph, 4, 8, "rnn")?;
 
     let x_var = graph.zeros(&[2, 1, 4])?;
-    x_var.set_value(&Tensor::new(&vec![0.1f32; 8], &[2, 1, 4]))?;
+    x_var.set_value(&Tensor::new(vec![0.1f32; 8], &[2, 1, 4]))?;
 
     let h = rnn.forward(&x_var)?;
     h.forward()?;
@@ -320,7 +320,7 @@ fn test_rnn_batch_size_one() -> Result<(), GraphError> {
     let rnn = Rnn::new(&graph, 4, 8, "rnn")?;
 
     let x_var = graph.zeros(&[1, 5, 4])?;
-    x_var.set_value(&Tensor::new(&vec![0.1f32; 20], &[1, 5, 4]))?;
+    x_var.set_value(&Tensor::new(vec![0.1f32; 20], &[1, 5, 4]))?;
 
     let h = rnn.forward(&x_var)?;
     h.forward()?;
@@ -339,7 +339,7 @@ fn test_rnn_long_sequence() -> Result<(), GraphError> {
 
     // 较长序列: seq_len=20
     let x_var = graph.zeros(&[2, 20, 4])?;
-    x_var.set_value(&Tensor::new(&vec![0.1f32; 160], &[2, 20, 4]))?;
+    x_var.set_value(&Tensor::new(vec![0.1f32; 160], &[2, 20, 4]))?;
 
     let h = rnn.forward(&x_var)?;
     h.forward()?;
@@ -365,14 +365,14 @@ fn test_rnn_recurrent_output_bridge_same_node_id() -> Result<(), GraphError> {
 
     // 不同 seq_len 的输入
     let x_seq3 = graph.zeros(&[2, 3, 2])?;
-    x_seq3.set_value(&Tensor::new(&vec![0.1f32; 12], &[2, 3, 2]))?;
+    x_seq3.set_value(&Tensor::new(vec![0.1f32; 12], &[2, 3, 2]))?;
 
     let x_seq5 = graph.zeros(&[2, 5, 2])?;
-    x_seq5.set_value(&Tensor::new(&vec![0.2f32; 20], &[2, 5, 2]))?;
+    x_seq5.set_value(&Tensor::new(vec![0.2f32; 20], &[2, 5, 2]))?;
 
     // 与 x_seq3 相同输入值，用于验证相同输入产生相同输出
     let x_seq3_again = graph.zeros(&[2, 3, 2])?;
-    x_seq3_again.set_value(&Tensor::new(&vec![0.1f32; 12], &[2, 3, 2]))?;
+    x_seq3_again.set_value(&Tensor::new(vec![0.1f32; 12], &[2, 3, 2]))?;
 
     // 1. 验证不同 seq_len 下输出形状正确
     let h1 = rnn.forward(&x_seq3)?;
@@ -429,15 +429,15 @@ fn test_rnn_different_batch_size_same_seq_len() -> Result<(), GraphError> {
 
     // 第一个输入：batch_size=2, seq_len=3
     let x1 = graph.zeros(&[2, 3, 2])?;
-    x1.set_value(&Tensor::new(&vec![0.1f32; 12], &[2, 3, 2]))?;
+    x1.set_value(&Tensor::new(vec![0.1f32; 12], &[2, 3, 2]))?;
 
     // 第二个输入：batch_size=4, seq_len=3（相同 seq_len，不同 batch_size）
     let x2 = graph.zeros(&[4, 3, 2])?;
-    x2.set_value(&Tensor::new(&vec![0.1f32; 24], &[4, 3, 2]))?;
+    x2.set_value(&Tensor::new(vec![0.1f32; 24], &[4, 3, 2]))?;
 
     // 第三个输入：batch_size=2, seq_len=3，与 x1 相同值，用于验证相同输入产生相同输出
     let x3 = graph.zeros(&[2, 3, 2])?;
-    x3.set_value(&Tensor::new(&vec![0.1f32; 12], &[2, 3, 2]))?;
+    x3.set_value(&Tensor::new(vec![0.1f32; 12], &[2, 3, 2]))?;
 
     // 1. 验证不同 batch_size 下输出形状正确
     let h1 = rnn.forward(&x1)?;
@@ -498,7 +498,7 @@ fn test_rnn_recurrent_output_gradient_propagation() -> Result<(), GraphError> {
 
     // 第一次训练：seq_len=3
     let x1 = graph.zeros(&[2, 3, 2])?;
-    x1.set_value(&Tensor::new(&vec![0.1f32; 12], &[2, 3, 2]))?;
+    x1.set_value(&Tensor::new(vec![0.1f32; 12], &[2, 3, 2]))?;
     let target1 = graph.input(&Tensor::new(&[1.0, 0.0, 0.0, 1.0], &[2, 2]))?;
 
     let h1 = rnn.forward(&x1)?;
@@ -518,7 +518,7 @@ fn test_rnn_recurrent_output_gradient_propagation() -> Result<(), GraphError> {
 
     // 第二次训练：seq_len=5（不同长度）
     let x2 = graph.zeros(&[2, 5, 2])?;
-    x2.set_value(&Tensor::new(&vec![0.2f32; 20], &[2, 5, 2]))?;
+    x2.set_value(&Tensor::new(vec![0.2f32; 20], &[2, 5, 2]))?;
     let target2 = graph.input(&Tensor::new(&[0.0, 1.0, 1.0, 0.0], &[2, 2]))?;
 
     let h2 = rnn.forward(&x2)?;

@@ -220,7 +220,7 @@ fn test_dot_sum_with_or_without_ownership() {
     assert_eq!(result, expected);
 
     // 2. tensor1 带引用，tensor2 不带引用
-    let result = (&tensor1).dot_sum(tensor2.clone());
+    let result = tensor1.dot_sum(tensor2.clone());
     assert_eq!(result, expected);
 
     // 3. tensor1 不带引用，tensor2 带引用
@@ -228,7 +228,7 @@ fn test_dot_sum_with_or_without_ownership() {
     assert_eq!(result, expected);
 
     // 4. 都带引用
-    let result = (&tensor1).dot_sum(&tensor2);
+    let result = tensor1.dot_sum(&tensor2);
     assert_eq!(result, expected);
 
     // 验证原始张量未被修改

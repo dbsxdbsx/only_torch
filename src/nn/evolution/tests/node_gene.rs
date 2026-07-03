@@ -785,7 +785,7 @@ fn genome_analysis_linear_chain_valid() {
         analysis.errors
     );
     assert_eq!(analysis.param_node_count, 2, "应有 W 和 b 两个参数节点");
-    assert_eq!(analysis.param_count, 4 * 8 + 1 * 8, "参数量应为 40");
+    assert_eq!(analysis.param_count, 4 * 8 + 8, "参数量应为 40");
     assert_eq!(analysis.topo_order.len(), 4);
 
     // 验证 Add 节点的推导形状

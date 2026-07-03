@@ -149,7 +149,7 @@ fn test_adam_step_inplace_noncontiguous_grad() {
         !grad_noncontig.is_contiguous(),
         "前置条件：梯度应为非连续布局"
     );
-    let grad_contig = Tensor::new(&grad_noncontig.to_vec(), &[2, 3]); // 逻辑序物化
+    let grad_contig = Tensor::new(grad_noncontig.to_vec(), &[2, 3]); // 逻辑序物化
 
     let init = Tensor::new(&[0.5, -0.5, 1.0, -1.0, 2.0, -2.0], &[2, 3]);
 

@@ -85,7 +85,7 @@ impl TraitNode for Gelu {
         // GELU 梯度必须从 parent_values（输入 x）计算，无法从 value 反推
         // gelu'(x) = 0.5*(1+tanh(z)) + x*0.5*(1-tanh(z)^2)*sqrt(2/pi)*(1+3*0.044715*x^2)
         // 其中 z = sqrt(2/pi)*(x + 0.044715*x^3)
-        const SQRT_2_OVER_PI: f32 = 0.7978845608;
+        const SQRT_2_OVER_PI: f32 = 0.797_884_6;
         const COEFF: f32 = 0.044715;
 
         let x = parent_values[0];

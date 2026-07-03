@@ -37,7 +37,7 @@ fn test_normal_log_prob_standard() {
     let output = lp.value().unwrap().unwrap();
 
     assert_eq!(output.shape(), &[1, 1]);
-    assert_abs_diff_eq!(output[[0, 0]], -0.91893852, epsilon = 1e-4);
+    assert_abs_diff_eq!(output[[0, 0]], -0.918_938_5, epsilon = 1e-4);
 }
 
 /// 一般正态分布 log_prob：μ=[1,2], σ=[0.5,1], x=[1.2,2.5]
@@ -59,7 +59,7 @@ fn test_normal_log_prob_general() {
 
     assert_eq!(output.shape(), &[1, 2]);
     assert_abs_diff_eq!(output[[0, 0]], -0.30579138, epsilon = 1e-4);
-    assert_abs_diff_eq!(output[[0, 1]], -1.04393852, epsilon = 1e-4);
+    assert_abs_diff_eq!(output[[0, 1]], -1.043_938_5, epsilon = 1e-4);
 }
 
 /// Batch log_prob 测试：batch=3, dim=2
@@ -90,14 +90,14 @@ fn test_normal_log_prob_batch() {
 
     assert_eq!(output.shape(), &[3, 2]);
     // Row 0: mean=[0,1], std=[1,0.5], value=[0.5,1.2]
-    assert_abs_diff_eq!(output[[0, 0]], -1.04393852, epsilon = 1e-4);
+    assert_abs_diff_eq!(output[[0, 0]], -1.043_938_5, epsilon = 1e-4);
     assert_abs_diff_eq!(output[[0, 1]], -0.30579138, epsilon = 1e-4);
     // Row 1: mean=[2,3], std=[2,0.1], value=[1.0,3.1]
-    assert_abs_diff_eq!(output[[1, 0]], -1.73708570, epsilon = 1e-4);
+    assert_abs_diff_eq!(output[[1, 0]], -1.737_085_7, epsilon = 1e-4);
     assert_abs_diff_eq!(output[[1, 1]], 0.88364756, epsilon = 1e-3);
     // Row 2: mean=[-1,0.5], std=[0.3,1.5], value=[-0.5,0.0]
-    assert_abs_diff_eq!(output[[2, 0]], -1.10385454, epsilon = 1e-4);
-    assert_abs_diff_eq!(output[[2, 1]], -1.37995923, epsilon = 1e-4);
+    assert_abs_diff_eq!(output[[2, 0]], -1.103_854_5, epsilon = 1e-4);
+    assert_abs_diff_eq!(output[[2, 1]], -1.379_959_2, epsilon = 1e-4);
 }
 
 // ==================== entropy 前向值测试 ====================
@@ -118,7 +118,7 @@ fn test_normal_entropy_standard() {
     let output = ent.value().unwrap().unwrap();
 
     assert_eq!(output.shape(), &[1, 1]);
-    assert_abs_diff_eq!(output[[0, 0]], 1.41893852, epsilon = 1e-4);
+    assert_abs_diff_eq!(output[[0, 0]], 1.418_938_5, epsilon = 1e-4);
 }
 
 /// 一般正态分布 entropy：σ=[0.5, 1.0]
@@ -138,7 +138,7 @@ fn test_normal_entropy_general() {
 
     assert_eq!(output.shape(), &[1, 2]);
     assert_abs_diff_eq!(output[[0, 0]], 0.72579134, epsilon = 1e-4);
-    assert_abs_diff_eq!(output[[0, 1]], 1.41893852, epsilon = 1e-4);
+    assert_abs_diff_eq!(output[[0, 1]], 1.418_938_5, epsilon = 1e-4);
 }
 
 /// Batch entropy 测试：batch=3, dim=2
@@ -164,12 +164,12 @@ fn test_normal_entropy_batch() {
     let output = ent.value().unwrap().unwrap();
 
     assert_eq!(output.shape(), &[3, 2]);
-    assert_abs_diff_eq!(output[[0, 0]], 1.41893852, epsilon = 1e-4);
+    assert_abs_diff_eq!(output[[0, 0]], 1.418_938_5, epsilon = 1e-4);
     assert_abs_diff_eq!(output[[0, 1]], 0.72579134, epsilon = 1e-4);
-    assert_abs_diff_eq!(output[[1, 0]], 2.11208582, epsilon = 1e-4);
-    assert_abs_diff_eq!(output[[1, 1]], -0.88364661, epsilon = 1e-3);
-    assert_abs_diff_eq!(output[[2, 0]], 0.21496570, epsilon = 1e-4);
-    assert_abs_diff_eq!(output[[2, 1]], 1.82440364, epsilon = 1e-4);
+    assert_abs_diff_eq!(output[[1, 0]], 2.112_085_8, epsilon = 1e-4);
+    assert_abs_diff_eq!(output[[1, 1]], -0.883_646_6, epsilon = 1e-3);
+    assert_abs_diff_eq!(output[[2, 0]], 0.214_965_7, epsilon = 1e-4);
+    assert_abs_diff_eq!(output[[2, 1]], 1.824_403_6, epsilon = 1e-4);
 }
 
 // ==================== rsample 测试 ====================
@@ -264,7 +264,7 @@ fn test_normal_log_prob_gradient() -> Result<(), GraphError> {
     let loss_val = loss.backward()?;
 
     // 验证 loss 值
-    assert_abs_diff_eq!(loss_val, -1.34972990, epsilon = 1e-3);
+    assert_abs_diff_eq!(loss_val, -1.349_729_9, epsilon = 1e-3);
 
     // 验证 mean 梯度
     let mean_grad = mean_param.grad()?.expect("mean 应有梯度");
@@ -304,7 +304,7 @@ fn test_normal_entropy_gradient() -> Result<(), GraphError> {
     let loss_val = loss.backward()?;
 
     // 验证 loss 值
-    assert_abs_diff_eq!(loss_val, 2.14472985, epsilon = 1e-3);
+    assert_abs_diff_eq!(loss_val, 2.144_729_9, epsilon = 1e-3);
 
     // 验证 std 梯度：∂H/∂σ = 1/σ
     let std_grad = std_param.grad()?.expect("std 应有梯度");

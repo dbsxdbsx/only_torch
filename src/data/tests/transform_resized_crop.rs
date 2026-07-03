@@ -6,7 +6,7 @@ use crate::tensor::Tensor;
 #[test]
 fn output_shape_3d() {
     let crop = RandomResizedCrop::new(8, 8);
-    let input = Tensor::new(&vec![1.0; 3 * 16 * 16], &[3, 16, 16]);
+    let input = Tensor::new(vec![1.0; 3 * 16 * 16], &[3, 16, 16]);
     let output = crop.apply(&input);
     assert_eq!(output.shape(), &[3, 8, 8]);
 }
@@ -14,7 +14,7 @@ fn output_shape_3d() {
 #[test]
 fn output_shape_2d() {
     let crop = RandomResizedCrop::new(5, 5);
-    let input = Tensor::new(&vec![1.0; 10 * 10], &[10, 10]);
+    let input = Tensor::new(vec![1.0; 10 * 10], &[10, 10]);
     let output = crop.apply(&input);
     assert_eq!(output.shape(), &[5, 5]);
 }
@@ -23,7 +23,7 @@ fn output_shape_2d() {
 fn output_shape_upscale() {
     // 裁切后放大：输入 8x8，输出 16x16
     let crop = RandomResizedCrop::new(16, 16).scale(0.5, 1.0);
-    let input = Tensor::new(&vec![0.5; 3 * 8 * 8], &[3, 8, 8]);
+    let input = Tensor::new(vec![0.5; 3 * 8 * 8], &[3, 8, 8]);
     let output = crop.apply(&input);
     assert_eq!(output.shape(), &[3, 16, 16]);
 }
@@ -56,7 +56,7 @@ fn uniform_input_stays_uniform() {
     // 均匀值图像经过任意裁切+resize 后仍应是均匀值
     let crop = RandomResizedCrop::new(10, 10);
     let val = 0.42;
-    let input = Tensor::new(&vec![val; 3 * 20 * 20], &[3, 20, 20]);
+    let input = Tensor::new(vec![val; 3 * 20 * 20], &[3, 20, 20]);
 
     for _ in 0..10 {
         let output = crop.apply(&input);
@@ -80,7 +80,7 @@ fn values_in_range() {
         let output = crop.apply(&input);
         let flat = output.flatten_view();
         for &v in flat.iter() {
-            assert!(v >= -1e-5 && v <= 1.0 + 1e-5, "value {v} out of [0, 1]");
+            assert!((-1e-5..=1.0 + 1e-5).contains(&v), "value {v} out of [0, 1]");
         }
     }
 }
@@ -88,7 +88,7 @@ fn values_in_range() {
 #[test]
 fn custom_scale_and_ratio() {
     let crop = RandomResizedCrop::new(6, 6).scale(0.5, 0.8).ratio(0.8, 1.2);
-    let input = Tensor::new(&vec![1.0; 3 * 12 * 12], &[3, 12, 12]);
+    let input = Tensor::new(vec![1.0; 3 * 12 * 12], &[3, 12, 12]);
     let output = crop.apply(&input);
     assert_eq!(output.shape(), &[3, 6, 6]);
 }

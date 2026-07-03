@@ -566,7 +566,7 @@ fn test_var_min_max_normalize_composition() {
     assert_abs_diff_eq!(out[[0, 3]], 0.25, epsilon = 1e-3);
 
     // 反向：经 amin/amax（梯度路由极值）+ repeat（梯度求和）回传，须有限且形状正确
-    let loss = y.sum().mse_loss(&Tensor::zeros(&[1, 1])).unwrap();
+    let loss = y.sum().mse_loss(Tensor::zeros(&[1, 1])).unwrap();
     loss.forward().unwrap();
     loss.backward().unwrap();
     let grad = x.grad().unwrap().unwrap();

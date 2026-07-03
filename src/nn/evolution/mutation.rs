@@ -79,20 +79,15 @@ pub enum SizeStrategy {
 /// 用于在 `InsertLayer` / 初始化序列模型时限制可用的循环 / 注意力算子。
 /// 默认 `Recurrent`：保持向后兼容（只用 RNN/LSTM/GRU），不会自动引入 Attention，
 /// 用户可显式切换到 `RecurrentWithAttention` 让演化在序列任务中尝试 attention。
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum SequenceOpSet {
     /// 仅循环单元（默认，向后兼容）
+    #[default]
     Recurrent,
     /// 仅注意力（适合 attention-only 实验）
     AttentionOnly,
     /// 循环单元 + 注意力混合（让演化挑选）
     RecurrentWithAttention,
-}
-
-impl Default for SequenceOpSet {
-    fn default() -> Self {
-        Self::Recurrent
-    }
 }
 
 impl SequenceOpSet {

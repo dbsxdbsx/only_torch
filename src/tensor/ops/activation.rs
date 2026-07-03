@@ -86,7 +86,7 @@ impl Tensor {
     ///
     /// `gelu(x) = 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))`
     pub fn gelu(&self) -> Self {
-        const SQRT_2_OVER_PI: f32 = 0.7978845608; // sqrt(2/pi)
+        const SQRT_2_OVER_PI: f32 = 0.797_884_6; // sqrt(2/pi)
         const COEFF: f32 = 0.044715;
         let data = self.data.mapv(|x| {
             let z = SQRT_2_OVER_PI * (x + COEFF * x * x * x);
@@ -135,8 +135,8 @@ impl Tensor {
     ///
     /// `selu(x) = LAMBDA * elu(x, ALPHA)`，使用固定常数
     pub fn selu(&self) -> Self {
-        const LAMBDA: f32 = 1.0507009873554805;
-        const ALPHA: f32 = 1.6732632423543772;
+        const LAMBDA: f32 = 1.050_701;
+        const ALPHA: f32 = 1.673_263_2;
         let data = self.data.mapv(|x| {
             if x > 0.0 {
                 LAMBDA * x

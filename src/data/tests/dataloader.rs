@@ -53,8 +53,8 @@ fn test_tensor_dataset_get_batch() {
 
 #[test]
 fn test_dataloader_basic() {
-    let features = Tensor::new(&(0..20).map(|x| x as f32).collect::<Vec<_>>(), &[10, 2]);
-    let labels = Tensor::new(&(0..10).map(|x| x as f32).collect::<Vec<_>>(), &[10, 1]);
+    let features = Tensor::new((0..20).map(|x| x as f32).collect::<Vec<_>>(), &[10, 2]);
+    let labels = Tensor::new((0..10).map(|x| x as f32).collect::<Vec<_>>(), &[10, 1]);
     let dataset = TensorDataset::new(features, labels);
 
     let loader = DataLoader::new(dataset, 3);
@@ -73,8 +73,8 @@ fn test_dataloader_basic() {
 
 #[test]
 fn test_dataloader_drop_last() {
-    let features = Tensor::new(&(0..20).map(|x| x as f32).collect::<Vec<_>>(), &[10, 2]);
-    let labels = Tensor::new(&(0..10).map(|x| x as f32).collect::<Vec<_>>(), &[10, 1]);
+    let features = Tensor::new((0..20).map(|x| x as f32).collect::<Vec<_>>(), &[10, 2]);
+    let labels = Tensor::new((0..10).map(|x| x as f32).collect::<Vec<_>>(), &[10, 1]);
     let dataset = TensorDataset::new(features, labels);
 
     let loader = DataLoader::new(dataset, 3).drop_last(true);
@@ -86,8 +86,8 @@ fn test_dataloader_drop_last() {
 
 #[test]
 fn test_dataloader_shuffle_with_seed() {
-    let features = Tensor::new(&(0..20).map(|x| x as f32).collect::<Vec<_>>(), &[10, 2]);
-    let labels = Tensor::new(&(0..10).map(|x| x as f32).collect::<Vec<_>>(), &[10, 1]);
+    let features = Tensor::new((0..20).map(|x| x as f32).collect::<Vec<_>>(), &[10, 2]);
+    let labels = Tensor::new((0..10).map(|x| x as f32).collect::<Vec<_>>(), &[10, 1]);
     let dataset = TensorDataset::new(features, labels);
 
     // 使用相同种子，两次迭代应该产生相同的结果
@@ -108,7 +108,7 @@ fn test_dataloader_shuffle_with_seed() {
 fn test_dataloader_3d_features() {
     // 模拟 RNN 输入: [samples, seq_len, input_size]
     let features = Tensor::new(
-        &(0..24).map(|x| x as f32).collect::<Vec<_>>(),
+        (0..24).map(|x| x as f32).collect::<Vec<_>>(),
         &[4, 3, 2], // 4 samples, seq_len=3, input_size=2
     );
     let labels = Tensor::new(&[0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0], &[4, 2]); // one-hot
@@ -381,10 +381,7 @@ fn test_dataloader_exact_batch_size() {
 #[test]
 fn test_dataloader_4d_features() {
     // 模拟图像数据 [batch, channels, height, width]
-    let features = Tensor::new(
-        &(0..24).map(|x| x as f32).collect::<Vec<_>>(),
-        &[2, 3, 2, 2],
-    );
+    let features = Tensor::new((0..24).map(|x| x as f32).collect::<Vec<_>>(), &[2, 3, 2, 2]);
     let labels = Tensor::new(&[0.0, 1.0], &[2, 1]);
     let dataset = TensorDataset::new(features, labels);
 

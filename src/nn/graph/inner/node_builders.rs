@@ -53,12 +53,11 @@ impl GraphInner {
         };
 
         // ===== CSE：查缓存 =====
-        if let Some(ref key) = dedup_key {
-            if let Some(weak) = self.cse_cache.get(key) {
-                if let Some(existing) = weak.upgrade() {
-                    return Ok(existing); // 命中：复用已有节点，raw_node 被 drop
-                }
-            }
+        if let Some(ref key) = dedup_key
+            && let Some(weak) = self.cse_cache.get(key)
+            && let Some(existing) = weak.upgrade()
+        {
+            return Ok(existing); // 命中：复用已有节点，raw_node 被 drop
         }
 
         // ===== 原有逻辑：生成 ID、命名、创建节点 =====

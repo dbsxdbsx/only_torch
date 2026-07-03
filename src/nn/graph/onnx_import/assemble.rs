@@ -651,21 +651,20 @@ fn emit_conv_with_bias(
 
     // ONNX Conv/ConvTranspose 的 bias 是 [C]；only_torch 显式广播用 [1, C, 1, 1]。
     let mut bias_was_reshaped = false;
-    if let Some(b_node) = descriptor.nodes.iter_mut().find(|n| n.id == bias_id) {
-        if let Some(new_shape) = conv_bias_broadcast_shape(&b_node.output_shape) {
-            if b_node.output_shape != new_shape {
-                b_node.output_shape = new_shape;
-                bias_was_reshaped = true;
-            }
-        }
+    if let Some(b_node) = descriptor.nodes.iter_mut().find(|n| n.id == bias_id)
+        && let Some(new_shape) = conv_bias_broadcast_shape(&b_node.output_shape)
+        && b_node.output_shape != new_shape
+    {
+        b_node.output_shape = new_shape;
+        bias_was_reshaped = true;
     }
-    if let Some(b_tensor) = weights.get_mut(&bias_id) {
-        if let Some(new_shape) = conv_bias_broadcast_shape(b_tensor.shape()) {
-            if b_tensor.shape() != new_shape.as_slice() {
-                *b_tensor = b_tensor.reshape(&new_shape);
-            }
-            bias_was_reshaped = true;
+    if let Some(b_tensor) = weights.get_mut(&bias_id)
+        && let Some(new_shape) = conv_bias_broadcast_shape(b_tensor.shape())
+    {
+        if b_tensor.shape() != new_shape.as_slice() {
+            *b_tensor = b_tensor.reshape(&new_shape);
         }
+        bias_was_reshaped = true;
     }
     if bias_was_reshaped {
         import_report.warnings.push(format!(
@@ -747,16 +746,16 @@ fn emit_gemm(
     // 处理 transB=1：转置权重 B 的 shape 和数据
     let trans_b = onnx_ops::find_attr_int(&node.attribute, "transB").unwrap_or(0);
     if trans_b == 1 {
-        if let Some(b_node) = descriptor.nodes.iter_mut().find(|n| n.id == b_id) {
-            if b_node.output_shape.len() == 2 {
-                let (rows, cols) = (b_node.output_shape[0], b_node.output_shape[1]);
-                b_node.output_shape = vec![cols, rows];
-            }
+        if let Some(b_node) = descriptor.nodes.iter_mut().find(|n| n.id == b_id)
+            && b_node.output_shape.len() == 2
+        {
+            let (rows, cols) = (b_node.output_shape[0], b_node.output_shape[1]);
+            b_node.output_shape = vec![cols, rows];
         }
-        if let Some(b_tensor) = weights.get_mut(&b_id) {
-            if b_tensor.shape().len() == 2 {
-                *b_tensor = b_tensor.transpose();
-            }
+        if let Some(b_tensor) = weights.get_mut(&b_id)
+            && b_tensor.shape().len() == 2
+        {
+            *b_tensor = b_tensor.transpose();
         }
         import_report.warnings.push(format!(
             "Gemm \"{}\" 因 transB=1 对权重 B 做了转置(只对 [in, out] 风格 FC 权重生效)",

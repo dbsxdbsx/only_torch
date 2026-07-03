@@ -1214,7 +1214,7 @@ impl NetworkGenome {
             "spatial (H, W) 至少需要 4"
         );
         assert!(
-            spatial.0 % 2 == 0 && spatial.1 % 2 == 0,
+            spatial.0.is_multiple_of(2) && spatial.1.is_multiple_of(2),
             "U-Net-lite segmentation 种子要求偶数空间尺寸"
         );
 
@@ -1799,7 +1799,7 @@ impl NetworkGenome {
                 NT::Parameter
                 | NT::BasicInput
                 | NT::TargetInput
-                | NT::State { .. }
+                | NT::State
                 | NT::Flatten { .. }
                 | NT::Reshape { .. }
                 | NT::Concat { .. }
@@ -2024,20 +2024,20 @@ impl NetworkGenome {
             }
 
             // 空间模式：Spatial 域内 skip edge 需要 H/W 匹配
-            if from_domain == ShapeDomain::Spatial {
-                if let Some(ref smap) = spatial_map {
-                    let from_sp = smap.get(&edge.from_innovation).copied().flatten();
-                    let to_sp = match to_idx {
-                        Some(0) => smap.get(&INPUT_INNOVATION).copied().flatten(),
-                        Some(idx) => {
-                            let pred_inn = enabled[idx - 1].innovation_number;
-                            smap.get(&pred_inn).copied().flatten()
-                        }
-                        None => continue,
-                    };
-                    if from_sp != to_sp {
-                        return false;
+            if from_domain == ShapeDomain::Spatial
+                && let Some(ref smap) = spatial_map
+            {
+                let from_sp = smap.get(&edge.from_innovation).copied().flatten();
+                let to_sp = match to_idx {
+                    Some(0) => smap.get(&INPUT_INNOVATION).copied().flatten(),
+                    Some(idx) => {
+                        let pred_inn = enabled[idx - 1].innovation_number;
+                        smap.get(&pred_inn).copied().flatten()
                     }
+                    None => continue,
+                };
+                if from_sp != to_sp {
+                    return false;
                 }
             }
         }

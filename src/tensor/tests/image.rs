@@ -12,7 +12,7 @@ use image::ColorType;
 /// 像素值 0,20,…,220 均落在 `[0,255]` 且为整数，满足 `is_image` 校验。
 fn noncontiguous_hwc_image() -> Tensor {
     let base = Tensor::new(
-        &(0..12).map(|v| (v * 20) as f32).collect::<Vec<_>>(),
+        (0..12).map(|v| (v * 20) as f32).collect::<Vec<_>>(),
         &[3, 2, 2],
     );
     let nc = base.permute(&[1, 2, 0]); // [H=2, W=2, C=3]，非连续
@@ -31,7 +31,7 @@ fn test_is_image_noncontiguous_no_panic() {
 #[test]
 fn test_to_image_noncontiguous_matches_contiguous() {
     let nc = noncontiguous_hwc_image();
-    let contig = Tensor::new(&nc.to_vec(), nc.shape());
+    let contig = Tensor::new(nc.to_vec(), nc.shape());
     let img_nc = nc.to_image().unwrap();
     let img_contig = contig.to_image().unwrap();
     assert_eq!(img_nc.to_rgb8(), img_contig.to_rgb8());

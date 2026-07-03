@@ -75,7 +75,7 @@ fn test_scalar_mse_loss_i32_zero() {
     let result_scalar = loss_scalar.item().unwrap();
 
     // 等价的显式 Tensor 写法
-    let loss_tensor = pred.mse_loss(&Tensor::zeros(&[3, 1])).unwrap();
+    let loss_tensor = pred.mse_loss(Tensor::zeros(&[3, 1])).unwrap();
     loss_tensor.forward().unwrap();
     let result_tensor = loss_tensor.item().unwrap();
 

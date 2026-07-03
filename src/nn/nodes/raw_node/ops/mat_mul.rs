@@ -140,7 +140,7 @@ impl TraitNode for MatMul {
         upstream_grad: &Tensor,
     ) -> Result<GradResult, GraphError> {
         // 获取两个父节点的值
-        let a_value = parent_values.get(0).ok_or_else(|| {
+        let a_value = parent_values.first().ok_or_else(|| {
             GraphError::ComputationError(format!("{}的左父节点没有值", self.display_node()))
         })?;
         let b_value = parent_values.get(1).ok_or_else(|| {

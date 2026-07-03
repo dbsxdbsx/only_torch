@@ -57,8 +57,8 @@ fn build_simple_mlp() -> (GraphDescriptor, HashMap<String, Tensor>) {
     ));
 
     let mut weights = HashMap::new();
-    weights.insert("W1".to_string(), Tensor::new(&vec![0.1; 8], &[2, 4]));
-    weights.insert("b1".to_string(), Tensor::new(&vec![0.0; 4], &[1, 4]));
+    weights.insert("W1".to_string(), Tensor::new(vec![0.1; 8], &[2, 4]));
+    weights.insert("b1".to_string(), Tensor::new(vec![0.0; 4], &[1, 4]));
 
     (desc, weights)
 }
@@ -271,7 +271,7 @@ fn test_export_conv2d_with_attributes() {
     let mut weights = HashMap::new();
     weights.insert(
         "conv_w".to_string(),
-        Tensor::new(&vec![0.1; 72], &[8, 1, 3, 3]),
+        Tensor::new(vec![0.1; 72], &[8, 1, 3, 3]),
     );
 
     let bytes = export_to_bytes(&desc, &weights).unwrap();
@@ -339,11 +339,11 @@ fn test_export_fuses_conv2d_add_bias_into_conv_input() {
     let mut weights = HashMap::new();
     weights.insert(
         "conv_w".to_string(),
-        Tensor::new(&vec![0.1; 72], &[8, 1, 3, 3]),
+        Tensor::new(vec![0.1; 72], &[8, 1, 3, 3]),
     );
     weights.insert(
         "conv_b".to_string(),
-        Tensor::new(&vec![0.2; 8], &[1, 8, 1, 1]),
+        Tensor::new(vec![0.2; 8], &[1, 8, 1, 1]),
     );
 
     let bytes = export_to_bytes(&desc, &weights).unwrap();
@@ -415,11 +415,11 @@ fn test_export_fuses_conv_transpose_add_bias_into_conv_input() {
     let mut weights = HashMap::new();
     weights.insert(
         "deconv_w".to_string(),
-        Tensor::new(&vec![0.1; 72], &[4, 2, 3, 3]),
+        Tensor::new(vec![0.1; 72], &[4, 2, 3, 3]),
     );
     weights.insert(
         "deconv_b".to_string(),
-        Tensor::new(&vec![0.0; 2], &[1, 2, 1, 1]),
+        Tensor::new(vec![0.0; 2], &[1, 2, 1, 1]),
     );
 
     let bytes = export_to_bytes(&desc, &weights).unwrap();

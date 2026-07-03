@@ -150,15 +150,15 @@ impl GraphInner {
         node: std::rc::Weak<crate::nn::nodes::NodeInner>,
     ) -> Result<(), GraphError> {
         // 检查是否已存在同名参数
-        if let Some(existing) = self.parameters.get(&name) {
-            if existing.upgrade().is_some() {
-                return Err(GraphError::InvalidOperation(format!(
-                    "参数 '{}' 已存在且仍有效",
-                    name
-                )));
-            }
-            // 已失效，允许替换
+        if let Some(existing) = self.parameters.get(&name)
+            && existing.upgrade().is_some()
+        {
+            return Err(GraphError::InvalidOperation(format!(
+                "参数 '{}' 已存在且仍有效",
+                name
+            )));
         }
+        // 已失效，允许替换
         self.parameters.insert(name, node);
         Ok(())
     }

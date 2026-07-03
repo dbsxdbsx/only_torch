@@ -318,9 +318,9 @@ fn test_add_broadcast() {
     ];
 
     for (shape_a, data_a, shape_b, data_b, expected_shape, expected_data) in test_cases {
-        let a = Tensor::new(*data_a, *shape_a);
-        let b = Tensor::new(*data_b, *shape_b);
-        let expected = Tensor::new(*expected_data, *expected_shape);
+        let a = Tensor::new(*data_a, shape_a);
+        let b = Tensor::new(*data_b, shape_b);
+        let expected = Tensor::new(*expected_data, expected_shape);
 
         // 直接比对 Tensor（同时验证 shape 和 data）
         let result = &a + &b;

@@ -427,10 +427,10 @@ impl Var {
                         if i == 0 {
                             "?".to_string()
                         } else if i == 1 {
-                            if let Some(&(min_s, max_s)) = input_range {
-                                if min_s != max_s {
-                                    return format!("{}-{}", min_s, max_s);
-                                }
+                            if let Some(&(min_s, max_s)) = input_range
+                                && min_s != max_s
+                            {
+                                return format!("{}-{}", min_s, max_s);
                             }
                             d.to_string()
                         } else {
@@ -448,7 +448,7 @@ impl Var {
                 let bytes = s.as_bytes();
                 let mut formatted = String::new();
                 for (i, &b) in bytes.iter().enumerate() {
-                    if i > 0 && (bytes.len() - i) % 3 == 0 {
+                    if i > 0 && (bytes.len() - i).is_multiple_of(3) {
                         formatted.push(',');
                     }
                     formatted.push(b as char);
@@ -695,40 +695,39 @@ impl Var {
             for pid in &snode.parent_ids {
                 let parent_id = pid.0;
                 let parent_model = node_to_model.get(&parent_id);
-                if let (Some(pm), Some(cm)) = (parent_model, child_model) {
-                    if pm != cm {
-                        let key = (parent_id, cm.clone());
-                        if !virtual_input_map.contains_key(&key) {
-                            let virt_id =
-                                format!("virt_{}_{}", rid(parent_id), cm.replace(' ', "_"));
-                            let shape_str = if let Some(parent_node) = node_map.get(&parent_id) {
-                                let shape = &parent_node.shape;
-                                if shape.is_empty() {
-                                    String::new()
-                                } else {
-                                    let dims: Vec<String> = shape
-                                        .iter()
-                                        .enumerate()
-                                        .map(|(i, &d)| {
-                                            if i == 0 {
-                                                "?".to_string()
-                                            } else {
-                                                d.to_string()
-                                            }
-                                        })
-                                        .collect();
-                                    format!("[{}]", dims.join(", "))
-                                }
-                            } else {
+                if let (Some(pm), Some(cm)) = (parent_model, child_model)
+                    && pm != cm
+                {
+                    let key = (parent_id, cm.clone());
+                    virtual_input_map.entry(key).or_insert_with(|| {
+                        let virt_id = format!("virt_{}_{}", rid(parent_id), cm.replace(' ', "_"));
+                        let shape_str = if let Some(parent_node) = node_map.get(&parent_id) {
+                            let shape = &parent_node.shape;
+                            if shape.is_empty() {
                                 String::new()
-                            };
-                            virtual_inputs_by_model
-                                .entry(cm.clone())
-                                .or_default()
-                                .push((virt_id.clone(), shape_str));
-                            virtual_input_map.insert(key, virt_id);
-                        }
-                    }
+                            } else {
+                                let dims: Vec<String> = shape
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(i, &d)| {
+                                        if i == 0 {
+                                            "?".to_string()
+                                        } else {
+                                            d.to_string()
+                                        }
+                                    })
+                                    .collect();
+                                format!("[{}]", dims.join(", "))
+                            }
+                        } else {
+                            String::new()
+                        };
+                        virtual_inputs_by_model
+                            .entry(cm.clone())
+                            .or_default()
+                            .push((virt_id.clone(), shape_str));
+                        virt_id
+                    });
                 }
             }
         }
@@ -747,7 +746,7 @@ impl Var {
             let display_name = cluster
                 .display_name
                 .as_ref()
-                .map(|n| n.split('/').last().unwrap_or(n).to_string())
+                .map(|n| n.split('/').next_back().unwrap_or(n).to_string())
                 .unwrap_or_else(|| cluster.group_type.clone());
 
             dot.push_str(&format!("{indent}subgraph cluster_{cluster_id} {{\n"));
@@ -862,7 +861,7 @@ impl Var {
                 let bytes = s.as_bytes();
                 let mut result = String::new();
                 for (i, &b) in bytes.iter().enumerate() {
-                    if i > 0 && (bytes.len() - i) % 3 == 0 {
+                    if i > 0 && (bytes.len() - i).is_multiple_of(3) {
                         result.push(',');
                     }
                     result.push(b as char);
@@ -911,13 +910,13 @@ impl Var {
             // 推断归属的散装节点
             for snode in &snapshot.nodes {
                 let nid = snode.id.0;
-                if !node_to_cluster.contains_key(&nid) && !rnn_hidden_ids.contains(&nid) {
-                    if let Some(m) = node_to_model.get(&nid) {
-                        if m == model_name {
-                            dot.push_str("        ");
-                            dot.push_str(&generate_node_def(snode));
-                        }
-                    }
+                if !node_to_cluster.contains_key(&nid)
+                    && !rnn_hidden_ids.contains(&nid)
+                    && let Some(m) = node_to_model.get(&nid)
+                    && m == model_name
+                {
+                    dot.push_str("        ");
+                    dot.push_str(&generate_node_def(snode));
                 }
             }
 
@@ -1074,13 +1073,13 @@ impl Var {
         let mut source_groups: std::collections::BTreeMap<u64, Vec<u64>> =
             std::collections::BTreeMap::new();
         for snode in &snapshot.nodes {
-            if let Some(sid) = snode.data_source_id {
-                if !rnn_hidden_ids.contains(&snode.id.0) {
-                    source_groups.entry(sid).or_default().push(snode.id.0);
-                }
+            if let Some(sid) = snode.data_source_id
+                && !rnn_hidden_ids.contains(&snode.id.0)
+            {
+                source_groups.entry(sid).or_default().push(snode.id.0);
             }
         }
-        for (_sid, ids) in &source_groups {
+        for ids in source_groups.values() {
             if ids.len() < 2 {
                 continue;
             }

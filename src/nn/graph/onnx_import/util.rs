@@ -23,7 +23,7 @@ pub(super) fn validate_opset(model: &onnx_rs::ast::Model) -> Result<(), OnnxErro
         .map(|op| op.version)
         .unwrap_or(0);
 
-    if opset_version < MIN_OPSET_VERSION || opset_version > MAX_OPSET_VERSION {
+    if !(MIN_OPSET_VERSION..=MAX_OPSET_VERSION).contains(&opset_version) {
         return Err(OnnxError::UnsupportedOpsetVersion {
             version: opset_version,
             min_supported: MIN_OPSET_VERSION,
@@ -107,21 +107,20 @@ pub(super) fn resolve_parents(
 
 /// 从 ValueInfo 中提取形状信息
 pub(super) fn extract_shape_from_value_info(vi: &onnx_rs::ast::ValueInfo) -> Vec<usize> {
-    if let Some(type_proto) = &vi.r#type {
-        if let Some(TypeValue::Tensor(tensor_type)) = &type_proto.value {
-            if let Some(shape) = &tensor_type.shape {
-                return shape
-                    .dim
-                    .iter()
-                    .map(|d| match &d.value {
-                        Dimension::Value(v) => {
-                            if *v > 0 { *v as usize } else { 0 } // 0 或负值 = 动态维度
-                        }
-                        Dimension::Param(_) => 0, // 符号维度 = 动态
-                    })
-                    .collect();
-            }
-        }
+    if let Some(type_proto) = &vi.r#type
+        && let Some(TypeValue::Tensor(tensor_type)) = &type_proto.value
+        && let Some(shape) = &tensor_type.shape
+    {
+        return shape
+            .dim
+            .iter()
+            .map(|d| match &d.value {
+                Dimension::Value(v) => {
+                    if *v > 0 { *v as usize } else { 0 } // 0 或负值 = 动态维度
+                }
+                Dimension::Param(_) => 0, // 符号维度 = 动态
+            })
+            .collect();
     }
     vec![] // 无类型信息
 }

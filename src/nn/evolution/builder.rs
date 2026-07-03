@@ -96,31 +96,30 @@ impl BuildResult {
     /// 将 kernel[dst_idx, src_idx, :, :] 置零。
     pub fn apply_fm_masks(&self) -> Result<(), GraphError> {
         for (&kernel_id, mask_info) in &self.fm_masks {
-            if let Some(params) = self.layer_params.get(&kernel_id) {
-                if let Some(param) = params.first() {
-                    if let Some(tensor) = param.value()? {
-                        let shape = tensor.shape();
-                        if shape.len() != 4 {
-                            continue;
-                        }
-                        let flat = tensor.to_vec();
-                        let (out_ch, in_ch, kh, kw) = (shape[0], shape[1], shape[2], shape[3]);
-                        let mut new_data = flat;
-                        let slice_size = kh * kw;
-                        for dst in 0..out_ch.min(mask_info.out_ch) {
-                            for src in 0..in_ch.min(mask_info.in_ch) {
-                                if !mask_info.connected_pairs.contains(&(src, dst)) {
-                                    let offset = ((dst * in_ch + src) * kh + 0) * kw;
-                                    for i in 0..slice_size {
-                                        new_data[offset + i] = 0.0;
-                                    }
-                                }
+            if let Some(params) = self.layer_params.get(&kernel_id)
+                && let Some(param) = params.first()
+                && let Some(tensor) = param.value()?
+            {
+                let shape = tensor.shape();
+                if shape.len() != 4 {
+                    continue;
+                }
+                let flat = tensor.to_vec();
+                let (out_ch, in_ch, kh, kw) = (shape[0], shape[1], shape[2], shape[3]);
+                let mut new_data = flat;
+                let slice_size = kh * kw;
+                for dst in 0..out_ch.min(mask_info.out_ch) {
+                    for src in 0..in_ch.min(mask_info.in_ch) {
+                        if !mask_info.connected_pairs.contains(&(src, dst)) {
+                            let offset = ((dst * in_ch + src) * kh) * kw;
+                            for i in 0..slice_size {
+                                new_data[offset + i] = 0.0;
                             }
                         }
-                        let masked = Tensor::new(&new_data, shape);
-                        param.set_value(&masked)?;
                     }
                 }
+                let masked = Tensor::new(&new_data, shape);
+                param.set_value(&masked)?;
             }
         }
         Ok(())
@@ -357,16 +356,16 @@ impl FMBuilderAnalysis {
                 &n.node_type,
                 NTD::Conv2d { .. } | NTD::ConvTranspose2d { .. }
             );
-            if is_conv_like && n.parents.len() >= 2 && input_set.contains(&n.parents[0]) {
-                if let Some(kn) = node_map.get(&n.parents[1]) {
-                    if kn.is_parameter()
-                        && kn.output_shape.len() == 4
-                        && kn.output_shape[0] == 1
-                        && kn.output_shape[1] == 1
-                    {
-                        edge_convs.push(n);
-                    }
-                }
+            if is_conv_like
+                && n.parents.len() >= 2
+                && input_set.contains(&n.parents[0])
+                && let Some(kn) = node_map.get(&n.parents[1])
+                && kn.is_parameter()
+                && kn.output_shape.len() == 4
+                && kn.output_shape[0] == 1
+                && kn.output_shape[1] == 1
+            {
+                edge_convs.push(n);
             }
         }
 
@@ -417,10 +416,7 @@ impl FMBuilderAnalysis {
             frontier = next_frontier;
         }
 
-        let concat_node = match found_concat {
-            Some(c) => c,
-            None => return None,
-        };
+        let concat_node = found_concat?;
 
         let out_ch = concat_node.parents.len();
 
@@ -429,10 +425,10 @@ impl FMBuilderAnalysis {
         let mut dst_fm_to_idx: HashMap<u64, usize> = HashMap::new();
         for (idx, &parent_id) in concat_node.parents.iter().enumerate() {
             // 从 Concat parent 追溯到 FM 的 fm_id
-            if let Some(pn) = node_map.get(&parent_id) {
-                if let Some(fid) = pn.fm_id {
-                    dst_fm_to_idx.insert(fid, idx);
-                }
+            if let Some(pn) = node_map.get(&parent_id)
+                && let Some(fid) = pn.fm_id
+            {
+                dst_fm_to_idx.insert(fid, idx);
             }
         }
 
@@ -445,12 +441,11 @@ impl FMBuilderAnalysis {
             // 找 dst fm_id：追踪 edge conv 的下游消费者到 FM 节点
             let dst_fm_id = Self::find_edge_dst_fm(e.innovation_number, nodes, node_map);
 
-            if let (Some(src_fid), Some(dst_fid)) = (src_fm_id, dst_fm_id) {
-                if let (Some(&src_idx), Some(&dst_idx)) =
+            if let (Some(src_fid), Some(dst_fid)) = (src_fm_id, dst_fm_id)
+                && let (Some(&src_idx), Some(&dst_idx)) =
                     (fm_to_src_idx.get(&src_fid), dst_fm_to_idx.get(&dst_fid))
-                {
-                    connected_pairs.insert((src_idx, dst_idx));
-                }
+            {
+                connected_pairs.insert((src_idx, dst_idx));
             }
         }
 
@@ -492,12 +487,12 @@ impl FMBuilderAnalysis {
             replaced_ids.insert(e.parents[1]); // kernel
         }
         for &parent_id in &concat_node.parents {
-            if let Some(pn) = node_map.get(&parent_id) {
-                if pn.fm_id.is_some() {
-                    replaced_ids.insert(parent_id);
-                    if matches!(pn.node_type, NTD::Add) {
-                        Self::collect_fm_add_tree(parent_id, node_map, &mut replaced_ids);
-                    }
+            if let Some(pn) = node_map.get(&parent_id)
+                && pn.fm_id.is_some()
+            {
+                replaced_ids.insert(parent_id);
+                if matches!(pn.node_type, NTD::Add) {
+                    Self::collect_fm_add_tree(parent_id, node_map, &mut replaced_ids);
                 }
             }
         }
@@ -578,11 +573,10 @@ impl FMBuilderAnalysis {
                     return Some(fid);
                 }
                 // 如果是 Add 聚合节点（无 fm_id），递归向下找
-                if matches!(n.node_type, NTD::Add) {
-                    if let Some(fid) = Self::find_edge_dst_fm(n.innovation_number, nodes, _node_map)
-                    {
-                        return Some(fid);
-                    }
+                if matches!(n.node_type, NTD::Add)
+                    && let Some(fid) = Self::find_edge_dst_fm(n.innovation_number, nodes, _node_map)
+                {
+                    return Some(fid);
                 }
             }
         }
@@ -597,11 +591,12 @@ impl FMBuilderAnalysis {
     ) {
         if let Some(node) = node_map.get(&node_id) {
             for &parent_id in &node.parents {
-                if let Some(parent) = node_map.get(&parent_id) {
-                    if matches!(parent.node_type, NTD::Add) && parent.fm_id.is_some() {
-                        collected.insert(parent_id);
-                        Self::collect_fm_add_tree(parent_id, node_map, collected);
-                    }
+                if let Some(parent) = node_map.get(&parent_id)
+                    && matches!(parent.node_type, NTD::Add)
+                    && parent.fm_id.is_some()
+                {
+                    collected.insert(parent_id);
+                    Self::collect_fm_add_tree(parent_id, node_map, collected);
                 }
             }
         }
@@ -639,14 +634,14 @@ impl FMBuilderAnalysis {
 
         // Concat 替换检查（全连接优化时 Concat 变为 Identity）
         for merged in &self.merged_groups {
-            if let Some(&(concat_id, replacement_id)) = merged.concat_replacement.as_ref() {
-                if id == concat_id {
-                    return (
-                        NTD::Identity,
-                        node.output_shape.clone(),
-                        vec![replacement_id],
-                    );
-                }
+            if let Some(&(concat_id, replacement_id)) = merged.concat_replacement.as_ref()
+                && id == concat_id
+            {
+                return (
+                    NTD::Identity,
+                    node.output_shape.clone(),
+                    vec![replacement_id],
+                );
             }
         }
 
@@ -759,7 +754,7 @@ impl NetworkGenome {
 
         // 用 GenomeAnalysis 获取拓扑序（Graph::from_descriptor_seeded 要求父节点先于子节点）
         let analysis =
-            GenomeAnalysis::compute(&nodes, INPUT_INNOVATION, input_shape.clone(), input_domain);
+            GenomeAnalysis::compute(nodes, INPUT_INNOVATION, input_shape.clone(), input_domain);
         let node_lookup: std::collections::HashMap<u64, &super::node_gene::NodeGene> = nodes
             .iter()
             .filter(|n| n.enabled)
@@ -770,87 +765,77 @@ impl NetworkGenome {
         // saturating_sub + max(1) 在 infer_output_shape 中防止 panic，
         // 但此处需要拒绝实际会产生退化输出的无效配置。
         for &id in &analysis.topo_order {
-            if let Some(node) = node_lookup.get(&id) {
-                if let Some(inp_shape) = analysis
+            if let Some(node) = node_lookup.get(&id)
+                && let Some(inp_shape) = analysis
                     .output_shapes
                     .get(&node.parents.first().copied().unwrap_or(0))
-                {
-                    if inp_shape.len() >= 4 {
-                        match &node.node_type {
-                            NTD::Conv2d {
-                                stride,
-                                padding,
-                                dilation,
-                            } => {
-                                if node.parents.len() >= 2 {
-                                    if let Some(ker_shape) =
-                                        analysis.output_shapes.get(&node.parents[1])
-                                    {
-                                        if ker_shape.len() >= 4 {
-                                            let eff_kh = dilation.0 * (ker_shape[2] - 1) + 1;
-                                            let eff_kw = dilation.1 * (ker_shape[3] - 1) + 1;
-                                            let h_raw = inp_shape[2] + 2 * padding.0;
-                                            let w_raw = inp_shape[3] + 2 * padding.1;
-                                            if h_raw < eff_kh || w_raw < eff_kw {
-                                                return Err(
-                                                    super::node_expansion::NodeExpansionError::InvalidGenome(
-                                                        format!(
-                                                            "Conv2d 节点 {} 的输入 {}x{} 对 kernel {}x{}（dilation {:?}）太小",
-                                                            id,
-                                                            inp_shape[2],
-                                                            inp_shape[3],
-                                                            ker_shape[2],
-                                                            ker_shape[3],
-                                                            dilation
-                                                        ),
-                                                    ),
-                                                );
-                                            }
-                                            let h_out = (h_raw - eff_kh) / stride.0 + 1;
-                                            let w_out = (w_raw - eff_kw) / stride.1 + 1;
-                                            if h_out == 0 || w_out == 0 {
-                                                return Err(
-                                                    super::node_expansion::NodeExpansionError::InvalidGenome(
-                                                        format!(
-                                                            "Conv2d 节点 {} 输出尺寸为 0 ({}x{})",
-                                                            id, h_out, w_out
-                                                        ),
-                                                    ),
-                                                );
-                                            }
-                                        }
-                                    }
-                                }
+                && inp_shape.len() >= 4
+            {
+                match &node.node_type {
+                    NTD::Conv2d {
+                        stride,
+                        padding,
+                        dilation,
+                    } => {
+                        if node.parents.len() >= 2
+                            && let Some(ker_shape) = analysis.output_shapes.get(&node.parents[1])
+                            && ker_shape.len() >= 4
+                        {
+                            let eff_kh = dilation.0 * (ker_shape[2] - 1) + 1;
+                            let eff_kw = dilation.1 * (ker_shape[3] - 1) + 1;
+                            let h_raw = inp_shape[2] + 2 * padding.0;
+                            let w_raw = inp_shape[3] + 2 * padding.1;
+                            if h_raw < eff_kh || w_raw < eff_kw {
+                                return Err(
+                                    super::node_expansion::NodeExpansionError::InvalidGenome(
+                                        format!(
+                                            "Conv2d 节点 {} 的输入 {}x{} 对 kernel {}x{}（dilation {:?}）太小",
+                                            id,
+                                            inp_shape[2],
+                                            inp_shape[3],
+                                            ker_shape[2],
+                                            ker_shape[3],
+                                            dilation
+                                        ),
+                                    ),
+                                );
                             }
-                            NTD::ConvTranspose2d {
-                                stride, padding, ..
-                            } => {
-                                if node.parents.len() >= 2 {
-                                    if let Some(ker_shape) =
-                                        analysis.output_shapes.get(&node.parents[1])
-                                    {
-                                        if ker_shape.len() >= 4 {
-                                            let h_sum =
-                                                (inp_shape[2].max(1) - 1) * stride.0 + ker_shape[2];
-                                            let w_sum =
-                                                (inp_shape[3].max(1) - 1) * stride.1 + ker_shape[3];
-                                            if h_sum < 2 * padding.0 || w_sum < 2 * padding.1 {
-                                                return Err(
-                                                    super::node_expansion::NodeExpansionError::InvalidGenome(
-                                                        format!(
-                                                            "ConvTranspose2d 节点 {} 的参数导致输出尺寸为负（padding {:?} 过大）",
-                                                            id, padding
-                                                        ),
-                                                    ),
-                                                );
-                                            }
-                                        }
-                                    }
-                                }
+                            let h_out = (h_raw - eff_kh) / stride.0 + 1;
+                            let w_out = (w_raw - eff_kw) / stride.1 + 1;
+                            if h_out == 0 || w_out == 0 {
+                                return Err(
+                                    super::node_expansion::NodeExpansionError::InvalidGenome(
+                                        format!(
+                                            "Conv2d 节点 {} 输出尺寸为 0 ({}x{})",
+                                            id, h_out, w_out
+                                        ),
+                                    ),
+                                );
                             }
-                            _ => {}
                         }
                     }
+                    NTD::ConvTranspose2d {
+                        stride, padding, ..
+                    } => {
+                        if node.parents.len() >= 2
+                            && let Some(ker_shape) = analysis.output_shapes.get(&node.parents[1])
+                            && ker_shape.len() >= 4
+                        {
+                            let h_sum = (inp_shape[2].max(1) - 1) * stride.0 + ker_shape[2];
+                            let w_sum = (inp_shape[3].max(1) - 1) * stride.1 + ker_shape[3];
+                            if h_sum < 2 * padding.0 || w_sum < 2 * padding.1 {
+                                return Err(
+                                    super::node_expansion::NodeExpansionError::InvalidGenome(
+                                        format!(
+                                            "ConvTranspose2d 节点 {} 的参数导致输出尺寸为负（padding {:?} 过大）",
+                                            id, padding
+                                        ),
+                                    ),
+                                );
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
@@ -858,7 +843,7 @@ impl NetworkGenome {
         // FM 感知分析：
         // 1. 识别 FM 输入 Identity 节点并映射到 Narrow 通道索引
         // 2. 检测全连接 FM 组用于合并优化
-        let fm_analysis = FMBuilderAnalysis::analyze(&nodes);
+        let fm_analysis = FMBuilderAnalysis::analyze(nodes);
 
         let mut desc = GraphDescriptor::new("EvolutionNet");
 
@@ -917,7 +902,7 @@ impl NetworkGenome {
 
                 // 确定最终的 node_type 和 output_shape
                 let (final_type, final_shape, final_parents) =
-                    fm_analysis.transform_node(node, &nodes);
+                    fm_analysis.transform_node(node, nodes);
                 let final_type = self.normalize_recurrent_cell_descriptor(final_type);
 
                 let dynamic = final_shape.first().map(|_| {
@@ -1012,8 +997,7 @@ impl NetworkGenome {
             .map_err(|e| GraphError::ComputationError(e.to_string()))?;
 
         let graph_seed: u64 = rng.r#gen();
-        let rebuild =
-            Graph::from_descriptor_seeded(&desc, graph_seed).map_err(|e| GraphError::from(e))?;
+        let rebuild = Graph::from_descriptor_seeded(&desc, graph_seed)?;
 
         let input = rebuild
             .inputs
@@ -1056,10 +1040,10 @@ impl NetworkGenome {
         let mut fm_masks: HashMap<u64, FMMaskInfo> = HashMap::new();
         for merged in &fm_analysis.merged_groups {
             for synth in &merged.synthetic_nodes {
-                if matches!(synth.node_type, NTD::Parameter) {
-                    if let Some(var) = rebuild.node_map.get(&synth.id) {
-                        layer_params.insert(synth.id, vec![var.clone()]);
-                    }
+                if matches!(synth.node_type, NTD::Parameter)
+                    && let Some(var) = rebuild.node_map.get(&synth.id)
+                {
+                    layer_params.insert(synth.id, vec![var.clone()]);
                 }
             }
             fm_masks.insert(
@@ -1249,13 +1233,13 @@ impl NetworkGenome {
 
                 // 注入循环贡献：result += prev_h @ W^T
                 for edge in &node.recurrent_parents {
-                    if let Some(prev_h) = prev_activations.get(&edge.source_id) {
-                        if let Some(w) = param_vars.get(&edge.weight_param_id) {
-                            // prev_h: [batch, source_dim], w: [target_dim, source_dim]
-                            let w_t = w.transpose(0, 1)?;
-                            let contribution = prev_h.matmul(&w_t)?;
-                            result = &result + &contribution;
-                        }
+                    if let Some(prev_h) = prev_activations.get(&edge.source_id)
+                        && let Some(w) = param_vars.get(&edge.weight_param_id)
+                    {
+                        // prev_h: [batch, source_dim], w: [target_dim, source_dim]
+                        let w_t = w.transpose(0, 1)?;
+                        let contribution = prev_h.matmul(&w_t)?;
+                        result = &result + &contribution;
                     }
                 }
 
@@ -1420,8 +1404,7 @@ impl NetworkGenome {
             .collect();
         let output_shape = nodes
             .iter()
-            .filter(|n| !child_ids.contains(&n.innovation_number))
-            .last()
+            .rfind(|n| !child_ids.contains(&n.innovation_number))
             .or_else(|| nodes.last())
             .map(|n| &n.output_shape)
             .ok_or_else(|| NodeExpansionError::DimensionError("无法确定输出节点".into()))?;

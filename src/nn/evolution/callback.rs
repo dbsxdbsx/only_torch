@@ -90,7 +90,7 @@ impl EvaluationTimingSummary {
         if let Some(other_best) = other.best_family_primary {
             let replace = self
                 .best_family_primary
-                .map_or(true, |current_best| other_best > current_best);
+                .is_none_or(|current_best| other_best > current_best);
             if replace {
                 self.best_family = other.best_family;
                 self.best_family_primary = Some(other_best);

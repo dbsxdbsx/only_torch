@@ -159,7 +159,7 @@ impl EvolutionCallback for MockCallback {
         self.state
             .borrow()
             .stop_at
-            .map_or(false, |limit| generation >= limit)
+            .is_some_and(|limit| generation >= limit)
     }
 }
 

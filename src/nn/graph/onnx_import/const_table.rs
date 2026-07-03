@@ -22,12 +22,11 @@ pub(super) fn build_const_table<'a>(
     for node in &graph.node {
         if node.op_type == OpType::Constant {
             // ONNX Constant 通过 attribute "value": TensorProto 携带常量值
-            if let Some(attr) = node.attribute.iter().find(|a| a.name == "value") {
-                if let Some(tensor) = &attr.t {
-                    if let Some(&out_name) = node.output.first() {
-                        const_table.insert(out_name, tensor);
-                    }
-                }
+            if let Some(attr) = node.attribute.iter().find(|a| a.name == "value")
+                && let Some(tensor) = &attr.t
+                && let Some(&out_name) = node.output.first()
+            {
+                const_table.insert(out_name, tensor);
             }
         }
     }
@@ -64,12 +63,11 @@ pub(super) fn build_consumed_meta_names<'a>(
                     consumed.insert(node.input[3]);
                 }
             }
-            OpType::Upsample => {
+            OpType::Upsample
                 // 保持既有 Upsample 路径行为：当前折叠实现读取 input[2] 的 scales。
-                if node.input.len() >= 3 && !node.input[2].is_empty() {
+                if node.input.len() >= 3 && !node.input[2].is_empty() => {
                     consumed.insert(node.input[2]);
                 }
-            }
             OpType::Split if node.input.len() >= 2 && !node.input[1].is_empty() => {
                 consumed.insert(node.input[1]);
             }

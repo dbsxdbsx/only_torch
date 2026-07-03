@@ -236,10 +236,11 @@ fn find_fm_edges(
         for &pid in &n.parents {
             if let Some(&fid) = node_to_fm.get(&pid) {
                 src_fm_id = Some(fid);
-            } else if let Some(parent) = node_map.get(&pid) {
-                if parent.is_parameter() && parent.fm_id.is_none() {
-                    kernel_node_id = Some(pid);
-                }
+            } else if let Some(parent) = node_map.get(&pid)
+                && parent.is_parameter()
+                && parent.fm_id.is_none()
+            {
+                kernel_node_id = Some(pid);
             }
         }
 
@@ -277,10 +278,10 @@ fn find_destination_fm(
     node_to_fm: &HashMap<u64, u64>,
 ) -> Option<u64> {
     for n in nodes.iter().filter(|n| n.enabled) {
-        if n.parents.contains(&op_id) {
-            if let Some(&fid) = node_to_fm.get(&n.innovation_number) {
-                return Some(fid);
-            }
+        if n.parents.contains(&op_id)
+            && let Some(&fid) = node_to_fm.get(&n.innovation_number)
+        {
+            return Some(fid);
         }
     }
     None

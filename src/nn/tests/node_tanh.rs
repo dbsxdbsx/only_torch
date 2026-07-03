@@ -38,9 +38,9 @@ fn test_tanh_forward() {
     let output = result.value().unwrap().unwrap();
     assert_eq!(output.shape(), &[2, 2]);
     assert_abs_diff_eq!(output[[0, 0]], 0.46211716, epsilon = 1e-6);
-    assert_abs_diff_eq!(output[[0, 1]], -0.76159418, epsilon = 1e-6);
+    assert_abs_diff_eq!(output[[0, 1]], -0.761_594_2, epsilon = 1e-6);
     assert_abs_diff_eq!(output[[1, 0]], 0.0, epsilon = 1e-6);
-    assert_abs_diff_eq!(output[[1, 1]], 0.96402758, epsilon = 1e-6);
+    assert_abs_diff_eq!(output[[1, 1]], 0.964_027_6, epsilon = 1e-6);
 }
 
 /// 测试 Tanh 前向传播（边界值）
@@ -108,7 +108,7 @@ fn test_tanh_vjp_unit_upstream() -> Result<(), GraphError> {
         .resolve(&upstream_grad);
 
     assert_eq!(grad.shape(), &[2, 2]);
-    assert_abs_diff_eq!(grad[[0, 0]], 0.78644770, epsilon = 1e-6);
+    assert_abs_diff_eq!(grad[[0, 0]], 0.786_447_7, epsilon = 1e-6);
     assert_abs_diff_eq!(grad[[0, 1]], 0.41997433, epsilon = 1e-6);
     assert_abs_diff_eq!(grad[[1, 0]], 1.0, epsilon = 1e-6);
     assert_abs_diff_eq!(grad[[1, 1]], 0.07065082, epsilon = 1e-6);
@@ -142,7 +142,7 @@ fn test_tanh_vjp_non_unit_upstream() -> Result<(), GraphError> {
 
     // grad = upstream_grad * (1 - tanh²)
     assert_eq!(grad.shape(), &[2, 2]);
-    assert_abs_diff_eq!(grad[[0, 0]], 2.0 * 0.78644770, epsilon = 1e-5);
+    assert_abs_diff_eq!(grad[[0, 0]], 2.0 * 0.786_447_7, epsilon = 1e-5);
     assert_abs_diff_eq!(grad[[0, 1]], 3.0 * 0.41997433, epsilon = 1e-5);
     assert_abs_diff_eq!(grad[[1, 0]], 4.0 * 1.0, epsilon = 1e-5);
     assert_abs_diff_eq!(grad[[1, 1]], 5.0 * 0.07065082, epsilon = 1e-5);
@@ -199,9 +199,9 @@ fn test_tanh_backward_e2e() -> Result<(), GraphError> {
     let loss = result.mse_loss(&target)?;
 
     let expected_loss = (0.46211716_f32.powi(2)
-        + 0.76159418_f32.powi(2)
+        + 0.761_594_2_f32.powi(2)
         + 0.0_f32.powi(2)
-        + 0.96402758_f32.powi(2))
+        + 0.964_027_6_f32.powi(2))
         / 4.0;
 
     graph.zero_grad()?;

@@ -35,7 +35,7 @@ fn test_categorical_log_prob_basic() {
     let dist = Categorical::new(logits);
 
     // 测试每个动作的 log_prob
-    for (action_idx, expected) in [(0, -1.46436882_f32), (1, -0.46436882), (2, -1.96436882)] {
+    for (action_idx, expected) in [(0, -1.464_368_8_f32), (1, -0.46436882), (2, -1.964_368_8)] {
         let action = Tensor::new(&[action_idx as f32], &[1, 1]);
         let lp = dist.log_prob(&action);
         lp.forward().unwrap();
@@ -63,7 +63,7 @@ fn test_categorical_log_prob_uniform() {
     lp.forward().unwrap();
     let output = lp.value().unwrap().unwrap();
 
-    assert_abs_diff_eq!(output[[0, 0]], -1.38629436, epsilon = 1e-4);
+    assert_abs_diff_eq!(output[[0, 0]], -1.386_294_4, epsilon = 1e-4);
 }
 
 /// Batch log_prob：batch=3
@@ -88,8 +88,8 @@ fn test_categorical_log_prob_batch() {
     let output = lp.value().unwrap().unwrap();
 
     assert_eq!(output.shape(), &[3, 1]);
-    assert_abs_diff_eq!(output[[0, 0]], -1.46436882, epsilon = 1e-4);
-    assert_abs_diff_eq!(output[[1, 0]], -1.09861231, epsilon = 1e-4);
+    assert_abs_diff_eq!(output[[0, 0]], -1.464_368_8, epsilon = 1e-4);
+    assert_abs_diff_eq!(output[[1, 0]], -1.098_612_3, epsilon = 1e-4);
     assert_abs_diff_eq!(output[[2, 0]], -0.06588387, epsilon = 1e-3);
 }
 
@@ -131,7 +131,7 @@ fn test_categorical_entropy_uniform() {
     ent.forward().unwrap();
     let output = ent.value().unwrap().unwrap();
 
-    assert_abs_diff_eq!(output[[0, 0]], 1.38629436, epsilon = 1e-4);
+    assert_abs_diff_eq!(output[[0, 0]], 1.386_294_4, epsilon = 1e-4);
 }
 
 /// Batch entropy：batch=3
@@ -155,7 +155,7 @@ fn test_categorical_entropy_batch() {
 
     assert_eq!(output.shape(), &[3, 1]);
     assert_abs_diff_eq!(output[[0, 0]], 0.90595925, epsilon = 1e-4);
-    assert_abs_diff_eq!(output[[1, 0]], 1.09861231, epsilon = 1e-4);
+    assert_abs_diff_eq!(output[[1, 0]], 1.098_612_3, epsilon = 1e-4);
     assert_abs_diff_eq!(output[[2, 0]], 0.27431303, epsilon = 1e-3);
 }
 
@@ -237,7 +237,7 @@ fn test_categorical_log_prob_gradient() -> Result<(), GraphError> {
 
     let grad = logits_param.grad()?.expect("logits 应有梯度");
     assert_abs_diff_eq!(grad[[0, 0]], -0.23122388, epsilon = 1e-3);
-    assert_abs_diff_eq!(grad[[0, 1]], 0.37146831, epsilon = 1e-3);
+    assert_abs_diff_eq!(grad[[0, 1]], 0.371_468_3, epsilon = 1e-3);
     assert_abs_diff_eq!(grad[[0, 2]], -0.14024438, epsilon = 1e-3);
 
     Ok(())
@@ -265,7 +265,7 @@ fn test_categorical_entropy_gradient() -> Result<(), GraphError> {
     assert_abs_diff_eq!(loss_val, 0.90595925, epsilon = 1e-3);
 
     let grad = logits_param.grad()?.expect("logits 应有梯度");
-    assert_abs_diff_eq!(grad[[0, 0]], 0.12911759, epsilon = 1e-3);
+    assert_abs_diff_eq!(grad[[0, 0]], 0.129_117_6, epsilon = 1e-3);
     assert_abs_diff_eq!(grad[[0, 1]], -0.27755362, epsilon = 1e-3);
     assert_abs_diff_eq!(grad[[0, 2]], 0.14843598, epsilon = 1e-3);
 

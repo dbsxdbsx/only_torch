@@ -14,7 +14,7 @@ use approx::assert_abs_diff_eq;
 
 /// 构造逻辑形状 `[C=3, H=2, W=2]` 的**非连续**张量：由 `[H,W,C]` permute 得到。
 fn noncontiguous_chw() -> Tensor {
-    let base = Tensor::new(&(0..12).map(|v| v as f32).collect::<Vec<_>>(), &[2, 2, 3]);
+    let base = Tensor::new((0..12).map(|v| v as f32).collect::<Vec<_>>(), &[2, 2, 3]);
     let nc = base.permute(&[2, 0, 1]); // [C=3, H=2, W=2]，非连续
     assert_eq!(nc.shape(), &[3, 2, 2]);
     assert!(!nc.is_contiguous(), "构造用例应产出非连续张量");
@@ -23,7 +23,7 @@ fn noncontiguous_chw() -> Tensor {
 
 /// 把非连续视图显式物化为同逻辑值的连续张量，作为对照基准。
 fn materialized(nc: &Tensor) -> Tensor {
-    Tensor::new(&nc.to_vec(), nc.shape())
+    Tensor::new(nc.to_vec(), nc.shape())
 }
 
 #[test]

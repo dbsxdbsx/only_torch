@@ -246,9 +246,9 @@ fn test_div_assign_broadcast() {
     ];
 
     for (shape_a, data_a, shape_b, data_b, expected_data) in test_cases {
-        let mut a = Tensor::new(*data_a, *shape_a);
-        let b = Tensor::new(*data_b, *shape_b);
-        let expected = Tensor::new(*expected_data, *shape_a);
+        let mut a = Tensor::new(*data_a, shape_a);
+        let b = Tensor::new(*data_b, shape_b);
+        let expected = Tensor::new(*expected_data, shape_a);
 
         a /= &b;
         assert_eq!(

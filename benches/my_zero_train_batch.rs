@@ -76,10 +76,10 @@ fn min_max(latent: &Var, batch: usize, dim: usize) -> Var {
 /// 构建一次 K 步 unroll 的总 loss（batch=`b` 行），返回可 backward 的 loss Var。
 fn forward_loss(net: &Net, g: &Graph, b: usize) -> Var {
     // 输入 + 目标（固定值，只为触发真实 forward/backward 计算量）
-    let obs = Tensor::new(&vec![0.1f32; b * OBS], &[b, OBS]);
-    let tp = Tensor::new(&vec![1.0 / ACTION as f32; b * ACTION], &[b, ACTION]);
-    let tv = Tensor::new(&vec![1.0 / SUPPORT as f32; b * SUPPORT], &[b, SUPPORT]);
-    let tc = Tensor::new(&vec![1.0f32; b], &[b, 1]);
+    let obs = Tensor::new(vec![0.1f32; b * OBS], &[b, OBS]);
+    let tp = Tensor::new(vec![1.0 / ACTION as f32; b * ACTION], &[b, ACTION]);
+    let tv = Tensor::new(vec![1.0 / SUPPORT as f32; b * SUPPORT], &[b, SUPPORT]);
+    let tc = Tensor::new(vec![1.0f32; b], &[b, 1]);
     let mut oh = vec![0.0f32; b * ACTION];
     for r in 0..b {
         oh[r * ACTION] = 1.0; // 每行 action=0 的 onehot

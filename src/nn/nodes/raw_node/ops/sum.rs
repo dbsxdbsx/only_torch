@@ -61,14 +61,14 @@ impl Sum {
         axis: Option<usize>,
     ) -> Result<Self, GraphError> {
         // 验证 axis 有效性
-        if let Some(ax) = axis {
-            if ax >= input_shape.len() {
-                return Err(GraphError::InvalidOperation(format!(
-                    "Sum: axis {} 超出输入维度范围 {}",
-                    ax,
-                    input_shape.len()
-                )));
-            }
+        if let Some(ax) = axis
+            && ax >= input_shape.len()
+        {
+            return Err(GraphError::InvalidOperation(format!(
+                "Sum: axis {} 超出输入维度范围 {}",
+                ax,
+                input_shape.len()
+            )));
         }
 
         // 计算输出形状

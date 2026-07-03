@@ -39,7 +39,7 @@ fn test_tanh_normal_log_prob_standard() {
 
     assert_eq!(output.shape(), &[1, 1]);
     // tanh(0)=0, correction≈0, log_prob ≈ Normal(0,1).log_prob(0)
-    assert_abs_diff_eq!(output[[0, 0]], -0.91893947, epsilon = 1e-4);
+    assert_abs_diff_eq!(output[[0, 0]], -0.918_939_5, epsilon = 1e-4);
 }
 
 /// 一般 TanhNormal log_prob: mean=[0,1], std=[1,0.5], u=[0.5,-0.3]
@@ -61,7 +61,7 @@ fn test_tanh_normal_log_prob_general() {
 
     assert_eq!(output.shape(), &[1, 2]);
     assert_abs_diff_eq!(output[[0, 0]], -0.80371076, epsilon = 1e-3);
-    assert_abs_diff_eq!(output[[0, 1]], -3.51711059, epsilon = 1e-3);
+    assert_abs_diff_eq!(output[[0, 1]], -3.517_110_6, epsilon = 1e-3);
 }
 
 /// Batch TanhNormal log_prob: batch=2, dim=2
@@ -91,9 +91,9 @@ fn test_tanh_normal_log_prob_batch() {
 
     assert_eq!(output.shape(), &[2, 2]);
     assert_abs_diff_eq!(output[[0, 0]], -0.80371076, epsilon = 1e-3);
-    assert_abs_diff_eq!(output[[0, 1]], -3.51711059, epsilon = 1e-3);
-    assert_abs_diff_eq!(output[[1, 0]], -17.13345718, epsilon = 1e-1); // 极端值，精度放宽
-    assert_abs_diff_eq!(output[[1, 1]], -0.40121090, epsilon = 1e-3);
+    assert_abs_diff_eq!(output[[0, 1]], -3.517_110_6, epsilon = 1e-3);
+    assert_abs_diff_eq!(output[[1, 0]], -17.133_457, epsilon = 1e-1); // 极端值，精度放宽
+    assert_abs_diff_eq!(output[[1, 1]], -0.401_210_9, epsilon = 1e-3);
 }
 
 // ==================== rsample 测试 ====================
@@ -187,7 +187,7 @@ fn test_tanh_normal_log_prob_gradient() -> Result<(), GraphError> {
     let loss_val = loss.backward()?;
 
     // 验证 loss 值
-    assert_abs_diff_eq!(loss_val, -4.32082129, epsilon = 1e-2);
+    assert_abs_diff_eq!(loss_val, -4.320_821_3, epsilon = 1e-2);
 
     // 验证 mean 梯度（与 PyTorch 对照）
     let mean_grad = mean_param.grad()?.expect("mean 应有梯度");

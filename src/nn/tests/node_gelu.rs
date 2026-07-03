@@ -40,8 +40,8 @@ fn test_gelu_forward() {
 
     let output = result.value().unwrap().unwrap();
     assert_eq!(output.shape(), &[2, 2]);
-    assert_abs_diff_eq!(output[[0, 0]], 0.3457140, epsilon = 1e-4);
-    assert_abs_diff_eq!(output[[0, 1]], -0.1588080, epsilon = 1e-4);
+    assert_abs_diff_eq!(output[[0, 0]], 0.345_714, epsilon = 1e-4);
+    assert_abs_diff_eq!(output[[0, 1]], -0.158_808, epsilon = 1e-4);
     assert_abs_diff_eq!(output[[1, 0]], 0.0, epsilon = 1e-6);
     assert_abs_diff_eq!(output[[1, 1]], 1.9545977, epsilon = 1e-4);
 }

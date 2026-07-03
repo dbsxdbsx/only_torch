@@ -42,7 +42,7 @@ impl DeformableConv2d {
         use_bias: bool,
         name: &str,
     ) -> Result<Self, GraphError> {
-        if deformable_groups == 0 || in_channels % deformable_groups != 0 {
+        if deformable_groups == 0 || !in_channels.is_multiple_of(deformable_groups) {
             return Err(GraphError::InvalidOperation(format!(
                 "in_channels={in_channels} 必须能被 deformable_groups={deformable_groups} 整除"
             )));

@@ -63,7 +63,7 @@ fn test_mat_mul_nt_tn_noncontiguous_inputs() {
     let a_base = Tensor::normal_seeded(0.0, 1.0, &[4, 2], 51);
     let a_nc = a_base.transpose();
     assert!(!a_nc.is_contiguous());
-    let a_c = Tensor::new(&a_nc.to_vec(), &[2, 4]);
+    let a_c = Tensor::new(a_nc.to_vec(), &[2, 4]);
 
     let b = Tensor::normal_seeded(0.0, 1.0, &[3, 4], 52);
 
@@ -82,7 +82,7 @@ fn test_mat_mul_nt_tn_noncontiguous_inputs() {
     // TN：非连续 self
     let s_base = Tensor::normal_seeded(0.0, 1.0, &[5, 4], 53);
     let s_nc = s_base.transpose(); // [4,5] 非连续
-    let s_c = Tensor::new(&s_nc.to_vec(), &[4, 5]);
+    let s_c = Tensor::new(s_nc.to_vec(), &[4, 5]);
     let o = Tensor::normal_seeded(0.0, 1.0, &[4, 6], 54);
 
     let from_nc = s_nc.mat_mul_tn(&o);

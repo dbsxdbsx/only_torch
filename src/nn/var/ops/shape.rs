@@ -524,7 +524,7 @@ impl VarShapeOps for Var {
         }
 
         let dim_size = shape[dim];
-        let chunk_size = (dim_size + n - 1) / n; // 向上取整
+        let chunk_size = dim_size.div_ceil(n); // 向上取整
         let mut result = Vec::new();
         let mut start = 0;
         while start < dim_size {

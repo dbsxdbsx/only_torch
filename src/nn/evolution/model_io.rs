@@ -250,7 +250,7 @@ impl EvolutionResult {
         let mut genome = evo_meta
             .genome
             .into_genome()
-            .map_err(|e| EvolutionError::IoError(e))?;
+            .map_err(EvolutionError::IoError)?;
 
         // 兼容旧 spatial 模型：如果没有 FM 节点，自动迁移
         genome.migrate_to_fm_level();

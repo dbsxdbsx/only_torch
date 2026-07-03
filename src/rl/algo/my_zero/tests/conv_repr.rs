@@ -89,7 +89,7 @@ fn conv_repr_backward_updates_conv_params() {
     let latent = net
         .forward(Tensor::new(&obs, &[1, CH * SIDE * SIDE]))
         .unwrap();
-    let target = Tensor::new(&vec![0.5f32; LATENT], &[1, LATENT]);
+    let target = Tensor::new(vec![0.5f32; LATENT], &[1, LATENT]);
     let loss = latent.mse_loss(&target).unwrap();
     opt.zero_grad().unwrap();
     let lv = loss.backward().unwrap();

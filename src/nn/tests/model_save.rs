@@ -913,7 +913,7 @@ fn test_save_load_parameter_count() {
     let x = graph.input(&Tensor::ones(&[1, 4])).unwrap();
     let fc1 = Linear::new(&graph, 4, 8, true, "fc1").unwrap(); // W:4*8 + b:8 = 40
     let fc2 = Linear::new(&graph, 8, 2, true, "fc2").unwrap(); // W:8*2 + b:2 = 18
-    let out = fc2.forward(&fc1.forward(&x).relu());
+    let out = fc2.forward(fc1.forward(&x).relu());
 
     let original_count = graph.parameter_count();
     graph.save_model(path, &[&out]).unwrap();

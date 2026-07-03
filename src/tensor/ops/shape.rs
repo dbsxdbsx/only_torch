@@ -744,7 +744,7 @@ impl Tensor {
         // 按行主序手写索引 flat[i]，要求连续；非连续（permute/transpose 视图）先物化为连续。
         let src = self.contiguous();
         let flat = src.flatten_view();
-        let old_strides = Self::compute_strides(&old_shape);
+        let old_strides = Self::compute_strides(old_shape);
         let new_strides = Self::compute_strides(&new_shape);
 
         for i in 0..self.size() {

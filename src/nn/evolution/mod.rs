@@ -490,12 +490,10 @@ fn materialize_task(spec: TaskSpec) -> Result<MaterializedTask, EvolutionError> 
             let heads = task.head_metas();
             let metric = task.metric().clone();
             for head in &heads {
-                if head.metric.is_segmentation() {
-                    if input_spatial.is_none() {
-                        return Err(EvolutionError::InvalidData(
-                            "分割 head 要求输入为 [C,H,W]".into(),
-                        ));
-                    }
+                if head.metric.is_segmentation() && input_spatial.is_none() {
+                    return Err(EvolutionError::InvalidData(
+                        "分割 head 要求输入为 [C,H,W]".into(),
+                    ));
                 }
             }
             let output_dim = heads.iter().map(|head| head.output_dim).sum();
@@ -1824,7 +1822,7 @@ fn summarize_eval_timings(results: &[EvalResult], wall: Duration) -> EvaluationT
         summary.evaluated_families.observe(family);
         let replace_best = summary
             .best_family_primary
-            .map_or(true, |best| result.score.primary > best);
+            .is_none_or(|best| result.score.primary > best);
         if replace_best {
             summary.best_family = Some(family.as_str());
             summary.best_family_primary = Some(result.score.primary);
@@ -2639,10 +2637,10 @@ fn snapshot_with_loss(task: &dyn EvolutionTask, genome: &NetworkGenome, build: &
 ///
 /// 优先选择满足 target 且 complexity 最小的成员；
 /// 若无达标成员，选择 primary 最高的。
-fn select_representative<'a>(
-    archive: &'a [(NetworkGenome, FitnessScore)],
+fn select_representative(
+    archive: &[(NetworkGenome, FitnessScore)],
     target_metric: f32,
-) -> (&'a NetworkGenome, &'a FitnessScore) {
+) -> (&NetworkGenome, &FitnessScore) {
     let target_member = archive
         .iter()
         .filter(|(_, s)| s.primary >= target_metric)

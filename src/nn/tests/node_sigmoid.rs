@@ -42,7 +42,7 @@ fn test_sigmoid_forward() {
     assert_abs_diff_eq!(output[[0, 0]], 0.62245935, epsilon = 1e-6);
     assert_abs_diff_eq!(output[[0, 1]], 0.26894143, epsilon = 1e-6);
     assert_abs_diff_eq!(output[[1, 0]], 0.5, epsilon = 1e-6);
-    assert_abs_diff_eq!(output[[1, 1]], 0.88079703, epsilon = 1e-6);
+    assert_abs_diff_eq!(output[[1, 1]], 0.880_797, epsilon = 1e-6);
 }
 
 /// 测试 Sigmoid 前向传播（边界值）
@@ -215,7 +215,7 @@ fn test_sigmoid_backward_e2e() -> Result<(), GraphError> {
         0.62245935 - 0.5,
         0.26894143 - 0.5,
         0.5 - 0.5,
-        0.88079703 - 0.5,
+        0.880_797 - 0.5,
     ];
     let expected_loss =
         (diff[0].powi(2) + diff[1].powi(2) + diff[2].powi(2) + diff[3].powi(2)) / 4.0;

@@ -778,7 +778,7 @@ fn bench_train_step(side: usize, batch: usize) -> Result<f64, GraphError> {
 
     // 均匀 policy 目标 + 中间原子 value 目标(纯计时,不关心收敛)
     let tp = Tensor::new(
-        &vec![1.0 / ACTION_DIM as f32; batch * ACTION_DIM],
+        vec![1.0 / ACTION_DIM as f32; batch * ACTION_DIM],
         &[batch, ACTION_DIM],
     );
     let mut tv_flat = vec![0.0f32; batch * SUPPORT_SIZE];
