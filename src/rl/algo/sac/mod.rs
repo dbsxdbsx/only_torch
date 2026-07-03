@@ -65,10 +65,10 @@ pub fn transitions_to_batch(transitions: &[Transition], obs_dim: usize) -> SacBa
         .collect();
 
     SacBatch {
-        obs: Tensor::new(&obs_data, &[bs, obs_dim]),
-        actions: Tensor::new(&actions_data, &[bs, action_dim]),
-        rewards: Tensor::new(&rewards, &[bs, 1]),
-        next_obs: Tensor::new(&next_obs_data, &[bs, obs_dim]),
-        not_terminated: Tensor::new(&not_terminated, &[bs, 1]),
+        obs: Tensor::new(obs_data, &[bs, obs_dim]),
+        actions: Tensor::new(actions_data, &[bs, action_dim]),
+        rewards: Tensor::new(rewards, &[bs, 1]),
+        next_obs: Tensor::new(next_obs_data, &[bs, obs_dim]),
+        not_terminated: Tensor::new(not_terminated, &[bs, 1]),
     }
 }

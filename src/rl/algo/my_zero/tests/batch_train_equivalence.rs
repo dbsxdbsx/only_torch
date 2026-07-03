@@ -61,15 +61,15 @@ fn to_item(
     trs: &[f32],
     tcs: &[f32],
     next_obs: &[Vec<f32>],
-) -> UnrollItem {
+) -> UnrollItem<'static> {
     UnrollItem {
-        obs_t: obs_t.to_vec(),
+        obs_t: obs_t.to_vec().into(),
         actions: actions.to_vec(),
         target_policies: tps.to_vec(),
         target_values: tvs.to_vec(),
         target_rewards: trs.to_vec(),
         target_continuations: tcs.to_vec(),
-        next_obs: next_obs.to_vec(),
+        next_obs: next_obs.iter().cloned().map(Into::into).collect(),
     }
 }
 

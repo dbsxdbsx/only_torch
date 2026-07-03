@@ -182,6 +182,17 @@ impl Var {
         node.set_value(Some(tensor)).expect("设置 Tensor 值失败");
         Self::new_with_rc_graph(node, &graph)
     }
+
+    /// [`tensor_to_target_var`](Self::tensor_to_target_var) 的 move 版本（省一次深拷贝）
+    pub(crate) fn tensor_to_target_var_owned(&self, tensor: Tensor) -> Self {
+        let graph = self.graph();
+        let node = graph
+            .borrow_mut()
+            .create_target_input_node(tensor.shape(), None)
+            .expect("创建 TargetInput 节点失败");
+        node.set_value_owned(tensor).expect("设置 Tensor 值失败");
+        Self::new_with_rc_graph(node, &graph)
+    }
 }
 
 // -------------------- Add: Var + Tensor --------------------

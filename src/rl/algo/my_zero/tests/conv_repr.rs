@@ -132,13 +132,13 @@ fn my_zero_model_image_spec_trains() {
 
     let dim = spec.dim();
     let item = UnrollItem {
-        obs_t: fake_obs(dim, 11),
+        obs_t: fake_obs(dim, 11).into(),
         actions: vec![1, 2],
         target_policies: vec![vec![0.5, 0.3, 0.2]; 3],
         target_values: vec![1.0, 0.8, 0.5],
         target_rewards: vec![1.0, 0.0],
         target_continuations: vec![1.0, 1.0],
-        next_obs: vec![fake_obs(dim, 12), fake_obs(dim, 13)],
+        next_obs: vec![fake_obs(dim, 12).into(), fake_obs(dim, 13).into()],
     };
     let loss = model
         .train_unroll_batch(&[item], 2.0, 0.0, 1.0, false)

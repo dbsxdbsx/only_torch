@@ -77,7 +77,43 @@ simulation 都走）：sink 算完时这三个节点消费者恰好归零 → �
 
 ---
 
+### 6. Tensor 共享存储（Arc/CoW），clone 变浅拷贝（2026-07-03 评估留档）
+
+**来源**：「零拷贝到底」评估（战报 N 前置调研）的长期备选。参考对照：Candle
+`Tensor(Arc<Tensor_>)` + `Arc<RwLock<Storage>>`、Burn ndarray 后端 `ArcArray`（CoW）、
+PyTorch 共享 storage——成熟库全部走共享所有权，无一家走借用生命周期方案。
+
+**收益**：一劳永逸——`Tensor::clone()` 变引用计数浅拷贝后，所有 `set_value` /
+`graph.input` / `LossTarget` 路径的深拷贝自动消失，无需逐调用点改 owned；ndarray
+自带 `ArcArray`，迁移有现成类型。
+
+**代价（Reviewer 压测结论，也是暂缓原因）**：全库 `Tensor` clone 语义重定义——
+in-place 写触发隐式 CoW 物化（心智负担）、序列化 / `source_id` / 非连续布局行为
+全要重审；而战报 N 落地后热点路径已零冗余拷贝，剩余收益封顶「每局几秒内」。
+
+**状态**：暂缓。触发条件 = 出现**多处**真实 profile 证据表明 clone 深拷贝进入热点
+（单点热点优先走 owned 路径，模式已建立），或图像线大 batch 时代整体撞内存墙。
+
+---
+
 ## 已否决项
+
+### 借用型张量视图（零拷贝到底）（2026-07-03 判死）
+
+**原设想**：训练张量以借用 strided view 直指 replay buffer 内存（类 PyTorch
+`from_numpy` 共享存储），消除组装批次的全部拷贝。
+
+**否决理由**（各自独立成立，评估含 Reviewer 压测）：
+1. 图像路径 3 次数据经手中，① 是 **u8→f32 dtype 转换**（视图本质消不掉，除非计算层
+   支持 u8，违反 f32-only 契约）；② 是**随机样本 gather**（batch 来自随机 episode/
+   时间步 + 帧堆叠边界重复填充，单 strided view 表达不了，PyTorch collate 同样物化）；
+   仅 ③ 入图 clone 是纯冗余——已由战报 N 的 owned 路径消除。
+2. 借用生命周期穿不过持久 Rc 计算图（节点 `Option<Tensor>` 跨 step 存活），逼 unsafe
+   裸指针会让 buffer 变成训练图的隐式所有者，回放淘汰/重分配全是雷。
+3. 成熟 Rust 库（Candle/Burn）均走共享所有权而非借用方案；若未来真需要，走上方
+   候选 #6（Arc/CoW），不走借用视图。
+
+
 
 ### 内核级优化路线：Winograd / 手写 GEMM / 三值内核（2026-07-02 论文清账盖棺）
 

@@ -4,6 +4,13 @@
 
 ### Changed
 
+- **perf(nn/rl): 训练 batch 组装融合 + owned 入图路径（优化 N，组装/入图流量 2.2×）**（2026-07-03）
+  - 「零拷贝到底（借用 strided view 指向 buffer）」评估**判死**（u8→f32 反量化视图消不掉、随机 gather 单 view 表达不了、借用生命周期穿不过持久 Rc 图；Candle/Burn/PyTorch 均走共享所有权而非借用方案），Reviewer 压测后改做两刀廉价替代，判死论证与 Arc/CoW 长期备选落档 [optimization_candidates.md](.doc/performance/optimization_candidates.md)
+  - **融合组装**：`UnrollItem.obs_t/next_obs` 由物化 `Vec<f32>` 改 `ObsSource<'a>` 枚举（借用 buffer 帧 + 延迟物化），batch 组装时边反量化边堆叠**直写最终 flat**（零中间 Vec）；`assemble_stacked_obs` 降级 `#[cfg(test)]` 语义参照 + 新增逐 bit 守门测试
+  - **owned 入图**：新增 `Graph::input_owned`（move 语义）；`IntoVar for Tensor` / `LossTarget for Tensor`（含标量广播）改走 owned，对用户透明；顺手清账 DataLoader / SAC / PPO batch 组装 `Tensor::new(&vec)`、`ema_update` 与演化 mini-batch `set_value` → owned
+  - 实测（新增 `benches/obs_batch_assembly.rs`，Pong 口径 84²×4/G=16，计时前断言两路径逐 bit 相等）：组装 2.3×（978→426µs）、入图 1.9×（784→419µs）、端到端 **2.2×**（993→447µs）
+  - 验证：全量测试 0 失败（RL 271）+ `smoke-rl` 7 目标全过；Flat 路径值序恒等、RNG 消耗不变；3-seed 哨兵未复跑（ndarray 0.16 升级后基线重定在册待办，数字暂不可解读），详见[优化战报 N](.doc/performance/optimization_log.md)
+
 - **docs: 性能文档拆分为 `.doc/performance/` 专区 + README 门面刷新**（2026-07-03）
   - `optimization_candidates.md`（482 行三种生命周期混居）一拆三：`optimization_candidates.md`（决策面：待做候选带触发条件 + 已否决，恒定小体量）/ `benchmark_workflow.md`（验证七步流程 + 测量纪律 + baseline 台账 + bench 清单）/ `optimization_log.md`（已实施战报 A–L 倒序 append-only）；`optimization_strategy.md` 从 `design/` 迁入同区；原「待优化项 §4 依赖升级」（已完成态）归位战报，liveness 候选项编号 #5→#4
   - 归档目录命名统一：`design/archive/` → `design/_archive/`（与根 `_archive/` 一致）；全库链接同步（AGENTS / README / CHANGELOG / `.bench/README` / paper / design / instructions 共 12+ 文件）

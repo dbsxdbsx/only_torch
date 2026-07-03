@@ -55,9 +55,9 @@ pub fn rollout_to_batch(
     let log_probs: Vec<f32> = steps.iter().map(|s| s.log_prob).collect();
 
     PpoBatch {
-        obs: Tensor::new(&obs_data, &[bs, obs_dim]),
-        actions: Tensor::new(&actions_data, &[bs, action_dim]),
-        old_log_probs: Tensor::new(&log_probs, &[bs, 1]),
+        obs: Tensor::new(obs_data, &[bs, obs_dim]),
+        actions: Tensor::new(actions_data, &[bs, action_dim]),
+        old_log_probs: Tensor::new(log_probs, &[bs, 1]),
         advantages: Tensor::new(advantages, &[bs, 1]),
         returns: Tensor::new(returns, &[bs, 1]),
     }

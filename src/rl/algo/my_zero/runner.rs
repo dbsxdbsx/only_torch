@@ -6,8 +6,8 @@ use super::component::Components;
 use super::config::{MyZeroConfig, greedy_episode_seed, self_play_episode_seed};
 use super::my_zero::MyZero;
 use super::n_step::compute_n_step_target;
-use super::network::{MyZeroModel, UnrollItem};
-use super::obs_pipeline::{ObsAdapter, assemble_stacked_obs};
+use super::network::{MyZeroModel, ObsSource, UnrollItem};
+use super::obs_pipeline::ObsAdapter;
 use super::reanalyze::reanalyze_unroll_window;
 use super::report::TrainReport;
 use super::sampled_params::{
@@ -327,19 +327,23 @@ pub(crate) fn train_batch(
     let want_next_obs = components.consistency || components.reconstruction;
 
     // 1) 逐样本展开成 UnrollItem，并按 (actual_k, next_obs 步数) 分组（结构对齐才能同批堆叠）
-    let mut groups: BTreeMap<(usize, usize), Vec<UnrollItem>> = BTreeMap::new();
+    let mut groups: BTreeMap<(usize, usize), Vec<UnrollItem<'_>>> = BTreeMap::new();
     for (game, start) in samples {
         let steps = &game.steps;
         let len = steps.len();
         let t = *start;
         let actual_k = unroll_len_at(steps, t, k_unroll);
 
-        // 模型入口 obs：Flat 直取，图像模式从存储量化单帧就地组装堆叠（反量化，老 → 新）
-        let frames: Vec<&crate::rl::StoredObs> = steps.iter().map(|s| &s.obs).collect();
-        let obs_at = |pos: usize| -> Vec<f32> {
+        // 模型入口 obs：只记录来源（borrow buffer），batch 组装时融合反量化/堆叠
+        // 一次性写入最终 flat（Flat 直通；图像模式老 → 新堆叠，语义同 assemble_stacked_obs）
+        let obs_at = |pos: usize| -> ObsSource<'_> {
             match image_stack {
-                None => steps[pos].obs.to_f32_vec(),
-                Some(k) => assemble_stacked_obs(&frames, pos, k),
+                None => ObsSource::Single(&steps[pos].obs),
+                Some(k) => ObsSource::Stacked {
+                    steps,
+                    t: pos,
+                    stack: k,
+                },
             }
         };
 
@@ -402,7 +406,7 @@ pub(crate) fn train_batch(
         };
 
         // consistency / reconstruction：收集 unroll 每步对应的真实 next_obs（否则留空）
-        let next_obs: Vec<Vec<f32>> = if want_next_obs {
+        let next_obs: Vec<ObsSource<'_>> = if want_next_obs {
             (0..actual_k)
                 .take_while(|&i| t + i + 1 < len)
                 .map(|i| obs_at(t + i + 1))

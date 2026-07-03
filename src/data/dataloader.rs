@@ -632,8 +632,9 @@ fn extract_tensor_batch(features: &Tensor, labels: &Tensor, indices: &[usize]) -
     let mut new_label_shape = vec![batch_size];
     new_label_shape.extend_from_slice(&label_shape[1..]);
 
-    let features_batch = Tensor::new(&feature_data, &new_feature_shape);
-    let labels_batch = Tensor::new(&label_data, &new_label_shape);
+    // Vec 直接 move 入 Tensor（零拷贝；&Vec 会多一次深拷贝）
+    let features_batch = Tensor::new(feature_data, &new_feature_shape);
+    let labels_batch = Tensor::new(label_data, &new_label_shape);
 
     (features_batch, labels_batch)
 }
@@ -784,8 +785,8 @@ impl Dataset for VarLenDataset {
             label_data.extend(&self.samples[idx].label);
         }
 
-        let features = Tensor::new(&feature_data, &[batch_size, seq_len, self.feature_size]);
-        let labels = Tensor::new(&label_data, &[batch_size, self.label_size]);
+        let features = Tensor::new(feature_data, &[batch_size, seq_len, self.feature_size]);
+        let labels = Tensor::new(label_data, &[batch_size, self.label_size]);
 
         (features, labels)
     }

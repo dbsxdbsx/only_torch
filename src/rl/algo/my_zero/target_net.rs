@@ -61,7 +61,7 @@ pub fn ema_update(online: &[Var], target: &[Var], tau: f32) {
             .zip(ts.iter())
             .map(|(a, b)| (1.0 - tau) * b + tau * a)
             .collect();
-        let _ = t.set_value(&Tensor::new(&blended, ov.shape()));
+        let _ = t.set_value_owned(Tensor::new(blended, ov.shape()));
     }
 }
 

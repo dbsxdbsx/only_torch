@@ -870,9 +870,9 @@ impl EvolutionTask for SupervisedTask {
                     timing.batch_slice += slice_start.elapsed();
 
                     let set_start = Instant::now();
-                    build.input.set_value(&batch_x)?;
-                    for (target, batch_y) in target_vars.iter().zip(&batch_ys) {
-                        target.set_value(batch_y)?;
+                    build.input.set_value_owned(batch_x)?;
+                    for (target, batch_y) in target_vars.iter().zip(batch_ys) {
+                        target.set_value_owned(batch_y)?;
                     }
                     timing.set_value += set_start.elapsed();
 

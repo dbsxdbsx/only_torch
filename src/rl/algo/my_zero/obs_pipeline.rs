@@ -194,11 +194,14 @@ pub(crate) fn bilinear_resize(
     out
 }
 
-/// 训练期从 `steps[*].obs`（量化单帧）组装位置 `t` 的堆叠观测（反量化 f32，老 → 新）。
+/// 训练期堆叠组装的**语义参照实现**（现仅测试使用）。
 ///
+/// 生产路径已融合进 batch 组装（`ObsSource::Stacked::append_into` 直接写入最终
+/// flat buffer，零中间 Vec），本函数保留为逐 bit 等价的守门基准：
 /// episode 起点（`t < STACK-1`）用 `saturating_sub` 前向填充首帧，
 /// 与 acting 期 [`ImagePipe::reset`] 填满滑窗的语义逐 bit 一致
-/// （两处共用 [`StoredObs::append_f32_into`] 的反量化口径）。
+/// （共用 [`StoredObs::append_f32_into`] 的反量化口径）。
+#[cfg(test)]
 pub(crate) fn assemble_stacked_obs(frames: &[&StoredObs], t: usize, stack: usize) -> Vec<f32> {
     let flen = frames[t].len();
     let mut out = Vec::with_capacity(stack * flen);

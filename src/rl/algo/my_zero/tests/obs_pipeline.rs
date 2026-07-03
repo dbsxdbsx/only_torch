@@ -82,6 +82,52 @@ fn assemble_stack_padding_and_order() {
     );
 }
 
+/// 融合组装（`ObsSource::Stacked` 直写 flat buffer）与参照实现逐 bit 一致
+///
+/// 生产路径已改为 batch 组装时就地反量化堆叠（零中间 Vec），本测试守住
+/// 它与 [`assemble_stacked_obs`]（语义参照）的逐 bit 等价，含起点前向填充。
+#[test]
+fn obs_source_stacked_matches_reference_bit_exact() {
+    use crate::rl::SelfPlayStep;
+    use crate::rl::algo::my_zero::network::ObsSource;
+
+    let steps: Vec<SelfPlayStep> = (0..6)
+        .map(|i| SelfPlayStep {
+            obs: StoredObs::quantize_pixels(&[i as f32 * 40.0, i as f32 * 40.0 + 0.7]),
+            action: vec![0.0],
+            policy_target: vec![1.0],
+            player: 0,
+            reward: 0.0,
+            root_value: None,
+            terminated: false,
+            truncated: false,
+            continuation: 1.0,
+            extras: Default::default(),
+        })
+        .collect();
+    let frames: Vec<&StoredObs> = steps.iter().map(|s| &s.obs).collect();
+
+    for t in [0usize, 1, 3, 5] {
+        let reference = assemble_stacked_obs(&frames, t, 4);
+        let src = ObsSource::Stacked {
+            steps: &steps,
+            t,
+            stack: 4,
+        };
+        assert_eq!(src.dim(), reference.len(), "t={t} dim 应一致");
+        let mut fused = Vec::new();
+        src.append_into(&mut fused);
+        assert_eq!(fused, reference, "t={t} 融合组装应与参照逐 bit 一致");
+    }
+
+    // Single（向量 obs 直通）同样逐 bit
+    let v: StoredObs = vec![0.5f32, -1.25, 3.0].into();
+    let single = ObsSource::Single(&v);
+    let mut out = Vec::new();
+    single.append_into(&mut out);
+    assert_eq!(out, v.to_f32_vec());
+}
+
 // ---- ImagePipe 常量契约 ----
 
 #[test]

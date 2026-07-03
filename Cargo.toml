@@ -180,6 +180,10 @@
     name   ="my_zero_train_batch"
     harness=false
 
+[[bench]]
+    name   ="obs_batch_assembly"
+    harness=false
+
     # ==================== 示例 ====================
 
 [[example]]

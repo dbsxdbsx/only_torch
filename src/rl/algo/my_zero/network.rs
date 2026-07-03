@@ -882,7 +882,7 @@ impl MyZeroModel {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn train_unroll_batch(
         &self,
-        items: &[UnrollItem],
+        items: &[UnrollItem<'_>],
         consistency_coef: f32,
         reconstruction_coef: f32,
         continuation_coef: f32,
@@ -892,7 +892,7 @@ impl MyZeroModel {
         debug_assert!(g > 0, "train_unroll_batch: 空组");
         let k = items[0].actions.len();
         let n_next = items[0].next_obs.len();
-        let obs_dim = items[0].obs_t.len();
+        let obs_dim = items[0].obs_t.dim();
 
         // ---- 逐 slot 把 G 条样本堆叠成 [G, dim] 张量 ----
         let stack = |rows: &[&[f32]], dim: usize| -> Tensor {
@@ -902,18 +902,18 @@ impl MyZeroModel {
             }
             Tensor::new(flat, &[g, dim])
         };
-        // obs 专用堆叠：入口单点 symlog（repr 输入与 recon 目标同源；policy 等目标不经过）
-        let stack_obs = |rows: &[&[f32]], dim: usize| -> Tensor {
-            let mut flat = Vec::with_capacity(g * dim);
-            for r in rows {
-                flat.extend_from_slice(r);
+        // obs 融合堆叠：从来源（buffer 借用帧）反量化/堆叠直接写入最终 flat（物化恰好一次），
+        // 入口单点 symlog（repr 输入与 recon 目标同源；policy 等目标不经过）
+        let stack_obs_sources = |srcs: &mut dyn Iterator<Item = &ObsSource>| -> Tensor {
+            let mut flat = Vec::with_capacity(g * obs_dim);
+            for s in srcs {
+                s.append_into(&mut flat);
             }
             maybe_symlog_in_place(self.obs_symlog, &mut flat);
-            Tensor::new(flat, &[g, dim])
+            Tensor::new(flat, &[g, obs_dim])
         };
         // obs_t（k=0 输入 + reconstruction k=0 目标）
-        let obs_rows: Vec<&[f32]> = items.iter().map(|it| it.obs_t.as_slice()).collect();
-        let obs_tensor = stack_obs(&obs_rows, obs_dim);
+        let obs_tensor = stack_obs_sources(&mut items.iter().map(|it| &it.obs_t));
         // 各步 policy 目标 [G, action_dim]（slot 0..=k）
         let policy_at = |slot: usize| -> Tensor {
             let rows: Vec<&[f32]> = items
@@ -929,17 +929,24 @@ impl MyZeroModel {
         };
 
         // ---- k=0：repr → pred（policy + value）+ reconstruction ----
-        let mut latent = self.repr.forward(&obs_tensor)?;
+        // recon 开启时 obs 数据在图里需要两份（repr 输入节点 + recon 目标节点），clone 一次；
+        // 关闭时整条 flat 直接 move 入图，零拷贝。
+        let (repr_in, recon_target0) = if reconstruction_coef > 0.0 {
+            (obs_tensor.clone(), Some(obs_tensor))
+        } else {
+            (obs_tensor, None)
+        };
+        let mut latent = self.repr.forward(repr_in)?;
         let (pred_policy, pred_value_logits) = self.pred.forward(&latent);
         let tp0 = policy_at(0);
         let tv0 = value_two_hot_at(0);
-        let mut total_loss = pred_policy.cross_entropy(&tp0)?;
+        let mut total_loss = pred_policy.cross_entropy(tp0)?;
         total_loss =
-            &total_loss + &(&pred_value_logits.cross_entropy(&tv0)? * loss::VALUE_LOSS_COEF);
+            &total_loss + &(&pred_value_logits.cross_entropy(tv0)? * loss::VALUE_LOSS_COEF);
 
-        if reconstruction_coef > 0.0 {
+        if let Some(target0) = recon_target0 {
             let recon0 = self.recon.forward(&latent);
-            let recon_loss0 = recon0.mse_loss(&obs_tensor)?;
+            let recon_loss0 = recon0.mse_loss(target0)?;
             total_loss = &total_loss + &(&recon_loss0 * reconstruction_coef);
         }
 
@@ -966,7 +973,7 @@ impl MyZeroModel {
             }
             let oh_var = self
                 .graph
-                .input(&Tensor::new(oh_flat, &[g, self.action_dim]))?;
+                .input_owned(Tensor::new(oh_flat, &[g, self.action_dim]))?;
 
             let (next_latent, pred_reward_logits, pred_continuation_logit) =
                 self.dyn_net.forward(&latent, &oh_var)?;
@@ -984,22 +991,22 @@ impl MyZeroModel {
                 .iter()
                 .map(|it| it.target_continuations[i].clamp(0.0, 1.0))
                 .collect();
-            let tc = Tensor::new(&tc_flat, &[g, 1]);
+            let tc = Tensor::new(tc_flat, &[g, 1]);
 
-            let step_policy_loss = pred_p.cross_entropy(&tp)?;
-            let step_value_loss = pred_v_logits.cross_entropy(&tv)?;
+            let step_policy_loss = pred_p.cross_entropy(tp)?;
+            let step_value_loss = pred_v_logits.cross_entropy(tv)?;
 
             let step_reward_loss = if use_value_prefix {
                 let (h_new, c_new) = self.lstm.step(&next_latent, &vp_h, &vp_c)?;
                 let prefix_logits = self.lstm.prefix_logits(&h_new);
                 vp_h = h_new;
                 vp_c = c_new;
-                prefix_logits.cross_entropy(&tr)?
+                prefix_logits.cross_entropy(tr)?
             } else {
-                pred_reward_logits.cross_entropy(&tr)?
+                pred_reward_logits.cross_entropy(tr)?
             };
             let pred_continuation = (&pred_continuation_logit + CONTINUATION_LOGIT_BIAS).sigmoid();
-            let step_continuation_loss = pred_continuation.mse_loss(&tc)?;
+            let step_continuation_loss = pred_continuation.mse_loss(tc)?;
 
             let mut step_loss = &step_policy_loss
                 + &(&step_value_loss * loss::VALUE_LOSS_COEF)
@@ -1007,22 +1014,29 @@ impl MyZeroModel {
                 + &(&step_continuation_loss * continuation_coef);
 
             // consistency / reconstruction：仅在该步有真实 next_obs 时（组内 i<n_next 统一成立）
-            if i < n_next {
-                let next_rows: Vec<&[f32]> =
-                    items.iter().map(|it| it.next_obs[i].as_slice()).collect();
-                let next_obs_tensor = stack_obs(&next_rows, obs_dim);
+            if i < n_next && (consistency_coef > 0.0 || reconstruction_coef > 0.0) {
+                let next_obs_tensor =
+                    stack_obs_sources(&mut items.iter().map(|it| &it.next_obs[i]));
+                // 两个分支都开时数据在图里需要两份（consistency 输入 + recon 目标），clone 一次
+                let (cons_in, recon_target) =
+                    match (consistency_coef > 0.0, reconstruction_coef > 0.0) {
+                        (true, true) => (Some(next_obs_tensor.clone()), Some(next_obs_tensor)),
+                        (true, false) => (Some(next_obs_tensor), None),
+                        (false, true) => (None, Some(next_obs_tensor)),
+                        (false, false) => unreachable!(),
+                    };
 
-                if consistency_coef > 0.0 {
-                    let repr_target = self.repr.forward(&next_obs_tensor)?;
+                if let Some(cons_obs) = cons_in {
+                    let repr_target = self.repr.forward(cons_obs)?;
                     let proj_target = self.projector.forward(&repr_target);
                     let proj_online = self.projector.forward(&next_latent);
                     let pred_online = self.predictor.forward(&proj_online);
                     let cons_loss = negative_cosine_similarity(&pred_online, &proj_target)?;
                     step_loss = &step_loss + &(&cons_loss * consistency_coef);
                 }
-                if reconstruction_coef > 0.0 {
+                if let Some(target) = recon_target {
                     let recon = self.recon.forward(&next_latent);
-                    let recon_loss = recon.mse_loss(&next_obs_tensor)?;
+                    let recon_loss = recon.mse_loss(target)?;
                     step_loss = &step_loss + &(&recon_loss * reconstruction_coef);
                 }
             }
@@ -1035,19 +1049,74 @@ impl MyZeroModel {
     }
 }
 
+/// 训练 batch 中单条 obs 的**来源描述**（延迟物化，融合组装）。
+///
+/// 组装 `[G, obs_dim]` batch 张量时由 [`ObsSource::append_into`] 直接把数据
+/// （必要时反量化 / 帧堆叠）写入最终 flat buffer——把不可避免的物化压到恰好一次，
+/// 消掉旧路径「每样本先物化堆叠 `Vec<f32>`、再复制进 batch flat」的中间拷贝。
+pub(crate) enum ObsSource<'a> {
+    /// 已物化的 f32 向量（测试构造 / reanalyze 等已有 owned 数据的路径）
+    Owned(Vec<f32>),
+    /// 单帧直通（向量 obs：borrow buffer，写入时反量化/复制一次）
+    Single(&'a crate::rl::StoredObs),
+    /// 图像模式：从 episode steps 就地堆叠位置 `t` 的最近 `stack` 帧（老 → 新）。
+    ///
+    /// episode 起点（`t < stack-1`）用 `saturating_sub` 前向填充首帧，与
+    /// [`assemble_stacked_obs`](super::obs_pipeline::assemble_stacked_obs) /
+    /// acting 期 `ImagePipe::reset` 语义逐 bit 一致。
+    Stacked {
+        steps: &'a [crate::rl::SelfPlayStep],
+        t: usize,
+        stack: usize,
+    },
+}
+
+impl ObsSource<'_> {
+    /// 物化后的 f32 元素个数
+    pub fn dim(&self) -> usize {
+        match self {
+            Self::Owned(v) => v.len(),
+            Self::Single(o) => o.len(),
+            Self::Stacked { steps, t, stack } => stack * steps[*t].obs.len(),
+        }
+    }
+
+    /// 把 obs 数据（反量化 f32）追加到 batch flat buffer（融合组装热路径）
+    pub fn append_into(&self, out: &mut Vec<f32>) {
+        match self {
+            Self::Owned(v) => out.extend_from_slice(v),
+            Self::Single(o) => o.append_f32_into(out),
+            Self::Stacked { steps, t, stack } => {
+                for i in (0..*stack).rev() {
+                    let idx = t.saturating_sub(i);
+                    steps[idx].obs.append_f32_into(out);
+                }
+            }
+        }
+    }
+}
+
+impl From<Vec<f32>> for ObsSource<'_> {
+    fn from(v: Vec<f32>) -> Self {
+        Self::Owned(v)
+    }
+}
+
 /// batch-native 训练的单条样本（已展开好各步目标）。
 ///
 /// 同一组（传入 [`MyZeroModel::train_unroll_batch`]）内所有 `UnrollItem` 须满足：
 /// `actions.len()`（= `actual_k）与` `next_obs.len()`（= consistency/recon 有效步数）一致，
 /// 从而组内结构逐样本对齐、可直接堆叠成 batch 而无需 padding。
-pub(crate) struct UnrollItem {
-    pub obs_t: Vec<f32>,
+///
+/// obs 以 [`ObsSource`]（借用 + 延迟物化）持有，batch 组装时一次性写入最终 flat buffer。
+pub(crate) struct UnrollItem<'a> {
+    pub obs_t: ObsSource<'a>,
     pub actions: Vec<usize>,            // len = actual_k
     pub target_policies: Vec<Vec<f32>>, // len = actual_k + 1
     pub target_values: Vec<f32>,        // len = actual_k + 1
     pub target_rewards: Vec<f32>,       // len = actual_k（value_prefix 时为前缀目标）
     pub target_continuations: Vec<f32>, // len = actual_k
-    pub next_obs: Vec<Vec<f32>>,        // len = next_obs 有效步数（≤ actual_k）
+    pub next_obs: Vec<ObsSource<'a>>,   // len = next_obs 有效步数（≤ actual_k）
 }
 
 // ============================================================================

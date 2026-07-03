@@ -56,8 +56,8 @@ impl LossTarget for &Tensor {
 
 impl LossTarget for Tensor {
     fn into_var(self, source: &Var) -> Var {
-        // 使用 TargetInput 节点，在可视化中显示为橙色椭圆
-        source.tensor_to_target_var(&self)
+        // 使用 TargetInput 节点（move 语义，省一次深拷贝），可视化中显示为橙色椭圆
+        source.tensor_to_target_var_owned(self)
     }
 }
 
@@ -69,7 +69,7 @@ macro_rules! impl_loss_target_for_scalar {
                 fn into_var(self, source: &Var) -> Var {
                     let shape = source.node().shape();
                     let tensor = Tensor::full(self as f32, &shape);
-                    source.tensor_to_target_var(&tensor)
+                    source.tensor_to_target_var_owned(tensor)
                 }
             }
         )+

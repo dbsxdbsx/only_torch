@@ -7,6 +7,52 @@
 
 ---
 
+## N. 训练 batch 组装融合 + owned 入图路径（2026-07-03，组装/入图流量 2.2×，全框架受益）
+
+**动机**：「零拷贝到底（借用 strided view 指向 buffer）」评估判死（论证见
+[candidates 已否决项](./optimization_candidates.md#借用型张量视图零拷贝到底2026-07-03-判死)）后，
+Reviewer 识别出两刀廉价替代：图像训练路径每样本 obs 数据经手 3 次——
+① `assemble_stacked_obs` 反量化堆叠出 per-sample 中间 `Vec<f32>`；② `stack_obs`
+把 G 个样本 Vec 复制拼进 batch flat；③ `graph.input(&Tensor)` 深拷贝进 BasicInput
+节点。①② 可融合为一次物化，③ 是纯冗余。
+
+**方案**（一次一项纪律下同属"拷贝消除"单主题）：
+- **融合组装**：`UnrollItem.obs_t/next_obs` 由 `Vec<f32>` 改为 `ObsSource<'a>` 枚举
+  （`Owned` / `Single(&StoredObs)` / `Stacked{steps,t,stack}`），batch 组装时
+  `append_into` 从 buffer 借用帧**直写最终 flat**（边反量化边堆叠，零中间 Vec）；
+  `assemble_stacked_obs` 降级为 `#[cfg(test)]` 语义参照，新增守门测试锤逐 bit 等价。
+- **owned 入图**：新增 `Graph::input_owned(Tensor)`（move 语义）；`IntoVar for Tensor`
+  与 `LossTarget for Tensor`（含标量广播）改走 owned 路径。`train_unroll_batch` 内
+  obs/action onehot/各目标张量全部 move 入图；recon/consistency 需同一数据两份时
+  仅 clone 一次（旧路径两处各 clone）。
+- **顺手清账**（同一根因、机械替换）：DataLoader `extract_tensor_batch` /
+  `VarLenDataset::get_batch`、SAC `transitions_to_batch`、PPO `rollout_to_batch` 的
+  `Tensor::new(&vec)` 改 owned move；`ema_update` 与演化 mini-batch `set_value` 改
+  `set_value_owned`。
+
+**实测**（新增 `benches/obs_batch_assembly.rs`，Pong 口径 frame=84²/stack=4/G=16，
+release+MKL；两路径输出先断言逐 bit 相等再计时）：
+
+| case | 旧 | 新 | 加速 |
+|---|---|---|---|
+| 组装（per-sample→stack vs 融合直写） | 978 µs | 426 µs | **2.3×** |
+| 入图（`input` clone vs `input_owned`） | 784 µs | 419 µs | **1.9×** |
+| 端到端（组装+建 Tensor+入图） | 993 µs | 447 µs | **2.2×** |
+
+绝对量级：单次 batch 组装省 ~550 µs × 每局 64 次训练 × 多 group ≈ 图像线每局省
+零点几秒——符合评估时「收益确定但不巨大」的预期；真正的价值是**消除结构性冗余**
+且全框架受益（DataLoader / SAC / PPO / 演化同享 owned 路径），API 零心智负担
+（`IntoVar`/`LossTarget` 对用户透明，owned 参数天然表达 move）。
+
+**验证**：`just test` 全量 0 失败（RL 271 含新增 `ObsSource` 逐 bit 守门测试，
+锤融合组装与参照实现逐 bit 等价）+ `smoke-rl` 7 目标全过。语义恒等论证：Flat 路径
+`ObsSource::Single` 与旧 `to_f32_vec` 值序恒等、RNG 消耗不变、图结构与节点值不变
+（owned 入图只改所有权转移方式）。3-seed CartPole 哨兵**未复跑**——ndarray 0.16
+升级后哨兵基线重定在册待办（有 seed 满额不收敛），当前跑数字不可解读，等基线
+重定后一并回归。
+
+---
+
 ## M. 图像 obs u8 量化帧存储 `StoredObs`（2026-07-03，Pong 单局 wall 3~7× + 增长斜率归零）
 
 **动机**：Phase 1 Pong 实测「单局耗时随 buffer 占用增长、buffer 满（Ep32）后进入平台」
