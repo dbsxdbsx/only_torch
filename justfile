@@ -460,13 +460,13 @@ example-evolution-deformable-conv2d-segmentation:
 
 # ==================== 代码质量 ====================
 
-# 运行 clippy lint
+# 运行 clippy lint（零警告门禁：覆盖 lib/tests/benches/examples，警告即失败）
 lint:
-    cargo clippy {{_blas_flag}}
+    cargo clippy {{_blas_flag}} --all-targets -- -D warnings
 
 # 运行 clippy 并自动修复
 lint-fix:
-    cargo clippy {{_blas_flag}} --fix --allow-dirty --allow-staged
+    cargo clippy {{_blas_flag}} --all-targets --fix --allow-dirty --allow-staged
 
 # 格式化代码
 fmt:
