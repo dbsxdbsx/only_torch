@@ -32,8 +32,14 @@
 - **风险 spike 先行**：最小 CNN 栈 + 假图像输入，实测「CNN 前向 × sims」单步 wall-clock，对照 [CPU 风险 issue](../../.issue/items/cpu_only_mcts_image_realtime_risk.md) 的触发线，产出去/留/改道决策
 - 图像 obs 管线（复用 `src/vision/preprocess`：降采样/灰度/帧堆叠）→ CNN representation 进 `network.rs`（按 recipe 注入）→ **预注册基准门槛**（Pong 类；验收 = 3-seed 可复现学习曲线 + 预注册分数，**非 SOTA**）
 - native 域复裁：consistency / reconstruction / HL-Gauss 各一次 A/B；recon_coef=16 为 CartPole 域标定值，图像 obs 走 [0,1] 像素归一并**在该域重标**（Phase 0 symlog 负结果已裁决：该系数是权衡旋钮而非单位换算，跨量纲不免重调）
+- **reanalyze 复活 · ROSMO-first 两级阶梯（2026-07-03 从 Phase 3 提前，图像基线立柱后串行）**：
+  - **提前理由**：Phase 3 原排期依据是"等样本贵的验证场"——图像线立柱后该前提即满足；且 reanalyze 若有效，Phase 1 之后每轮图像实验都直接省采样成本（战略组件早验收早受益）。
+  - **阶梯一（默认档）**：**ROSMO 式一步 target 刷新**（Xiao et al., ICLR 2023 · [arXiv:2210.05980](https://arxiv.org/abs/2210.05980)，开源 sail-sg/rosmo）——学习模型上一步 look-ahead 构造 advantage/target + 行为正则，不重跑整棵树。选它做第一臂的三重理由：① 旧 reanalyze 在 CartPole 的失败模式（弱网全树重搜写回投毒）与 ROSMO 诊断 MuZero Unplugged 失效的病理同源（旧数据上深搜复合模型误差）；② 重刷成本 ≈ 一次前向，正面绕开 CPU-only 一级风险（旧全树版每局 wall-clock ×10+）；③ 一步展开误差暴露面小，弱网期鲁棒。
+  - **阶梯二（升级档）**：阶梯一实测有增益后，再单变量消融**全树 MCTS reanalyze**（在线 off-policy 设定下网络变强、数据变新后深搜红利可能回归——ROSMO 结论出自纯离线设定，不自动外推）。
+  - **同批**：loss 优先回放（[Simulus 计划 B1](./my_zero_simulus_ablation_plan.md#b1--loss-优先回放随-reanalyze-复活挂-phase-1-图像线尾段)）。
+  - **纪律**：必须先立**无 reanalyze** 的图像基线（预注册门槛），阶梯一/二各为单变量 A/B；CartPole 只做回归覆盖（条款二：只答"崩没崩"），价值裁决全在图像域。
 - Simulus 暂缓项触发点：若环境奖励稀疏且探索成实测瓶颈，ensemble JSD 内在奖励在此转正（唯一入口）
-- **退出判据**：图像支柱 3-seed 账本 + CPU 风险 issue 第一格勾选。
+- **退出判据**：图像支柱 3-seed 账本 + CPU 风险 issue 第一格勾选 + reanalyze 阶梯一裁决入账本（[reanalyze issue](../../.issue/items/my_zero_reanalyze_cartpole_regression.md) 可归档或降级为全树版残留项）。
 
 ## 3. Phase 2 · self-play 线：Gomoku 踏脚石（v0.27 上半）
 
@@ -49,10 +55,11 @@
 
 ## 4. Phase 3 · 样本效率纵深（v0.27 下半）
 
-**为什么第四**：reanalyze 在 CartPole 负结果的根因是"样本便宜喂不出价值"，必须等 Phase 1/2 提供样本贵的验证场；target_net / SVE 同属 value target 质量域，一批清账最经济。
+**为什么第四**：target_net / SVE 同属 value target 质量域，一批清账最经济。
+**范围变更（2026-07-03）**：reanalyze 复活 + loss 优先回放已提前至 Phase 1（ROSMO-first 阶梯，见 §2）；本阶段收窄为 value target 质量清账 + acting/reanalyze 解耦的工程落地。
 
-- loss 优先回放（= Simulus 计划 B1：per-sample loss + α=0.3 混合采样 + ν₀ 初始值，单参数）→ target_net 接入训练循环 + 消融（staleness 治理，reanalyze 前置）→ reanalyze 复活 + acting/reanalyze 解耦落地（[纲领 §2.3](./my_zero_algorithm_vision.md#23-战略目标与优先轴2026-07-01-定稿) 战略架构）→ SVE 接入消融或删除（不留 ⏳）
-- **退出判据**：[reanalyze issue](../../.issue/items/my_zero_reanalyze_cartpole_regression.md) 终局归档、target_net/SVE 零 ⏳、with/without reanalyze 样本效率对照入账本。
+- target_net 接入训练循环 + 消融（staleness 治理；若 Phase 1 阶梯一实测需要 target 网 bootstrap 则相应前移）→ acting/reanalyze 解耦落地（[纲领 §2.3](./my_zero_algorithm_vision.md#23-战略目标与优先轴2026-07-01-定稿) 战略架构：实时轻 acting + 离线重刷新，刷新引擎 = Phase 1 裁决出的阶梯档位）→ SVE 接入消融或删除（不留 ⏳）
+- **退出判据**：target_net/SVE 零 ⏳、解耦架构跑通并入账本；[reanalyze issue](../../.issue/items/my_zero_reanalyze_cartpole_regression.md) 若 Phase 1 未终局则在此归档。
 
 ## 5. Phase 4 · 总收口（v0.28）
 
@@ -71,7 +78,8 @@
 |---|---|
 | [CPU-only × 图像 × MCTS 一级风险](../../.issue/items/cpu_only_mcts_image_realtime_risk.md) | Phase 1（spike 数据裁决） |
 | [Gumbel / completedQ 负结果](../../.issue/items/my_zero_gumbel_completedq_cartpole_negative.md) | Phase 2（前置修复 + native 复测） |
-| [reanalyze 回归](../../.issue/items/my_zero_reanalyze_cartpole_regression.md) | Phase 3（样本贵环境复活） |
+| [CartPole 哨兵红灯（ndarray 漂移）](../../.issue/items/cartpole_sentinel_red_ndarray_drift.md) | Phase 1 **前置阻断项**（新数值流复裁系数，收口前哨兵不作绿灯） |
+| [reanalyze 回归](../../.issue/items/my_zero_reanalyze_cartpole_regression.md) | Phase 1（ROSMO-first 阶梯复活，2026-07-03 自 Phase 3 提前） |
 | [Pendulum 诊断](../../.issue/items/pendulum_failure_diagnosis.md) | Phase 4（固定预算终审） |
 | [Sampled 决策备忘](../../.issue/items/my_zero_action_space_sampled_policy.md) | Phase 4（随 Pendulum B=7 落地） |
 

@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-06-20
-updated: 2026-07-02
+updated: 2026-07-03
 owners: []
 reviewers: []
 ---
@@ -61,9 +61,18 @@ seed=42 · release · CartPole-v1 · recipe **consistency + reanalyze + 写回**
 
 ## 四、恢复条件（promote 前）
 
-- [ ] 至少一条：CartPole greedy ≥475 且 3-seed 中位 env-steps **不劣于** 当前 recipe 基线（数字见[账本](../../examples/my_zero/cartpole/README.md)）
-- [ ] 或：Atari / 数据受限 env 上证明 reanalyze+写回有增益（CartPole 可永久 ⏸）——v0.26 图像线的**优先验证项**（纲领 §2.3）
-- [ ] 若接 target net：训练循环接线 + 与 reanalyze 联调
+> **复活路径重构（2026-07-03）：ROSMO-first 两级阶梯，裁决场 = Phase 1 图像线**（详见[收口规划 Phase 1](../../.doc/design/rl_closure_plan.md#2-phase-1--图像线立柱--一级风险压测v026-下半)）。
+> 关键洞察：本 issue §三假设 1（弱网全树重搜写回投毒）与 ROSMO（Xiao et al., ICLR 2023 ·
+> [arXiv:2210.05980](https://arxiv.org/abs/2210.05980)，开源 sail-sg/rosmo）诊断 MuZero Unplugged
+> 失效的病理**同源**——旧数据上搜得越深模型误差复合越狠。故复活第一臂改为 **ROSMO 式一步
+> target 刷新**（一步 look-ahead + 行为正则，不重跑整棵树；重刷成本 ≈ 一次前向，CPU 友好、
+> 弱网鲁棒），全树 MCTS reanalyze 降为阶梯二（一步版有增益后再单变量消融——在线 off-policy
+> 下深搜红利可能回归，ROSMO 纯离线结论不自动外推）。
+
+- [ ] 阶梯一：图像域（Phase 1）ROSMO 式一步刷新 vs 无 reanalyze 基线，3-seed 样本效率有增益
+- [ ] 阶梯二（条件项）：一步版增益确认后，全树 reanalyze+写回单变量复测（§三假设 2/3 随此臂验证）
+- [ ] CartPole 仅回归覆盖（条款二），不再作为价值裁决场
+- [ ] 若接 target net：训练循环接线 + 与刷新引擎联调（Phase 3 target_net 项可能前移）
 
 ---
 

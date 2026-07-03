@@ -58,11 +58,12 @@ repr(next_obs) → projector ──[detach ✂]── -cos ·cons_coef        [�
 - **(c) dynamics 入口 sg：不跑（前提不成立 + 反核心原则）**——它同时切断 k≥1 policy/value/reward 与 consistency 对 repr 的全部训练信号，破坏 MuZero 价值等价训练（repr 经 dynamics 链受训是核心机制）；Simulus B.1 的前提是 encoder 有独立的强观测建模信号（token WM），MyZero 的 repr 主信号恰恰来自该链。且系数重标定后哨兵（~9.8k）已超 bug 时代（13.1k），无"调系数调不掉"的病灶证据。
 - **复活触发条件**：Phase 1 图像线若出现干扰症状（recon loss 与 value/policy loss 此消彼长、或 recon 长期不降），(b)/(c) 以图像域证据重新立项。
 
-### B1 · loss 优先回放（P1，随 reanalyze 复活）
+### B1 · loss 优先回放（随 reanalyze 复活，挂 Phase 1 图像线尾段）
 
 - **改动**：buffer 每样本存最近一次训练 loss（新样本初始 ν₀=10 保证必被光顾）；采样时 α=0.3 按 softmax(loss) 抽、其余均匀；训练后回写。单参数 α，无 PER 的 IS 权重复杂度（Simulus 实测此简化方案稳健）。
 - **挂靠理由**：reanalyze 的价值 = 榨旧样本；优先回放决定"榨哪些"——两者天然一批验收，也共享"CartPole 负结果不构成否定"的复测前提（[reanalyze issue](../../.issue/items/my_zero_reanalyze_cartpole_regression.md)）。
 - **消融**：α ∈ {0（对照）, 0.3}，3-seed。
+- **步调变更（2026-07-03）**：reanalyze 复活已重构为 **ROSMO-first 两级阶梯**并从 Phase 3 提前至 Phase 1 图像线（样本贵的 native 场景即裁决场），本项随之提前；阶梯定义与裁决顺序见[收口规划 Phase 1](./rl_closure_plan.md#2-phase-1--图像线立柱--一级风险压测v026-下半)与 [reanalyze issue §四](../../.issue/items/my_zero_reanalyze_cartpole_regression.md)。
 
 ## 3. 暂缓项与触发条件
 
@@ -75,5 +76,5 @@ repr(next_obs) → projector ──[detach ✂]── -cos ·cons_coef        [�
 
 1. **A2 第一步审计**先行（零风险、纯读码，产出梯度流向现状图）→ 决定 A2 实验矩阵。
 2. A1（编码切换）与 P0 系数重标定**串行**执行（同为"改行为"，禁止混批）。
-3. B1 等 reanalyze 复活排期，不提前。
+3. B1 随 reanalyze 复活排期（2026-07-03 起 = Phase 1 图像线尾段，前提是图像基线已立 + 哨兵红灯已收口）。
 4. 每项验收 = [rl_roadmap §3](./rl_roadmap.md#3-验收协议三层发版固定关卡) 三层协议；数字只进[基准账本](../../examples/my_zero/cartpole/README.md)；负结果照常记 `.issue`（参照 completedQ/Gumbel 先例）。

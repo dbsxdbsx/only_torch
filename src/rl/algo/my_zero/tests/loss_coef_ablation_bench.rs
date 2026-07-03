@@ -37,6 +37,22 @@
 //! ```
 //!
 //! 实测结果回填 `examples/my_zero/cartpole/README.md`（唯一基准账本）。
+//!
+//! # 哨兵红灯复裁（2026-07-03 · 新数值流；见 `.issue/items/cartpole_sentinel_red_ndarray_drift.md`）
+//!
+//! ndarray 0.16/0.17 升级致 BLAS 轨迹漂移后，recon=16 达标率跌破门槛（3/5 与 1/3）。
+//! 按红灯 issue 待办，在**新依赖栈 + 当前 HEAD**上重跑系数矩阵重点档位：
+//!
+//! - **档位**：recon ∈ {4, 16}（旧网格的两个候选平台点），单变量、其余 promoted recipe 不动；
+//! - **口径**：release + MKL · seeds 42–46（5-seed）· 中位 env-steps + 达标率；
+//!   旧数值流数字（recon16 中位 12.5k / 5/5）仅作历史参考，不作对照臂；
+//! - **裁决（预注册）**：达标率 ≥ 4/5 的臂中取中位更优者重新 promote；
+//!   两臂均 <4/5 → 升级追加温度调度常数臂（红灯 issue 可选臂）再裁；
+//! - 结果回填账本「哨兵红灯」节并收口该 issue。
+//!
+//! ```bash
+//! cargo test --release --features blas-mkl cartpole_recal -- --ignored --nocapture --test-threads=1
+//! ```
 
 use super::super::component::Components;
 use crate::nn::GraphError;
@@ -95,6 +111,35 @@ fn cartpole_coef_a4_cont16() -> Result<(), GraphError> {
 #[ignore = "manual: v0.26 P0 系数消融 recon=64（边界核查）"]
 fn cartpole_coef_a5_recon64() -> Result<(), GraphError> {
     run_coef_arm("recon=64", |c| c.reconstruction_coef = 64.0)
+}
+
+/// 红灯复裁公共路径：promoted recipe 为底、只改 recon 系数，seeds 42–46 一次跑齐 5-seed。
+fn run_recal_arm(label: &str, recon: f32) -> Result<(), GraphError> {
+    let mut cfg = MyZero::new("CartPole-v1")
+        .solved(475.0)
+        .max_episodes(2000)
+        .seeds(5)
+        .build()?;
+    cfg.components.reconstruction_coef = recon;
+    println!(
+        "[sentinel-recal] CartPole-v1 arm={label} · recon={recon} · seeds 42-46 · 新数值流（ndarray 0.17 + 当前 HEAD）"
+    );
+    train_all_seeds(cfg)?;
+    Ok(())
+}
+
+/// 红灯复裁 r1：recon=4（旧网格次优档，漂移后可能反超）。
+#[test]
+#[ignore = "manual: 哨兵红灯复裁 recon=4 × 5 seeds"]
+fn cartpole_recal_r1_recon4() -> Result<(), GraphError> {
+    run_recal_arm("recon=4", 4.0)
+}
+
+/// 红灯复裁 r2：recon=16（现 promoted 默认，红灯当事档）。
+#[test]
+#[ignore = "manual: 哨兵红灯复裁 recon=16 × 5 seeds"]
+fn cartpole_recal_r2_recon16() -> Result<(), GraphError> {
+    run_recal_arm("recon=16", 16.0)
 }
 
 /// seed 扩展公共路径：base_seed=45、seeds=2（即 45/46），与账本 42/43/44 合并成 5-seed。

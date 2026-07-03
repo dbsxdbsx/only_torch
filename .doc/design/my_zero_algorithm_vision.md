@@ -94,6 +94,10 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 | **Gumbel MuZero** | **计划**：Gumbel-root / completedQ | Danihelka et al. 2022 · arXiv:2111.00301；少 sims 的 policy improvement；**非 MaxEnt** |
 | **Stochastic MuZero** | 远期：随机转移 | 学 \(p(s'\|s,a)\)，不要求策略随机 |
 | **BetaZero** | **❌ 不学**（2026-06-21 定稿） | Moss et al. 2024 · [2306.00249](https://arxiv.org/abs/2306.00249)；belief 规划、**已知** \(T,O\)——与黑盒 MyZero 设定冲突，见 §5.3 |
+| **MuZero Unplugged** | 谱系自身的纯 offline 分支（reanalyze 离线极限用法）；认知锚点，不直接复刻 | Schrittwieser et al. 2021 · [2104.06294](https://arxiv.org/abs/2104.06294) |
+| **ROSMO** | **计划**：reanalyze 复活阶梯一（一步 look-ahead target 刷新 + 行为正则；诊断"旧数据深搜复合模型误差"与我们 CartPole reanalyze 失败同病理，且 CPU 友好） | Xiao et al. ICLR 2023 · [2210.05980](https://arxiv.org/abs/2210.05980)；开源 sail-sg/rosmo；落点见[收口规划 Phase 1](./rl_closure_plan.md#2-phase-1--图像线立柱--一级风险压测v026-下半) |
+| **QZero** | ❌ 主线不采纳；planning-free 退路的棋类实证（soft-Q self-play 从零到 AlphaGo 裸网水平，无 test-time compute 杠杆） | 网易 2026 · arXiv:2601.03306；退路组合见[风险 issue §三b](../../.issue/items/cpu_only_mcts_image_realtime_risk.md) |
+| **COMBO** | 思想参考、机制不采纳（观测空间模型 + Dyna 造数据，与 value-equivalent 潜空间正交；其"OOD 保守主义"病症在 Zero 谱系对应 ROSMO 的行为正则） | Yu et al. 2021 · [2102.08363](https://arxiv.org/abs/2102.08363) |
 | **BTS/DENTS** | 若改 `SearchPolicy` backup 时**参考** | 比 MENTS/ANTS 理论更干净；未接 MuZero 全家桶 |
 | **ANTS / MENTS** | **不**作为 MuZero 替代品全盘复刻 | Atari planning + 预训练 Q 习惯；与 DM 棋类栈不同范式 |
 | **SAC / MaxEnt RL** | 卫星基线 | meta-POMDP 理论价值；**无 MCTS** |
@@ -228,4 +232,5 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 | 2026-06-21 | §5.1：拆分 SVE / 补 Phase 2 改进候选（SVE 自适应、consistency 正规化、value 上游 target） |
 | 2026-06-21 | §4.1：组件文献对照迁入本文（单一事实源）；示例 README 改链入 |
 | 2026-06-21 | §5.3：BetaZero 论文已读，**❌ 不学**（已知 \(T,O\) belief 规划 vs 黑盒 MyZero）；POMDP 默认 history |
+| 2026-07-03 | §4：文献谱系补 MuZero Unplugged / ROSMO / QZero / COMBO 四行（2026-07-02 两轮调研落档：SAC 万金油裁决 + 离线数据效率地图）；reanalyze 复活定为 **ROSMO-first 两级阶梯**并自 Phase 3 提前至 Phase 1 图像线（见收口规划） |
 | 2026-07-02 | **§2.3 战略目标定稿**（象棋 + 商业图像游戏；A 路定锚不转 Dreamer；优先轴转向观测空间 + self-play；acting/reanalyze 解耦；CPU-only 风险 issue 化）。**本文去数字化**：§5.1/§6 实测数字移除，唯一账本为 cartpole README；官方口径改 3-seed 中位（autograd 修复后历史单 seed 数字失效） |
