@@ -75,13 +75,12 @@
     num-derive ="*"
     num-integer="*"
     rand       ="^0.8"
-    ndarray    ={version="^0.15", features=["serde"]}
+    # ^0.16 与 pyo3 桥 `numpy 0.27` 的依赖统一（消除 0.15/0.16 双版本重复编译）；
+    # 0.16.1 含 BLAS 全布局派发修复（#1419），惠及 mat_mul / mat_mul_nt/tn 热路径
+    ndarray    ={version="^0.16", features=["serde"]}
 
     # 错误处理
     thiserror="1"
-
-    # 序列化相关项
-    ndarray-npy="*"
 
     # （反）序列化
     serde     ={version="1.0", features=["derive"]}

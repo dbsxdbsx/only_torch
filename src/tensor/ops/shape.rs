@@ -29,7 +29,7 @@ impl Tensor {
             self.data.as_standard_layout().into_owned()
         };
         Self {
-            data: contiguous.into_shape(shape).unwrap(),
+            data: contiguous.into_shape_with_order(shape).unwrap(),
             source_id: next_source_id(),
         }
     }
@@ -46,7 +46,7 @@ impl Tensor {
         if !self.is_contiguous() {
             self.data = self.data.as_standard_layout().into_owned();
         }
-        self.data = self.data.clone().into_shape(shape).unwrap();
+        self.data = self.data.clone().into_shape_with_order(shape).unwrap();
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑reshape↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
@@ -287,7 +287,7 @@ impl Tensor {
             self.data.as_standard_layout().into_owned()
         };
         Self {
-            data: contiguous.into_shape(new_shape).unwrap(),
+            data: contiguous.into_shape_with_order(new_shape).unwrap(),
             source_id: next_source_id(),
         }
     }
@@ -303,7 +303,7 @@ impl Tensor {
         if !self.is_contiguous() {
             self.data = self.data.as_standard_layout().into_owned();
         }
-        self.data = self.data.clone().into_shape(new_shape).unwrap();
+        self.data = self.data.clone().into_shape_with_order(new_shape).unwrap();
     }
 
     /// 在指定维度上增加一个维度。
@@ -468,7 +468,9 @@ impl Tensor {
             self.data.as_standard_layout().into_owned()
         };
         Self {
-            data: contiguous.into_shape(vec![total_elements]).unwrap(),
+            data: contiguous
+                .into_shape_with_order(vec![total_elements])
+                .unwrap(),
             source_id: next_source_id(),
         }
     }
@@ -483,16 +485,31 @@ impl Tensor {
         // 此时 data 必为连续，into_shape 仅改写元数据（O(1)）；用 mem::replace 取出所有权，
         // 避免多余的整块 clone（占位空数组零分配）。
         let contiguous = std::mem::replace(&mut self.data, Array::zeros(IxDyn(&[0])));
-        self.data = contiguous.into_shape(vec![total_elements]).unwrap();
+        self.data = contiguous
+            .into_shape_with_order(vec![total_elements])
+            .unwrap();
     }
 
     /// 返回张量的1维展开视图，不复制数据
     /// NOTE：这个主要参考了numpy的ravel和pytorch的flatten
+    ///
+    /// # Panics
+    /// 要求标准（C 连续）布局；`permute`/`transpose` 等非标准布局请先
+    /// `into_contiguous()` 或改用 [`flatten`](Self::flatten)（物化逻辑序）。
+    /// 注：ndarray 0.15 时代旧 `into_shape` 会静默接受 F 序数组并按**内存序**
+    /// 展平（逻辑顺序错误），0.16 起收紧为显式报错，此处沿用该守卫。
     pub fn flatten_view(&self) -> ndarray::ArrayView1<'_, f32> {
         self.data
             .view()
-            .into_shape(ndarray::Dim(self.data.len()))
-            .unwrap()
+            .into_shape_with_order(ndarray::Dim(self.data.len()))
+            .unwrap_or_else(|e| {
+                panic!(
+                    "flatten_view 要求标准布局（先 into_contiguous 或改用 flatten）：\
+                     shape={:?} strides={:?} err={e}",
+                    self.data.shape(),
+                    self.data.strides()
+                )
+            })
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑flatten↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 

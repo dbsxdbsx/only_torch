@@ -203,7 +203,8 @@ impl Tensor {
         );
         let data = Array::eye(n);
         let shape = vec![n, n];
-        let data = Array::from_shape_vec(IxDyn(&shape), data.into_raw_vec()).unwrap();
+        // eye 产物为标准布局，offset 恒为 0，直接取 Vec
+        let data = Array::from_shape_vec(IxDyn(&shape), data.into_raw_vec_and_offset().0).unwrap();
         Self {
             data,
             source_id: next_source_id(),

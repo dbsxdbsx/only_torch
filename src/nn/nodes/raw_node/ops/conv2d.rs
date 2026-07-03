@@ -402,7 +402,7 @@ impl Conv2d {
         // 将 kernel [out_c, in_c, k_h, k_w] reshape 为 [out_c, in_c*k_h*k_w]
         let col_w = in_c * k_h * k_w;
         let k_flat = kernel.flatten_view();
-        let kernel_mat = k_flat.into_shape((out_c, col_w)).unwrap();
+        let kernel_mat = k_flat.into_shape_with_order((out_c, col_w)).unwrap();
 
         // 预分配整块输出，Rayon 按样本 chunk 直写：GEMM 经 general_mat_mul 写入
         // chunk 视图（与 dot 同一 BLAS/matrixmultiply 调用，beta=0，结果逐 bit 一致），
@@ -444,7 +444,7 @@ impl Conv2d {
         let output_shape = vec![batch_size, out_c, in_h, in_w];
 
         let k_flat = kernel.flatten_view();
-        let kernel_mat = k_flat.into_shape((out_c, in_c)).unwrap();
+        let kernel_mat = k_flat.into_shape_with_order((out_c, in_c)).unwrap();
         let input_flat = input.flatten_view();
         let input_slice = input_flat.as_slice().unwrap();
         let sample_size = in_c * spatial;
@@ -626,7 +626,7 @@ impl TraitNode for Conv2d {
             let padded_w = orig_in_w + 2 * pad_w;
 
             let k_flat = kernel.flatten_view();
-            let kernel_mat = k_flat.into_shape((out_c, col_w)).unwrap();
+            let kernel_mat = k_flat.into_shape_with_order((out_c, col_w)).unwrap();
 
             // 无 padding：col2im 直接累加进（已清零的）输出 chunk；
             // 有 padding：col2im 到临时 padded 缓冲，再按行裁剪拷入 chunk。
@@ -715,10 +715,11 @@ impl TraitNode for Conv2d {
                     )
             };
 
-            // reduce 产物为新分配的标准布局矩阵，into_raw_vec 零拷贝取出底层缓冲，
-            // from_vec 零拷贝按 4D kernel 形状接管（旧路径 to_vec + Tensor::new 拷两次）
+            // reduce 产物为新分配的标准布局矩阵（offset 恒 0），into_raw_vec_and_offset
+            // 零拷贝取出底层缓冲，from_vec 零拷贝按 4D kernel 形状接管
+            // （旧路径 to_vec + Tensor::new 拷两次）
             Ok(GradResult::Computed(Tensor::from_vec(
-                kernel_grad.into_raw_vec(),
+                kernel_grad.into_raw_vec_and_offset().0,
                 kernel_shape,
             )))
         }

@@ -1,5 +1,19 @@
 use crate::tensor::{Tensor, next_source_id};
 
+/// 把 GEMM 输出统一为标准（C 连续）布局的动态维数组
+///
+/// ndarray 0.16 起 BLAS 派发覆盖全部兼容布局（#1419），转置视图输入的
+/// `dot`（如 TN 形式 `A^T @ B`）可能直接以 **F 序**输出；而本框架约定
+/// `Tensor` 运算产物均为标准布局（`flatten_view` / `data_as_slice` 等依赖）。
+/// 已是标准布局时零开销直通，仅 F 序输出付一次物化。
+fn into_standard_dyn(result: ndarray::Array2<f32>) -> ndarray::ArrayD<f32> {
+    if result.is_standard_layout() {
+        result.into_dyn()
+    } else {
+        result.as_standard_layout().into_owned().into_dyn()
+    }
+}
+
 impl Tensor {
     /// 实现矩阵乘法(`mat_mul`这个名称参考了python的`numpy`库)。
     /// 只接受2维张量(即矩阵)，否则会触发panic。
@@ -30,7 +44,7 @@ impl Tensor {
         let result_data = self_data.dot(&other_data);
         // 创建并返回新的张量
         Self {
-            data: result_data.into_dyn(),
+            data: into_standard_dyn(result_data),
             source_id: next_source_id(),
         }
     }
@@ -62,7 +76,7 @@ impl Tensor {
             .unwrap();
         let result_data = self_data.dot(&other_data.t());
         Self {
-            data: result_data.into_dyn(),
+            data: into_standard_dyn(result_data),
             source_id: next_source_id(),
         }
     }
@@ -93,7 +107,7 @@ impl Tensor {
             .unwrap();
         let result_data = self_data.t().dot(&other_data);
         Self {
-            data: result_data.into_dyn(),
+            data: into_standard_dyn(result_data),
             source_id: next_source_id(),
         }
     }

@@ -76,22 +76,28 @@
 
 ---
 
-### 4. ndarray 升级（2026-07-03 调研）
+### 4. ndarray 升级（2026-07-03 调研；步骤 1/2 已完成）
 
-**现状**：本体用 `ndarray 0.15.6`（2022），但 `numpy 0.27`（pyo3 桥）与 `ndarray-npy 0.9.1`
-依赖 `0.16.1` → 依赖树里**两个 ndarray 版本共存、重复编译**；且 `ndarray-npy` 在 `src/`
+**背景**：本体曾用 `ndarray 0.15.6`（2022），而 `numpy 0.27`（pyo3 桥）与 `ndarray-npy 0.9.1`
+依赖 `0.16.1` → 依赖树里两个 ndarray 版本共存、重复编译；且 `ndarray-npy` 在 `src/`
 零使用（死依赖 + `"*"` 通配版本）。上游最新 `0.17.2`（2026-01；`0.17.0` 因引用类型
 use-after-free 被 yank）。
 
-**分步方案**：
+**进展**：
 
-1. **清死依赖**：删 `ndarray-npy`（零风险，随手做）。
-2. **升 0.16.1**（建议近期）：① BLAS 派发修复（#1419 全布局兼容 + #1421 gemm 精简），
-   直接惠及 `mat_mul` / `mat_mul_nt/tn` 热路径；② 与 `numpy 0.27` 统一到同版本，消重复编译。
-   迁移成本机械：`into_shape` → `into_shape_with_order`/`to_shape`（约 15 处），
-   `into_raw_vec` → `into_raw_vec_and_offset`（2 处）。独立 commit + 对 `post-hotpath-opt`
-   基线跑 bench-compare 验证（重点 `tensor_matmul` / conv2d 组）。
-3. **升 0.17.2**（暂缓，等生态）：吸引点 = IxDyn 直接 `dot`（删 Ix2 转换样板）、`ArrayRef`
+1. ✅ **清死依赖**：`ndarray-npy` 已删。
+2. ✅ **升 0.16.1**（2026-07-03）：`Cargo.toml` `^0.15` → `^0.16`，并
+   `cargo update --package ndarray@0.17.2 --precise 0.16.1` 把 `numpy 0.27` 拉起的
+   0.17 统一到 0.16.1（rust-numpy 声明宽版本区间，cargo 默认取最高，需手动统一）。
+   迁移：`into_shape` → `into_shape_with_order`（12 处），`into_raw_vec` →
+   `into_raw_vec_and_offset().0`（2 处）。
+   **实际踩坑（比预期多一条）**：#1419 BLAS 全布局派发后，TN 形式 `A^T @ B` 的 GEMM
+   输出直接以 **F 序**返回（0.15 会物化 C 序），破坏本框架「Tensor 产物皆标准布局」
+   约定（`flatten_view`/`data_as_slice` 依赖），曾致 2 个梯度累积测试 panic；已在
+   `mat_mul` 系加 `into_standard_dyn` 归一化守卫（标准布局零开销直通）。
+   同时 `flatten_view` 沿用 0.16 收紧后的布局报错（0.15 旧 `into_shape` 会静默按
+   内存序展平 F 序数组，属正确性隐患，收紧是好事）。
+3. ⏳ **升 0.17.2**（暂缓，等生态）：吸引点 = IxDyn 直接 `dot`（删 Ix2 转换样板）、`ArrayRef`
    引用类型、数组级 `tanh/exp_m1` 等数学函数、原地 `permute_axes`；拦路石 = `numpy` 需升
    0.29（连带 pyo3 联动，牵扯 RL 桥）。等下次动 RL 桥接层时一起。
 
