@@ -26,6 +26,7 @@
 | `pre-execution-context` | 2026-04-29 | `just bench-save pre-execution-context` | `blas-mkl` | `Mode` 重构前的 Criterion 对照基线 |
 | `post-mode-refactor` | 2026-04-29 | `just bench-save post-mode-refactor` | `blas-mkl` | `Mode` 重构完成后的新命名完整基线，后续性能回归从这里继续比较 |
 | `pre-hotpath-opt` | 2026-07-03 | `just bench-save pre-hotpath-opt` | `blas-mkl` | 热路径分配/拷贝消除批量优化（见优化 J）前的完整基线；已快照入仓 `.bench/history/20260703-000547-pre-hotpath-opt-before-hotpath/`（104 case） |
+| `post-hotpath-opt` | 2026-07-03 | `just bench-save post-hotpath-opt` | `blas-mkl` | 优化 J 全部落地（含 Add 分流修复 `3027ac0`）后的新基线，**后续性能回归从这里比较**；已快照入仓 `.bench/history/20260703-093545-post-hotpath-opt-after-hotpath/`（104 case，conv2d 前向 / max_pool 前向组经安静复测覆盖首跑受扰值）。注意与 pre 基线跑于不同时段，存在 ~10% 环境偏移（见优化 J 噪声鉴定），跨基线百分比勿直接混读 |
 
 说明：baseline 保存在 Criterion 的 `target/criterion` 报告目录中，属于本地构建产物，不入仓。`pre-execution-context` 仅用于解释 `Mode` 重构前后差异；`smoke_conv2d_eval_1x1_b1` 已随语义改名为 `smoke_conv2d_inference_1x1_b1`，后续不再为重构前 baseline 兼容名称，统一从 `post-mode-refactor` 继续对比。
 
@@ -75,7 +76,31 @@
 
 ---
 
-### 4. 推理模式中间节点 value 及早释放（liveness）
+### 4. ndarray 升级（2026-07-03 调研）
+
+**现状**：本体用 `ndarray 0.15.6`（2022），但 `numpy 0.27`（pyo3 桥）与 `ndarray-npy 0.9.1`
+依赖 `0.16.1` → 依赖树里**两个 ndarray 版本共存、重复编译**；且 `ndarray-npy` 在 `src/`
+零使用（死依赖 + `"*"` 通配版本）。上游最新 `0.17.2`（2026-01；`0.17.0` 因引用类型
+use-after-free 被 yank）。
+
+**分步方案**：
+
+1. **清死依赖**：删 `ndarray-npy`（零风险，随手做）。
+2. **升 0.16.1**（建议近期）：① BLAS 派发修复（#1419 全布局兼容 + #1421 gemm 精简），
+   直接惠及 `mat_mul` / `mat_mul_nt/tn` 热路径；② 与 `numpy 0.27` 统一到同版本，消重复编译。
+   迁移成本机械：`into_shape` → `into_shape_with_order`/`to_shape`（约 15 处），
+   `into_raw_vec` → `into_raw_vec_and_offset`（2 处）。独立 commit + 对 `post-hotpath-opt`
+   基线跑 bench-compare 验证（重点 `tensor_matmul` / conv2d 组）。
+3. **升 0.17.2**（暂缓，等生态）：吸引点 = IxDyn 直接 `dot`（删 Ix2 转换样板）、`ArrayRef`
+   引用类型、数组级 `tanh/exp_m1` 等数学函数、原地 `permute_axes`；拦路石 = `numpy` 需升
+   0.29（连带 pyo3 联动，牵扯 RL 桥）。等下次动 RL 桥接层时一起。
+
+**冷水**：优化 J 踩的 `&a + &b` 广播慢路径上游 0.16/0.17 均未修（最后一次广播性能优化
+是 0.15.2），Add 三路分流修复升级后仍必要。
+
+---
+
+### 5. 推理模式中间节点 value 及早释放（liveness）
 
 **来源**：arXiv 2308.13898（内存感知调度）的"穷人版"思想——执行顺序与张量生命周期决定峰值内存；论文本体（ILP 调度器）对我们不适用，见[阅读日志](./paper/reading_log.md)。
 

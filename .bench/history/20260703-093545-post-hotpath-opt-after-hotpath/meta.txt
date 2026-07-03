@@ -1,0 +1,9 @@
+baseline: post-hotpath-opt
+label: after-hotpath
+archived_at: 20260703-093545
+git_commit: 3027ac0ddbf021e748582b95c540945f9c4fb90f
+git_dirty: yes
+rustc: rustc 1.95.0 (59807616e 2026-04-14)
+blas: Intel MKL
+os: MINGW64_NT-10.0-19045 3.3.6-bec3d608-341.x86_64
+cases: 104
