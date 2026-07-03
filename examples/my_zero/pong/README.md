@@ -28,7 +28,7 @@ SEEDS=3 cargo run --example my_zero_pong --release --features blas-mkl    # 官�
 
 | 日期 | 配置 | seeds | best greedy（各 seed） | 中位 | 裁决 |
 |------|------|-------|------------------------|------|------|
-| （待跑） | image base（预注册栈） | 42/43/44 | — | — | — |
+| 2026-07-03 | image base（预注册栈）· **旧数值流 ⚠️** | 42/43/44 | −20.4 / −21.0 / −21.0 | **−21.0** | **未达标，曲线平直** → 按预注册判读记负结果，见 [issue](../../../.issue/items/my_zero_pong_image_flat_negative.md)；14 个 eval 点 greedy 恒 −21 级（仅偶发 −20.x），self-play avg 恒 −20~−21，loss 下降但不转化为策略改进；每 seed 满 150 局 ≈134k env-steps，wall ~26min/seed；450 局全程零 panic。**代码基线 `b697e95`，先于 `adfc02f` 框架修复批（per-seed reset 派生 / GroupNorm 梯度 / 温度调度显式化等）——数字仅作历史参考，图像支柱裁决以新数值流复跑为准** |
 
 ### 工程基线（非学习指标）
 
