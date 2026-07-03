@@ -41,9 +41,9 @@ just bench-archive pre-hotpath-opt before-hotpath
 just bench-compare pre-hotpath-opt
 ```
 
-## 与 optimization_candidates.md 的分工
+## 与 .doc/performance/ 的分工
 
-- `.doc/optimization_candidates.md`：人工账本，写 before/after 摘要数字 + 结论。
+- [`.doc/performance/optimization_log.md`](../.doc/performance/optimization_log.md)：人工账本（战报），写 before/after 摘要数字 + 结论；流程与 baseline 台账见同目录 [`benchmark_workflow.md`](../.doc/performance/benchmark_workflow.md)。
 - `.bench/history/`：机器原始数据，供脚本画趋势线或精确回溯。
 
 两者互补：账本讲「为什么、结论如何」，存档留「精确数值、可复算」。

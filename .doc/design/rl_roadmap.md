@@ -1,7 +1,7 @@
 # 强化学习路线图（当前态）
 
 > **定位**：RL 模块的**当前状态 + 验收协议 + 下一版方向**。战略层（为什么选这条路）见 [MyZero 算法纲领](./my_zero_algorithm_vision.md)；实测数字**唯一账本**是 [examples/my_zero/cartpole/README.md](../../examples/my_zero/cartpole/README.md)。
-> v0.20–v0.24「每版一个算法」时代的设计决策与实施计划已整体归档：[rl_roadmap_v020_v024.md](./archive/rl_roadmap_v020_v024.md)（MCTS 接缝设计、能力边界矩阵、SAC 技术笔记等长期有效内容也在归档 §2.5 / §2.2.1b / §4，按需链回，不重复维护）。
+> v0.20–v0.24「每版一个算法」时代的设计决策与实施计划已整体归档：[rl_roadmap_v020_v024.md](./_archive/rl_roadmap_v020_v024.md)（MCTS 接缝设计、能力边界矩阵、SAC 技术笔记等长期有效内容也在归档 §2.5 / §2.2.1b / §4，按需链回，不重复维护）。
 >
 > **创建日期**：2026-02-14 · **本版重写**：2026-07-02（v0.25 收口）
 
@@ -17,7 +17,7 @@
 | [examples/my_zero/cartpole/README.md](../../examples/my_zero/cartpole/README.md) | **基准账本**（所有 benchmark 数字的唯一事实源） |
 | [rl_python_env_setup.md](../rl_python_env_setup.md) | Python / Gymnasium 环境搭建 |
 | [rl.instructions.md](../../.github/instructions/rl.instructions.md) | 改 RL 代码时的 agent 约束 |
-| [archive/rl_roadmap_v020_v024.md](./archive/rl_roadmap_v020_v024.md) | 历史：v0.20–v0.24 设计决策与实施计划 |
+| [_archive/rl_roadmap_v020_v024.md](./_archive/rl_roadmap_v020_v024.md) | 历史：v0.20–v0.24 设计决策与实施计划 |
 
 ---
 
@@ -30,7 +30,7 @@
 | **MyZero**（主线，项目唯一 `*Zero` 实现） | `src/rl/algo/my_zero/`（自包含：模型 + 训练循环 + MCTS 接入 + recipe） | CartPole ✅ 哨兵；Pendulum ⏳ 诊断中 |
 | **SAC / PPO**（model-free 基线） | 纯函数 helper 入库 `src/rl/algo/{sac,ppo}/`；Agent 与训练循环留在 `examples/{sac,ppo}/` | SAC 四环境 + PPO CartPole 示例可跑 |
 
-支撑层：`src/rl/env/`（`GymEnv` Gymnasium-only + `MinariDataset`）、`src/rl/buffer/`（`Transition` / `ReplayBuffer` / `RolloutBuffer` / `SelfPlayGame`）、`src/rl/mcts/`（搜索内核：PUCT / Gumbel / Sampled，吃 model 不吃 env——接缝设计见[归档 §2.5](./archive/rl_roadmap_v020_v024.md#25-mcts-抽象边界内核吃-model不吃-env选择规则可插拔v022-定形)）。
+支撑层：`src/rl/env/`（`GymEnv` Gymnasium-only + `MinariDataset`）、`src/rl/buffer/`（`Transition` / `ReplayBuffer` / `RolloutBuffer` / `SelfPlayGame`）、`src/rl/mcts/`（搜索内核：PUCT / Gumbel / Sampled，吃 model 不吃 env——接缝设计见[归档 §2.5](./_archive/rl_roadmap_v020_v024.md#25-mcts-抽象边界内核吃-model不吃-env选择规则可插拔v022-定形)）。
 
 ### 2.2 MyZero 组件裁决现状
 
@@ -100,6 +100,6 @@
 
 ## 6. 长期 backlog（可能做，不承诺）
 
-Stochastic MuZero（chance node，动树核心）· MENTS/DENTS 熵 backup · MCTS 并行（virtual loss / 批量叶子）· PER · Beta 分布 · DQN/TD3（教学）· 演化+RL 联合搜索。详细谱系与接缝对照见[归档 §5.10](./archive/rl_roadmap_v020_v024.md#510-mcts--zero-变体-backlog接缝已留做不做按需)与[算法纲领 §5](./my_zero_algorithm_vision.md#5-决策表可能做--暂缓--不做)。
+Stochastic MuZero（chance node，动树核心）· MENTS/DENTS 熵 backup · MCTS 并行（virtual loss / 批量叶子）· PER · Beta 分布 · DQN/TD3（教学）· 演化+RL 联合搜索。详细谱系与接缝对照见[归档 §5.10](./_archive/rl_roadmap_v020_v024.md#510-mcts--zero-变体-backlog接缝已留做不做按需)与[算法纲领 §5](./my_zero_algorithm_vision.md#5-决策表可能做--暂缓--不做)。
 
 **明确不做**：BetaZero（belief 规划，[纲领 §5.3](./my_zero_algorithm_vision.md#53-betazero-裁决2026-06-21-定稿)）· 不完全信息博弈（CFR 族）· 多智能体 N>2 · SAC 升格母算法。

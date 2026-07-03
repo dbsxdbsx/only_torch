@@ -1,12 +1,12 @@
 ﻿## 这是啥？
 
-一个用纯 Rust（不用 C++）打造的仿 Pytorch 的玩具型 AI 框架（目前尚不成熟，请勿使用）。该项目不打算支持 GPU--因后期可能要支持安卓等平台，不想受制于某（几）种非 CPU 设备。已实现 NEAT 风格的神经架构演化系统，具备 NodeLevel 统一内核、Pareto/NSGA-II 多目标搜索、ONNX 互通、Feature Map 粒度演化、Net2Net 函数保持性变异、ASHA 多保真评估等能力，可从最小网络自动搜索最优架构。
+一个用纯 Rust（不用 C++）打造的仿 Pytorch 的玩具型 AI 框架（目前尚不成熟，请勿使用）。该项目不打算支持 GPU--因后期可能要支持安卓等平台，不想受制于某（几）种非 CPU 设备。已实现 NEAT 风格的神经架构演化系统，具备 NodeLevel 统一内核、Pareto/NSGA-II 多目标搜索、ONNX 互通、Feature Map 粒度演化、Net2Net 函数保持性变异、ASHA 多保真评估等能力，可从最小网络自动搜索最优架构；另含强化学习模块（SAC 三动作类型 + 自研 MyZero model-based 算法 + MCTS 规划），通过 pyo3 对接 Gymnasium 环境。
 
 ### 名字由来
 
 一部分原因是受到 pytorch 的影响，希望能写个和 pytorch 一样甚至更易用的 AI 框架；另一部分是希望本框架只触及（touch）一些关键的东西：
 
-- only torch Rust --- 只用 Rust（不用 C++是因为其在复杂逻辑项目中容易写出内存不安全代码）；也不打算支持 Python 接口）；亦不用第三方 lib（所以排除[tch-rs](https://github.com/LaurentMazare/tch-rs)），这样对跨平台支持会比较友好。
+- only torch Rust --- 只用 Rust（不用 C++是因为其在复杂逻辑项目中容易写出内存不安全代码）；也不打算暴露 Python 接口（RL 示例仅通过 pyo3 嵌入调用 Gymnasium 训练环境）；亦不用第三方 lib（所以排除[tch-rs](https://github.com/LaurentMazare/tch-rs)），这样对跨平台支持会比较友好。
 - only torch CPU --- 不用 GPU，因要照顾多平台也不想被某个 GPU 厂商制约，且基于 NEAT 进化的网络结构也不太好被 GPU 优化（也省得考虑数据从 CPU 的堆栈迁移到其他设备内存的开销问题了）。
 - only torch node --- 没有全连接、卷积、resnet 这类先入为主的算子概念，具体模型结构均可基于 NEAT 演化自动发现（已有 MVP 实现）。
 - only torch tensor --- 所有的数据类型都是内置类型 tensor，默认不依赖第三方数值库。可通过 feature flag 可选启用 [Intel MKL](https://www.intel.com/content/www/us/en/developer/tools/oneapi/onemkl.html) 或 [OpenBLAS](https://github.com/xianyi/OpenBLAS) 加速矩阵运算（约 15% 训练提速）。
@@ -73,6 +73,7 @@ let dot = graph.to_dot();
 | [pendulum_sac](examples/sac/pendulum/) | **强化学习** | **SAC-Continuous**、TanhNormal、动作缩放 | `Actor(3→32→mean+std) Critic(4→32→1)` | `cargo run --example pendulum_sac` |
 | [platform_sac](examples/sac/platform/) | **强化学习** | **Hybrid SAC**、Platform-v0 混合动作、双温度 | `Actor(10→128→离散+连续) Critic(13→128→3)` | `cargo run --example platform_sac` |
 | [lunarlander_sac](examples/sac/lunarlander/) | **强化学习** | **SAC-Discrete**、LunarLander-v3、验证 helper 复用 | `Actor(8→128→4) Critic(8→128→4)` | `cargo run --example lunarlander_sac` |
+| [my_zero_cartpole](examples/my_zero/cartpole/) | **强化学习** | **MyZero**（model-based + MCTS 规划）、官方 3-seed 哨兵、样本效率领先 model-free | repr/dyn/pred MLP（latent 64） | `cargo run --example my_zero_cartpole --release` |
 | [chinese_chess_cnn_onnx_finetune](examples/traditional/chinese_chess_cnn_onnx_finetune/) | 图像分类 | **ONNX 互通**、CNN、继续训练、.otm 保存/加载 | `Conv(3→16→32) FC(1568→128→15)` | `cargo run --example chinese_chess_cnn_onnx_finetune` |
 | [chinese_chess_yolov5_onnx_recognize_fen](examples/traditional/chinese_chess_yolov5_onnx_recognize_fen/) | YOLOv5 检测 → FEN 识别 | **第三方真实 YOLOv5 ONNX**、整盘识别 → 标准 FEN | YOLOv5 (~7M 参数) | `cargo run --example chinese_chess_yolov5_onnx_recognize_fen` |
 | [evolution_xor](examples/evolution/xor/) | **神经架构演化** | **Evolution API**、零模型代码、自动架构搜索 | 自动演化 | `cargo run --example evolution_xor` |
@@ -613,7 +614,7 @@ cargo build --features blas-openblas
 
 > 按优先级排序。Agent 接手任务时：**优先「当前主线」**，演化阶段 D 与低优先级项除非用户点名否则不默认展开。
 
-### 🟢 当前主线（v0.19.0 后）
+### 🟢 当前主线（v0.26）
 
 **强化学习** — 详见 [MyZero 算法纲领](.doc/design/my_zero_algorithm_vision.md)、[RL 路线图](.doc/design/rl_roadmap.md)、[MyZero 示例总览](examples/my_zero/README.md) 与 [AGENTS.md — 当前版本与焦点](AGENTS.md#当前版本与焦点)
 
@@ -623,8 +624,8 @@ v0.26 方向（[RL 路线图 §5](.doc/design/rl_roadmap.md#5-v026-方向2026-07
 
 | 优先级 | 任务 | 入口 |
 |--------|------|------|
-| P0 | loss 系数重标定消融（autograd 修复后收回样本效率） | [基准账本](examples/my_zero/cartpole/README.md) |
-| P0 | CNN 图像表征 + 图像离散基准（商业游戏代理） | [纲领 §2.3](.doc/design/my_zero_algorithm_vision.md) |
+| ✅ P0 | loss 系数重标定消融（已完成：recon_coef 16 promote，官方哨兵中位 ~9.8k env-steps） | [基准账本](examples/my_zero/cartpole/README.md) |
+| P0 | CNN 图像表征 + 图像离散基准（商业游戏代理；风险 spike 已裁决 GO） | [Phase 1 计划](.doc/design/rl_phase1_image_plan.md)、[纲领 §2.3](.doc/design/my_zero_algorithm_vision.md) |
 | P1 | Gomoku self-play（象棋踏脚石）；reanalyze 复活 + acting 解耦 | `python/gym_env/gomoku/` |
 
 环境配置： [`.doc/rl_python_env_setup.md`](.doc/rl_python_env_setup.md)
@@ -664,8 +665,10 @@ v0.26 方向（[RL 路线图 §5](.doc/design/rl_roadmap.md#5-v026-方向2026-07
 ### 设计文档
 
 - [广播机制设计决策](.doc/design/broadcast_mechanism_design.md) - 阐述了为何采用"显式节点广播"而非 PyTorch 风格隐式广播，及其对 NEAT 演化、梯度计算的影响
-- [性能优化策略](.doc/design/optimization_strategy.md) - 针对 CPU-only 和 NEAT 小规模不规则网络的优化方向，包括个体并行、Batch 向量化、SIMD 等策略的优先级分析
-- [性能优化候选项](.doc/optimization_candidates.md) - 待 benchmark 验证的具体优化点记录
+- [性能优化策略](.doc/performance/optimization_strategy.md) - 针对 CPU-only 和 NEAT 小规模不规则网络的优化方向，包括个体并行、Batch 向量化、SIMD 等策略的优先级分析
+- [性能优化候选项](.doc/performance/optimization_candidates.md) - 待做候选（带触发条件）与已否决路线的决策面
+- [Benchmark 工作流与基线台账](.doc/performance/benchmark_workflow.md) - 性能验证标准流程、测量纪律、当前 Criterion baseline 与 bench 清单
+- [性能优化实施战报](.doc/performance/optimization_log.md) - 历次已实施优化的 before/after 数据、归因过程与教训（倒序 append-only）
 - [本项目的梯度设计机制说明](.doc/design/gradient_clear_and_accumulation_design.md) - 详细说明了梯度/雅可比矩阵相关的设计决策，包括手动清除梯度的原理、累计机制等的使用模式和最佳实践
 - [Mode 设计](.doc/design/mode_design.md) - `Train` / `Inference` 二态执行契约，以及与 `detach()` 局部梯度截断的关系
 - [DataLoader 设计文档](.doc/design/data_loader_design.md) - PyTorch 风格的数据批量加载器，支持 `TensorDataset`、自动分批、shuffle、drop_last、变长序列分桶等功能，含架构改进计划
@@ -682,7 +685,7 @@ v0.26 方向（[RL 路线图 §5](.doc/design/rl_roadmap.md#5-v026-方向2026-07
 - [优化器架构设计](.doc/design/optimizer_architecture_design.md) - SGD / Adam 优化器的内部实现和 API 设计
 - [概率分布模块设计](.doc/design/distributions_design.md) - Categorical / Normal / TanhNormal 三种分布的 API 设计原则（Var vs Tensor、构造时缓存、梯度追踪策略）
 - [MyZero 算法纲领](.doc/design/my_zero_algorithm_vision.md) - MyZero 战略层：做/不做、文献谱系、双轨架构、首要评价指标
-- [强化学习路线图](.doc/design/rl_roadmap.md) - RL 当前状态、验收协议与 v0.26 方向（v0.20–v0.24 历史决策见 [归档](.doc/design/archive/rl_roadmap_v020_v024.md)）
+- [强化学习路线图](.doc/design/rl_roadmap.md) - RL 当前状态、验收协议与 v0.26 方向（v0.20–v0.24 历史决策见 [归档](.doc/design/_archive/rl_roadmap_v020_v024.md)）
 - [MatrixSlow 项目识别文档](.doc/reference/python_MatrixSlow_pid.md) - 基于 MatrixSlow 的 Python 深度学习框架分析，包含计算图、自动求导、静态图执行等核心概念的详细说明
 
 ## 参考资料
@@ -733,7 +736,6 @@ v0.26 方向（[RL 路线图 §5](.doc/design/rl_roadmap.md#5-v026-方向2026-07
 - [重点：Rust- ---支持 cuda 的 Rust 深度学习库(参考下自动微分部分)](https://docs.rs/dfdx/latest/dfdx/)
 - [重点：基于 ndarray 的反向 autoDiff 库](https://github.com/raskr/rust-autograd)
 - [前向 autoDiff(貌似不成熟)](https://github.com/elrnv/autodiff)
-- []
 - [深度学习框架 InsNet 简介](https://zhuanlan.zhihu.com/p/378684569)
 - [C++机器学习库 MLPACK](https://www.mlpack.org/)
 - [经典机器学习算法 Rust 库](https://github.com/Rust-ml/linfa)

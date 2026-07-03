@@ -31,7 +31,7 @@ for i in 0..num_samples {
 
 ### 1.2 预期收益
 
-根据 `optimization_strategy.md` 分析，Batch 机制预期带来 **3-10x** 加速：
+根据 `../performance/optimization_strategy.md` 分析，Batch 机制预期带来 **3-10x** 加速：
 
 | 优化来源       | 预期收益  |
 | -------------- | --------- |
@@ -301,7 +301,7 @@ fn benchmark_batch_vs_single() {
 
 ```
 batch_mechanism_design.md（本文档）
-    ├── 依赖: optimization_strategy.md（优化策略）
+    ├── 依赖: ../performance/optimization_strategy.md（优化策略）
     ├── 依赖: gradient_clear_and_accumulation_design.md（梯度累积）
     ├── 影响: data_loader_design.md（DataLoader 返回 batch）
     └── 影响: optimizer_architecture_design.md（优化器适配）
@@ -321,7 +321,7 @@ batch_mechanism_design.md（本文档）
 
 - PyTorch autograd 机制: https://pytorch.org/docs/stable/autograd.html
 - JAX vmap 设计: https://jax.readthedocs.io/en/latest/jax-101/03-vectorization.html
-- 项目内部: `optimization_strategy.md`, `broadcast_mechanism_design.md`
+- 项目内部: `../performance/optimization_strategy.md`, `broadcast_mechanism_design.md`
 
 ---
 

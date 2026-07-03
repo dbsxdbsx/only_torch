@@ -42,7 +42,7 @@
 |------|----------|
 | **瓶颈定位方法论** | benchmark 时分别测量各 primitive 操作，而非只看整体 |
 | **内存布局** | Conv2d 实现考虑 NHWC 支持（参考 oneDNN 的 blocked format） |
-| **in-place 优化** | 反向传播中减少临时 Tensor 分配（已在 `optimization_candidates.md` 中记录类似问题） |
+| **in-place 优化** | 反向传播中减少临时 Tensor 分配（已在 `.doc/performance/` 优化战报中记录类似问题） |
 | **层融合思路** | 将来固定结构训练时，可融合 Conv + BN + Activation |
 | **低精度训练** | 远期考虑 BF16 支持，但 loss 计算需保持高精度 |
 

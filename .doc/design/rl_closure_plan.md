@@ -2,7 +2,7 @@
 
 > **定位**：把「所有 RL 基准 + MyZero 万金油算法」收口到可验收终态的**战役次序文档**——回答"先做什么、后做什么、为什么这个顺序、做到什么算过关"。
 > 当前状态与验收协议见 [rl_roadmap.md](./rl_roadmap.md)；战术细节各自链出（Simulus 消融见 [my_zero_simulus_ablation_plan.md](./my_zero_simulus_ablation_plan.md)）；实测数字唯一账本仍是 [cartpole README](../../examples/my_zero/cartpole/README.md)。
-> **创建**：2026-07-02 · 贯穿纪律沿用 [roadmap §3.2](./rl_roadmap.md#32-改动纪律搬运--改进沿用)：一次一项、预注册协议、3-seed 消融、数字只进账本；性能优化 measure-first、挂实测需求（内核级优化路线已盖棺，见 [optimization_candidates](../optimization_candidates.md)）。
+> **创建**：2026-07-02 · 贯穿纪律沿用 [roadmap §3.2](./rl_roadmap.md#32-改动纪律搬运--改进沿用)：一次一项、预注册协议、3-seed 消融、数字只进账本；性能优化 measure-first、挂实测需求（内核级优化路线已盖棺，见 [optimization_candidates](../performance/optimization_candidates.md)）。
 
 ---
 

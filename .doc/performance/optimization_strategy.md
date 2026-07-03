@@ -683,5 +683,5 @@ nChw16c（blocked）：
 |------|------|----------|
 | **层融合（训练模式）** | Conv + FrozenBN + ReLU 可融合；含可训练权重的层需保留中间值 | 固定结构训练 |
 | **优化器融合** | 将参数遍历+梯度应用合并为单次操作，减少内存遍历 | Optimizer 实现 |
-| **in-place 反向传播** | 反向传播中尽量原地修改梯度 Tensor，避免分配临时变量 | 已在 `optimization_candidates.md` 中有相关讨论 |
+| **in-place 反向传播** | 反向传播中尽量原地修改梯度 Tensor，避免分配临时变量 | 已在同目录 `optimization_candidates.md` / `optimization_log.md` 中有相关讨论 |
 | **BF16 混合精度** | 计算用 BF16（速度翻倍），loss 保持 f32（避免精度崩溃） | 远期特性 |

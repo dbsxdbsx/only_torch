@@ -22,10 +22,14 @@
 │   ├── graph_serialization_design.md               # 序列化与可视化
 │   ├── memory_mechanism_design.md                  # 记忆/循环机制设计
 │   ├── node_vs_layer_design.md                     # Node vs Layer 架构设计
-│   ├── optimization_strategy.md                    # 性能优化策略
 │   ├── optimizer_architecture_design.md            # 优化器架构
 │   ├── rl_roadmap.md                               # RL 模块路线图
 │   └── visualization_guide.md                      # 可视化使用指南
+├── performance/                         # 性能优化专区
+│   ├── optimization_strategy.md         # 全局优化策略与架构约束
+│   ├── optimization_candidates.md       # 决策面：待做候选 + 已否决
+│   ├── benchmark_workflow.md            # 验证流程 + baseline 台账 + bench 清单
+│   └── optimization_log.md              # 已实施战报（倒序 append-only）
 ├── reference/                           # 参考资料
 │   └── python_MatrixSlow_pid.md         # MatrixSlow 项目分析
 └── _archive/                            # 已完成/历史文档

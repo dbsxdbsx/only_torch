@@ -4,27 +4,32 @@
 
 ### Changed
 
+- **docs: 性能文档拆分为 `.doc/performance/` 专区 + README 门面刷新**（2026-07-03）
+  - `optimization_candidates.md`（482 行三种生命周期混居）一拆三：`optimization_candidates.md`（决策面：待做候选带触发条件 + 已否决，恒定小体量）/ `benchmark_workflow.md`（验证七步流程 + 测量纪律 + baseline 台账 + bench 清单）/ `optimization_log.md`（已实施战报 A–L 倒序 append-only）；`optimization_strategy.md` 从 `design/` 迁入同区；原「待优化项 §4 依赖升级」（已完成态）归位战报，liveness 候选项编号 #5→#4
+  - 归档目录命名统一：`design/archive/` → `design/_archive/`（与根 `_archive/` 一致）；全库链接同步（AGENTS / README / CHANGELOG / `.bench/README` / paper / design / instructions 共 12+ 文件）
+  - README 门面修复：主线标题 v0.19.0→v0.26 且 P0 系数重标定标记 ✅（补 spike GO 与 Phase 1 计划链接）、示例概览表补 `my_zero_cartpole` 行、简介补 RL 模块一句、修正「不支持 Python 接口」过时表述（pyo3 嵌入调用 Gymnasium）、删参考资料空链接
+
 - **refactor(tensor): 构造接口统一——`from_vec` 并入泛型 `new`（`IntoTensorData`，性能中性）**（2026-07-03）
   - 消除优化 J 引入的双构造入口（`new(&[f32])` 复制 vs `from_vec(Vec)` 零拷贝，签名几乎一致仅所有权语义不同）：新增 `IntoTensorData` trait，`Tensor::new` 改 `impl IntoTensorData` 入参——传 owned `Vec<f32>` 零拷贝 move，传 `&[f32]` / `&[f32; N]` / `&Vec<f32>` 复制一次；**删除 `from_vec`**（未进任何发布版本，无兼容包袱）。产物两路完全等价（独立所有权、连续布局），对齐 Burn 单入口惯例；PyTorch 式分名仅适用于可观察语义不同（别名共享）的场景
   - 关键实现细节：不能用 `impl Into<Vec<f32>>`——泛型参数不触发 unsize coercion，`&[1.0, 2.0]` 数组字面量（全库数百处调用形状）会编译失败，const-generic `&[f32; N]` impl 是零改动兼容的必要件
   - 全库 28 处 `from_vec` 调用点机械迁移；`random`/`normal`/`arange`/`eyes` 内部改 owned 传参（各免一次 memcpy）；ONNX 导入 `Cow` 权重 `into_owned()` 传入（Owned 分支复制转 move）；`IntoTensorData` 随 `Tensor` 一并 crate 根导出
-  - 验证：双口径全量 3320 测试全绿；clippy 179 条（低于改动前 181，顺手清 5 处 needless-borrow）；同窗基线 `pre-unify-new`（smoke/pool2d/my_zero_forward 18 case）对比性能中性——3 项名义回归复测翻转，唯一持续项 `max_pool2d_backward/b32` +5~7% 经 stash 旧代码同窗对照（+11.7%，反而更差）锤死环境归因；**全量 bench 无必要**，`post-hotpath-opt` 基线继续有效，详见 [optimization_candidates.md 优化 L](.doc/optimization_candidates.md)
+  - 验证：双口径全量 3320 测试全绿；clippy 179 条（低于改动前 181，顺手清 5 处 needless-borrow）；同窗基线 `pre-unify-new`（smoke/pool2d/my_zero_forward 18 case）对比性能中性——3 项名义回归复测翻转，唯一持续项 `max_pool2d_backward/b32` +5~7% 经 stash 旧代码同窗对照（+11.7%，反而更差）锤死环境归因；**全量 bench 无必要**，`post-hotpath-opt` 基线继续有效，详见[优化战报 L](.doc/performance/optimization_log.md)
 
 - **perf(nn): Pool2d 平铺直写 + BatchNorm 反向单趟融合（优化 K）**（2026-07-03）
   - `avg_pool2d` 前向/反向从「IxDyn 逐元素索引 + `Vec<Vec>` flatten」旧模式改为 contiguous 守卫 + 平铺 slice + `par_chunks_mut` 直写；`max_pool2d` 前向双输出 zip 直写、反向 IxDyn 读改平铺读；`BatchNormOp` 训练反向 dx 表达式链（~6 个全尺寸临时 + 广播慢路径）融合为单趟并行循环
   - 实测（同环境背靠背基线 + stash 旧实现同窗对照归因）：`avg_pool2d_backward/b32` **-36%**（3.5→2.65ms，优于夜间基线绝对值）、BatchNorm dx 隔离对照 **2.35x**（4.23→1.80ms，手动档 `bn_backward_micro`，全链路 bench -14% 与之吻合）、`avg_pool2d_forward/b8` 净代码收益 ~17pp（旧实现同窗 +0.6% vs 新 -17%）；大 batch 前向档位与旧实现同窗持平（rayon 摊薄 IxDyn 开销）
   - 正确性：新增 3 个逐 bit 金测试（pool 以旧实现为参考 7 case 含 padding/ceil_mode/平局首胜；BatchNorm 以统计量重建 + 旧 dx 链为参考 3 case），全库金测试家族 9 → 12；双口径全量 3320 测试全绿
-  - 测量教训落档：白天窗口 bench 先跑未触碰组做金丝雀（本次首轮被并行编译任务污染出全场 +30~85% 假回归，金丝雀归零后复跑才可用）；详见 [optimization_candidates.md 优化 K](.doc/optimization_candidates.md)
+  - 测量教训落档：白天窗口 bench 先跑未触碰组做金丝雀（本次首轮被并行编译任务污染出全场 +30~85% 假回归，金丝雀归零后复跑才可用）；详见[优化战报 K](.doc/performance/optimization_log.md)
 
 - **build(deps): pyo3 / numpy 0.27 → 0.29（成对升级，代码零改动）**（2026-07-03）
   - pyo3 与 rust-numpy 同属 PyO3 组织、0.28 起版本号同步发版；0.29 含两个 RustSec 安全修复（`new_closure` 缺 `Sync` 约束、`nth_back` 越界读）+ 多项 soundness 收紧
   - 0.27→0.29 破坏性变更全部集中在「写 Python 扩展模块」场景，本项目纯嵌入方向（`auto-initialize` + `Python::attach`）零涉及；numpy 0.29 的 ndarray 区间仍为 `>=0.15,<=0.17`，与 0.17.2 兼容
   - 验证：blas-mkl + 默认双口径全量测试 3317 全绿（含 RL / pyo3 桥）、examples + benches 编译通过、clippy 无新增；至此依赖栈定格 **ndarray 0.17.2 + pyo3 0.29 + numpy 0.29**
-  - **bench 对比已执行并闭环（2026-07-03）**：104 case vs `post-hotpath-opt` 名义 80 回归，经三层归因（噪声金丝雀 `tensor_clone`/纯 MKL `tensor_matmul` 同带齐涨 / +226% 离群项复测翻转 / **worktree 控制实验**——基线原始 commit 连 ndarray 0.15.6 还原在当前时段复跑反而「回归」更狠 +43~76%）判定**全部为白天环境噪声，依赖升级性能中性**，`post-hotpath-opt` 基线继续有效；顺带绝对值审计新识别 2 个优化候选（pool2d IxDyn 索引 / BatchNorm 反向表达式链，落档 [optimization_candidates.md §6/§7](.doc/optimization_candidates.md)）
+  - **bench 对比已执行并闭环（2026-07-03）**：104 case vs `post-hotpath-opt` 名义 80 回归，经三层归因（噪声金丝雀 `tensor_clone`/纯 MKL `tensor_matmul` 同带齐涨 / +226% 离群项复测翻转 / **worktree 控制实验**——基线原始 commit 连 ndarray 0.15.6 还原在当前时段复跑反而「回归」更狠 +43~76%）判定**全部为白天环境噪声，依赖升级性能中性**，`post-hotpath-opt` 基线继续有效；顺带绝对值审计新识别 2 个优化候选（pool2d IxDyn 索引 / BatchNorm 反向表达式链，落档后已随优化 K 实施，见[优化战报](.doc/performance/optimization_log.md)）
 - **build(deps): ndarray 0.16.1 → 0.17.2（与 0.15→0.16 同日连升，代码零改动）**（2026-07-03）
   - 推翻「0.17 需 numpy 0.29 + pyo3 联动」旧预判：`numpy 0.27.1` 的 ndarray 区间即为 `>=0.15,<=0.17`，升级零涉及 RL 桥；实际动作仅 `Cargo.toml` `^0.16`→`^0.17.1`（0.17.0 因 ArrayRef use-after-free 被 yank）+ `cargo update --precise 0.17.2` 统一 numpy 侧
   - 0.17 对 0.16 纯增量（`ArrayRef` 引用类型 / IxDyn 直接 `dot` / 数组级数学函数 / 原地 `permute_axes`）；BLAS 路径零变更 → `mat_mul` 系 F 序守卫仍必要，浮点数值与 0.16.1 一致
-  - 验证：blas-mkl + 默认双口径全量测试 3317 全绿、clippy 无新增；调研结论落档 [optimization_candidates.md §4](.doc/optimization_candidates.md)
+  - 验证：blas-mkl + 默认双口径全量测试 3317 全绿、clippy 无新增；调研结论落档[优化战报「依赖升级」条目](.doc/performance/optimization_log.md)
   - **RL 哨兵基线重定待办**：0.16.1 的 BLAS 派发变化已使 CartPole 哨兵数字漂移（升级日噪声环境探测跑 2/3 达标、中位 28.9k），按「框架级数值变化 → 重定基线」约定，待安静窗口以 3~5 seeds 重测写回[唯一账本](examples/my_zero/cartpole/README.md)（口径变更史已登记）；Criterion 全量 bench 对比（vs `post-hotpath-opt`）同窗口执行
 
 ### Added
@@ -154,7 +159,7 @@
   - `my_zero::tests::value_head_capacity`：喂高方差可分 value 目标，head 把高/低组预测间隔训到精确 **14.0** → 证伪「value head 学不动」，Pendulum value 坍缩根因缩到上游 target/搜索（见 [`pendulum_failure_diagnosis.md`](.issue/items/pendulum_failure_diagnosis.md)）
 - **docs(rl): RL 文档信息架构重构（v0.25 收口，2026-07-02）**——核心原则「每类信息只有一个 owner」
   - **基准账本唯一 owner** = `examples/my_zero/cartpole/README.md`：新官方基线表（增量链 + 跨算法，带口径列 profile/BLAS/seeds/日期）+ 口径变更史；旧消融表整体标注「pre-autograd-fix 历史，仅方向性参考」
-  - **`rl_roadmap.md` 拆分**：v0.20–v0.24 历史（599 行：实施计划、SAC 技术笔记、MCTS 接缝设计等）整体归档至 `.doc/design/archive/rl_roadmap_v020_v024.md`；主文件重写为薄版「文档分工 + 当前状态 + 验收协议 + v0.25 结果 + v0.26 方向」
+  - **`rl_roadmap.md` 拆分**：v0.20–v0.24 历史（599 行：实施计划、SAC 技术笔记、MCTS 接缝设计等）整体归档至 `.doc/design/_archive/rl_roadmap_v020_v024.md`；主文件重写为薄版「文档分工 + 当前状态 + 验收协议 + v0.25 结果 + v0.26 方向」
   - **`my_zero_algorithm_vision.md` 去数字化 + §2.3 战略目标定稿**：实测数字全部改链账本；新增战略裁决——真实目标 = 中国象棋 + 商业图像游戏，A 路（EZ-V2/MCTS 谱系）定锚不转 Dreamer，优先轴从「动作空间广度」转向「观测空间（CNN/图像）+ self-play」，Pendulum/Platform 降级，reanalyze 升战略组件（acting/reanalyze 解耦），CartPole 严格定位 sanity 哨兵
   - **`.issue/` 维护**：归档 `post_ez_v2_research_backlog.md`（角色被 vision/roadmap 取代）；3 个 my_zero issue 补口径提示（旧数字 pre-autograd-fix）与战略优先级注记；**新增一级风险条目 `cpu_only_mcts_image_realtime_risk.md`**
   - **修过期与死链**：roadmap/env-setup/backlog 中 4+ 处本机 plan 绝对路径清除；`rl_python_env_setup.md` 架构图删 gym 兼容层、五子棋章节从「TODO 迁移」改为已落地的 `python/gym_env/gomoku/` 口径；根 README RL 示例段 Moving-v0 → Platform-v0 并补 MyZero 条目、TODO 段从 v0.19 旧任务表刷新为 v0.26 方向

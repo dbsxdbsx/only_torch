@@ -117,7 +117,7 @@ just smoke-rl                  # 全部 RL smoke 聚合（发版固定关卡，�
 ### 修改 Evolution
 1. 保持主流程稳定：build → restore weights → train → capture → evaluate → accept/rollback → mutate。
 2. 优先跑针对性测试或小示例，不要直接全量 MNIST。
-3. 若改到性能路径，顺手查看 [`.doc/optimization_candidates.md`](.doc/optimization_candidates.md)。
+3. 若改到性能路径，顺手查看 [`.doc/performance/optimization_candidates.md`](.doc/performance/optimization_candidates.md)（流程与基线台账在同目录 [`benchmark_workflow.md`](.doc/performance/benchmark_workflow.md)）。
 
 ## 测试约定
 
