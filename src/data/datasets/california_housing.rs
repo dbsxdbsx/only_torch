@@ -133,8 +133,8 @@ impl CaliforniaHousingDataset {
 
         // 计算均值
         for i in 0..self.len {
-            for j in 0..NUM_FEATURES {
-                means[j] += self.features[[i, j]];
+            for (j, mean) in means.iter_mut().enumerate() {
+                *mean += self.features[[i, j]];
             }
         }
         for mean in &mut means {

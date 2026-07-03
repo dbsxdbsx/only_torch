@@ -323,10 +323,10 @@ impl Tensor {
                 // 将前 k 个写入正确的输出位置（row-major）
                 // 输出 out[o, j, i]（axis 维度为 j）的 flat 索引：
                 //   o * (k * inner_size) + j * inner_size + i
-                for j in 0..k {
+                for (j, &(val, idx)) in pairs.iter().enumerate().take(k) {
                     let out_flat = o * (k * inner_size) + j * inner_size + i;
-                    values_data[out_flat] = pairs[j].0;
-                    indices_data[out_flat] = pairs[j].1 as f32;
+                    values_data[out_flat] = val;
+                    indices_data[out_flat] = idx as f32;
                 }
             }
         }

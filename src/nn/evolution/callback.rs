@@ -495,11 +495,7 @@ impl EvolutionCallback for DefaultCallback {
             return;
         }
         let total = inherited + reinitialized;
-        let pct = if total > 0 {
-            inherited * 100 / total
-        } else {
-            0
-        };
+        let pct = (inherited * 100).checked_div(total).unwrap_or(0);
         println!(
             "         inherit={}/{} ({}%) reinit={}",
             inherited, total, pct, reinitialized

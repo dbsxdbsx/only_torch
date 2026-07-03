@@ -1886,8 +1886,8 @@ pub fn find_connectable_pairs(genome: &NetworkGenome) -> Vec<ConnectablePair> {
         }
 
         // 索引 0..tgt_idx-1 的块输出（全部非直接前驱）
-        for src_idx in 0..tgt_idx.saturating_sub(1) {
-            let src_out = blocks[src_idx].output_id;
+        for block in &blocks[..tgt_idx.saturating_sub(1)] {
+            let src_out = block.output_id;
             if src_out != immediate_pred_id {
                 sources.push(src_out);
             }

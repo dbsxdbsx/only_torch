@@ -599,10 +599,10 @@ fn bn_ref_channel_mean(x: &Tensor) -> Tensor {
     let flat = x.flatten_view();
     let mut means = vec![0.0f32; c];
     for sample in 0..n {
-        for ch in 0..c {
+        for (ch, mean) in means.iter_mut().enumerate() {
             for s in 0..spatial_size {
                 let idx = sample * c * spatial_size + ch * spatial_size + s;
-                means[ch] += flat[idx];
+                *mean += flat[idx];
             }
         }
     }

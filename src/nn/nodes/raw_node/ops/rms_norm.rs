@@ -130,7 +130,7 @@ impl TraitNode for RMSNormOp {
         let mut x_hat_data = vec![0.0f32; x.size()];
         let mut rms_data = vec![0.0f32; batch_size];
 
-        for b in 0..batch_size {
+        for (b, rms_out) in rms_data.iter_mut().enumerate() {
             let offset = b * d;
 
             // rms = sqrt(mean(x^2) + eps)
@@ -141,7 +141,7 @@ impl TraitNode for RMSNormOp {
             }
             mean_sq /= d as f32;
             let rms = (mean_sq + self.eps).sqrt();
-            rms_data[b] = rms;
+            *rms_out = rms;
 
             // x_hat = x / rms
             let inv_rms = 1.0 / rms;
@@ -152,9 +152,7 @@ impl TraitNode for RMSNormOp {
 
         let x_hat = Tensor::new(&x_hat_data, shape);
         let mut rms_shape: Vec<usize> = shape[..norm_start].to_vec();
-        for _ in 0..self.normalized_dims {
-            rms_shape.push(1);
-        }
+        rms_shape.extend(std::iter::repeat_n(1, self.normalized_dims));
         let rms_tensor = Tensor::new(&rms_data, &rms_shape);
 
         if self.should_cache_for_backward {

@@ -80,12 +80,8 @@ fn test_rotate_multi_channel() {
     // [C=2, H=3, W=3]
     let mut data = vec![0.0f32; 18];
     // 通道 0 全 1，通道 1 全 2
-    for i in 0..9 {
-        data[i] = 1.0;
-    }
-    for i in 9..18 {
-        data[i] = 2.0;
-    }
+    data[..9].fill(1.0);
+    data[9..18].fill(2.0);
     let input = Tensor::new(&data, &[2, 3, 3]);
     let output = rotate(&input, 0.0, 0.0);
 

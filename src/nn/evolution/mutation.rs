@@ -169,7 +169,7 @@ impl SizeConstraints {
             // CNN channels 通常 8..256，给予更大范围
             256
         } else {
-            (input_dim / 2).max(128).min(512)
+            (input_dim / 2).clamp(128, 512)
         };
 
         // max_layers（空间模型需要更多层：Conv+BN+Pool+Flatten+FC...）
@@ -3042,7 +3042,7 @@ fn layer_widen_owner_snap(
 /// consumer 快照就地更新：输入维度从 `old_size` 扩展（按 counts 缩放）。
 /// 失败时返回 false，快照保持不变。
 fn layer_widen_consumer_snap(
-    snap: &mut Vec<Tensor>,
+    snap: &mut [Tensor],
     config: &LayerConfig,
     mapping: &[usize],
     counts: &[usize],

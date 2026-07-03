@@ -458,7 +458,7 @@ impl Tensor {
     /// // y = [0.0, 0.0, 3.0, 6.0]
     /// ```
     pub fn relu6(&self) -> Self {
-        let data = self.data.mapv(|x| x.max(0.0).min(6.0));
+        let data = self.data.mapv(|x| x.clamp(0.0, 6.0));
         Self {
             data: data.into_shared(),
             source_id: next_source_id(),

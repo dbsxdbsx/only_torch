@@ -5,11 +5,11 @@
 //! # 主要组件
 //!
 //! - [`DataLoader`]: `PyTorch` 风格的数据批量加载器
-//! - [`TensorDataset`]: 持有特征和标签的数据集
+//! - [`TensorDataset`][]: 持有特征和标签的数据集
 //! - [`MnistDataset`]: MNIST 手写数字数据集（分类任务）
 //! - [`CaliforniaHousingDataset`]: California Housing 房价数据集（回归任务）
 //! - [`transforms`]: 数据变换函数（归一化、one-hot 等）
-//! - [`DataError`]: 数据加载错误类型
+//! - [`DataError`][]: 数据加载错误类型
 //!
 //! # 使用示例
 //!

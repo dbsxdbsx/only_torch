@@ -255,11 +255,14 @@ impl FMBuilderAnalysis {
         // 先按 parent 粗分组，再按下游 Concat 细分（处理并行分支共享上游的情况）
         let mut raw_parent_groups: HashMap<u64, Vec<(u64, u64)>> = HashMap::new(); // parent_id → [(node_id, fm_id)]
         for n in nodes.iter().filter(|n| n.enabled) {
-            if n.fm_id.is_some() && matches!(n.node_type, NTD::Identity) && !n.parents.is_empty() {
+            if let Some(fm_id) = n.fm_id
+                && matches!(n.node_type, NTD::Identity)
+                && !n.parents.is_empty()
+            {
                 raw_parent_groups
                     .entry(n.parents[0])
                     .or_default()
-                    .push((n.innovation_number, n.fm_id.unwrap()));
+                    .push((n.innovation_number, fm_id));
             }
         }
 

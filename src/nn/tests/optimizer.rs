@@ -208,7 +208,7 @@ fn test_sgd_basic() {
     let initial_loss = loss.item().unwrap();
 
     // 创建 SGD 优化器
-    let mut optimizer = SGD::new(&graph, &[w.clone()], 0.1);
+    let mut optimizer = SGD::new(&graph, std::slice::from_ref(&w), 0.1);
 
     // 训练一步
     optimizer.zero_grad().unwrap();
@@ -244,7 +244,7 @@ fn test_sgd_minimize() {
     let y = x.matmul(&w).unwrap();
     let loss = y.mse_loss(&target).unwrap();
 
-    let mut optimizer = SGD::new(&graph, &[w.clone()], 0.1);
+    let mut optimizer = SGD::new(&graph, std::slice::from_ref(&w), 0.1);
 
     // 使用 minimize
     let loss_val = optimizer.minimize(&loss).unwrap();
@@ -269,7 +269,7 @@ fn test_adam_basic() {
     let initial_loss = loss.item().unwrap();
 
     // 创建 Adam 优化器
-    let mut optimizer = Adam::new(&graph, &[w.clone()], 0.1);
+    let mut optimizer = Adam::new(&graph, std::slice::from_ref(&w), 0.1);
 
     // 训练一步
     optimizer.zero_grad().unwrap();
@@ -304,7 +304,7 @@ fn test_adam_minimize() {
     let y = x.matmul(&w).unwrap();
     let loss = y.mse_loss(&target).unwrap();
 
-    let mut optimizer = Adam::new(&graph, &[w.clone()], 0.1);
+    let mut optimizer = Adam::new(&graph, std::slice::from_ref(&w), 0.1);
 
     // 使用 minimize
     let loss_val = optimizer.minimize(&loss).unwrap();
@@ -447,7 +447,7 @@ fn test_adam_state_accessors() {
     let y = x.matmul(&w).unwrap();
     let loss = y.mse_loss(&target).unwrap();
 
-    let mut optimizer = Adam::new(&graph, &[w.clone()], 0.1);
+    let mut optimizer = Adam::new(&graph, std::slice::from_ref(&w), 0.1);
 
     // 初始状态：timestep = 0，无动量/速度
     assert_eq!(optimizer.timestep(), 0);

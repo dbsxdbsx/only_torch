@@ -48,12 +48,12 @@ fn test_confusion_matrix_perfect() {
 
     // 完美预测，所有非对角线元素为0
     assert_eq!(cm.len(), 3);
-    for i in 0..3 {
-        for j in 0..3 {
+    for (i, row) in cm.iter().enumerate() {
+        for (j, &v) in row.iter().enumerate() {
             if i == j {
-                assert!(cm[i][j] > 0, "对角线元素应 > 0");
+                assert!(v > 0, "对角线元素应 > 0");
             } else {
-                assert_eq!(cm[i][j], 0, "非对角线元素应 = 0");
+                assert_eq!(v, 0, "非对角线元素应 = 0");
             }
         }
     }
@@ -168,7 +168,7 @@ fn test_confusion_matrix_col_sums() {
 
     // 每列的和应该等于该预测类别的次数（每类3次）
     for j in 0..3 {
-        let col_sum: usize = (0..3).map(|i| cm[i][j]).sum();
+        let col_sum: usize = cm.iter().take(3).map(|row| row[j]).sum();
         assert_eq!(col_sum, 3, "每个预测类别应出现3次");
     }
 }

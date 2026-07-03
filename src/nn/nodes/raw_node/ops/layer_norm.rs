@@ -153,7 +153,7 @@ impl TraitNode for LayerNormOp {
         let mut x_hat_data = vec![0.0f32; x.size()];
         let mut std_data = vec![0.0f32; batch_size];
 
-        for b in 0..batch_size {
+        for (b, std_out) in std_data.iter_mut().enumerate() {
             let offset = b * d;
 
             // 计算均值
@@ -173,7 +173,7 @@ impl TraitNode for LayerNormOp {
 
             // std = sqrt(var + eps)
             let std = (var + self.eps).sqrt();
-            std_data[b] = std;
+            *std_out = std;
 
             // x_hat = (x - mean) / std
             let inv_std = 1.0 / std;
@@ -186,9 +186,7 @@ impl TraitNode for LayerNormOp {
 
         // 构建 std 的可广播形状
         let mut std_shape: Vec<usize> = shape[..norm_start].to_vec();
-        for _ in 0..self.normalized_dims {
-            std_shape.push(1);
-        }
+        std_shape.extend(std::iter::repeat_n(1, self.normalized_dims));
         let std_tensor = Tensor::new(&std_data, &std_shape);
 
         if self.should_cache_for_backward {

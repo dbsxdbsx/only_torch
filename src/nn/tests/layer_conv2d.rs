@@ -87,7 +87,6 @@ const PYTORCH_CHAIN_FC_WEIGHT: &[f32] = &[
 ];
 const PYTORCH_CHAIN_FC_BIAS: &[f32] = &[0.1, 0.2, 0.3];
 const PYTORCH_CHAIN_TARGET: &[f32] = &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
-#[rustfmt::skip]
 
 const PYTORCH_CHAIN_LOSS: f32 = 3.9335797;
 const PYTORCH_CHAIN_GRAD_CONV_KERNEL: &[f32] = &[

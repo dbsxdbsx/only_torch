@@ -101,6 +101,7 @@ impl Graph {
     /// - Parameter 节点使用默认初始化，权重由后续 load 步骤填充
     /// - Dropout 使用固定 seed=42，加载后建议设为 eval 模式
     /// - BatchNormOp 的 running_mean/running_var 优先从 descriptor 恢复，缺省时使用 0/1
+    ///
     /// 从 GraphDescriptor 重建计算图（使用指定种子，每代 build 可复现）
     pub fn from_descriptor_seeded(
         desc: &GraphDescriptor,

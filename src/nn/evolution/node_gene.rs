@@ -132,6 +132,7 @@ pub struct RecurrentEdge {
 /// 存储指向本节点的时延循环连接 `(source_id, weight_param_id)`：
 /// - `source_id`: 提供上一时间步输出的源节点创新号
 /// - `weight_param_id`: 持有循环权重矩阵的 Parameter 节点创新号
+///
 /// 循环边不参与前向 DAG 拓扑排序，仅在时序展开时注入上一时间步的激活值。
 /// 此字段仅在序列模式（`seq_len.is_some()`）的 edge-based 循环范式中有效，
 /// 与 cell-based 循环（CellRnn/CellLstm/CellGru）互斥。

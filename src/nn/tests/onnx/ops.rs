@@ -9,26 +9,29 @@ use onnx_rs::ast::{Attribute, OpType};
 
 fn make_float_attr(name: &str, val: f32) -> Attribute<'static> {
     let name: &'static str = Box::leak(name.to_string().into_boxed_str());
-    let mut attr = Attribute::default();
-    attr.name = name;
-    attr.f = val;
-    attr
+    Attribute {
+        name,
+        f: val,
+        ..Default::default()
+    }
 }
 
 fn make_int_attr(name: &str, val: i64) -> Attribute<'static> {
     let name: &'static str = Box::leak(name.to_string().into_boxed_str());
-    let mut attr = Attribute::default();
-    attr.name = name;
-    attr.i = val;
-    attr
+    Attribute {
+        name,
+        i: val,
+        ..Default::default()
+    }
 }
 
 fn make_ints_attr(name: &str, vals: Vec<i64>) -> Attribute<'static> {
     let name: &'static str = Box::leak(name.to_string().into_boxed_str());
-    let mut attr = Attribute::default();
-    attr.name = name;
-    attr.ints = vals;
-    attr
+    Attribute {
+        name,
+        ints: vals,
+        ..Default::default()
+    }
 }
 
 // ==================== 导入方向测试 ====================

@@ -11,6 +11,7 @@
 //! 本 bench 把「同一套 h/g/f 栈」隔离出来，对比：
 //! - `per_sample_x8`：8 次 `[1,X]` forward+backward（逐样本累积，= 现状）
 //! - `batched_x8`：1 次 `[8,X]` forward+backward（batch 化目标）
+//!
 //! 给出低方差 ns/iter，判断 batch 化训练是否值得立项。
 //!
 //! # 覆盖范围（保守下界）

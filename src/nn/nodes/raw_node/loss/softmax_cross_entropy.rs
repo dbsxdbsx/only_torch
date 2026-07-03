@@ -93,15 +93,15 @@ impl SoftmaxCrossEntropy {
 
                 // 计算 exp(x - max) 和 sum
                 let mut sum_exp = 0.0f32;
-                for c in 0..num_classes {
+                for (c, out) in sample_result.iter_mut().enumerate().take(num_classes) {
                     let exp_val = (logits[[b, c]] - max_val).exp();
-                    sample_result[c] = exp_val;
+                    *out = exp_val;
                     sum_exp += exp_val;
                 }
 
                 // 归一化
-                for c in 0..num_classes {
-                    sample_result[c] /= sum_exp;
+                for prob in sample_result.iter_mut().take(num_classes) {
+                    *prob /= sum_exp;
                 }
 
                 let log_sum_exp = sum_exp.ln();

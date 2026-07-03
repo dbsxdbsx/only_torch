@@ -404,8 +404,8 @@ fn test_platform_hybrid_action_space() {
         assert_eq!(action_ranges[0].get_discrete_action_selectable_num(), 3);
 
         // [1..=3] 连续参数
-        for i in 1..=3 {
-            assert!(!action_ranges[i].is_discrete_action());
+        for range in &action_ranges[1..=3] {
+            assert!(!range.is_discrete_action());
         }
 
         env.close();

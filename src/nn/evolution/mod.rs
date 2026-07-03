@@ -1266,7 +1266,7 @@ impl Evolution {
             if is_spatial_classification {
                 0
             } else {
-                (constraints.max_layers / 2).max(2).min(8)
+                (constraints.max_layers / 2).clamp(2, 8)
             }
         });
 
@@ -1498,11 +1498,11 @@ impl Evolution {
             // 极短的 rung-0（1 epoch）无法区分好坏架构，导致结构变异全部被淘汰。
             // 用户可通过 `.with_asha(None)` 完全关闭 / 通过自定义 rung_epochs 手动启用。
             let (eval_results, eval_timing, eval_phase) =
-                if is_phase1 && asha.is_some() && !is_sequential {
+                if let Some(asha_cfg) = asha.as_ref().filter(|_| is_phase1 && !is_sequential) {
                     let batch = evaluate_batch_asha(
                         &base_task,
                         offspring_genomes,
-                        asha.as_ref().unwrap(),
+                        asha_cfg,
                         current_convergence,
                         eval_runs,
                         &complexity_metric,

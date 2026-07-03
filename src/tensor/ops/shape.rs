@@ -309,7 +309,7 @@ impl Tensor {
     /// 在指定维度上增加一个维度。
     ///
     /// * `dim` - 要增加维度的索引。若`dim`为正数或零，则从头开始计数；
-    /// 若`dim`为负数，则从末尾开始计数。例如，-1表示在最后一个维度后增加。
+    ///   若`dim`为负数，则从末尾开始计数。例如，-1表示在最后一个维度后增加。
     ///
     /// # 示例
     ///
@@ -341,8 +341,8 @@ impl Tensor {
     /// 就地在指定维度上增加一个维度。
     ///
     /// * `dim` - 要增加维度的索引。若`dim`为正数或零，则从头开始计数；
-    /// 若`dim`为负数，则从末尾开始计数。例如，-1表示在最后一个维度增加。
-    /// 若`dim`超出了当前维度的范围，将会触发panic。
+    ///   若`dim`为负数，则从末尾开始计数。例如，-1表示在最后一个维度增加。
+    ///   若`dim`超出了当前维度的范围，将会触发panic。
     ///
     /// # 示例
     ///
@@ -381,8 +381,7 @@ impl Tensor {
         // 检查axes中的所有元素必须是唯一且在[0, <张量维数>)范围内
         let unique_axes = axes.iter().copied().collect::<HashSet<_>>();
         assert!(
-            !(unique_axes.len() != axes.len()
-                || !unique_axes.iter().all(|&a| a < self.dimension())),
+            unique_axes.len() == axes.len() && unique_axes.iter().all(|&a| a < self.dimension()),
             "{}",
             TensorError::PermuteNeedUniqueAndInRange
         );
@@ -400,8 +399,7 @@ impl Tensor {
         // 检查axes中的所有元素必须是唯一且在[0, <张量维数>)范围内
         let unique_axes = axes.iter().copied().collect::<HashSet<_>>();
         assert!(
-            !(unique_axes.len() != axes.len()
-                || !unique_axes.iter().all(|&a| a < self.dimension())),
+            unique_axes.len() == axes.len() && unique_axes.iter().all(|&a| a < self.dimension()),
             "{}",
             TensorError::PermuteNeedUniqueAndInRange
         );
@@ -520,6 +518,7 @@ impl Tensor {
     /// - 若输入为向量，则返回以该向量为对角线的方阵
     /// - 若输入为方阵，则返回其对角线元素组成的1维向量
     /// - 若输入为非方阵，则panic
+    ///
     /// 注意：对于仅含1个元素的1维或2维张量，为方便理解，可被视为标量而不是向量或方阵；
     /// 另外，不同于`numpy`的`diag`, 这里不支持诸如`[2,3]`这样的非标量、向量及方阵的情况
     ///
@@ -594,6 +593,7 @@ impl Tensor {
     /// - 若输入为向量，则转换为以该向量为对角线的方阵
     /// - 若输入为方阵，则转换为其对角线元素组成的1维向量
     /// - 若输入为非方阵，则panic
+    ///
     /// 注意：对于仅含1个元素的1维或2维张量，为方便理解，可被视为标量而不是向量或方阵；
     /// 另外，不同于`numpy`的`diag`, 这里不支持诸如`[2,3]`这样的非标量、向量及方阵的情况
     ///
@@ -803,7 +803,7 @@ impl Tensor {
         let new_size: usize = new_shape.iter().product();
         let mut data = vec![0.0f32; new_size];
 
-        for i in 0..new_size {
+        for (i, out) in data.iter_mut().enumerate() {
             let mut remaining = i;
             let mut old_linear = 0;
             for d in 0..ndim {
@@ -811,7 +811,7 @@ impl Tensor {
                 remaining %= new_strides[d];
                 old_linear += (idx_in_dim + ranges[d].0) * old_strides[d];
             }
-            data[i] = flat[old_linear];
+            *out = flat[old_linear];
         }
 
         Self::new(data, &new_shape)
@@ -877,7 +877,7 @@ impl Tensor {
         let old_strides = Self::compute_strides(old_shape);
         let new_strides = Self::compute_strides(&new_shape);
 
-        for i in 0..total {
+        for (i, out) in data.iter_mut().enumerate() {
             // 将新索引转为老索引（取模）
             let mut remaining = i;
             let mut old_linear = 0;
@@ -887,7 +887,7 @@ impl Tensor {
                 let old_idx = idx_in_dim % old_shape[d];
                 old_linear += old_idx * old_strides[d];
             }
-            data[i] = flat[old_linear];
+            *out = flat[old_linear];
         }
 
         Self::new(data, &new_shape)

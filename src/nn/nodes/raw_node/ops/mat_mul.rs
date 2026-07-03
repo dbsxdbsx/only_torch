@@ -132,7 +132,7 @@ impl TraitNode for MatMul {
     /// 对于 C = A @ B（A: [batch, n], B: [n, k], C: [batch, k]）：
     /// - dL/dA = `upstream_grad` @ B^T，shape: [batch, k] @ [k, n] = [batch, n]
     /// - dL/dB = A^T @ `upstream_grad，shape`: [n, batch] @ [batch, k] = [n, k]
-    ///           这个乘法自然地对 batch 维度求和
+    ///   这个乘法自然地对 batch 维度求和
     fn calc_grad_to_parent(
         &self,
         target_parent_index: usize,

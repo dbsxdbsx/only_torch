@@ -45,7 +45,7 @@ fn bench_add_chain_backward(c: &mut Criterion) {
         let loss = result.mse_loss(&target).unwrap();
         graph.snapshot_once_from(&[&loss]);
 
-        let mut opt = SGD::new(&graph, &[p.clone()], 0.001);
+        let mut opt = SGD::new(&graph, std::slice::from_ref(&p), 0.001);
 
         group.bench_with_input(BenchmarkId::from_parameter(name), &name, |b, _| {
             b.iter(|| {
@@ -97,7 +97,7 @@ fn bench_negate_chain_backward(c: &mut Criterion) {
         let loss = result.mse_loss(&target).unwrap();
         graph.snapshot_once_from(&[&loss]);
 
-        let mut opt = SGD::new(&graph, &[p.clone()], 0.001);
+        let mut opt = SGD::new(&graph, std::slice::from_ref(&p), 0.001);
 
         group.bench_with_input(BenchmarkId::from_parameter(name), &name, |b, _| {
             b.iter(|| {

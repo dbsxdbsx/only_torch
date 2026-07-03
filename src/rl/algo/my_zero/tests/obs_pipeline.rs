@@ -207,8 +207,8 @@ fn assemble_quantized_frames_matches_manual_dequant() {
 
     let assembled = assemble_stacked_obs(&frames, 4, 4);
     let mut manual = Vec::new();
-    for idx in 1..=4 {
-        manual.extend(f[idx].to_f32_vec());
+    for frame in &f[1..=4] {
+        manual.extend(frame.to_f32_vec());
     }
     assert_eq!(assembled, manual);
     // 起点前向填充语义在量化帧下同样成立

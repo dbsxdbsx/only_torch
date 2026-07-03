@@ -214,8 +214,7 @@ impl SamplingStrategy for BucketedSampling {
 
         // 按分桶键分组
         let mut buckets: HashMap<usize, Vec<usize>> = HashMap::new();
-        for idx in 0..dataset_len {
-            let key = bucket_keys[idx];
+        for (idx, &key) in bucket_keys.iter().enumerate().take(dataset_len) {
             buckets.entry(key).or_default().push(idx);
         }
 

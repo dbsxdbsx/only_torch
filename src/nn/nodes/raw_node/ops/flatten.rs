@@ -66,13 +66,13 @@ impl Flatten {
                 parent_shape.to_vec()
             } else {
                 let first_dim = parent_shape[0];
-                if first_dim == 0 {
-                    // Dynamic batch: compute rest from non-batch dims
-                    let rest_dim: usize = parent_shape[1..].iter().product();
-                    vec![0, rest_dim]
-                } else {
-                    let rest_dim = total_elements / first_dim;
-                    vec![first_dim, rest_dim]
+                match total_elements.checked_div(first_dim) {
+                    // Dynamic batch（first_dim == 0）：从非 batch 维推导 rest
+                    None => {
+                        let rest_dim: usize = parent_shape[1..].iter().product();
+                        vec![0, rest_dim]
+                    }
+                    Some(rest_dim) => vec![first_dim, rest_dim],
                 }
             }
         } else {

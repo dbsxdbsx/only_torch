@@ -82,7 +82,7 @@ fn value_head_can_separate_high_low_targets() {
                 .train_unroll(
                     obs,
                     &[],
-                    &[uniform.clone()],
+                    std::slice::from_ref(&uniform),
                     &[t],
                     &[],
                     &[],
