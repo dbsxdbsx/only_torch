@@ -399,7 +399,7 @@ impl TraitNode for BatchNormOp {
                     }
                 });
 
-            let dx = Tensor::from_vec(dx_data, up_c.shape());
+            let dx = Tensor::new(dx_data, up_c.shape());
             Ok(GradResult::Computed(dx))
         } else {
             // 评估模式：简单除以 std

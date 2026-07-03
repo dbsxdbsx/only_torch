@@ -22,4 +22,4 @@ pub mod utils;
 pub mod vision;
 
 pub use data::{DataError, MnistDataset};
-pub use tensor::Tensor;
+pub use tensor::{IntoTensorData, Tensor};

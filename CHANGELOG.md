@@ -4,6 +4,12 @@
 
 ### Changed
 
+- **refactor(tensor): 构造接口统一——`from_vec` 并入泛型 `new`（`IntoTensorData`，性能中性）**（2026-07-03）
+  - 消除优化 J 引入的双构造入口（`new(&[f32])` 复制 vs `from_vec(Vec)` 零拷贝，签名几乎一致仅所有权语义不同）：新增 `IntoTensorData` trait，`Tensor::new` 改 `impl IntoTensorData` 入参——传 owned `Vec<f32>` 零拷贝 move，传 `&[f32]` / `&[f32; N]` / `&Vec<f32>` 复制一次；**删除 `from_vec`**（未进任何发布版本，无兼容包袱）。产物两路完全等价（独立所有权、连续布局），对齐 Burn 单入口惯例；PyTorch 式分名仅适用于可观察语义不同（别名共享）的场景
+  - 关键实现细节：不能用 `impl Into<Vec<f32>>`——泛型参数不触发 unsize coercion，`&[1.0, 2.0]` 数组字面量（全库数百处调用形状）会编译失败，const-generic `&[f32; N]` impl 是零改动兼容的必要件
+  - 全库 28 处 `from_vec` 调用点机械迁移；`random`/`normal`/`arange`/`eyes` 内部改 owned 传参（各免一次 memcpy）；ONNX 导入 `Cow` 权重 `into_owned()` 传入（Owned 分支复制转 move）；`IntoTensorData` 随 `Tensor` 一并 crate 根导出
+  - 验证：双口径全量 3320 测试全绿；clippy 179 条（低于改动前 181，顺手清 5 处 needless-borrow）；同窗基线 `pre-unify-new`（smoke/pool2d/my_zero_forward 18 case）对比性能中性——3 项名义回归复测翻转，唯一持续项 `max_pool2d_backward/b32` +5~7% 经 stash 旧代码同窗对照（+11.7%，反而更差）锤死环境归因；**全量 bench 无必要**，`post-hotpath-opt` 基线继续有效，详见 [optimization_candidates.md 优化 L](.doc/optimization_candidates.md)
+
 - **perf(nn): Pool2d 平铺直写 + BatchNorm 反向单趟融合（优化 K）**（2026-07-03）
   - `avg_pool2d` 前向/反向从「IxDyn 逐元素索引 + `Vec<Vec>` flatten」旧模式改为 contiguous 守卫 + 平铺 slice + `par_chunks_mut` 直写；`max_pool2d` 前向双输出 zip 直写、反向 IxDyn 读改平铺读；`BatchNormOp` 训练反向 dx 表达式链（~6 个全尺寸临时 + 广播慢路径）融合为单趟并行循环
   - 实测（同环境背靠背基线 + stash 旧实现同窗对照归因）：`avg_pool2d_backward/b32` **-36%**（3.5→2.65ms，优于夜间基线绝对值）、BatchNorm dx 隔离对照 **2.35x**（4.23→1.80ms，手动档 `bn_backward_micro`，全链路 bench -14% 与之吻合）、`avg_pool2d_forward/b8` 净代码收益 ~17pp（旧实现同窗 +0.6% vs 新 -17%）；大 batch 前向档位与旧实现同窗持平（rayon 摊薄 IxDyn 开销）

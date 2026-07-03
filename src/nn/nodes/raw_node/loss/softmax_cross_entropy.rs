@@ -118,8 +118,8 @@ impl SoftmaxCrossEntropy {
             .sum();
 
         (
-            // from_vec 零拷贝接管（softmax_data 由 par_chunks_mut 按行主序直写）
-            Tensor::from_vec(softmax_data, shape),
+            // owned Vec 传入 new 零拷贝接管（softmax_data 由 par_chunks_mut 按行主序直写）
+            Tensor::new(softmax_data, shape),
             total_loss / batch_size as f32,
         )
     }

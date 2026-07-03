@@ -91,6 +91,49 @@ impl AbsDiffEq for Tensor {
     }
 }
 
+/// `Tensor` 构造数据源的统一抽象：任何能产出**行主序** `Vec<f32>` 的类型。
+///
+/// [`Tensor::new`] 借此对不同入参自动选择最优构造路径，调用方无需区分两套构造函数：
+/// - `Vec<f32>`：**零拷贝**（move 语义，直接接管所有权）——"先按行主序构建 `Vec`
+///   再包成 Tensor"的热点路径（如卷积/池化/损失节点的输出组装）推荐用法；
+/// - `&[f32]` / `&[f32; N]` / `&Vec<f32>`：复制一次（借用语义，适合字面量与共享数据）。
+///
+/// 两类入参产出的张量完全等价（独立所有权、连续布局），仅构造成本不同。
+pub trait IntoTensorData {
+    /// 转换为行主序的 `Vec<f32>`（owned 入参零拷贝直通，借用入参复制一次）
+    fn into_tensor_data(self) -> Vec<f32>;
+}
+
+impl IntoTensorData for Vec<f32> {
+    #[inline]
+    fn into_tensor_data(self) -> Vec<f32> {
+        self
+    }
+}
+
+impl IntoTensorData for &Vec<f32> {
+    #[inline]
+    fn into_tensor_data(self) -> Vec<f32> {
+        self.clone()
+    }
+}
+
+impl IntoTensorData for &[f32] {
+    #[inline]
+    fn into_tensor_data(self) -> Vec<f32> {
+        self.to_vec()
+    }
+}
+
+// 数组字面量（如 `Tensor::new(&[1.0, 2.0], &[2])`）：泛型参数不触发 unsize coercion，
+// 需要 const-generic impl 直接接住 `&[f32; N]`。
+impl<const N: usize> IntoTensorData for &[f32; N] {
+    #[inline]
+    fn into_tensor_data(self) -> Vec<f32> {
+        self.to_vec()
+    }
+}
+
 impl Tensor {
     /// 创建一个张量，
     /// 若为标量，`shape`可以是[]、[1]、[1,1]、[1,1,1]...
@@ -98,33 +141,18 @@ impl Tensor {
     /// 若为矩阵，`shape`可以是[n,m]；
     /// 若为更高维度的数组，`shape`可以是[c,n,m,...]；
     /// 注：除了`data`长度为1且shape为`[]`的情况（标量），`data`的长度必须和`shape`中所有元素的乘积相等。
-    pub fn new(data: &[f32], shape: &[usize]) -> Self {
-        let data_len = data.len();
-        let data = Array::from_shape_vec(IxDyn(shape), data.to_vec()).unwrap_or_else(|e| {
-            panic!("Tensor::new: 数据长度 {data_len} 与形状 {shape:?} 不匹配: {e}")
-        });
-        Self {
-            data,
-            source_id: next_source_id(),
-        }
-    }
-
-    /// 从已有 `Vec<f32>` 创建张量（**零拷贝**，move 语义）。
     ///
-    /// 与 [`Tensor::new`]（接收 `&[f32]`，内部总是复制一次）不同，本方法直接接管
-    /// `data` 的所有权，不发生任何数据复制。适用于"先按**行主序**构建 `Vec` 再包成
-    /// Tensor"的热点路径（如卷积/损失节点的输出组装）。
+    /// # 数据传递语义（详见 [`IntoTensorData`]）
+    /// - 传 owned `Vec<f32>`：**零拷贝** move；
+    /// - 传 `&[f32]` 等借用类型：内部复制一次。
     ///
     /// # 布局契约
-    /// `data` 必须已按行主序（C-contiguous）排列——`Vec` 本身总是连续内存，
-    /// 调用方只需保证**元素逻辑顺序**是行主序。产出的张量必为连续布局。
-    ///
-    /// # Panics
-    /// 当 `data.len()` 与 `shape` 各维乘积不一致时 panic（与 `Tensor::new` 相同）。
-    pub fn from_vec(data: Vec<f32>, shape: &[usize]) -> Self {
+    /// `data` 的元素逻辑顺序必须为行主序（C-contiguous），产出的张量必为连续布局。
+    pub fn new(data: impl IntoTensorData, shape: &[usize]) -> Self {
+        let data = data.into_tensor_data();
         let data_len = data.len();
         let data = Array::from_shape_vec(IxDyn(shape), data).unwrap_or_else(|e| {
-            panic!("Tensor::from_vec: 数据长度 {data_len} 与形状 {shape:?} 不匹配: {e}")
+            panic!("Tensor::new: 数据长度 {data_len} 与形状 {shape:?} 不匹配: {e}")
         });
         Self {
             data,
@@ -147,7 +175,7 @@ impl Tensor {
         let data = (0..shape.iter().product::<usize>())
             .map(|_| Uniform::from(min..=max).sample(&mut rng))
             .collect::<Vec<_>>();
-        Self::new(&data, shape)
+        Self::new(data, shape)
     }
 
     /// 创建一个用指定值填充的张量（类似 PyTorch 的 `torch.full`）。
@@ -202,13 +230,8 @@ impl Tensor {
             }
         );
         let data = Array::eye(n);
-        let shape = vec![n, n];
-        // eye 产物为标准布局，offset 恒为 0，直接取 Vec
-        let data = Array::from_shape_vec(IxDyn(&shape), data.into_raw_vec_and_offset().0).unwrap();
-        Self {
-            data,
-            source_id: next_source_id(),
-        }
+        // eye 产物为标准布局，offset 恒为 0，直接取 Vec 零拷贝构造
+        Self::new(data.into_raw_vec_and_offset().0, &[n, n])
     }
 
     /// 创建一个服从正态分布的随机张量，其值在指定的均值和标准差范围内。
@@ -237,7 +260,7 @@ impl Tensor {
             }
         }
 
-        Self::new(&data, shape)
+        Self::new(data, shape)
     }
 
     /// 创建一个服从正态分布的随机张量（使用指定种子确保可重复性）
@@ -275,7 +298,7 @@ impl Tensor {
             }
         }
 
-        Self::new(&data, shape)
+        Self::new(data, shape)
     }
 
     /// 创建一个包含指定范围内等间隔值的1维张量。
@@ -295,7 +318,7 @@ impl Tensor {
             .map(|i| (i as f32).mul_add(step, start))
             .collect();
 
-        Self::new(&data, &[num_elements])
+        Self::new(data, &[num_elements])
     }
 
     /// 从快照创建一个新张量

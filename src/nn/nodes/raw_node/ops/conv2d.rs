@@ -220,7 +220,7 @@ impl Conv2d {
         let input_sample_size = c * h * w;
 
         // 预分配整块输出（零值即 padding），Rayon 按样本 chunk 直写：
-        // 相比旧的 Vec<Vec> 收集 + flatten + Tensor::new，少两次全量拷贝。
+        // 相比旧的 Vec<Vec> 收集 + flatten + 借用传参构造 Tensor，少两次全量拷贝。
         let mut all_data = vec![0.0f32; batch_size * single_sample_size];
         all_data
             .par_chunks_mut(single_sample_size)
@@ -239,7 +239,7 @@ impl Conv2d {
                 }
             });
 
-        Tensor::from_vec(all_data, &new_shape)
+        Tensor::new(all_data, &new_shape)
     }
 
     /// im2col：将单样本输入 [C_in, H, W] 展开为列矩阵 [out_h*out_w, C_in*k_h*k_w]
@@ -406,7 +406,7 @@ impl Conv2d {
 
         // 预分配整块输出，Rayon 按样本 chunk 直写：GEMM 经 general_mat_mul 写入
         // chunk 视图（与 dot 同一 BLAS/matrixmultiply 调用，beta=0，结果逐 bit 一致），
-        // 相比旧的「dot 分配 → collect 拷贝 → extend 拷贝 → Tensor::new 拷贝」少三次全量拷贝。
+        // 相比旧的「dot 分配 → collect 拷贝 → extend 拷贝 → 借用传参构造拷贝」少三次全量拷贝。
         let sample_out_size = out_c * out_h * out_w;
         let spatial = out_h * out_w;
         let mut all_data = vec![0.0f32; batch_size * sample_out_size];
@@ -424,7 +424,7 @@ impl Conv2d {
             })
             .collect();
 
-        (Tensor::from_vec(all_data, &output_shape), im2col_cache)
+        (Tensor::new(all_data, &output_shape), im2col_cache)
     }
 
     /// eval 模式下的 1x1 stride=1 卷积快路径。
@@ -467,7 +467,7 @@ impl Conv2d {
                 ndarray::linalg::general_mat_mul(1.0, &kernel_mat, &sample, 0.0, &mut out_view);
             });
 
-        Tensor::from_vec(all_data, &output_shape)
+        Tensor::new(all_data, &output_shape)
     }
 }
 
@@ -678,7 +678,7 @@ impl TraitNode for Conv2d {
                     });
             }
 
-            Ok(GradResult::Computed(Tensor::from_vec(
+            Ok(GradResult::Computed(Tensor::new(
                 all_data,
                 orig_input_shape,
             )))
@@ -716,9 +716,9 @@ impl TraitNode for Conv2d {
             };
 
             // reduce 产物为新分配的标准布局矩阵（offset 恒 0），into_raw_vec_and_offset
-            // 零拷贝取出底层缓冲，from_vec 零拷贝按 4D kernel 形状接管
-            // （旧路径 to_vec + Tensor::new 拷两次）
-            Ok(GradResult::Computed(Tensor::from_vec(
+            // 零拷贝取出底层缓冲，owned Vec 传入 new 零拷贝按 4D kernel 形状接管
+            // （旧路径 to_vec 借用传参拷两次）
+            Ok(GradResult::Computed(Tensor::new(
                 kernel_grad.into_raw_vec_and_offset().0,
                 kernel_shape,
             )))

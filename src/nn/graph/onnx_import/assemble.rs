@@ -116,7 +116,8 @@ pub(super) fn assemble<'a>(
             tensor_name: init.name().to_string(),
             reason: "无法提取 float32 数据".to_string(),
         })?;
-        let tensor = Tensor::new(&float_data, &shape);
+        // Cow::Owned（字节序转换产物）时 into_owned 零拷贝直通，Borrowed 时复制一次
+        let tensor = Tensor::new(float_data.into_owned(), &shape);
         weights.insert(id, tensor);
     }
 
@@ -164,7 +165,7 @@ pub(super) fn assemble<'a>(
                 .with_origin_onnx_nodes(vec![node.name.to_string()]),
             );
             if let Some(float_data) = tensor_proto.as_f32() {
-                let tensor = Tensor::new(&float_data, &shape);
+                let tensor = Tensor::new(float_data.into_owned(), &shape);
                 weights.insert(id, tensor);
             }
             continue;
@@ -548,7 +549,7 @@ fn emit_batch_norm_eps(
         )
         .with_origin_onnx_nodes(vec![node.name.to_string()]),
     );
-    weights.insert(id, Tensor::new(&vec![eps; num_features], bcast_shape));
+    weights.insert(id, Tensor::new(vec![eps; num_features], bcast_shape));
     id
 }
 

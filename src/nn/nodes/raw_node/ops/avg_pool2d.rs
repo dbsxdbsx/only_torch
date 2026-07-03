@@ -236,7 +236,7 @@ impl TraitNode for AvgPool2d {
                 }
             });
 
-        self.value = Some(Tensor::from_vec(all_data, &output_shape));
+        self.value = Some(Tensor::new(all_data, &output_shape));
         self.input_shape = input_shape;
         Ok(())
     }
@@ -303,10 +303,7 @@ impl TraitNode for AvgPool2d {
                 }
             });
 
-        Ok(GradResult::Computed(Tensor::from_vec(
-            all_data,
-            input_shape,
-        )))
+        Ok(GradResult::Computed(Tensor::new(all_data, input_shape)))
     }
 
     fn grad(&self) -> Option<&Tensor> {

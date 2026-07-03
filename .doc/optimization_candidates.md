@@ -403,6 +403,31 @@ per-sample Rayon 并行策略在有无 BLAS 时完全一致。
 `avg/max_pool2d_forward/b16_c32_14x14_k3`（~9.5µs 小 case）在新旧实现间无显著差异
 （k=3 小窗口下平铺收益与 par 调度开销相抵），非回归。
 
+### L. Tensor 构造接口统一：`from_vec` 并入泛型 `new`（2026-07-03，API 收口，性能中性）
+
+**动机**：优化 J 引入的 `Tensor::from_vec(Vec, shape)` 与 `Tensor::new(&[f32], shape)`
+签名几乎一致、仅所有权语义不同，双入口造成"该用哪个"的用户成本。参考对照：Burn
+`TensorData::new` 单入口收 owned `Vec`；PyTorch 的 `tensor` / `from_numpy` 分名是因为
+**可观察语义不同**（别名共享），而我们两者产物完全等价（独立所有权、连续布局），
+只有构造成本差异——该场景 Rust 惯例是单入口 + 参数类型静态分派。
+
+**方案**：新增 `IntoTensorData` trait（`Vec<f32>` 零拷贝 move / `&Vec` / `&[f32]` /
+const-generic `&[f32; N]` 复制一次），`new` 改 `impl IntoTensorData` 入参，**删除
+`from_vec`**（未进任何发布版本，无兼容包袱）。关键细节：不能用 `impl Into<Vec<f32>>`
+——泛型参数不触发 unsize coercion，`&[1.0, 2.0]` 数组字面量（全库测试数百处调用形状）
+会全部编译失败，const-generic impl 是保住零改动兼容的必要件。全库 28 处 `from_vec`
+调用点机械迁移；`random`/`normal`/`arange`/`eyes` 构造器内部顺手改 owned 传参
+（各免一次 memcpy）；ONNX 导入 `Cow` 权重改 `into_owned()` 传入（Owned 分支由复制转 move）。
+
+**验证**：双口径全量 3320 测试全绿；clippy 179（低于改动前 181，顺手清了 5 处
+needless-borrow）；同窗基线 `pre-unify-new`（smoke + pool2d + my_zero_forward 共 18 case）
+对比——初跑 4 项名义回归中 3 项复测翻转 No change；唯一持续项 `max_pool2d_backward/b32`
++5~7% 经 **stash 旧代码同窗对照**复跑 +11.7%（旧代码反而更差）→ 锤死环境漂移归因，
+非代码回归。泛型单态化后 `new(Vec)` / `new(&slice)` 生成代码与旧 `from_vec` / 旧 `new`
+逐指令等价，符合"零运行时开销"预期。**全量 bench 与基线重录均无必要**，
+`post-hotpath-opt` 基线继续有效（本节 J/K 表格中的 `from_vec` 字样即现今
+`new(owned Vec)` 路径）。
+
 ---
 
 ## Benchmark 基础设施（✅ 已搭建）

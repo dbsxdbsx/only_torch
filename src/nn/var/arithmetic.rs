@@ -496,7 +496,7 @@ impl Mul<f32> for &Var {
 
     fn mul(self, scalar: f32) -> Var {
         let shape = self.node().shape();
-        let t = Tensor::new(&vec![scalar; 1], &vec![1; shape.len()]);
+        let t = Tensor::new(vec![scalar; 1], &vec![1; shape.len()]);
         self * t
     }
 }
@@ -532,7 +532,7 @@ impl Add<f32> for &Var {
 
     fn add(self, scalar: f32) -> Var {
         let shape = self.node().shape();
-        let t = Tensor::new(&vec![scalar; 1], &vec![1; shape.len()]);
+        let t = Tensor::new(vec![scalar; 1], &vec![1; shape.len()]);
         self + t
     }
 }

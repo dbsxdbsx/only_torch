@@ -122,7 +122,7 @@ impl TraitNode for Sqrt {
         // contiguous() 连续时零拷贝借用，非连续时按逻辑序物化一次（值序与 output.shape() 对齐）。
         let output_c = output.contiguous();
         let half_recip = Tensor::new(
-            &output_c
+            output_c
                 .data_as_slice()
                 .iter()
                 .map(|&y| 0.5 / y)

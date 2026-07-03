@@ -177,7 +177,7 @@ impl TraitNode for Clip {
         // 非连续时物化一份（按逻辑行主序，与 input.shape() 对齐）。
         let input_c = input.contiguous();
         let mask = Tensor::new(
-            &input_c
+            input_c
                 .data_as_slice()
                 .iter()
                 .map(|&x| if x > min && x < max { 1.0 } else { 0.0 })

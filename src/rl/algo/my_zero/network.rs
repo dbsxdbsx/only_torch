@@ -706,7 +706,7 @@ impl MyZeroModel {
     }
 
     fn two_hot_target(&self, x: f32) -> Tensor {
-        Tensor::from_vec(self.encode_scalar(x), &[1, SUPPORT.size()])
+        Tensor::new(self.encode_scalar(x), &[1, SUPPORT.size()])
     }
 
     /// 一批标量 value/reward → categorical 目标张量 `[G, support_size]`（逐行编码）。
@@ -716,7 +716,7 @@ impl MyZeroModel {
         for &x in xs {
             flat.extend_from_slice(&self.encode_scalar(x));
         }
-        Tensor::from_vec(flat, &[xs.len(), size])
+        Tensor::new(flat, &[xs.len(), size])
     }
 
     /// value/reward logits 切片 → 标量（softmax 期望 + h⁻¹，无 Tensor 中间分配）
@@ -798,7 +798,7 @@ impl MyZeroModel {
 
         for i in 0..k {
             let oh = self.action_to_onehot(actions[i]);
-            let oh_tensor = Tensor::from_vec(oh, &[1, self.action_dim]);
+            let oh_tensor = Tensor::new(oh, &[1, self.action_dim]);
             let oh_var = self.graph.input(&oh_tensor)?;
 
             let (next_latent, pred_reward_logits, pred_continuation_logit) =
@@ -900,7 +900,7 @@ impl MyZeroModel {
             for r in rows {
                 flat.extend_from_slice(r);
             }
-            Tensor::from_vec(flat, &[g, dim])
+            Tensor::new(flat, &[g, dim])
         };
         // obs 专用堆叠：入口单点 symlog（repr 输入与 recon 目标同源；policy 等目标不经过）
         let stack_obs = |rows: &[&[f32]], dim: usize| -> Tensor {
@@ -909,7 +909,7 @@ impl MyZeroModel {
                 flat.extend_from_slice(r);
             }
             maybe_symlog_in_place(self.obs_symlog, &mut flat);
-            Tensor::from_vec(flat, &[g, dim])
+            Tensor::new(flat, &[g, dim])
         };
         // obs_t（k=0 输入 + reconstruction k=0 目标）
         let obs_rows: Vec<&[f32]> = items.iter().map(|it| it.obs_t.as_slice()).collect();
@@ -966,7 +966,7 @@ impl MyZeroModel {
             }
             let oh_var = self
                 .graph
-                .input(&Tensor::from_vec(oh_flat, &[g, self.action_dim]))?;
+                .input(&Tensor::new(oh_flat, &[g, self.action_dim]))?;
 
             let (next_latent, pred_reward_logits, pred_continuation_logit) =
                 self.dyn_net.forward(&latent, &oh_var)?;
@@ -1072,7 +1072,7 @@ impl MyZeroModel {
         let obs_len = obs_tf.len();
         let r = &self.root_infer;
         r.obs_in
-            .set_value_owned(Tensor::from_vec(obs_tf.into_owned(), &[1, obs_len]))
+            .set_value_owned(Tensor::new(obs_tf.into_owned(), &[1, obs_len]))
             .expect("set obs 失败");
         self.graph.forward(&r.sink).expect("root forward 失败");
 
@@ -1097,14 +1097,14 @@ impl MyZeroModel {
         {
             crate::prof_scope!("model.rec.setup");
             rc.latent_in
-                .set_value_owned(Tensor::from_vec(state.to_vec(), &[1, self.latent_dim]))
+                .set_value_owned(Tensor::new(state.to_vec(), &[1, self.latent_dim]))
                 .expect("set latent 失败");
             let mut oh = vec![0.0; self.action_dim];
             if action_idx < self.action_dim {
                 oh[action_idx] = 1.0;
             }
             rc.action_in
-                .set_value_owned(Tensor::from_vec(oh, &[1, self.action_dim]))
+                .set_value_owned(Tensor::new(oh, &[1, self.action_dim]))
                 .expect("set action 失败");
         }
 

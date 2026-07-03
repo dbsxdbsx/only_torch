@@ -525,7 +525,7 @@ impl Tensor {
         // 输出形状：原形状 + [num_classes]
         let mut new_shape = self.shape().to_vec();
         new_shape.push(num_classes);
-        Self::from_vec(data, &new_shape)
+        Self::new(data, &new_shape)
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑one_hot↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 

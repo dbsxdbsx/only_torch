@@ -339,8 +339,8 @@ impl TraitNode for MaxPool2d {
                 }
             });
 
-        self.value = Some(Tensor::from_vec(all_output, &output_shape));
-        self.max_indices = Some(Tensor::from_vec(all_indices, &output_shape));
+        self.value = Some(Tensor::new(all_output, &output_shape));
+        self.max_indices = Some(Tensor::new(all_indices, &output_shape));
         self.input_shape = input_shape;
         Ok(())
     }
@@ -427,10 +427,7 @@ impl TraitNode for MaxPool2d {
             });
         let _ = padded_h_check; // 仅用于命名意图，实际上限校验在前向已做
 
-        Ok(GradResult::Computed(Tensor::from_vec(
-            all_data,
-            input_shape,
-        )))
+        Ok(GradResult::Computed(Tensor::new(all_data, input_shape)))
     }
 
     fn grad(&self) -> Option<&Tensor> {
