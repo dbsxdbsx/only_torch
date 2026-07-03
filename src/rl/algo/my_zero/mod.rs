@@ -70,6 +70,8 @@ pub mod config;
 pub mod consistency;
 pub mod loss;
 pub mod model_io;
+// 模块与算法同名属刻意设计（my_zero::my_zero::MyZero 仅内部路径，公开面已 re-export）
+#[allow(clippy::module_inception)]
 pub mod my_zero;
 pub mod n_step;
 pub mod network;

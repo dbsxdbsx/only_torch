@@ -12,6 +12,18 @@
 
     keywords=["machine-learning", "logic", "AI", "torch", "NEAT"]
 
+# Lint 政策（与 clippy 默认的三处刻意分歧，其余保持零警告纪律）：
+# - upper_case_acronyms：GELU/SELU/SGD/MSE/BCE 等是领域标准名，且部分枚举已序列化进
+#   基因/模型文件，改名破坏兼容。
+# - too_many_arguments：Conv2d/ConvTranspose2d 等按 PyTorch 签名对齐本就 >7 参数，
+#   演化内部 helper 同理；该 lint 的"设计味道"提示由 code review 承担。
+# - type_complexity：主要是测试 fixture 的元组类型与图内部回调签名，抽 type alias
+#   反而降低就地可读性。
+[lints.clippy]
+    upper_case_acronyms="allow"
+    too_many_arguments ="allow"
+    type_complexity    ="allow"
+
 # 关闭 lib 目标的默认 libtest bench harness：
 # 使 `cargo bench --benches -- --save-baseline <名>` 等 Criterion 参数可在
 # 单次 cargo 调用中传给全部 bench 目标（libtest 不认识这些参数会直接报错）。

@@ -16,30 +16,30 @@ pub enum SliceInfo {
 
 /// `用于将各种类型转换为SliceInfo的内部trait`
 pub trait IntoSliceInfo {
-    fn into_slice_info(&self) -> SliceInfo;
+    fn to_slice_info(&self) -> SliceInfo;
 }
 
 impl IntoSliceInfo for usize {
-    fn into_slice_info(&self) -> SliceInfo {
+    fn to_slice_info(&self) -> SliceInfo {
         SliceInfo::Single(*self)
     }
 }
 
 impl IntoSliceInfo for Range<usize> {
-    fn into_slice_info(&self) -> SliceInfo {
+    fn to_slice_info(&self) -> SliceInfo {
         SliceInfo::Range(self.clone())
     }
 }
 
 impl IntoSliceInfo for RangeFull {
-    fn into_slice_info(&self) -> SliceInfo {
+    fn to_slice_info(&self) -> SliceInfo {
         SliceInfo::Full
     }
 }
 
 // 添加对 RangeInclusive 的支持
 impl IntoSliceInfo for RangeInclusive<usize> {
-    fn into_slice_info(&self) -> SliceInfo {
+    fn to_slice_info(&self) -> SliceInfo {
         // 将 RangeInclusive 转换为普通 Range
         // RangeInclusive 的结束值需要+1，因为它包含结束值
         SliceInfo::Range(*self.start()..*self.end() + 1)
@@ -95,7 +95,7 @@ impl super::Tensor {
         );
 
         // 将输入的索引转换为SliceInfo类型
-        let slice_infos: Vec<_> = indices.iter().map(|idx| idx.into_slice_info()).collect();
+        let slice_infos: Vec<_> = indices.iter().map(|idx| idx.to_slice_info()).collect();
 
         // 检查每个维度的索引范围
         for (dim, info) in slice_infos.iter().enumerate() {
