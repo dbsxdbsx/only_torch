@@ -32,7 +32,7 @@ impl Tensor {
             .and(&other.data)
             .map_collect(|&a, &b| f(a, b));
         Self {
-            data,
+            data: data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -91,7 +91,7 @@ impl Tensor {
             .map_collect(|&a, &b| a.min(b));
 
         Tensor {
-            data: result_data,
+            data: result_data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -149,7 +149,7 @@ impl Tensor {
             .map_collect(|&a, &b| a.max(b));
 
         Tensor {
-            data: result_data,
+            data: result_data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -192,7 +192,7 @@ impl Tensor {
             .map_collect(|&y, &x| y.atan2(x));
 
         Tensor {
-            data: result_data,
+            data: result_data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -219,7 +219,7 @@ impl Tensor {
         // 这里显式处理零值，使其返回 0.0
         let data = self.data.mapv(|x| if x == 0.0 { 0.0 } else { x.signum() });
         Self {
-            data,
+            data: data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -251,7 +251,7 @@ impl Tensor {
     pub fn abs(&self) -> Self {
         let data = self.data.mapv(f32::abs);
         Self {
-            data,
+            data: data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -283,7 +283,7 @@ impl Tensor {
     pub fn clip(&self, min: f32, max: f32) -> Self {
         let data = self.data.mapv(|x| x.clamp(min, max));
         Self {
-            data,
+            data: data.into_shared(),
             source_id: next_source_id(),
         }
     }

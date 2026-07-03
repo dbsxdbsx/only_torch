@@ -7,6 +7,53 @@
 
 ---
 
+## O. Tensor 共享存储 Arc/CoW：clone 变 O(1) 浅拷贝 + owned 双轨 API 收敛删除（2026-07-03，架构收敛）
+
+**动机**：候选 #6 落地。触发时机 = 图像线 S1/S2 已进库（拷贝类收益首次有真实消费者）+
+哨兵红灯待新数值流复裁（无在册基线需保护，语义恒等重构的理想空窗）。定位是**架构收敛**
+而非纯性能项：CoW 保值语义、对外行为与深拷贝逐 bit 等价，一次换底让全库 clone 类冗余
+（反向缓存、快照、`value()` 读取、入图/设值）整类消失，并使 `_owned` 双轨 API 失去存在理由。
+
+**方案**：
+- **换底**：`Tensor.data` 由 `ArrayD<f32>` 改 `ArcArray<f32, IxDyn>`（`TensorStorage` 别名）。
+  `clone()` = 引用计数 +1（O(1)）；一切可变访问经 ndarray `ensure_unique` 自动写时物化——
+  共享时先复制私有副本再写，值语义与独占深拷贝完全一致。构造路径统一 `.into_shared()`
+  （owned `Array` → `ArcArray` 为 move，不复制元素）。序列化格式与旧 `ArrayD` 兼容
+  （ndarray serde 只编码 dim+data，与 repr 无关），`source_id` 语义不变且更名副其实。
+- **API 收敛（第二刀，同窗独立提交粒度）**：删除 `Graph::input_owned` / `Var::set_value_owned` /
+  `NodeInner::set_value_owned` / `TraitNode::set_value_owned`（含各节点 override）/
+  `tensor_to_target_var_owned`；`IntoVar for Tensor`、`LossTarget for Tensor`、标量 LossTarget、
+  MyZero 推理 setup、EMA、演化 mini-batch 全部回归唯一入口（`input(&t)` / `set_value(&t)`）。
+  维护者此后无需再为新 API 纠结"要不要补 owned 版本"。
+  `benches/obs_batch_assembly.rs` 两个 `*_owned` case 保留原名（baseline 连续性）、实际改调 `input`。
+- **守门**：新增 `src/tensor/tests/storage_cow.rs` 6 测锁死契约——clone 浅共享（缓冲指针相等）、
+  写时物化 + 值语义恒等（改一方不影响另一方，含非连续布局）、独占就地写零重分配
+  （守护优化器参数更新热路径）、共享方释放后恢复原缓冲就地写。
+
+**实测**（release+MKL，baseline `pre-arc-cow`，smoke + obs_batch_assembly + my_zero_forward）：
+
+| case | 变化 | 归因 |
+|---|---|---|
+| `graph_input_cloned` | **-47%** | 入图 clone 变浅拷贝——历史 owned 优化的收益如今"白送" |
+| `e2e_old_assemble_plus_input_cloned` | -37% | 同上 |
+| `smoke_cnn_train_step_b4` | **-12.7%** | 训练路径反向缓存/设值类 clone 消失 |
+| `smoke_conv2d_fwd_b32_3x28x28` | -71% | 大张量 clone 流量清零 |
+| `smoke_conv2d_inference_1x1_b1` | -39% | 同上 |
+| `my_zero_forward`（initial/recurrent） | **+6%/+7%（复跑稳定）** | 小张量（[1,64] 级）每次产出多付一次 Arc 控制块分配；MCTS 小张量推理密集故可见 |
+| 其余 smoke / 组装类 | No change | 与预期一致（组装路径不经手 Tensor clone） |
+
+**代价与裁决**：唯一持续回归 = 小张量高频创建路径的 Arc 分配开销（~6%，
+CartPole 哨兵口径是 env-steps 不受影响，wall 轻微变慢）；图像线大张量时代此项被
+clone 类收益远远盖过（cnn_train_step -12.7% 即证）。接受，不做小张量特判
+（Candle/Burn 同价结构，YAGNI；若未来 profiler 证明痛，候选池再立项）。
+
+**验证**：双轮全量测试 0 失败（3337 lib + 全 target）；clippy 179 = 改动前基数，零新增；
+`smoke-rl` 7 目标全过；**SMOKE CartPole 输出与改前逐 bit 相同**（换底与 API 收敛两轮各比一次，
+剔除耗时字段后 diff 为空）——锤实"语义恒等重构"承诺，3-seed 哨兵无需为本项重跑
+（哨兵红灯复裁按其 issue 原计划走新数值流，与本项无关）。
+
+---
+
 ## N. 训练 batch 组装融合 + owned 入图路径（2026-07-03，组装/入图流量 2.2×，全框架受益）
 
 **动机**：「零拷贝到底（借用 strided view 指向 buffer）」评估判死（论证见

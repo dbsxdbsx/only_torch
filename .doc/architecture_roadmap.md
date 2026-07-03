@@ -56,7 +56,7 @@ nn/graph           ~95%     ✅ 动态图架构 + PyTorch 风格 API + GraphErro
 nn/nodes           ~95%     ✅ 73 个节点类型（含完整激活函数族 + 归一化族 + 选择/排序）
 nn/layer           ~90%     ✅ Linear/Conv2d/Pool/RNN/LSTM/GRU + BatchNorm/LayerNorm/RMSNorm/GroupNorm/InstanceNorm + Embedding/MultiHeadAttention
 nn/debug           100%     ✅ 节点类型枚举 + 调试工具（strum 自动获取）
-nn/optimizer       ~70%     ✅ SGD/Adam 可用（set_value_owned 零拷贝 + 可选 BLAS 加速）
+nn/optimizer       ~70%     ✅ SGD/Adam 可用（apply_param_update 融合原地更新 + 可选 BLAS 加速）
 data/              ~85%     ✅ MNIST + California Housing + DataLoader + Transform 管线（8 种数据增强）
 vision/            ~70%     ✅ 基本完成
 rl/                ~45%     ✅ GymEnv + SAC-Discrete（CartPole）+ SAC-Continuous（Pendulum）

@@ -14,7 +14,7 @@ impl Neg for Tensor {
 
     fn neg(self) -> Self {
         Self {
-            data: -&self.data,
+            data: (-&self.data).into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -25,7 +25,7 @@ impl Neg for &Tensor {
 
     fn neg(self) -> Tensor {
         Tensor {
-            data: -&self.data,
+            data: (-&self.data).into_shared(),
             source_id: next_source_id(),
         }
     }

@@ -299,7 +299,7 @@ impl Tensor {
 
         // 将广播视图转换为拥有所有权的数组（复制数据）
         Tensor {
-            data: broadcast_view.to_owned(),
+            data: broadcast_view.to_owned().into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -379,7 +379,7 @@ impl Tensor {
             // 将非连续数据复制为连续布局
             let contiguous_data = self.data.as_standard_layout().into_owned();
             Self {
-                data: contiguous_data,
+                data: contiguous_data.into_shared(),
                 source_id: next_source_id(),
             }
         }
@@ -399,7 +399,7 @@ impl Tensor {
             std::borrow::Cow::Borrowed(self)
         } else {
             std::borrow::Cow::Owned(Tensor {
-                data: self.data.as_standard_layout().into_owned(),
+                data: self.data.as_standard_layout().into_owned().into_shared(),
                 source_id: next_source_id(),
             })
         }

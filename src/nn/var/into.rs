@@ -37,8 +37,8 @@ impl IntoVar for &Tensor {
 
 impl IntoVar for Tensor {
     fn into_var(self, graph: &Graph) -> Result<Var, GraphError> {
-        // owned Tensor 走 move 语义入图，省一次深拷贝
-        graph.input_owned(self)
+        // Tensor 存储 Arc/CoW 化后 clone 为 O(1) 浅拷贝，借用入图即零成本
+        graph.input(&self)
     }
 }
 

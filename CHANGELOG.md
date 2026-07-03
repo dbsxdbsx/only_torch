@@ -17,6 +17,14 @@
 
 ### Changed
 
+- **refactor(tensor): 存储 Arc/CoW 化——`clone()` 变 O(1) 浅拷贝 + `_owned` 双轨 API 收敛删除（优化 O，架构收敛）**（2026-07-03）
+  - **换底**：`Tensor.data` 由 `ArrayD<f32>` 改 `ArcArray<f32, IxDyn>`（候选 #6 落地，对齐 Candle/Burn/PyTorch 共享所有权路线）：`clone()` = 引用计数 +1，任何可变访问经 ndarray `ensure_unique` 自动写时物化——**值语义与深拷贝逐 bit 等价**，用户无新规则可学；序列化格式与旧 `ArrayD` 兼容，`source_id` 语义不变
+  - **API 收敛**：删除 `Graph::input_owned` / `Var::set_value_owned` / `NodeInner::set_value_owned` / `TraitNode::set_value_owned`（含各节点 override）/ `tensor_to_target_var_owned`——clone 免费后 owned 双轨失去存在理由，`input(&t)` / `set_value(&t)` 回归唯一入口；`IntoVar` / `LossTarget` / MyZero 推理 setup / EMA / 演化 mini-batch 全部迁移
+  - **守门**：新增 `src/tensor/tests/storage_cow.rs` 6 测锁死 CoW 契约（clone 浅共享 / 写时物化值语义恒等含非连续布局 / 独占就地写零重分配守护优化器热路径）
+  - 实测（baseline `pre-arc-cow`）：`graph_input_cloned` **-47%**、`smoke_cnn_train_step_b4` **-12.7%**、conv2d 前向 -39~71%；唯一持续回归 `my_zero_forward` +6~7%（小张量每产出多一次 Arc 控制块分配，MCTS 密集推理可见；哨兵口径 env-steps 不受影响，观察项落候选 #6）
+  - 验证：双轮全量测试 0 失败 + clippy 零新增 + `smoke-rl` 7 目标全过 + **SMOKE CartPole 输出与改前逐 bit 相同**（换底与收敛各比一次）；3-seed 哨兵无需为本项重跑，详见[优化战报 O](.doc/performance/optimization_log.md)
+  - **复查收尾**（同日，自查 + Reviewer 专家双轮）：`permute_mut` / `flatten_mut` 从深拷贝（`to_owned` / mem::replace 花招）改 O(1) 浅共享；`diag` / `diag_mut` 方阵取对角消除双重拷贝；`filter` / `stack` / `concat` 标量路径 / `gather` / `multinomial` / ConvTranspose2d 前向的 `Tensor::new(&vec)` 改 move；清理机械替换残留的冗余括号；`source_id` 文档补「视图类运算共享缓冲但仍是新 ID」语义说明；Reviewer 识别的「视图类算子改 Arc 共享视图」机会落候选 #7（暂缓，附不随批实施理由）；复查后全量测试 3427 全绿、clippy 维持 179 基数
+
 - **perf(nn/rl): 训练 batch 组装融合 + owned 入图路径（优化 N，组装/入图流量 2.2×）**（2026-07-03）
   - 「零拷贝到底（借用 strided view 指向 buffer）」评估**判死**（u8→f32 反量化视图消不掉、随机 gather 单 view 表达不了、借用生命周期穿不过持久 Rc 图；Candle/Burn/PyTorch 均走共享所有权而非借用方案），Reviewer 压测后改做两刀廉价替代，判死论证与 Arc/CoW 长期备选落档 [optimization_candidates.md](.doc/performance/optimization_candidates.md)
   - **融合组装**：`UnrollItem.obs_t/next_obs` 由物化 `Vec<f32>` 改 `ObsSource<'a>` 枚举（借用 buffer 帧 + 延迟物化），batch 组装时边反量化边堆叠**直写最终 flat**（零中间 Vec）；`assemble_stacked_obs` 降级 `#[cfg(test)]` 语义参照 + 新增逐 bit 守门测试

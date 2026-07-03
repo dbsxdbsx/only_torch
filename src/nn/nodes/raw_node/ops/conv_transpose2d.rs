@@ -327,7 +327,7 @@ impl ConvTranspose2d {
             .collect();
 
         let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
-        Tensor::new(&all_data, &output_shape)
+        Tensor::new(all_data, &output_shape)
     }
 }
 

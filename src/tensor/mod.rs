@@ -1,5 +1,5 @@
 use approx::AbsDiffEq;
-use ndarray::{Array, ArrayD, ArrayViewD, IxDyn};
+use ndarray::{ArcArray, Array, ArrayViewD, IxDyn};
 use rand::Rng;
 use rand::SeedableRng;
 use rand::distributions::{Distribution, Uniform};
@@ -49,17 +49,31 @@ pub use property::broadcast_shape;
 
 #[cfg(test)]
 mod tests;
+/// Tensor 底层存储：引用计数共享（`Arc`）+ 写时复制（CoW）。
+///
+/// - `clone()` 为 O(1) 浅拷贝（引用计数 +1），数据不复制；
+/// - 任何可变访问（`view_mut` / `as_slice_mut` / 就地运算等）经 ndarray 的
+///   `ensure_unique` 自动触发写时物化——共享时先复制出私有副本再写，
+///   因此**值语义与独占深拷贝完全一致**，仅代价不同。
+pub(crate) type TensorStorage = ArcArray<f32, IxDyn>;
+
 /// 定义张量的结构体。其可以是标量、向量、矩阵或更高维度的数组。
 /// 注：通过Tensor初始化的都是张量（即使标量也是张量）；
 /// 而通常意义上的数字（类型为usize、i32、f64等）就只是纯数（number），在这里不被认为是张量。
+///
+/// # 存储与 clone 语义（Arc/CoW）
+/// 底层数据由 [`TensorStorage`]（`ArcArray`）承载：`clone()` 是引用计数浅拷贝，
+/// 写入时自动物化（copy-on-write），对外可观察行为与深拷贝逐 bit 等价。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tensor {
-    data: ArrayD<f32>,
+    data: TensorStorage,
     /// 数据源身份 ID（用于同源数据追踪）
     ///
     /// - 每个新创建的 Tensor 获得唯一 ID
     /// - `clone()` 保持同一 ID（同一份数据）
-    /// - 运算产生的新 Tensor 获得新 ID（新数据）
+    /// - 运算产生的新 Tensor 获得新 ID（新数据）；注意 Arc/CoW 化后 `reshape` /
+    ///   `permute` 等视图类运算的产物可能与原张量**共享底层缓冲**，但身份上仍是
+    ///   新数据（新 ID）——本 ID 追踪的是逻辑数据源，不是物理存储是否同块
     /// - 序列化时跳过（运行时身份，非持久化信息）
     #[serde(skip, default = "next_source_id")]
     source_id: u64,
@@ -155,7 +169,7 @@ impl Tensor {
             panic!("Tensor::new: 数据长度 {data_len} 与形状 {shape:?} 不匹配: {e}")
         });
         Self {
-            data,
+            data: data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -184,7 +198,7 @@ impl Tensor {
     /// 若为矩阵，`shape`可以是[n,m]；
     /// 若为更高维度的数组，`shape`可以是[c,n,m,...]；
     pub fn full(value: f32, shape: &[usize]) -> Self {
-        let data = Array::from_elem(IxDyn(shape), value);
+        let data = Array::from_elem(IxDyn(shape), value).into_shared();
         Self {
             data,
             source_id: next_source_id(),
@@ -197,7 +211,7 @@ impl Tensor {
     /// 若为矩阵，`shape`可以是[n,m]；
     /// 若为更高维度的数组，`shape`可以是[c,n,m,...]；
     pub fn zeros(shape: &[usize]) -> Self {
-        let data = Array::zeros(IxDyn(shape));
+        let data = Array::zeros(IxDyn(shape)).into_shared();
         Self {
             data,
             source_id: next_source_id(),
@@ -210,7 +224,7 @@ impl Tensor {
     /// 若为矩阵，`shape`可以是[n,m]；
     /// 若为更高维度的数组，`shape`可以是[c,n,m,...]；
     pub fn ones(shape: &[usize]) -> Self {
-        let data = Array::ones(IxDyn(shape));
+        let data = Array::ones(IxDyn(shape)).into_shared();
         Self {
             data,
             source_id: next_source_id(),
@@ -324,7 +338,7 @@ impl Tensor {
     /// 从快照创建一个新张量
     pub fn from_view(view: ArrayViewD<'_, f32>) -> Self {
         Self {
-            data: view.to_owned(),
+            data: view.to_owned().into_shared(),
             source_id: next_source_id(),
         }
     }

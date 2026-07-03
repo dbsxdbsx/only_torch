@@ -37,7 +37,7 @@ impl Tensor {
             .map(|((&c, &t), &f)| if c == 0.0 { f } else { t })
             .collect();
 
-        Self::new(&result, condition.shape())
+        Self::new(result, condition.shape())
     }
 
     /// 通用的条件过滤函数，可以灵活处理张量中的元素
@@ -79,7 +79,7 @@ impl Tensor {
             })
             .collect::<Vec<_>>();
 
-        Self::new(&result, self.shape())
+        Self::new(result, self.shape())
     }
 
     /// 基于另一个张量的条件过滤函数，可以灵活处理张量中的元素
@@ -138,7 +138,7 @@ impl Tensor {
             })
             .collect::<Vec<_>>();
 
-        Self::new(&result, self.shape())
+        Self::new(result, self.shape())
     }
 }
 

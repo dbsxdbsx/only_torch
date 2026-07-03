@@ -137,20 +137,6 @@ impl Graph {
         Ok(Var::new_with_rc_graph(node, &self.inner))
     }
 
-    /// 创建输入节点并设置数据（move 语义，零拷贝）
-    ///
-    /// 与 [`input`](Self::input)（内部 clone 一次）语义相同，但直接接管传入
-    /// Tensor 的所有权。适用于"刚构建好 Tensor 就立即入图"的热点路径
-    /// （如 RL 训练 batch 组装）；`IntoVar for Tensor` 默认走此路径。
-    pub fn input_owned(&self, data: Tensor) -> Result<Var, GraphError> {
-        let node = self
-            .inner
-            .borrow_mut()
-            .create_basic_input_node(data.shape(), None)?;
-        node.set_value_owned(data)?;
-        Ok(Var::new_with_rc_graph(node, &self.inner))
-    }
-
     /// 创建命名输入节点
     pub fn input_named(&self, data: &Tensor, name: &str) -> Result<Var, GraphError> {
         let node = self

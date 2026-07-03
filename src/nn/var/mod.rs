@@ -308,15 +308,6 @@ impl Var {
         self.node.set_value(Some(value))
     }
 
-    /// 设置节点的值（move 语义，零拷贝）
-    ///
-    /// 与 [`set_value`](Self::set_value)（内部 clone 一次）语义相同，但直接接管
-    /// 传入 Tensor 的所有权。适用于"刚构建好 Tensor 就立即写入输入节点"的热点
-    /// 路径（如 MCTS 搜索期每次 recurrent 推理写 latent / action）。
-    pub fn set_value_owned(&self, value: Tensor) -> Result<(), GraphError> {
-        self.node.set_value_owned(value)
-    }
-
     /// 获取标量值（假设是 1x1 Tensor）
     pub fn item(&self) -> Result<f32, GraphError> {
         let val = self

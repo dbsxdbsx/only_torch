@@ -26,7 +26,7 @@ impl Tensor {
         let contiguous = if self.is_contiguous() {
             self.data.clone()
         } else {
-            self.data.as_standard_layout().into_owned()
+            self.data.as_standard_layout().into_owned().into_shared()
         };
         Self {
             data: contiguous.into_shape_with_order(shape).unwrap(),
@@ -44,7 +44,7 @@ impl Tensor {
         );
         // 确保连续布局后再 reshape
         if !self.is_contiguous() {
-            self.data = self.data.as_standard_layout().into_owned();
+            self.data = self.data.as_standard_layout().into_owned().into_shared();
         }
         self.data = self.data.clone().into_shape_with_order(shape).unwrap();
     }
@@ -81,7 +81,7 @@ impl Tensor {
                 .flat_map(|t| t.data.as_slice().unwrap())
                 .copied()
                 .collect();
-            return Self::new(&data, &[tensors.len(), 1]);
+            return Self::new(data, &[tensors.len(), 1]);
         }
 
         assert!(
@@ -104,7 +104,7 @@ impl Tensor {
         let views: Vec<_> = tensors.iter().map(|t| t.data.view()).collect();
         let stacked = ndarray::stack(Axis(axis), &views).expect("stack: ndarray stack 失败");
         Self {
-            data: stacked,
+            data: stacked.into_shared(),
             source_id: next_source_id(),
         }
         .into_contiguous()
@@ -142,7 +142,7 @@ impl Tensor {
                 .flat_map(|t| t.data.as_slice().unwrap())
                 .copied()
                 .collect();
-            return Self::new(&data, &[tensors.len()]);
+            return Self::new(data, &[tensors.len()]);
         }
 
         assert!(axis < ndim, "concat: axis {axis} 超出张量维度 {ndim}");
@@ -177,7 +177,7 @@ impl Tensor {
         let concatenated =
             ndarray::concatenate(Axis(axis), &views).expect("concat: ndarray concatenate 失败");
         Self {
-            data: concatenated,
+            data: concatenated.into_shared(),
             source_id: next_source_id(),
         }
         .into_contiguous()
@@ -224,7 +224,7 @@ impl Tensor {
                 .data
                 .slice_axis(Axis(axis), ndarray::Slice::from(start..start + size));
             result.push(Self {
-                data: slice.to_owned(),
+                data: slice.to_owned().into_shared(),
                 source_id: next_source_id(),
             });
             start += size;
@@ -266,7 +266,7 @@ impl Tensor {
             .data
             .slice_axis(Axis(axis), ndarray::Slice::from(start..start + length));
         Self {
-            data: slice.to_owned(),
+            data: slice.to_owned().into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -284,7 +284,7 @@ impl Tensor {
         let contiguous = if self.is_contiguous() {
             self.data.clone()
         } else {
-            self.data.as_standard_layout().into_owned()
+            self.data.as_standard_layout().into_owned().into_shared()
         };
         Self {
             data: contiguous.into_shape_with_order(new_shape).unwrap(),
@@ -301,7 +301,7 @@ impl Tensor {
         }
         // 与 reshape_mut 一致：非连续先物化再 into_shape
         if !self.is_contiguous() {
-            self.data = self.data.as_standard_layout().into_owned();
+            self.data = self.data.as_standard_layout().into_owned().into_shared();
         }
         self.data = self.data.clone().into_shape_with_order(new_shape).unwrap();
     }
@@ -406,7 +406,8 @@ impl Tensor {
             TensorError::PermuteNeedUniqueAndInRange
         );
 
-        self.data = self.data.to_owned().permuted_axes(axes);
+        // clone 为 O(1) 浅共享，permuted_axes 仅改 strides 元数据（零数据拷贝）
+        self.data = self.data.clone().permuted_axes(axes);
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑permute↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
@@ -465,7 +466,7 @@ impl Tensor {
         let contiguous = if self.is_contiguous() {
             self.data.clone()
         } else {
-            self.data.as_standard_layout().into_owned()
+            self.data.as_standard_layout().into_owned().into_shared()
         };
         Self {
             data: contiguous
@@ -480,12 +481,12 @@ impl Tensor {
         let total_elements = self.data.len();
         // 与 reshape_mut 一致：非连续时先物化为连续再展平。
         if !self.is_contiguous() {
-            self.data = self.data.as_standard_layout().into_owned();
+            self.data = self.data.as_standard_layout().into_owned().into_shared();
         }
-        // 此时 data 必为连续，into_shape 仅改写元数据（O(1)）；用 mem::replace 取出所有权，
-        // 避免多余的整块 clone（占位空数组零分配）。
-        let contiguous = std::mem::replace(&mut self.data, Array::zeros(IxDyn(&[0])));
-        self.data = contiguous
+        // 此时 data 必为连续，into_shape 仅改写元数据；clone 为 O(1) 浅共享（与 reshape_mut 一致）
+        self.data = self
+            .data
+            .clone()
             .into_shape_with_order(vec![total_elements])
             .unwrap();
     }
@@ -570,7 +571,9 @@ impl Tensor {
                 diag_data[i * n + i] = data_slice[i];
             }
             return Self {
-                data: Array::from_shape_vec(IxDyn(&[n, n]), diag_data).unwrap(),
+                data: Array::from_shape_vec(IxDyn(&[n, n]), diag_data)
+                    .unwrap()
+                    .into_shared(),
                 source_id: next_source_id(),
             };
         }
@@ -582,12 +585,8 @@ impl Tensor {
             !(shape.len() != 2 || shape[0] != shape[1]),
             "张量必须是标量、向量或方阵"
         );
-        let diag_data = self.data.diag().to_owned();
-        let diag_vector = Array::from_shape_vec(IxDyn(&[shape[0]]), diag_data.to_vec()).unwrap();
-        Self {
-            data: diag_vector,
-            source_id: next_source_id(),
-        }
+        // diag() 视图直接 to_vec 复制一次即可（旧写法 to_owned + to_vec 复制两次）
+        Self::new(self.data.diag().to_vec(), &[shape[0]])
     }
 
     /// 就地修改当前张量。输入张量必须是1维或2维，否则会 panic。根据输入类型：
@@ -645,7 +644,9 @@ impl Tensor {
             for i in 0..n {
                 diag_data[i * n + i] = data_slice[i];
             }
-            self.data = Array::from_shape_vec(IxDyn(&[n, n]), diag_data).unwrap();
+            self.data = Array::from_shape_vec(IxDyn(&[n, n]), diag_data)
+                .unwrap()
+                .into_shared();
             return;
         }
 
@@ -656,9 +657,12 @@ impl Tensor {
             !(shape.len() != 2 || shape[0] != shape[1]),
             "张量必须是标量、向量或方阵"
         );
-        let diag_data = self.data.diag().to_owned();
-        let diag_vector = Array::from_shape_vec(IxDyn(&[shape[0]]), diag_data.to_vec()).unwrap();
-        self.data = diag_vector;
+        // diag() 视图直接 to_vec 复制一次即可（旧写法 to_owned + to_vec 复制两次）
+        let n = shape[0];
+        let diag_data = self.data.diag().to_vec();
+        self.data = Array::from_shape_vec(IxDyn(&[n]), diag_data)
+            .unwrap()
+            .into_shared();
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑diag↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 

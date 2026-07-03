@@ -319,7 +319,7 @@ for batch in data {
 | :------------------------------ | :---------- | :----- | :--------------------------------------------------------- |
 | GradResult 零拷贝梯度传递       | 反向 ~10-15% | ✅ 已完成 | `GradResult` 枚举替代裸 Tensor 返回，Add/Identity/Negate 等零分配 |
 | Conv2d 反向并行策略统一          | — | ✅ 已完成 | 批量大 GEMM 方案被撤回（`seq` MKL 下反而更慢），统一为 per-sample Rayon 路径 |
-| 优化器 set_value_owned          | 每参数省 1 次 clone | ✅ 已完成 | TraitNode → NodeInner → SGD/Adam 全链路零拷贝参数更新 |
+| 优化器零拷贝参数更新            | 每参数省 1 次 clone | ✅ 已完成 | 历史为 set_value_owned，现为 apply_param_update 融合原地更新（owned 双轨已随 Tensor Arc/CoW 化删除，见战报 O） |
 | Adam 中间变量优化               | 减少临时分配 | ✅ 已完成 | 偏差修正外提、原地标量操作 |
 | 节点 cache clone 消除           | 视节点而定 | ✅ 已完成 | Conv2d padded_input move、LeakyReLU 去 parent_value 缓存 |
 | BLAS 可选支持（MKL/OpenBLAS）   | 训练 ~15% | ✅ 已完成 | feature flag + MKL seq + 透明加速，无需条件编译 |

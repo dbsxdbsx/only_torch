@@ -40,6 +40,7 @@ mod repeat;
 
 mod save_load;
 mod source_id;
+mod storage_cow;
 
 mod concat;
 mod log_softmax;

@@ -44,7 +44,7 @@ impl Tensor {
         let result_data = self_data.dot(&other_data);
         // 创建并返回新的张量
         Self {
-            data: into_standard_dyn(result_data),
+            data: into_standard_dyn(result_data).into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -76,7 +76,7 @@ impl Tensor {
             .unwrap();
         let result_data = self_data.dot(&other_data.t());
         Self {
-            data: into_standard_dyn(result_data),
+            data: into_standard_dyn(result_data).into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -107,7 +107,7 @@ impl Tensor {
             .unwrap();
         let result_data = self_data.t().dot(&other_data);
         Self {
-            data: into_standard_dyn(result_data),
+            data: into_standard_dyn(result_data).into_shared(),
             source_id: next_source_id(),
         }
     }

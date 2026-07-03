@@ -13,8 +13,8 @@
 **位置**：`src/nn/layer/rnn.rs` → `forward`
 
 **现状**：每个时间步两次数据复制。当前规模开销可忽略（~1.2 MB 总冗余）。
-
-**推荐方案**：方案 A（使用已有的 `set_value_owned` 方法），最小改动。
+注：Tensor 存储 Arc/CoW 化（战报 O）后 `set_value` 的 clone 已是浅拷贝，
+本项残余问题只剩 `select` 一侧的物化，价值进一步缩水。
 
 **状态**：暂缓（YAGNI），等 RNN 处理大规模数据时再实施
 
@@ -77,22 +77,31 @@ simulation 都走）：sink 算完时这三个节点消费者恰好归零 → �
 
 ---
 
-### 6. Tensor 共享存储（Arc/CoW），clone 变浅拷贝（2026-07-03 评估留档）
+### 6. 小张量高频创建路径的 Arc 分配开销（2026-07-03，战报 O 遗留观察项）
 
-**来源**：「零拷贝到底」评估（战报 N 前置调研）的长期备选。参考对照：Candle
-`Tensor(Arc<Tensor_>)` + `Arc<RwLock<Storage>>`、Burn ndarray 后端 `ArcArray`（CoW）、
-PyTorch 共享 storage——成熟库全部走共享所有权，无一家走借用生命周期方案。
+**来源**：Tensor 存储 Arc/CoW 化（[战报 O](./optimization_log.md)）唯一持续回归——
+每次 Tensor 产出多付一次 Arc 控制块分配，`my_zero_forward`（[1,64] 级小张量、
+MCTS 推理密集）+6%/+7%。大张量路径被 clone 类收益远远盖过（cnn_train_step -12.7%）。
 
-**收益**：一劳永逸——`Tensor::clone()` 变引用计数浅拷贝后，所有 `set_value` /
-`graph.input` / `LossTarget` 路径的深拷贝自动消失，无需逐调用点改 owned；ndarray
-自带 `ArcArray`，迁移有现成类型。
+**状态**：暂缓（YAGNI，Candle/Burn 同价结构）。触发条件 = profiler 证明小张量
+Arc 分配进入热点前列；届时候选方向 = 小张量池化 / 输出缓冲复用，不走"退回深拷贝"。
 
-**代价（Reviewer 压测结论，也是暂缓原因）**：全库 `Tensor` clone 语义重定义——
-in-place 写触发隐式 CoW 物化（心智负担）、序列化 / `source_id` / 非连续布局行为
-全要重审；而战报 N 落地后热点路径已零冗余拷贝，剩余收益封顶「每局几秒内」。
+---
 
-**状态**：暂缓。触发条件 = 出现**多处**真实 profile 证据表明 clone 深拷贝进入热点
-（单点热点优先走 owned 路径，模式已建立），或图像线大 batch 时代整体撞内存墙。
+### 7. 视图类算子（narrow / select / split / slice / get）改 Arc 共享视图（2026-07-03，战报 O 后续候选）
+
+**来源**：Tensor 存储 Arc/CoW 化（战报 O）后 Reviewer 复查发现：这些算子仍走
+`to_owned()` 物化拷贝，而 `ArcArray` 原生支持 `slice_move` / `index_axis_move`
+等 O(1) 共享视图（保留整块缓冲 + offset/strides）。热路径消费者：演化 mini-batch
+切片（`task.rs` narrow）、attention 逐 head 切片（`attention.rs` narrow）、RNN
+时间步 select（候选 #1）。
+
+**为什么不随战报 O 一起做**：共享视图会让产物变成带 offset / 可能非连续的张量，
+下游 `flatten_view` / `data_as_slice` 等连续性假设路径行为改变（panic 面扩大）+
+整块缓冲存活期延长（内存驻留语义变化），破坏战报 O「语义恒等、验证便宜」纪律。
+
+**状态**：暂缓。触发条件 = profiler 证明上述任一 narrow/select 调用点进入热点前列；
+届时单独战役实施（需全量测试 + 连续性假设审计，不需 3-seed）。
 
 ---
 

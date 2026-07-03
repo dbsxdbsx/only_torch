@@ -14,7 +14,9 @@ impl Tensor {
     pub fn load(file: &mut File) -> Self {
         let mut serialized_data = Vec::new();
         file.read_to_end(&mut serialized_data).unwrap();
-        let data = bincode::deserialize(&serialized_data).unwrap();
+        // 序列化格式与旧 `ArrayD`（OwnedRepr）完全兼容：ndarray 的 serde 只编码 dim + data，
+        // 与存储 repr 无关，故旧文件可直接反序列化为 ArcArray。
+        let data: super::TensorStorage = bincode::deserialize(&serialized_data).unwrap();
         Self {
             data,
             source_id: next_source_id(),

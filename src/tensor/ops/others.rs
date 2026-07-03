@@ -43,7 +43,7 @@ impl Tensor {
         sorted_data.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let ordered_data = Array::from_shape_vec(self.data.shape(), sorted_data).unwrap();
         Self {
-            data: ordered_data,
+            data: ordered_data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -54,38 +54,36 @@ impl Tensor {
         let shape = self.data.shape().to_owned();
         let mut sorted_data = self.to_vec();
         sorted_data.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        self.data = Array::from_shape_vec(shape, sorted_data).unwrap();
+        self.data = Array::from_shape_vec(shape, sorted_data)
+            .unwrap()
+            .into_shared();
     }
 
     /// 打乱张量中的元素顺序，并将其返回（不影响原张量）
     ///
     /// * `dim` - 可选的维度参数，指定沿哪个维度打乱；若为 None 则打乱所有元素
     pub fn shuffle(&self, dim: Option<usize>) -> Self {
-        let mut shuffled_data = self.data.clone();
         let mut rng = thread_rng();
 
-        if let Some(dim) = dim {
+        let shuffled_data = if let Some(dim) = dim {
             let axis = Axis(dim);
-            let mut chunks: Vec<_> = shuffled_data
-                .axis_iter(axis)
-                .map(|c| c.to_owned())
-                .collect();
+            let mut chunks: Vec<_> = self.data.axis_iter(axis).map(|c| c.to_owned()).collect();
             chunks.shuffle(&mut rng);
-            let mut new_data = Array::zeros(shuffled_data.raw_dim());
+            let mut new_data = Array::zeros(self.data.raw_dim());
             for (i, chunk) in chunks.into_iter().enumerate() {
                 let mut slice = new_data.index_axis_mut(axis, i);
                 slice.assign(&chunk);
             }
-            shuffled_data = new_data;
+            new_data
         } else {
             // to_vec 按逻辑序取值，对非连续布局也成立；打乱后重建为连续张量。
             let mut v = self.to_vec();
             v.shuffle(&mut rng);
-            shuffled_data = Array::from_shape_vec(IxDyn(self.data.shape()), v).unwrap();
-        }
+            Array::from_shape_vec(IxDyn(self.data.shape()), v).unwrap()
+        };
 
         Self {
-            data: shuffled_data,
+            data: shuffled_data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -113,7 +111,7 @@ impl Tensor {
             let shape = self.data.shape().to_owned();
             let mut v = self.to_vec();
             v.shuffle(&mut rng);
-            self.data = Array::from_shape_vec(shape, v).unwrap();
+            self.data = Array::from_shape_vec(shape, v).unwrap().into_shared();
         }
     }
 
@@ -141,7 +139,7 @@ impl Tensor {
             let shape = self.data.shape().to_owned();
             let mut v = self.to_vec();
             v.shuffle(&mut rng);
-            self.data = Array::from_shape_vec(shape, v).unwrap();
+            self.data = Array::from_shape_vec(shape, v).unwrap().into_shared();
         }
     }
 
@@ -240,7 +238,7 @@ impl Tensor {
             output_data.push(self.data[IxDyn(&self_idx)]);
         }
 
-        Tensor::new(&output_data, index_shape)
+        Tensor::new(output_data, index_shape)
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑gather↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
@@ -443,7 +441,7 @@ impl Tensor {
             }
         }
 
-        Self::new(&result, &[batch, num_samples])
+        Self::new(result, &[batch, num_samples])
     }
 
     /// 带种子的多项分布采样（可复现）
@@ -535,7 +533,7 @@ impl Tensor {
                 source_id: next_source_id(),
             },
             Self {
-                data: indices_data,
+                data: indices_data.into_shared(),
                 source_id: next_source_id(),
             },
         )
@@ -588,7 +586,7 @@ impl Tensor {
         }
 
         Self {
-            data: output,
+            data: output.into_shared(),
             source_id: next_source_id(),
         }
     }

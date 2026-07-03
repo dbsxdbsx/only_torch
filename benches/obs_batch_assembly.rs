@@ -8,9 +8,13 @@
 //! 2. `stack_obs`：G 个样本 Vec 逐个 `extend_from_slice` 拼进 batch flat `Vec<f32>`；
 //! 3. `graph.input(&Tensor)`：Tensor 深拷贝进 `BasicInput` 节点。
 //!
-//! 新路径把 (1)(2) 融合为「来源直写最终 flat」（物化恰好一次），(3) 改
-//! `graph.input_owned`（move 语义零拷贝）。本 bench 用与生产等价的数据流复现
-//! 两条路径（维度对齐 Pong：frame=84²、stack=4、G=16），量化真实收益。
+//! 新路径把 (1)(2) 融合为「来源直写最终 flat」（物化恰好一次）。
+//! (3) 的历史对比对象 `graph.input_owned`（move 语义）已随 **Tensor 存储 Arc/CoW 化**
+//! 收敛删除——`input(&t)` 内部 clone 如今是 O(1) 引用计数浅拷贝，owned 双轨失去
+//! 存在理由；下方 `graph_input_owned` / `*_input_owned` 两个 case 保留原名
+//! （维持 Criterion baseline 连续性），实际同样调用 `input(&t)`。
+//! 本 bench 用与生产等价的数据流复现两条路径（维度对齐 Pong：frame=84²、
+//! stack=4、G=16），量化真实收益。
 //!
 //! 注意：两条路径的**反量化算术完全相同**（u8→f32 除 255），差异只在
 //! 中间 Vec 物化次数与入图 clone——这正是本次优化改变的全部内容。
@@ -106,7 +110,7 @@ fn bench_assembly(c: &mut Criterion) {
         b.iter(|| {
             let flat = assemble_fused(&episode, &starts);
             let t = Tensor::new(flat, &[G, OBS_DIM]);
-            black_box(g_new.input_owned(t).unwrap());
+            black_box(g_new.input(&t).unwrap());
         });
     });
 
@@ -124,7 +128,7 @@ fn bench_assembly(c: &mut Criterion) {
         b.iter(|| {
             let flat = assemble_fused(&episode, &starts);
             let t = Tensor::new(flat, &[G, OBS_DIM]);
-            black_box(g_e2e_new.input_owned(t).unwrap());
+            black_box(g_e2e_new.input(&t).unwrap());
         });
     });
 

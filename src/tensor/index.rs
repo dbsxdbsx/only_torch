@@ -98,14 +98,14 @@ impl Tensor {
         let step: Vec<isize> = vec![1; indices.len()];
 
         let t = Self {
-            data: Self::slice_array(&self.data, &start, &end, &step),
+            data: Self::slice_array(&self.data, &start, &end, &step).into_shared(),
             source_id: next_source_id(),
         };
         t.squeeze() //将所有仅为1的维度优化掉
     }
 
     fn slice_array(
-        array: &Array<f32, IxDyn>,
+        array: &super::TensorStorage,
         start: &[isize],
         end: &[isize],
         step: &[isize],

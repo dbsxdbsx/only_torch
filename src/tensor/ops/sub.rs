@@ -21,7 +21,7 @@ impl Sub<Tensor> for f32 {
 
     fn sub(self, tensor: Tensor) -> Tensor {
         Tensor {
-            data: self - &tensor.data,
+            data: (self - &tensor.data).into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -31,7 +31,7 @@ impl<'a> Sub<&'a Tensor> for f32 {
 
     fn sub(self, tensor: &'a Tensor) -> Tensor {
         Tensor {
-            data: self - &tensor.data,
+            data: (self - &tensor.data).into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -44,7 +44,7 @@ impl Sub<f32> for Tensor {
 
     fn sub(self, scalar: f32) -> Self {
         Self {
-            data: &self.data - scalar,
+            data: (&self.data - scalar).into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -54,7 +54,7 @@ impl Sub<f32> for &Tensor {
 
     fn sub(self, scalar: f32) -> Tensor {
         Tensor {
-            data: &self.data - scalar,
+            data: (&self.data - scalar).into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -113,7 +113,7 @@ fn sub_within_tensors(tensor_1: &Tensor, tensor_2: &Tensor) -> Tensor {
     );
     // 使用 ndarray 的原生广播
     Tensor {
-        data: &tensor_1.data - &tensor_2.data,
+        data: (&tensor_1.data - &tensor_2.data).into_shared(),
         source_id: next_source_id(),
     }
 }

@@ -15,7 +15,7 @@ impl Tensor {
     pub fn relu(&self) -> Self {
         let data = self.data.mapv(|x| if x > 0.0 { x } else { 0.0 });
         Self {
-            data,
+            data: data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -33,7 +33,7 @@ impl Tensor {
     pub fn leaky_relu(&self, alpha: f32) -> Self {
         let data = self.data.mapv(|x| if x > 0.0 { x } else { alpha * x });
         Self {
-            data,
+            data: data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -60,7 +60,7 @@ impl Tensor {
             }
         });
         Self {
-            data,
+            data: data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -75,7 +75,7 @@ impl Tensor {
     pub fn step_fn(&self) -> Self {
         let data = self.data.mapv(|x| if x >= 0.0 { 1.0 } else { 0.0 });
         Self {
-            data,
+            data: data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -93,7 +93,7 @@ impl Tensor {
             0.5 * x * (1.0 + z.tanh())
         });
         Self {
-            data,
+            data: data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -109,7 +109,7 @@ impl Tensor {
             x * sig
         });
         Self {
-            data,
+            data: data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -124,7 +124,7 @@ impl Tensor {
             .data
             .mapv(|x| if x > 0.0 { x } else { alpha * (x.exp() - 1.0) });
         Self {
-            data,
+            data: data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -145,7 +145,7 @@ impl Tensor {
             }
         });
         Self {
-            data,
+            data: data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -171,7 +171,7 @@ impl Tensor {
             x * sp.tanh()
         });
         Self {
-            data,
+            data: data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -192,7 +192,7 @@ impl Tensor {
             }
         });
         Self {
-            data,
+            data: data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -213,7 +213,7 @@ impl Tensor {
             }
         });
         Self {
-            data,
+            data: data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -223,7 +223,7 @@ impl Tensor {
     pub fn sqrt(&self) -> Self {
         let sqrt_data = self.data.mapv(f32::sqrt);
         Self {
-            data: sqrt_data,
+            data: sqrt_data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -244,7 +244,7 @@ impl Tensor {
     pub fn tanh(&self) -> Self {
         let data = self.data.mapv(f32::tanh);
         Self {
-            data,
+            data: data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -271,7 +271,7 @@ impl Tensor {
     pub fn sigmoid(&self) -> Self {
         let data = self.data.mapv(|x| 1.0 / (1.0 + (-x).exp()));
         Self {
-            data,
+            data: data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -296,7 +296,7 @@ impl Tensor {
     pub fn exp(&self) -> Self {
         let data = self.data.mapv(f32::exp);
         Self {
-            data,
+            data: data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -324,7 +324,7 @@ impl Tensor {
     pub fn ln(&self) -> Self {
         let data = self.data.mapv(f32::ln);
         Self {
-            data,
+            data: data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -352,7 +352,7 @@ impl Tensor {
     pub fn powf(&self, exponent: f32) -> Self {
         let data = self.data.mapv(|x| x.powf(exponent));
         Self {
-            data,
+            data: data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -372,7 +372,7 @@ impl Tensor {
     pub fn square(&self) -> Self {
         let data = self.data.mapv(|x| x * x);
         Self {
-            data,
+            data: data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -394,7 +394,7 @@ impl Tensor {
     pub fn reciprocal(&self) -> Self {
         let data = self.data.mapv(|x| 1.0 / x);
         Self {
-            data,
+            data: data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -416,7 +416,7 @@ impl Tensor {
     pub fn log10(&self) -> Self {
         let data = self.data.mapv(f32::log10);
         Self {
-            data,
+            data: data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -438,7 +438,7 @@ impl Tensor {
     pub fn log2(&self) -> Self {
         let data = self.data.mapv(f32::log2);
         Self {
-            data,
+            data: data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -460,7 +460,7 @@ impl Tensor {
     pub fn relu6(&self) -> Self {
         let data = self.data.mapv(|x| x.max(0.0).min(6.0));
         Self {
-            data,
+            data: data.into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -484,7 +484,7 @@ impl Tensor {
     pub fn hard_tanh(&self, min_val: f32, max_val: f32) -> Self {
         let data = self.data.mapv(|x| x.max(min_val).min(max_val));
         Self {
-            data,
+            data: data.into_shared(),
             source_id: next_source_id(),
         }
     }

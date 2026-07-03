@@ -85,7 +85,7 @@ impl Tensor {
         // insert_axis 仅改元数据，直接复用 sum_axis 的输出缓冲，零额外拷贝。
         let summed = self.data.sum_axis(Axis(axis));
         Self {
-            data: summed.insert_axis(Axis(axis)),
+            data: (summed.insert_axis(Axis(axis))).into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -170,7 +170,7 @@ impl Tensor {
         // 沿指定轴求均值后 insert_axis 恢复维度（同 sum_axis_keepdims，零额外拷贝）
         let meaned = self.data.mean_axis(Axis(axis)).unwrap();
         Self {
-            data: meaned.insert_axis(Axis(axis)),
+            data: (meaned.insert_axis(Axis(axis))).into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -224,7 +224,7 @@ impl Tensor {
         // insert_axis 恢复维度（同 sum_axis_keepdims，零额外拷贝）
         let var_array = self.data.var_axis(Axis(axis), 0.0);
         Self {
-            data: var_array.insert_axis(Axis(axis)),
+            data: (var_array.insert_axis(Axis(axis))).into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -312,7 +312,7 @@ impl Tensor {
         });
 
         Self {
-            data: argmax_array.into_dyn(),
+            data: (argmax_array.into_dyn()).into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -359,7 +359,7 @@ impl Tensor {
         });
 
         Self {
-            data: argmin_array.into_dyn(),
+            data: (argmin_array.into_dyn()).into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -411,7 +411,7 @@ impl Tensor {
         });
 
         Self {
-            data: min_array.into_dyn(),
+            data: (min_array.into_dyn()).into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -463,7 +463,7 @@ impl Tensor {
         });
 
         Self {
-            data: max_array.into_dyn(),
+            data: (max_array.into_dyn()).into_shared(),
             source_id: next_source_id(),
         }
     }

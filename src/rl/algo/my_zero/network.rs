@@ -973,7 +973,7 @@ impl MyZeroModel {
             }
             let oh_var = self
                 .graph
-                .input_owned(Tensor::new(oh_flat, &[g, self.action_dim]))?;
+                .input(&Tensor::new(oh_flat, &[g, self.action_dim]))?;
 
             let (next_latent, pred_reward_logits, pred_continuation_logit) =
                 self.dyn_net.forward(&latent, &oh_var)?;
@@ -1141,7 +1141,7 @@ impl MyZeroModel {
         let obs_len = obs_tf.len();
         let r = &self.root_infer;
         r.obs_in
-            .set_value_owned(Tensor::new(obs_tf.into_owned(), &[1, obs_len]))
+            .set_value(&Tensor::new(obs_tf.into_owned(), &[1, obs_len]))
             .expect("set obs 失败");
         self.graph.forward(&r.sink).expect("root forward 失败");
 
@@ -1162,18 +1162,18 @@ impl MyZeroModel {
         let rc = &self.rec_infer;
 
         // setup：只写入 latent / action onehot（复用持久化输入节点，不新建；
-        // set_value_owned 直接 move 刚构建的 Tensor，免去 set_value 的 clone）
+        // Tensor 存储 Arc/CoW 化后 set_value 内部 clone 为 O(1) 浅拷贝）
         {
             crate::prof_scope!("model.rec.setup");
             rc.latent_in
-                .set_value_owned(Tensor::new(state.to_vec(), &[1, self.latent_dim]))
+                .set_value(&Tensor::new(state.to_vec(), &[1, self.latent_dim]))
                 .expect("set latent 失败");
             let mut oh = vec![0.0; self.action_dim];
             if action_idx < self.action_dim {
                 oh[action_idx] = 1.0;
             }
             rc.action_in
-                .set_value_owned(Tensor::new(oh, &[1, self.action_dim]))
+                .set_value(&Tensor::new(oh, &[1, self.action_dim]))
                 .expect("set action 失败");
         }
 

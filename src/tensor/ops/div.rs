@@ -27,7 +27,7 @@ impl Div<Tensor> for f32 {
             TensorError::DivByZeroElement
         );
         Tensor {
-            data: self / &tensor.data,
+            data: (self / &tensor.data).into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -42,7 +42,7 @@ impl<'a> Div<&'a Tensor> for f32 {
             TensorError::DivByZeroElement
         );
         Tensor {
-            data: self / &tensor.data,
+            data: (self / &tensor.data).into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -56,7 +56,7 @@ impl Div<f32> for Tensor {
     fn div(self, scalar: f32) -> Self {
         assert!(!(scalar == 0.), "{}", TensorError::DivByZero);
         Self {
-            data: &self.data / scalar,
+            data: (&self.data / scalar).into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -67,7 +67,7 @@ impl Div<f32> for &Tensor {
     fn div(self, scalar: f32) -> Tensor {
         assert!(!(scalar == 0.), "{}", TensorError::DivByZero);
         Tensor {
-            data: &self.data / scalar,
+            data: (&self.data / scalar).into_shared(),
             source_id: next_source_id(),
         }
     }
@@ -133,7 +133,7 @@ fn div_within_tensors(tensor_1: &Tensor, tensor_2: &Tensor) -> Tensor {
     );
     // 使用 ndarray 的原生广播
     Tensor {
-        data: &tensor_1.data / &tensor_2.data,
+        data: (&tensor_1.data / &tensor_2.data).into_shared(),
         source_id: next_source_id(),
     }
 }
