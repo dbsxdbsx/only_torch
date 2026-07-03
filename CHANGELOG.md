@@ -34,6 +34,11 @@
 
 ### Added
 
+- **perf(rl): 图像 obs u8 量化帧存储 `StoredObs`——Pong 单局 wall 增长斜率归零（平台期 ~7×）**（2026-07-03）
+  - 新增 `src/rl/buffer/obs.rs` `StoredObs` 枚举：`F32(Vec<f32>)` 直通（向量 obs，与旧 `Vec<f32>` 字段逐 bit 同语义 + RNG 序不变）/ `U8(Vec<u8>)` 像素量化帧；`SelfPlayStep.obs` 换为该类型（`From<Vec<f32>>` 保扩展者 `obs: v.into()` 人体工学）。**f32-only 计算契约不变**：u8 是存储休眠编码（类比磁盘 PNG），进 `Tensor` 前已反量化；量化决策在 `ObsAdapter` 源头按 env 观察空间声明显式做出，`ReplayBuffer<T>` 保持内容无感知
+  - 量化口径（图像域行为改变，一次一项）：resize 输出（0–255 像素域）round 为 u8、读取反量化 `u8/255`，误差 ≤ 0.5/255（DQN→MuZero 系标准做法）；acting 滑窗与训练组装吃同一份量化语义，数值自洽；buffer 800MB → 200MB
+  - 实测（`MAX_EP=60` 与旧口径同命令同 seed）：旧 f32 帧「Ep1 2.4s → buffer 满后平台 65~110s」→ u8 帧 **Ep5~Ep60 全程平坦 ~10s、增长斜率归零**；归因锤死为「800MB 工作集 × 随机抽样冷读」（排除 swap：旧进程 RSS 仅 ~1GB；排除「agent 变强局变长」：局长钉 800~1000 步）；60 局零崩溃（Ep53 被动陷阱干净通过）；150 局/seed 成本 ~3h → **~20min**，S2/S3 在本机变为工程可行
+  - 验证：RL 单测 270 全绿（新增量化往返 / F32 直通 / 量化堆叠组装 3 单测）+ `smoke-rl` 7 目标全过；数据与教训见[优化战报 M](.doc/performance/optimization_log.md)、[pong README 工程基线](examples/my_zero/pong/README.md)
 - **docs(rl): 商业实时图像游戏目标画像登记（匿名化）**（2026-07-02）
   - 新增 `.issue/items/commercial_realtime_game_target_profile.md`：纲领 §2.3「商业图像游戏」战略目标的真实标的技术画像（16:9 非方形 obs / 滑窗 3 帧 / Dict 观测 / MultiDiscrete 256 联合动作 / 50ms 决策周期 / 重度 POMDP）× 五项能力缺口清单（矩形输入 → 堆叠可配 → Dict obs 双分支 → MultiDiscrete 适配 → POMDP 验证，均不进 v0.26 关键路径、按接入需求逐项兑现）
   - 关键洞察存档：私有侧「MCTS 实时延迟硬伤」旧否决基于 Python 栈算术（~5-6ms/推理 × 50 sims），被 Phase 1 spike 实测推翻（recurrent 0.03ms，sims=50 全套 3.9ms）——wall-clock 维度该标的对 MyZero 重新开放；纲领 §2.3 链入

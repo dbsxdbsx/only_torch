@@ -44,7 +44,7 @@ impl MctsModel for MockModel {
 
 fn make_step(obs: Vec<f32>) -> SelfPlayStep {
     SelfPlayStep {
-        obs,
+        obs: obs.into(),
         action: vec![0.0],
         policy_target: vec![1.0, 0.0],
         player: 0,
@@ -104,7 +104,7 @@ fn reanalyze_visit_target_matches_search_learn_policy() {
     reanalyze_step(&model, &policy, &mut step, &cfg, None, 2, &mut rng);
 
     let mut rng2 = StdRng::seed_from_u64(11);
-    let result = mcts_search(&model, &policy, &step.obs, &cfg, &mut rng2);
+    let result = mcts_search(&model, &policy, step.obs.as_f32(), &cfg, &mut rng2);
     assert_eq!(step.policy_target, result.learn_policy);
 }
 
@@ -120,7 +120,7 @@ fn reanalyze_completed_q_matches_mcts_policy_target() {
     reanalyze_step(&model, &policy, &mut step, &cfg, cq, 2, &mut rng);
 
     let mut rng2 = StdRng::seed_from_u64(13);
-    let result = mcts_search(&model, &policy, &step.obs, &cfg, &mut rng2);
+    let result = mcts_search(&model, &policy, step.obs.as_f32(), &cfg, &mut rng2);
     let expected = mcts_policy_target(&result, cq, 2);
     assert_eq!(step.policy_target, expected);
     // 与 visit target 应不同（completedQ 在此 mock 下会放大 Q 差）

@@ -13,7 +13,7 @@ use rand::rngs::StdRng;
 
 fn make_step(obs_tag: f32, root_value: f32) -> SelfPlayStep {
     SelfPlayStep {
-        obs: vec![obs_tag, 0.0, 0.0, 0.0],
+        obs: vec![obs_tag, 0.0, 0.0, 0.0].into(),
         action: vec![0.0],
         policy_target: vec![1.0, 0.0],
         player: 0,

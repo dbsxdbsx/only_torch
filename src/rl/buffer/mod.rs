@@ -7,12 +7,14 @@
 //! - [`ReplayBuffer`]：泛型 FIFO + 有放回随机采样
 //! - [`RolloutBuffer`]：固定 `n_steps` 的 on-policy 采集缓冲区
 
+mod obs;
 mod replay;
 mod rollout;
 mod rollout_buffer;
 mod self_play;
 mod transition;
 
+pub use obs::StoredObs;
 pub use replay::ReplayBuffer;
 pub use rollout::RolloutStep;
 pub use rollout_buffer::RolloutBuffer;

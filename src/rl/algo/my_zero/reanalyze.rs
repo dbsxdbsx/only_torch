@@ -28,7 +28,8 @@ pub fn reanalyze_step<M, P>(
     M: MctsModel,
     P: SearchPolicy,
 {
-    let result = mcts_search(model, policy, &step.obs, cfg, rng);
+    // 仅向量 obs 路径（图像模式的 reanalyze 在 runner 入口拒绝，Phase 3 接回时需堆叠组装）
+    let result = mcts_search(model, policy, step.obs.as_f32(), cfg, rng);
     if result.children.is_empty() {
         return;
     }

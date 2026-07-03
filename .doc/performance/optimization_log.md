@@ -7,6 +7,48 @@
 
 ---
 
+## M. 图像 obs u8 量化帧存储 `StoredObs`（2026-07-03，Pong 单局 wall 3~7× + 增长斜率归零）
+
+**动机**：Phase 1 Pong 实测「单局耗时随 buffer 占用增长、buffer 满（Ep32）后进入平台」
+（Run A：Ep1 2.4s → Ep26 65s → 平台 65~110s）。零克隆采样（战报 J 前置修复）已消掉
+clone 流量后，残余病灶 = **工作集本身**：单帧以 f32 存（84²=28KB/帧），32 局 buffer
+≈ 800MB，每局 64 次训练 × 随机抽 16 局 × 组装 ~11MB 堆叠批次——随机读几乎每读必冷，
+内存带宽成瓶颈。曾候选的「借用型张量视图」救不了这个（省的是最后一次 memcpy，
+省不了 800MB 工作集的冷读），已判死。
+
+**方案**：`src/rl/buffer/obs.rs` 新增 `StoredObs` 枚举——`F32(Vec<f32>)` 直通（向量
+obs，与旧字段逐 bit 同语义）/ `U8(Vec<u8>)` 像素量化帧；`SelfPlayStep.obs` 换该类型
+（`From<Vec<f32>>` 保扩展者人体工学）。量化决策在 **`ObsAdapter` 源头**按 env 观察
+空间声明显式做出（不做数据猜测，`ReplayBuffer<T>` 保持内容无感知）；acting 滑窗
+（`ImagePipe.frames`）与训练组装（`assemble_stacked_obs`）吃**同一份**量化语义。
+**f32-only 计算契约不变**：u8 是存储休眠编码（类比磁盘 PNG），进 `Tensor` 前已反量化。
+
+**量化口径**（图像域行为改变，一次一项）：resize 输出（0–255 像素域）round 为 u8，
+读取反量化 `u8/255` → [0,1]；相对旧「f32 直存 v/255」每像素误差 ≤ 0.5/255
+（DQN→MuZero 系标准做法）。buffer 800MB → 200MB，批次组装读写量同步 ¼。
+
+**实测**（`MAX_EP=60 PROFILE=1` release+MKL，与 Run A 同命令同 seed）：
+
+| 口径 | 旧（f32 帧） | 新（u8 帧） |
+|---|---|---|
+| 逐局 wall 曲线 | Ep1 2.4s → Ep26 65s → 平台 65~110s | **Ep5~Ep60 全程平坦 ~10s，无增长斜率** |
+| 健康环境同期对照（重启后 3-seed 跑 Ep11~13） | 25~33s 且仍在爬 | 9~10s 平 |
+| 60 局总 wall | —（Run A 为降级环境，不可比总量） | 716.8s（含 eval） |
+| PROFILE 分解 | batch_prepare 曾 67.7s/6局（J 前） | self_play 139.8s / train_step 481.3s / eval 113.9s / batch_prepare **0.01s** |
+
+平台期对比 ~7×、健康环境同期对比 ~3×，且**增长斜率本身消失**（Ep5 与 Ep55 同为
+~10s，跨过 buffer 满点无拐点）——锤死「工作集 × 随机读」归因；排除 swap（旧进程
+RSS 仅 ~1GB）与「agent 变强局变长」（局长钉在 800~1000 步、计算量结构固定）。
+60 局零崩溃（Ep53 被动陷阱干净通过）。
+
+**验证**：RL 单测 270 全绿（新增量化往返/F32 直通/量化堆叠组装 3 个单测）+
+`smoke-rl` 7 目标全过；Flat 路径语义恒等（值与 RNG 消耗序均不变）。CartPole 哨兵
+复测被「ndarray 0.16 BLAS 派发漂移 → 哨兵基线重定」在册待办遮蔽（见 CHANGELOG
+deps 条目），与本改动无关；Pong 账本尚无历史数字，量化无「数字失效」问题，
+口径已写入 pong README。
+
+---
+
 ## L. Tensor 构造接口统一：`from_vec` 并入泛型 `new`（2026-07-03，API 收口，性能中性）
 
 **动机**：优化 J 引入的 `Tensor::from_vec(Vec, shape)` 与 `Tensor::new(&[f32], shape)`

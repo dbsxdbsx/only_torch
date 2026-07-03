@@ -334,11 +334,11 @@ pub(crate) fn train_batch(
         let t = *start;
         let actual_k = unroll_len_at(steps, t, k_unroll);
 
-        // 模型入口 obs：Flat 直取，图像模式从存储单帧就地组装堆叠（老 → 新）
-        let frames: Vec<&[f32]> = steps.iter().map(|s| s.obs.as_slice()).collect();
+        // 模型入口 obs：Flat 直取，图像模式从存储量化单帧就地组装堆叠（反量化，老 → 新）
+        let frames: Vec<&crate::rl::StoredObs> = steps.iter().map(|s| &s.obs).collect();
         let obs_at = |pos: usize| -> Vec<f32> {
             match image_stack {
-                None => steps[pos].obs.clone(),
+                None => steps[pos].obs.to_f32_vec(),
                 Some(k) => assemble_stacked_obs(&frames, pos, k),
             }
         };
@@ -630,7 +630,7 @@ fn dynamics_diagnostic(
     };
     let target_steps: Vec<SelfPlayStep> = (0..n)
         .map(|t| SelfPlayStep {
-            obs: obses[t].clone(),
+            obs: obses[t].clone().into(),
             action: vec![act_idxs[t] as f32],
             policy_target: Vec::new(),
             player: 0,

@@ -1,6 +1,6 @@
 //! Self-play 整局数据类型（AlphaZero / MuZero / EZ-V2 共用）
 
-use super::BufferItem;
+use super::{BufferItem, StoredObs};
 
 /// 整局 self-play 中的单步（MCTS 监督目标，非 SAC 五元组）。
 ///
@@ -8,7 +8,8 @@ use super::BufferItem;
 /// MuZero 填实际 reward 和 MCTS 根节点 value。
 #[derive(Debug, Clone)]
 pub struct SelfPlayStep {
-    pub obs: Vec<f32>,
+    /// 存储态观测：向量 obs 为 `F32` 直通（`vec.into()`），图像 obs 为量化单帧（管线内部构造）。
+    pub obs: StoredObs,
     /// 实际执行的动作（离散用 `vec![idx as f32]`，连续用原始向量）
     pub action: Vec<f32>,
     /// MCTS 输出的 π（visit count 归一化后的概率分布）

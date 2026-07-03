@@ -5,7 +5,7 @@ use crate::rl::SelfPlayStep;
 
 fn step(reward: f32, root_value: Option<f32>) -> SelfPlayStep {
     SelfPlayStep {
-        obs: vec![],
+        obs: vec![].into(),
         action: vec![],
         policy_target: vec![],
         player: 0,

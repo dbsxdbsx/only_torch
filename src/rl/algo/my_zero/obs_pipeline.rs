@@ -1,16 +1,21 @@
 //! 图像 obs 预处理管线（v0.26 Phase 1，收口规划 §2 / Phase 1 计划 §S1）。
 //!
 //! **管线**（Atari 标准口径）：HWC/CHW f32 原始帧（0–255）→ BT.601 灰度 →
-//! 双线性降采样至 [`OUT_SIDE`]² → `[0,1]` 归一 → 最近 [`STACK`] 帧堆叠为 CHW。
+//! 双线性降采样至 [`OUT_SIDE`]² → **u8 量化存储**（[`StoredObs::U8`]，round，4× 省内存）
+//! → 读取时反量化 `[0,1]` → 最近 [`STACK`] 帧堆叠为 CHW。
 //!
-//! **内存纪律**（收口规划 §2 图像线）：replay buffer 只存**处理后单帧**
-//! （[`frame_len`] 个 f32），堆叠在两处按需组装：
+//! **内存纪律**（收口规划 §2 图像线）：replay buffer 只存**处理后量化单帧**
+//! （[`frame_len`] 个 u8），堆叠在两处按需组装（两处吃**同一份量化语义**，数值自洽）：
 //! - acting 期：[`ImagePipe`] 维护 episode 内滑窗（[`ImagePipe::stacked`]）；
 //! - 训练期：[`assemble_stacked_obs`] 从 `SelfPlayGame.steps` 就地组装
 //!   （episode 起点用首帧前向填充，与 acting 期 reset 语义逐 bit 一致）。
+//!
+//! **量化口径**：resize 输出（0–255 像素域）round 为 u8，反量化 `u8/255`；
+//! 相对旧「f32 直存 `v/255`」每像素误差 ≤ 0.5/255（DQN→MuZero 系标准做法）。
+//! 计算层 f32-only 契约不变，见 [`StoredObs`] 模块文档。
 
 use super::network::ObsSpec;
-use crate::rl::{GymEnv, ObsType};
+use crate::rl::{GymEnv, ObsType, StoredObs};
 use std::collections::VecDeque;
 
 /// 预处理输出边长（Atari 社区标准 84×84）
@@ -41,8 +46,8 @@ pub struct ImagePipe {
     in_w: usize,
     in_c: usize,
     channel_first: bool,
-    /// 最近 STACK 个处理后单帧（老 → 新）
-    frames: VecDeque<Vec<f32>>,
+    /// 最近 STACK 个处理后量化单帧（老 → 新；与 buffer 存储同编码）
+    frames: VecDeque<StoredObs>,
 }
 
 impl ImagePipe {
@@ -74,8 +79,8 @@ impl ImagePipe {
         })
     }
 
-    /// episode 开始：处理首帧并将滑窗填满该帧（标准前向填充），返回处理后单帧。
-    pub fn reset(&mut self, raw: &[f32]) -> Vec<f32> {
+    /// episode 开始：处理首帧并将滑窗填满该帧（标准前向填充），返回处理后量化单帧。
+    pub fn reset(&mut self, raw: &[f32]) -> StoredObs {
         let frame = self.process_frame(raw);
         self.frames.clear();
         for _ in 0..STACK {
@@ -84,8 +89,8 @@ impl ImagePipe {
         frame
     }
 
-    /// episode 中：处理新帧入滑窗（挤出最老帧），返回处理后单帧。
-    pub fn push(&mut self, raw: &[f32]) -> Vec<f32> {
+    /// episode 中：处理新帧入滑窗（挤出最老帧），返回处理后量化单帧。
+    pub fn push(&mut self, raw: &[f32]) -> StoredObs {
         let frame = self.process_frame(raw);
         if self.frames.len() >= STACK {
             self.frames.pop_front();
@@ -94,7 +99,7 @@ impl ImagePipe {
         frame
     }
 
-    /// 当前堆叠观测（CHW 展平，老 → 新），供 MCTS 搜索用。
+    /// 当前堆叠观测（反量化 `[0,1]` f32，CHW 展平，老 → 新），供 MCTS 搜索用。
     ///
     /// # Panics
     /// 未 [`reset`](Self::reset) 先调用时 panic。
@@ -106,15 +111,17 @@ impl ImagePipe {
         );
         let mut out = Vec::with_capacity(stacked_obs_dim());
         for f in &self.frames {
-            out.extend_from_slice(f);
+            f.append_f32_into(&mut out);
         }
         out
     }
 
-    /// 单帧预处理：灰度 → 双线性缩放 → [0,1] 归一。
+    /// 单帧预处理：灰度 → 双线性缩放 → u8 量化（0–255 域 round）。
     ///
-    /// 输入为 env 原始展平 f32（0–255，HWC 或 CHW 排布），输出 [`frame_len`] 长度。
-    pub fn process_frame(&self, raw: &[f32]) -> Vec<f32> {
+    /// 输入为 env 原始展平 f32（0–255，HWC 或 CHW 排布），输出 [`frame_len`] 长度
+    /// 量化帧；`[0,1]` 归一在读取（[`stacked`](Self::stacked) / `assemble_stacked_obs`）
+    /// 时反量化完成。
+    pub fn process_frame(&self, raw: &[f32]) -> StoredObs {
         debug_assert_eq!(
             raw.len(),
             self.in_h * self.in_w * self.in_c,
@@ -122,7 +129,7 @@ impl ImagePipe {
         );
         let gray = self.to_gray(raw);
         let resized = bilinear_resize(&gray, self.in_h, self.in_w, OUT_SIDE, OUT_SIDE);
-        resized.iter().map(|v| v / 255.0).collect()
+        StoredObs::quantize_pixels(&resized)
     }
 
     /// 灰度化（BT.601）；单通道原样返回。输出 [h*w]（行主序）。
@@ -187,16 +194,17 @@ pub(crate) fn bilinear_resize(
     out
 }
 
-/// 训练期从 `steps[*].obs`（单帧）组装位置 `t` 的堆叠观测（老 → 新）。
+/// 训练期从 `steps[*].obs`（量化单帧）组装位置 `t` 的堆叠观测（反量化 f32，老 → 新）。
 ///
 /// episode 起点（`t < STACK-1`）用 `saturating_sub` 前向填充首帧，
-/// 与 acting 期 [`ImagePipe::reset`] 填满滑窗的语义逐 bit 一致。
-pub(crate) fn assemble_stacked_obs(frames: &[&[f32]], t: usize, stack: usize) -> Vec<f32> {
+/// 与 acting 期 [`ImagePipe::reset`] 填满滑窗的语义逐 bit 一致
+/// （两处共用 [`StoredObs::append_f32_into`] 的反量化口径）。
+pub(crate) fn assemble_stacked_obs(frames: &[&StoredObs], t: usize, stack: usize) -> Vec<f32> {
     let flen = frames[t].len();
     let mut out = Vec::with_capacity(stack * flen);
     for i in (0..stack).rev() {
         let idx = t.saturating_sub(i);
-        out.extend_from_slice(frames[idx]);
+        frames[idx].append_f32_into(&mut out);
     }
     out
 }
@@ -213,8 +221,8 @@ pub(crate) fn assemble_stacked_obs(frames: &[&[f32]], t: usize, stack: usize) ->
 ///
 /// | 模式 | 搜索 obs（MCTS 输入） | 存储 obs（`SelfPlayStep.obs`） |
 /// |------|----------------------|------------------------------|
-/// | `Flat` | 原始展平 obs | 同左 |
-/// | `Image` | [`STACK`] 帧堆叠（[`stacked_obs_dim`]） | 处理后**单帧**（[`frame_len`]，省 ¾ 内存） |
+/// | `Flat` | 原始展平 obs | 同左（[`StoredObs::F32`] 直通） |
+/// | `Image` | [`STACK`] 帧堆叠（[`stacked_obs_dim`]） | 处理后**量化单帧**（[`StoredObs::U8`]，[`frame_len`] 个 u8，f32 整局的 1/16） |
 pub(crate) enum ObsAdapter {
     Flat,
     Image(ImagePipe),
@@ -249,12 +257,12 @@ impl ObsAdapter {
     }
 
     /// `env.reset` → `(搜索 obs, 存储 obs)`
-    pub fn reset(&mut self, env: &GymEnv, seed: Option<u64>) -> (Vec<f32>, Vec<f32>) {
+    pub fn reset(&mut self, env: &GymEnv, seed: Option<u64>) -> (Vec<f32>, StoredObs) {
         let raw = env.reset(seed);
         match self {
             Self::Flat => {
                 let o = raw[0].clone();
-                (o.clone(), o)
+                (o.clone(), o.into())
             }
             Self::Image(pipe) => {
                 let frame = pipe.reset(&raw[0]);
@@ -264,7 +272,7 @@ impl ObsAdapter {
     }
 
     /// `env.step` → `(搜索 obs, 存储 obs, reward, terminated, truncated)`
-    pub fn step(&mut self, env: &GymEnv, action: &[f32]) -> (Vec<f32>, Vec<f32>, f32, bool, bool) {
+    pub fn step(&mut self, env: &GymEnv, action: &[f32]) -> (Vec<f32>, StoredObs, f32, bool, bool) {
         let (raw, reward, terminated, truncated) = {
             crate::prof_scope!("env.step");
             env.step(action)
@@ -272,7 +280,7 @@ impl ObsAdapter {
         match self {
             Self::Flat => {
                 let o = raw[0].clone();
-                (o.clone(), o, reward, terminated, truncated)
+                (o.clone(), o.into(), reward, terminated, truncated)
             }
             Self::Image(pipe) => {
                 let frame = pipe.push(&raw[0]);

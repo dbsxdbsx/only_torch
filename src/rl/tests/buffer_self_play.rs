@@ -9,7 +9,7 @@ fn make_step(id: usize, player: u8) -> SelfPlayStep {
     let mut policy = vec![0.0; action_dim];
     policy[id % action_dim] = 1.0;
     SelfPlayStep {
-        obs: vec![id as f32; 4],
+        obs: vec![id as f32; 4].into(),
         action: vec![(id % action_dim) as f32],
         policy_target: policy,
         player,
