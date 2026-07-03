@@ -320,6 +320,28 @@ impl XorMLP {
 
 ---
 
+## 9. 演化系统对接项（2026-07-03 清账）
+
+> **来源**：早期架构笔记清账。原笔记共 4 条，其中「builder 层类型覆盖不完整」（现 `node_expansion.rs` 已覆盖 Linear / Conv 系 / Pool / Norm 系 / Dropout / RNN / LSTM / GRU / Attention 共 15 种展开）与「metrics 回调缺失」（现有完整 `ReportMetric` 体系，含 Precision / Recall / F1 / IoU / Dice 等）均已完成，不再记录。剩余两条如下，均为**条件触发**，不主动排期。
+
+### 9.1 RLTask：演化与 RL 模块对接
+
+**优先级**：💤 暂缓（条件触发）
+
+**现状**：`EvolutionTask` trait 下仅有 `SupervisedTask` 一个实现；`rl/` 模块（GymEnv、MyZero 等）无演化入口。扩展口已留好——trait 注释明确允许自定义 Task 使用自身采样策略，做法见[演化设计 §11.3](../design/neural_architecture_evolution_design.md#113-支持新学习范式)：包 `GymEnv`，`train()` 跑若干 episode，`evaluate()` 用平均回报当 fitness，约 1–2 天工作量。
+
+**触发条件**：出现「用演化搜 RL 网络结构」的真实需求（如给 MyZero 搜 backbone）。当前 RL 主线是 MyZero 梯度法 + MCTS（v0.26 焦点 = 观测空间 + self-play），演化式 RL 与主线无交集，勿提前开工。
+
+### 9.2 SupervisedTask 接入 DataLoader
+
+**优先级**：💤 暂缓（条件触发）
+
+**现状**：`SupervisedTask::from_spec` 接收 per-sample `Vec<Tensor>`，内部一次性 stack 全量驻内存，完全绕过 `data/` 模块（DataLoader、transforms）。batching / shuffle 语义演化内部已自行实现，接入 DataLoader 的增益只剩省内存、省拷贝、复用 transforms。
+
+**触发条件**：图像演化任务上大数据集、全量驻内存或数据搬运成为实际瓶颈时。独立的 per-epoch clone-shuffle 小优化不依赖本项，见[性能候选 #4](../performance/optimization_candidates.md#4-演化-supervisedtask-mini-batch-路径-per-epoch-整集-clone-shuffle)。
+
+---
+
 ## 依赖关系图
 
 ```
@@ -352,6 +374,8 @@ impl XorMLP {
 | ✅ 完成 | ~~API 便捷方法~~ | zeros_like / randn_like / 标量运算 / attach |
 | ✅ 完成 | ~~错误类型精细化~~ | ValueNotComputed / GradientNotComputed 等已添加 |
 | 💤 暂缓 | **强化学习改良** | 后续方向详见 [RL 路线图](./rl_roadmap.md) |
+| 💤 暂缓 | **演化 RLTask 对接** | 条件触发（见 §9.1），出现演化搜 RL 结构需求时再做 |
+| 💤 暂缓 | **演化接入 DataLoader** | 条件触发（见 §9.2），图像演化上大数据集时再做 |
 
 ---
 

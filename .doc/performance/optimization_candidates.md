@@ -43,7 +43,19 @@
 
 ---
 
-### 4. 推理模式中间节点 value 及早释放（liveness）
+### 4. 演化 SupervisedTask mini-batch 路径 per-epoch 整集 clone-shuffle
+
+**位置**：`src/nn/evolution/task.rs` → `SupervisedTask::train` mini-batch 分支
+
+**现状**：每个 epoch 把整个训练集（train_x + 全部 head 的 train_y）`clone()` 一份再原地 `shuffle_mut_seeded`。MNIST 规模下不构成热点，但数据集变大后是 O(数据集大小 × epoch 数) 的纯冗余拷贝。
+
+**推荐方案**：改为索引 shuffle——shuffle 一个 `Vec<usize>` 索引数组，batch 切片时按索引 gather；不需要引入 DataLoader 即可实施。
+
+**状态**：暂缓（YAGNI）。触发条件 = 演化任务上大规模数据集（如图像演化线）且 profiling 显示 shuffle/clone 进入热点。届时若同时撞到内存墙，与 [future_enhancements.md 演化对接项](../_archive/future_enhancements.md#9-演化系统对接项2026-07-03-清账) 的 DataLoader 接入合并评估。
+
+---
+
+### 5. 推理模式中间节点 value 及早释放（liveness）
 
 **来源**：arXiv 2308.13898（内存感知调度）的"穷人版"思想——执行顺序与张量生命周期决定峰值内存；论文本体（ILP 调度器）对我们不适用，见[阅读日志](../paper/reading_log.md)。
 
