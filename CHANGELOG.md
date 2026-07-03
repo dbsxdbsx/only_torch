@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **build(deps): pyo3 / numpy 0.27 → 0.29（成对升级，代码零改动）**（2026-07-03）
+  - pyo3 与 rust-numpy 同属 PyO3 组织、0.28 起版本号同步发版；0.29 含两个 RustSec 安全修复（`new_closure` 缺 `Sync` 约束、`nth_back` 越界读）+ 多项 soundness 收紧
+  - 0.27→0.29 破坏性变更全部集中在「写 Python 扩展模块」场景，本项目纯嵌入方向（`auto-initialize` + `Python::attach`）零涉及；numpy 0.29 的 ndarray 区间仍为 `>=0.15,<=0.17`，与 0.17.2 兼容
+  - 验证：blas-mkl + 默认双口径全量测试 3317 全绿（含 RL / pyo3 桥）、examples + benches 编译通过、clippy 无新增；至此依赖栈定格 **ndarray 0.17.2 + pyo3 0.29 + numpy 0.29**，Criterion bench 对比在此最终形态上一次性执行（调研落档 [optimization_candidates.md §4](.doc/optimization_candidates.md)）
+- **build(deps): ndarray 0.16.1 → 0.17.2（与 0.15→0.16 同日连升，代码零改动）**（2026-07-03）
+  - 推翻「0.17 需 numpy 0.29 + pyo3 联动」旧预判：`numpy 0.27.1` 的 ndarray 区间即为 `>=0.15,<=0.17`，升级零涉及 RL 桥；实际动作仅 `Cargo.toml` `^0.16`→`^0.17.1`（0.17.0 因 ArrayRef use-after-free 被 yank）+ `cargo update --precise 0.17.2` 统一 numpy 侧
+  - 0.17 对 0.16 纯增量（`ArrayRef` 引用类型 / IxDyn 直接 `dot` / 数组级数学函数 / 原地 `permute_axes`）；BLAS 路径零变更 → `mat_mul` 系 F 序守卫仍必要，浮点数值与 0.16.1 一致
+  - 验证：blas-mkl + 默认双口径全量测试 3317 全绿、clippy 无新增；调研结论落档 [optimization_candidates.md §4](.doc/optimization_candidates.md)
+  - **RL 哨兵基线重定待办**：0.16.1 的 BLAS 派发变化已使 CartPole 哨兵数字漂移（升级日噪声环境探测跑 2/3 达标、中位 28.9k），按「框架级数值变化 → 重定基线」约定，待安静窗口以 3~5 seeds 重测写回[唯一账本](examples/my_zero/cartpole/README.md)（口径变更史已登记）；Criterion 全量 bench 对比（vs `post-hotpath-opt`）同窗口执行
+
 ### Added
 
 - **docs(rl): 商业实时图像游戏目标画像登记（匿名化）**（2026-07-02）

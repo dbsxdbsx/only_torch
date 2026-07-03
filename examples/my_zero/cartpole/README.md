@@ -151,6 +151,8 @@ baseline = 上节哨兵（12,519 / 8,643 / 9,826，中位 ~9.8k，range 8.6k–1
 
 ## 口径变更史（读旧数字前必看）
 
+> **ndarray 0.16.1/0.17.2 升级致轨迹漂移（2026-07-03，基线重定待办）**：ndarray 0.15.6 → 0.16.1（同日连升 0.17.2）后，BLAS 全布局派发（#1419）使转置视图 GEMM 改走 MKL 转置标志路径，浮点累加顺序变化 → 上方「~9.8k 逐 bit 复现」**自此不再可复现**。升级当日一次探测跑（白天噪声环境）：seed 42 未达标、中位 28,930（2/3）——按「框架级数值变化 → 重定基线，预算内不收敛才深查」约定，**需要在安静窗口以 3~5 seeds 重测重定官方哨兵**（预算内不收敛需先排除孤例）；在新基线落定前，本文件所有 env-steps 绝对值仅作方向性参考。0.16.1 → 0.17.2 无 BLAS 改动，数值与 0.16.1 一致，重定只需做一次。
+>
 > **哨兵口径变更（batch-native + autograd 修复后，2026-07-01）**：修复了 MSE/MAE/BCE/Huber 反向忽略 `upstream_grad` 的框架 bug（作中间 loss 时丢链式缩放因子），训练同时改 batch-native（与逐样本数学等价）。梯度归约顺序改变 → env-steps 不再逐 bit 复现，验收改**统计口径**（3-seed 中位 + 达标率）。旧的 ~10–13k env-steps 部分依赖该 bug 使 continuation/reconstruction 辅助 loss 偏强；修复后辅助 loss 回到正确量级。若要收回样本效率，正道是显式调大 `RECONSTRUCTION_LOSS_COEF` / `CONTINUATION_LOSS_COEF`（v0.26 P0 消融）。
 >
 > **BLAS 口径变更（2026-07-02）**：`just` 的 MyZero/PPO 目标此前漏传 `{{_blas_flag}}`，历史 wall-clock 与 env-steps 均为**纯 Rust（matrixmultiply）口径**；现统一为自动检测注入（本机 Intel MKL）。GEMM 浮点累加顺序不同会使轨迹漂移，属统计口径已覆盖的扰动，但与历史行对比时需注意后端差异。

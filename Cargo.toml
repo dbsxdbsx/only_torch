@@ -75,9 +75,11 @@
     num-derive ="*"
     num-integer="*"
     rand       ="^0.8"
-    # ^0.16 与 pyo3 桥 `numpy 0.27` 的依赖统一（消除 0.15/0.16 双版本重复编译）；
-    # 0.16.1 含 BLAS 全布局派发修复（#1419），惠及 mat_mul / mat_mul_nt/tn 热路径
-    ndarray    ={version="^0.16", features=["serde"]}
+    # ^0.17 与 pyo3 桥 `numpy 0.27.1` 依赖统一（其 ndarray 区间为 >=0.15,<=0.17，无需动 pyo3）。
+    # 0.16.1 起含 BLAS 全布局派发（#1419，注意转置 GEMM 可能输出 F 序，见 tensor/ops/mat_mul.rs 守卫）；
+    # 0.17 纯增量（ArrayRef / IxDyn dot / 数组级数学函数），BLAS 路径与 0.16.1 相同。
+    # 0.17.0 因 use-after-free 被 yank，最低用 0.17.1+。
+    ndarray    ={version="^0.17.1", features=["serde"]}
 
     # 错误处理
     thiserror="1"
@@ -114,8 +116,12 @@
     rayon="1.10" # 数据并行
 
     # Python 交互（强化学习 Gym 环境）
-    pyo3 ={version="0.27", features=["auto-initialize"]}
-    numpy="0.27"
+    # pyo3 与 rust-numpy 同属 PyO3 组织，0.28 起版本号同步发版，需成对升级。
+    # 0.29 含两个 RustSec 安全修复（new_closure Sync 缺失、迭代器越界读）与多项 soundness 收紧；
+    # 其破坏性变更集中在「写 Python 扩展模块」场景，本项目纯嵌入方向（auto-initialize）不受影响。
+    # numpy 0.29 的 ndarray 区间为 >=0.15,<=0.17，与本项目 ndarray 0.17.2 兼容。
+    pyo3 ={version="0.29", features=["auto-initialize"]}
+    numpy="0.29"
 
 [dev-dependencies]
     # statrs="^0.16.0"

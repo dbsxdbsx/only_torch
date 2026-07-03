@@ -76,7 +76,7 @@
 
 ---
 
-### 4. ndarray 升级（2026-07-03 调研；步骤 1/2 已完成）
+### 4. ndarray / pyo3 / numpy 升级（2026-07-03 全部完成；ndarray 0.17.2 + pyo3 0.29 + numpy 0.29）
 
 **背景**：本体曾用 `ndarray 0.15.6`（2022），而 `numpy 0.27`（pyo3 桥）与 `ndarray-npy 0.9.1`
 依赖 `0.16.1` → 依赖树里两个 ndarray 版本共存、重复编译；且 `ndarray-npy` 在 `src/`
@@ -97,9 +97,28 @@ use-after-free 被 yank）。
    `mat_mul` 系加 `into_standard_dyn` 归一化守卫（标准布局零开销直通）。
    同时 `flatten_view` 沿用 0.16 收紧后的布局报错（0.15 旧 `into_shape` 会静默按
    内存序展平 F 序数组，属正确性隐患，收紧是好事）。
-3. ⏳ **升 0.17.2**（暂缓，等生态）：吸引点 = IxDyn 直接 `dot`（删 Ix2 转换样板）、`ArrayRef`
-   引用类型、数组级 `tanh/exp_m1` 等数学函数、原地 `permute_axes`；拦路石 = `numpy` 需升
-   0.29（连带 pyo3 联动，牵扯 RL 桥）。等下次动 RL 桥接层时一起。
+3. ✅ **升 0.17.2**（2026-07-03，与 0.16.1 同日连升）：**「需 numpy 0.29 / pyo3 联动」的
+   旧预判被推翻**——`numpy 0.27.1`（Cargo.lock 已锁定版本）的 ndarray 区间即为
+   `>=0.15,<=0.17`，升级零涉及 pyo3 / RL 桥。实际动作 = `Cargo.toml` `^0.16` → `^0.17.1`
+   （0.17.0 因 ArrayRef use-after-free 被 yank）+ `cargo update --package ndarray@0.16.1
+   --precise 0.17.2` 统一 numpy 侧；**代码零改动**（0.17 对 0.16 纯增量：`ArrayRef` 引用
+   类型、IxDyn 直接 `dot`、数组级 `tanh` 等数学函数、原地 `permute_axes`；仅删了我们
+   未用的 `serde-1`/`test`/`docs` feature 别名）。BLAS 路径 0.16→0.17 零变更 →
+   `into_standard_dyn` F 序守卫仍必要，浮点数值与 0.16.1 一致（不再引入新一轮轨迹漂移）。
+   验证：blas-mkl + 默认双口径全量测试 3317 全绿，clippy 无新增。
+   可选后续（不阻塞）：用 IxDyn `dot` 删 `mat_mul` 系的 `into_dimensionality::<Ix2>`
+   样板、公共 API 逐步换 `ArrayRef` 签名。
+4. ✅ **pyo3 / numpy 0.27 → 0.29 同日跟进**（2026-07-03）：pyo3 与 rust-numpy 同属
+   PyO3 组织、0.28 起版本号同步发版，成对升级。0.29 含两个 RustSec 安全修复
+   （`PyCFunction::new_closure` 缺 `Sync` 约束、`Bound{Tuple,List}Iterator::nth_back`
+   越界读）+ 多项 soundness 收紧；0.27→0.29 的破坏性变更（`PyErr` 的 `From<Utf8Error>`
+   等实现移除、`pyo3_build_config` 需直接依赖、pyclass Clone 自动 FromPyObject 弃用、
+   free-threaded 默认支持等）全部集中在「写 Python 扩展模块」场景——本项目纯嵌入方向
+   （`auto-initialize` + `Python::attach` + `py.import`），**代码零改动**。numpy 0.29
+   的 ndarray 区间仍为 `>=0.15,<=0.17`，与 0.17.2 兼容。验证：blas-mkl + 默认双口径
+   全量测试 3317 全绿（含 RL / pyo3 桥测试）、examples + benches 编译通过、clippy
+   180 warnings 无新增。至此依赖栈定格：**ndarray 0.17.2 + pyo3 0.29.0 + numpy 0.29.0**，
+   Criterion bench 对比（vs `post-hotpath-opt`）应在此最终形态上跑，避免升一次测一次。
 
 **冷水**：优化 J 踩的 `&a + &b` 广播慢路径上游 0.16/0.17 均未修（最后一次广播性能优化
 是 0.15.2），Add 三路分流修复升级后仍必要。
