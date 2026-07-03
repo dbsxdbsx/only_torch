@@ -237,9 +237,11 @@ impl TraitNode for MaxPool2d {
     }
 
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
-        let input = parent_values[0];
+        // 手写平铺偏移索引要求行主序连续；父节点可能传入 permute 等非连续视图
+        // （连续时零拷贝借用）。逐窗口 IxDyn 多维索引是此前 bench 实测的主开销。
+        let input_c = parent_values[0].contiguous();
         // 输入必须是 4D [batch, C, H, W]
-        let input_shape = input.shape();
+        let input_shape = input_c.shape().to_vec();
         let (batch_size, channels, in_h, in_w) = (
             input_shape[0],
             input_shape[1],
@@ -266,18 +268,28 @@ impl TraitNode for MaxPool2d {
         // 输出形状：始终是 4D [batch, C, H', W']
         let output_shape = vec![batch_size, channels, out_h, out_w];
         let single_sample_size = channels * out_h * out_w;
+        let sample_in_size = channels * in_h * in_w;
+        let in_s = input_c.data_as_slice();
 
         // 池化窗口在 padded 空间的访问；padding 区域虚拟为 -inf，
         // 实际通过越界检测跳过（避免实际分配 padded tensor，省内存）。
         // max_indices 存 padded 空间的展平索引（行 * padded_w + 列），
         // 反向时减去 (pad_t, pad_l) 还原到原始输入坐标。
-        let batch_results: Vec<(Vec<f32>, Vec<f32>)> = (0..batch_size)
-            .into_par_iter()
-            .map(|b| {
-                let mut sample_output = vec![0.0f32; single_sample_size];
-                let mut sample_indices = vec![0.0f32; single_sample_size];
+        // 双输出预分配 + zip 直写（消除 per-sample Vec 对 + extend 拷贝）；
+        // 窗口扫描序与 `>` 严格比较（首个最大者胜出）与旧实现逐 bit 一致。
+        let total_size = batch_size * single_sample_size;
+        let mut all_output = vec![0.0f32; total_size];
+        let mut all_indices = vec![0.0f32; total_size];
 
+        all_output
+            .par_chunks_mut(single_sample_size)
+            .zip(all_indices.par_chunks_mut(single_sample_size))
+            .enumerate()
+            .for_each(|(b, (sample_output, sample_indices))| {
+                let in_base = b * sample_in_size;
                 for c in 0..channels {
+                    let in_c_base = in_base + c * in_h * in_w;
+                    let out_c_base = c * out_h * out_w;
                     for oh in 0..out_h {
                         for ow in 0..out_w {
                             let h_start = oh * s_h;
@@ -287,21 +299,22 @@ impl TraitNode for MaxPool2d {
                             let mut max_idx_padded: usize = 0;
 
                             for kh in 0..k_h {
+                                let ih_padded = h_start + kh;
+                                // 检查是否在原始输入 (非 padding) 区域
+                                if ih_padded < pad_t || ih_padded >= pad_t + in_h {
+                                    // padding 行 = -inf，不更新 max
+                                    continue;
+                                }
+                                let ih = ih_padded - pad_t;
+                                let row_base = in_c_base + ih * in_w;
                                 for kw in 0..k_w {
-                                    let ih_padded = h_start + kh;
                                     let iw_padded = w_start + kw;
-                                    // 检查是否在原始输入 (非 padding) 区域
-                                    if ih_padded < pad_t
-                                        || ih_padded >= pad_t + in_h
-                                        || iw_padded < pad_l
-                                        || iw_padded >= pad_l + in_w
-                                    {
-                                        // padding 区域 = -inf，不更新 max
+                                    if iw_padded < pad_l || iw_padded >= pad_l + in_w {
+                                        // padding 列 = -inf，不更新 max
                                         continue;
                                     }
-                                    let ih = ih_padded - pad_t;
                                     let iw = iw_padded - pad_l;
-                                    let val = input[[b, c, ih, iw]];
+                                    let val = in_s[row_base + iw];
 
                                     if val > max_val {
                                         max_val = val;
@@ -318,28 +331,17 @@ impl TraitNode for MaxPool2d {
                                 max_val = 0.0;
                             }
 
-                            let idx = c * out_h * out_w + oh * out_w + ow;
+                            let idx = out_c_base + oh * out_w + ow;
                             sample_output[idx] = max_val;
                             sample_indices[idx] = max_idx_padded as f32;
                         }
                     }
                 }
-                (sample_output, sample_indices)
-            })
-            .collect();
+            });
 
-        // 合并结果
-        let mut all_output = Vec::with_capacity(batch_size * single_sample_size);
-        let mut all_indices = Vec::with_capacity(batch_size * single_sample_size);
-
-        for (output, indices) in batch_results {
-            all_output.extend(output);
-            all_indices.extend(indices);
-        }
-
-        self.value = Some(Tensor::new(&all_output, &output_shape));
-        self.max_indices = Some(Tensor::new(&all_indices, &output_shape));
-        self.input_shape = input_shape.to_vec();
+        self.value = Some(Tensor::from_vec(all_output, &output_shape));
+        self.max_indices = Some(Tensor::from_vec(all_indices, &output_shape));
+        self.input_shape = input_shape;
         Ok(())
     }
 
@@ -376,6 +378,14 @@ impl TraitNode for MaxPool2d {
         let padded_h_check = in_h + pad_t + pad_b;
         let single_sample_size = channels * in_h * in_w;
 
+        // 平铺读要求连续；upstream 可能来自非连续视图（连续时零拷贝借用），
+        // max_indices 为本节点前向产物（恒标准布局，守卫为零开销）。
+        let up_c = upstream_grad.contiguous();
+        let up_s = up_c.data_as_slice();
+        let mi_c = max_indices.contiguous();
+        let mi_s = mi_c.data_as_slice();
+        let sample_up_size = channels * out_h * out_w;
+
         // 预分配单一连续 buffer（避免 Vec<Vec> + flatten 的双重分配）
         let total_size = batch_size * single_sample_size;
         let mut all_data = vec![0.0f32; total_size];
@@ -387,11 +397,14 @@ impl TraitNode for MaxPool2d {
             .par_chunks_mut(single_sample_size)
             .enumerate()
             .for_each(|(b, sample_grad)| {
+                let up_base = b * sample_up_size;
                 for c in 0..channels {
+                    let up_c_base = up_base + c * out_h * out_w;
                     for oh in 0..out_h {
+                        let up_row = up_c_base + oh * out_w;
                         for ow in 0..out_w {
-                            let grad_val = upstream_grad[[b, c, oh, ow]];
-                            let max_pos = max_indices[[b, c, oh, ow]] as usize;
+                            let grad_val = up_s[up_row + ow];
+                            let max_pos = mi_s[up_row + ow] as usize;
                             let ih_padded = max_pos / padded_w;
                             let iw_padded = max_pos % padded_w;
                             // 防御：max_pos == 0 且 grad_val == 0 时会被解析为 (0, 0)，
@@ -414,7 +427,10 @@ impl TraitNode for MaxPool2d {
             });
         let _ = padded_h_check; // 仅用于命名意图，实际上限校验在前向已做
 
-        Ok(GradResult::Computed(Tensor::new(&all_data, input_shape)))
+        Ok(GradResult::Computed(Tensor::from_vec(
+            all_data,
+            input_shape,
+        )))
     }
 
     fn grad(&self) -> Option<&Tensor> {

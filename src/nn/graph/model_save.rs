@@ -166,11 +166,12 @@ pub(crate) fn write_otm_file<P: AsRef<Path>>(
 
     // 确保父目录存在
     if let Some(parent) = path.parent()
-        && !parent.exists() {
-            std::fs::create_dir_all(parent).map_err(|e| {
-                GraphError::ComputationError(format!("无法创建目录 {}: {e}", parent.display()))
-            })?;
-        }
+        && !parent.exists()
+    {
+        std::fs::create_dir_all(parent).map_err(|e| {
+            GraphError::ComputationError(format!("无法创建目录 {}: {e}", parent.display()))
+        })?;
+    }
 
     let file = File::create(&path).map_err(|e| {
         GraphError::ComputationError(format!("无法创建文件 {}: {e}", path.display()))

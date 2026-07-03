@@ -4,10 +4,17 @@
 
 ### Changed
 
+- **perf(nn): Pool2d 平铺直写 + BatchNorm 反向单趟融合（优化 K）**（2026-07-03）
+  - `avg_pool2d` 前向/反向从「IxDyn 逐元素索引 + `Vec<Vec>` flatten」旧模式改为 contiguous 守卫 + 平铺 slice + `par_chunks_mut` 直写；`max_pool2d` 前向双输出 zip 直写、反向 IxDyn 读改平铺读；`BatchNormOp` 训练反向 dx 表达式链（~6 个全尺寸临时 + 广播慢路径）融合为单趟并行循环
+  - 实测（同环境背靠背基线 + stash 旧实现同窗对照归因）：`avg_pool2d_backward/b32` **-36%**（3.5→2.65ms，优于夜间基线绝对值）、BatchNorm dx 隔离对照 **2.35x**（4.23→1.80ms，手动档 `bn_backward_micro`，全链路 bench -14% 与之吻合）、`avg_pool2d_forward/b8` 净代码收益 ~17pp（旧实现同窗 +0.6% vs 新 -17%）；大 batch 前向档位与旧实现同窗持平（rayon 摊薄 IxDyn 开销）
+  - 正确性：新增 3 个逐 bit 金测试（pool 以旧实现为参考 7 case 含 padding/ceil_mode/平局首胜；BatchNorm 以统计量重建 + 旧 dx 链为参考 3 case），全库金测试家族 9 → 12；双口径全量 3320 测试全绿
+  - 测量教训落档：白天窗口 bench 先跑未触碰组做金丝雀（本次首轮被并行编译任务污染出全场 +30~85% 假回归，金丝雀归零后复跑才可用）；详见 [optimization_candidates.md 优化 K](.doc/optimization_candidates.md)
+
 - **build(deps): pyo3 / numpy 0.27 → 0.29（成对升级，代码零改动）**（2026-07-03）
   - pyo3 与 rust-numpy 同属 PyO3 组织、0.28 起版本号同步发版；0.29 含两个 RustSec 安全修复（`new_closure` 缺 `Sync` 约束、`nth_back` 越界读）+ 多项 soundness 收紧
   - 0.27→0.29 破坏性变更全部集中在「写 Python 扩展模块」场景，本项目纯嵌入方向（`auto-initialize` + `Python::attach`）零涉及；numpy 0.29 的 ndarray 区间仍为 `>=0.15,<=0.17`，与 0.17.2 兼容
-  - 验证：blas-mkl + 默认双口径全量测试 3317 全绿（含 RL / pyo3 桥）、examples + benches 编译通过、clippy 无新增；至此依赖栈定格 **ndarray 0.17.2 + pyo3 0.29 + numpy 0.29**，Criterion bench 对比在此最终形态上一次性执行（调研落档 [optimization_candidates.md §4](.doc/optimization_candidates.md)）
+  - 验证：blas-mkl + 默认双口径全量测试 3317 全绿（含 RL / pyo3 桥）、examples + benches 编译通过、clippy 无新增；至此依赖栈定格 **ndarray 0.17.2 + pyo3 0.29 + numpy 0.29**
+  - **bench 对比已执行并闭环（2026-07-03）**：104 case vs `post-hotpath-opt` 名义 80 回归，经三层归因（噪声金丝雀 `tensor_clone`/纯 MKL `tensor_matmul` 同带齐涨 / +226% 离群项复测翻转 / **worktree 控制实验**——基线原始 commit 连 ndarray 0.15.6 还原在当前时段复跑反而「回归」更狠 +43~76%）判定**全部为白天环境噪声，依赖升级性能中性**，`post-hotpath-opt` 基线继续有效；顺带绝对值审计新识别 2 个优化候选（pool2d IxDyn 索引 / BatchNorm 反向表达式链，落档 [optimization_candidates.md §6/§7](.doc/optimization_candidates.md)）
 - **build(deps): ndarray 0.16.1 → 0.17.2（与 0.15→0.16 同日连升，代码零改动）**（2026-07-03）
   - 推翻「0.17 需 numpy 0.29 + pyo3 联动」旧预判：`numpy 0.27.1` 的 ndarray 区间即为 `>=0.15,<=0.17`，升级零涉及 RL 桥；实际动作仅 `Cargo.toml` `^0.16`→`^0.17.1`（0.17.0 因 ArrayRef use-after-free 被 yank）+ `cargo update --precise 0.17.2` 统一 numpy 侧
   - 0.17 对 0.16 纯增量（`ArrayRef` 引用类型 / IxDyn 直接 `dot` / 数组级数学函数 / 原地 `permute_axes`）；BLAS 路径零变更 → `mat_mul` 系 F 序守卫仍必要，浮点数值与 0.16.1 一致

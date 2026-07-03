@@ -97,17 +97,11 @@ impl Default for SequenceOpSet {
 
 impl SequenceOpSet {
     pub const fn allow_recurrent(&self) -> bool {
-        matches!(
-            self,
-            Self::Recurrent | Self::RecurrentWithAttention
-        )
+        matches!(self, Self::Recurrent | Self::RecurrentWithAttention)
     }
 
     pub const fn allow_attention(&self) -> bool {
-        matches!(
-            self,
-            Self::AttentionOnly | Self::RecurrentWithAttention
-        )
+        matches!(self, Self::AttentionOnly | Self::RecurrentWithAttention)
     }
 }
 
@@ -359,7 +353,12 @@ impl MutationRegistry {
             } else {
                 reg.register(0.06, MutateStrideMutation);
                 // FM 级别变异：结构探索偏重拓扑（Add/Split），参数调整适度降权
-                use super::fm_mutation::{AddFeatureMapMutation, RemoveFeatureMapMutation, AddFMEdgeMutation, RemoveFMEdgeMutation, SplitFMEdgeMutation, ChangeFMEdgeTypeMutation, MutateFMEdgeKernelSizeMutation, MutateFMEdgeStrideMutation, MutateFMEdgeDilationMutation, ChangeFeatureMapSizeMutation};
+                use super::fm_mutation::{
+                    AddFMEdgeMutation, AddFeatureMapMutation, ChangeFMEdgeTypeMutation,
+                    ChangeFeatureMapSizeMutation, MutateFMEdgeDilationMutation,
+                    MutateFMEdgeKernelSizeMutation, MutateFMEdgeStrideMutation,
+                    RemoveFMEdgeMutation, RemoveFeatureMapMutation, SplitFMEdgeMutation,
+                };
                 reg.register(0.12, AddFeatureMapMutation);
                 reg.register(0.04, RemoveFeatureMapMutation);
                 reg.register(0.10, AddFMEdgeMutation);
@@ -417,7 +416,12 @@ impl MutationRegistry {
             } else {
                 reg.register(0.06, MutateStrideMutation);
                 // FM 级别变异（Phase 2 偏向参数调整，结构探索适度保留）
-                use super::fm_mutation::{AddFeatureMapMutation, RemoveFeatureMapMutation, AddFMEdgeMutation, RemoveFMEdgeMutation, SplitFMEdgeMutation, ChangeFMEdgeTypeMutation, MutateFMEdgeKernelSizeMutation, MutateFMEdgeStrideMutation, MutateFMEdgeDilationMutation, ChangeFeatureMapSizeMutation};
+                use super::fm_mutation::{
+                    AddFMEdgeMutation, AddFeatureMapMutation, ChangeFMEdgeTypeMutation,
+                    ChangeFeatureMapSizeMutation, MutateFMEdgeDilationMutation,
+                    MutateFMEdgeKernelSizeMutation, MutateFMEdgeStrideMutation,
+                    RemoveFMEdgeMutation, RemoveFeatureMapMutation, SplitFMEdgeMutation,
+                };
                 reg.register(0.06, AddFeatureMapMutation);
                 reg.register(0.04, RemoveFeatureMapMutation);
                 reg.register(0.06, AddFMEdgeMutation);
@@ -612,10 +616,7 @@ fn grow_size(current: usize, max: usize, strategy: &SizeStrategy, rng: &mut StdR
                 current.saturating_mul(2)
             }
         }
-        SizeStrategy::AlignTo(align) => {
-            
-            ((current / align) + 1) * align
-        }
+        SizeStrategy::AlignTo(align) => ((current / align) + 1) * align,
     };
     new_size.min(max)
 }
@@ -1553,9 +1554,9 @@ impl Mutation for MutateCellTypeMutation {
                 && let GenomeRepr::LayerLevel {
                     weight_snapshots, ..
                 } = &mut genome.repr
-                {
-                    weight_snapshots.insert(inn, new_snap);
-                }
+            {
+                weight_snapshots.insert(inn, new_snap);
+            }
         } else {
             genome.remove_layer_weight_snapshot(inn);
         }
@@ -1670,9 +1671,7 @@ fn node_level_mutate_cell_type_apply(
                 2
             }
         }
-        NT::CellGru { .. } => {
-            u8::from(!rng.gen_bool(0.5))
-        }
+        NT::CellGru { .. } => u8::from(!rng.gen_bool(0.5)),
         _ => unreachable!(),
     };
 
@@ -1783,12 +1782,13 @@ fn node_level_mutate_cell_type_apply(
             new_cell_kind,
             &new_param_ids,
             hidden_size,
-        ) {
-            let snaps = genome.node_weight_snapshots_mut();
-            for (id, t) in migrated {
-                snaps.insert(id, t);
-            }
+        )
+    {
+        let snaps = genome.node_weight_snapshots_mut();
+        for (id, t) in migrated {
+            snaps.insert(id, t);
         }
+    }
 
     // 重新推导计算节点形状
     sync_computation_shapes(genome);
@@ -1852,9 +1852,9 @@ impl Mutation for MutateKernelSizeMutation {
                     ref mut kernel_size,
                     ..
                 } = genome.layers_mut()[idx].layer_config
-                {
-                    *kernel_size = new_k;
-                }
+            {
+                *kernel_size = new_k;
+            }
         }
         Ok(())
     }
@@ -2132,16 +2132,18 @@ fn node_level_grow_apply(
 
     // 执行 resize
     match &block.kind {
-        NodeBlockKind::Linear { .. } => resize_linear_out(genome, &block, new_size)
-            .map_err(MutationError::InternalError)?,
-        NodeBlockKind::Conv2d { .. } => resize_conv2d_out(genome, &block, new_size)
-            .map_err(MutationError::InternalError)?,
-        NodeBlockKind::Rnn { .. } | NodeBlockKind::Lstm { .. } | NodeBlockKind::Gru { .. } => {
-            resize_recurrent_out(genome, &block, new_size)
-                .map_err(MutationError::InternalError)?
+        NodeBlockKind::Linear { .. } => {
+            resize_linear_out(genome, &block, new_size).map_err(MutationError::InternalError)?
         }
-        NodeBlockKind::Attention { .. } => resize_attention_out(genome, &block, new_size)
-            .map_err(MutationError::InternalError)?,
+        NodeBlockKind::Conv2d { .. } => {
+            resize_conv2d_out(genome, &block, new_size).map_err(MutationError::InternalError)?
+        }
+        NodeBlockKind::Rnn { .. } | NodeBlockKind::Lstm { .. } | NodeBlockKind::Gru { .. } => {
+            resize_recurrent_out(genome, &block, new_size).map_err(MutationError::InternalError)?
+        }
+        NodeBlockKind::Attention { .. } => {
+            resize_attention_out(genome, &block, new_size).map_err(MutationError::InternalError)?
+        }
         _ => return Err(MutationError::NotApplicable("不可调整大小的块类型".into())),
     }
 
@@ -2327,9 +2329,9 @@ fn node_level_mutate_kernel_size_apply(
             && let NodeTypeDescriptor::Conv2d {
                 ref mut padding, ..
             } = node.node_type
-            {
-                *padding = (new_padding, new_padding);
-            }
+        {
+            *padding = (new_padding, new_padding);
+        }
     }
 
     sync_computation_shapes(genome);
@@ -2380,9 +2382,10 @@ impl Mutation for MutateStrideMutation {
             .iter()
             .find_map(|n| {
                 if bid_set.contains(&n.innovation_number)
-                    && let NodeTypeDescriptor::Conv2d { stride, .. } = &n.node_type {
-                        return Some(*stride);
-                    }
+                    && let NodeTypeDescriptor::Conv2d { stride, .. } = &n.node_type
+                {
+                    return Some(*stride);
+                }
                 None
             })
             .unwrap_or((1, 1));
@@ -2404,9 +2407,10 @@ impl Mutation for MutateStrideMutation {
         // 更新 Conv2d op 节点的 stride
         for node in genome.nodes_mut().iter_mut() {
             if bid_set.contains(&node.innovation_number)
-                && let NodeTypeDescriptor::Conv2d { ref mut stride, .. } = node.node_type {
-                    *stride = new_stride;
-                }
+                && let NodeTypeDescriptor::Conv2d { ref mut stride, .. } = node.node_type
+            {
+                *stride = new_stride;
+            }
         }
 
         sync_computation_shapes(genome);
@@ -2455,8 +2459,7 @@ impl Mutation for AddConnectionMutation {
         let pair = pairs.choose(rng).unwrap().clone();
         let mut counter = make_counter(genome);
 
-        add_skip_connection(genome, &pair, &mut counter)
-            .map_err(MutationError::InternalError)?;
+        add_skip_connection(genome, &pair, &mut counter).map_err(MutationError::InternalError)?;
 
         commit_counter(genome, &counter);
         Ok(())
@@ -2645,9 +2648,7 @@ fn atomic_insert_candidates(blocks: &[NodeBlock], genome: &NetworkGenome) -> Vec
                 .is_some_and(|b| b.kind.is_activation())
         } else if block_idx == usize::MAX {
             // INPUT 后面第一个块
-            blocks
-                .first()
-                .is_some_and(|b| b.kind.is_activation())
+            blocks.first().is_some_and(|b| b.kind.is_activation())
         } else {
             false
         };
@@ -2667,9 +2668,10 @@ fn atomic_insert_candidates(blocks: &[NodeBlock], genome: &NetworkGenome) -> Vec
 fn is_next_dropout(genome: &NetworkGenome, after_id: u64) -> bool {
     let blocks = node_main_path(genome);
     if let Some(idx) = blocks.iter().position(|b| b.output_id == after_id)
-        && let Some(next) = blocks.get(idx + 1) {
-            return matches!(next.kind, NodeBlockKind::Dropout);
-        }
+        && let Some(next) = blocks.get(idx + 1)
+    {
+        return matches!(next.kind, NodeBlockKind::Dropout);
+    }
     // INPUT 后的第一个块
     if after_id == INPUT_INNOVATION {
         return blocks
@@ -2978,23 +2980,23 @@ fn widen_layer_snapshots(
     // 扩宽 owner 快照
     if let Some(mut snap) = owner_snap_opt
         && layer_widen_owner_snap(&mut snap, &owner_config, &mapping, &counts)
-            && let GenomeRepr::LayerLevel {
-                weight_snapshots, ..
-            } = &mut genome.repr
-            {
-                weight_snapshots.insert(owner_inn, snap);
-            }
+        && let GenomeRepr::LayerLevel {
+            weight_snapshots, ..
+        } = &mut genome.repr
+    {
+        weight_snapshots.insert(owner_inn, snap);
+    }
 
     // 扩宽 consumer 快照（输入维度）
     if let Some((consumer_inn, consumer_config)) = consumer
         && let Some((_, mut csnap)) = consumer_snap_opt
-            && layer_widen_consumer_snap(&mut csnap, &consumer_config, &mapping, &counts)
-                && let GenomeRepr::LayerLevel {
-                    weight_snapshots, ..
-                } = &mut genome.repr
-                {
-                    weight_snapshots.insert(consumer_inn, csnap);
-                }
+        && layer_widen_consumer_snap(&mut csnap, &consumer_config, &mapping, &counts)
+        && let GenomeRepr::LayerLevel {
+            weight_snapshots, ..
+        } = &mut genome.repr
+    {
+        weight_snapshots.insert(consumer_inn, csnap);
+    }
 }
 
 /// owner 快照就地扩宽：输出维度从 `old_size` 扩展到 `new_size（faithful` copy）。

@@ -904,3 +904,206 @@ fn test_max_pool2d_backward_with_padding() -> Result<(), GraphError> {
 
     Ok(())
 }
+
+// ==================== 7. 平铺直写重构 vs 旧链逐 bit 金测试 ====================
+//
+// 2026-07-03 优化（优化候选 #6）：前向从「IxDyn 逐元素索引 + per-sample Vec 对 +
+// extend 拷贝」改为「contiguous 守卫 + 平铺 slice + 双输出 par_chunks_mut zip 直写」，
+// 反向的 IxDyn 索引改平铺读。本组测试以旧实现（IxDyn 索引、串行）为参考实现，
+// 锁死逐 bit 一致性（含 padding / ceil_mode / 平局首胜语义）。
+
+/// 旧实现参考：前向，返回 (输出, padded 空间 max 索引)
+fn max_pool2d_reference_forward(
+    input: &Tensor,
+    kernel: (usize, usize),
+    stride: (usize, usize),
+    padding: (usize, usize, usize, usize),
+    ceil_mode: bool,
+) -> (Tensor, Vec<usize>) {
+    let shape = input.shape();
+    let (batch_size, channels, in_h, in_w) = (shape[0], shape[1], shape[2], shape[3]);
+    let (k_h, k_w) = kernel;
+    let (s_h, s_w) = stride;
+    let (pad_t, pad_b, pad_l, pad_r) = padding;
+    let padded_h = in_h + pad_t + pad_b;
+    let padded_w = in_w + pad_l + pad_r;
+    let out_h = if ceil_mode {
+        (padded_h - k_h).div_ceil(s_h) + 1
+    } else {
+        (padded_h - k_h) / s_h + 1
+    };
+    let out_w = if ceil_mode {
+        (padded_w - k_w).div_ceil(s_w) + 1
+    } else {
+        (padded_w - k_w) / s_w + 1
+    };
+
+    let mut all_output = Vec::with_capacity(batch_size * channels * out_h * out_w);
+    let mut all_indices = Vec::with_capacity(all_output.capacity());
+    for b in 0..batch_size {
+        for c in 0..channels {
+            for oh in 0..out_h {
+                for ow in 0..out_w {
+                    let h_start = oh * s_h;
+                    let w_start = ow * s_w;
+                    let mut max_val = f32::NEG_INFINITY;
+                    let mut max_idx_padded: usize = 0;
+                    for kh in 0..k_h {
+                        for kw in 0..k_w {
+                            let ih_padded = h_start + kh;
+                            let iw_padded = w_start + kw;
+                            if ih_padded < pad_t
+                                || ih_padded >= pad_t + in_h
+                                || iw_padded < pad_l
+                                || iw_padded >= pad_l + in_w
+                            {
+                                continue;
+                            }
+                            let val = input[[b, c, ih_padded - pad_t, iw_padded - pad_l]];
+                            if val > max_val {
+                                max_val = val;
+                                max_idx_padded = ih_padded * padded_w + iw_padded;
+                            }
+                        }
+                    }
+                    if max_val == f32::NEG_INFINITY {
+                        max_val = 0.0;
+                    }
+                    all_output.push(max_val);
+                    all_indices.push(max_idx_padded);
+                }
+            }
+        }
+    }
+    (
+        Tensor::new(&all_output, &[batch_size, channels, out_h, out_w]),
+        all_indices,
+    )
+}
+
+/// 旧实现参考：反向（用参考前向产出的 padded 空间索引做 scatter）
+fn max_pool2d_reference_backward(
+    upstream: &Tensor,
+    indices: &[usize],
+    input_shape: &[usize],
+    padding: (usize, usize, usize, usize),
+) -> Tensor {
+    let grad_shape = upstream.shape();
+    let (batch_size, channels, out_h, out_w) =
+        (grad_shape[0], grad_shape[1], grad_shape[2], grad_shape[3]);
+    let (pad_t, _pad_b, pad_l, pad_r) = padding;
+    let (in_h, in_w) = (input_shape[2], input_shape[3]);
+    let padded_w = in_w + pad_l + pad_r;
+    let single_sample_size = channels * in_h * in_w;
+
+    let mut all_data = vec![0.0f32; batch_size * single_sample_size];
+    let mut flat_out = 0usize;
+    for b in 0..batch_size {
+        let base = b * single_sample_size;
+        for c in 0..channels {
+            for oh in 0..out_h {
+                for ow in 0..out_w {
+                    let grad_val = upstream[[b, c, oh, ow]];
+                    let max_pos = indices[flat_out];
+                    flat_out += 1;
+                    let ih_padded = max_pos / padded_w;
+                    let iw_padded = max_pos % padded_w;
+                    if ih_padded >= pad_t
+                        && ih_padded < pad_t + in_h
+                        && iw_padded >= pad_l
+                        && iw_padded < pad_l + in_w
+                    {
+                        let ih = ih_padded - pad_t;
+                        let iw = iw_padded - pad_l;
+                        all_data[base + c * in_h * in_w + ih * in_w + iw] += grad_val;
+                    }
+                }
+            }
+        }
+    }
+    Tensor::new(&all_data, input_shape)
+}
+
+fn assert_bitwise_eq(actual: &Tensor, expected: &Tensor, ctx: &str) {
+    assert_eq!(actual.shape(), expected.shape(), "{ctx}: 形状不一致");
+    let a = actual.data_as_slice();
+    let e = expected.data_as_slice();
+    for i in 0..a.len() {
+        assert_eq!(
+            a[i].to_bits(),
+            e[i].to_bits(),
+            "{ctx}: i={i} actual={} expected={}",
+            a[i],
+            e[i]
+        );
+    }
+}
+
+/// 平铺直写前向/反向 vs 旧实现逐 bit（含 padding、ceil_mode、重叠窗口、全等值平局首胜）
+#[test]
+fn test_max_pool2d_bitwise_matches_reference() -> Result<(), GraphError> {
+    // (输入形状, kernel, stride, padding(对称 h,w), ceil_mode, 全常数输入否)
+    type Case = (
+        &'static [usize],
+        (usize, usize),
+        Option<(usize, usize)>,
+        (usize, usize),
+        bool,
+        bool,
+    );
+    let cases: &[Case] = &[
+        (&[2, 3, 8, 8], (2, 2), None, (0, 0), false, false), // 基本
+        (&[1, 2, 20, 20], (5, 5), Some((1, 1)), (2, 2), false, false), // SPPF 风格 padding
+        (&[3, 2, 9, 11], (3, 3), Some((2, 2)), (1, 1), true, false), // ceil_mode + 非方尺寸
+        (&[1, 1, 6, 6], (3, 3), Some((1, 1)), (0, 0), false, true), // 全常数：平局首胜语义
+    ];
+
+    for (case_idx, &(shape, kernel, stride, pad, ceil, constant)) in cases.iter().enumerate() {
+        let graph = Graph::new();
+        let inner = graph.inner_rc();
+
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(shape, Some("input"))?;
+        let pool = inner.borrow_mut().create_max_pool2d_node(
+            input.clone(),
+            kernel,
+            stride,
+            pad,
+            ceil,
+            Some("pool"),
+        )?;
+
+        let input_val = if constant {
+            Tensor::ones(shape)
+        } else {
+            Tensor::normal_seeded(0.0, 1.0, shape, 7 + case_idx as u64)
+        };
+        input.set_value(Some(&input_val))?;
+        pool.forward_recursive(1, Mode::Train)?;
+
+        let effective_stride = stride.unwrap_or(kernel);
+        let padding4 = (pad.0, pad.0, pad.1, pad.1);
+        let (expected_fwd, ref_indices) =
+            max_pool2d_reference_forward(&input_val, kernel, effective_stride, padding4, ceil);
+        let actual_fwd = pool.value().unwrap();
+        assert_bitwise_eq(
+            &actual_fwd,
+            &expected_fwd,
+            &format!("max_pool2d 前向 case {case_idx}"),
+        );
+
+        let upstream = Tensor::normal_seeded(0.0, 1.0, expected_fwd.shape(), 300 + case_idx as u64);
+        let grad = pool
+            .calc_grad_to_parent_index(0, &upstream)?
+            .resolve(&upstream);
+        let expected_bwd = max_pool2d_reference_backward(&upstream, &ref_indices, shape, padding4);
+        assert_bitwise_eq(
+            &grad,
+            &expected_bwd,
+            &format!("max_pool2d 反向 case {case_idx}"),
+        );
+    }
+
+    Ok(())
+}

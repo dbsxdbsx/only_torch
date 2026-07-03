@@ -226,8 +226,6 @@ fn image_h_w(tensor: &Tensor) -> (usize, usize) {
     match shape.len() {
         2 => (shape[0], shape[1]),
         3 => (shape[1], shape[2]),
-        _ => panic!(
-            "RandomAffine: 期望图像形状 [H, W] 或 [C, H, W]，得到 {shape:?}"
-        ),
+        _ => panic!("RandomAffine: 期望图像形状 [H, W] 或 [C, H, W]，得到 {shape:?}"),
     }
 }

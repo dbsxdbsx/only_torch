@@ -23,6 +23,7 @@ use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::nn::{GraphError, Mode};
 use crate::tensor::Tensor;
+use rayon::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -347,41 +348,58 @@ impl TraitNode for BatchNormOp {
 
             let n = self.n_reduce as f32;
             let shape = upstream_grad.shape();
-            let ndim = shape.len();
             let c = self.num_features;
             let spatial_size: usize = shape[2..].iter().product();
             let batch_size = shape[0];
+            let sp = spatial_size.max(1);
+            let sample_size = c * sp;
 
             // 计算 per-channel sum(upstream) 和 sum(upstream * x_hat)
             // upstream_grad 可能来自 permute/transpose 的反向（非连续）；x_hat 为算子结果，
             // 布局不保证。手写平铺索引前统一保证连续（连续时零拷贝）。
             let up_c = upstream_grad.contiguous();
             let xh_c = x_hat.contiguous();
-            let up_flat = up_c.flatten_view();
-            let xh_flat = xh_c.flatten_view();
+            let up_s = up_c.data_as_slice();
+            let xh_s = xh_c.data_as_slice();
+            // std 由前向构造为 [1, C, 1...] 标准布局，len == c
+            let std_s = std.data_as_slice();
 
             let mut sum_up = vec![0.0f32; c];
             let mut sum_up_xh = vec![0.0f32; c];
 
             for sample in 0..batch_size {
                 for ch in 0..c {
-                    for s in 0..spatial_size.max(1) {
-                        let idx = sample * c * spatial_size.max(1) + ch * spatial_size.max(1) + s;
-                        sum_up[ch] += up_flat[idx];
-                        sum_up_xh[ch] += up_flat[idx] * xh_flat[idx];
+                    for s in 0..sp {
+                        let idx = sample * sample_size + ch * sp + s;
+                        sum_up[ch] += up_s[idx];
+                        sum_up_xh[ch] += up_s[idx] * xh_s[idx];
                     }
                 }
             }
 
-            // 构建可广播的 sum 张量
-            let mut bcast_shape = vec![1usize; ndim];
-            bcast_shape[1] = c;
-            let sum_up_t = Tensor::new(&sum_up, &bcast_shape);
-            let sum_up_xh_t = Tensor::new(&sum_up_xh, &bcast_shape);
+            // dx = (N * upstream - sum_up - x_hat * sum_up_xh) / (std * N)
+            // 单趟融合逐元素计算，替代旧张量表达式链（~6 个全尺寸临时 + [1,C,1,1] 广播
+            // 减/除的 ndarray 慢路径）；每元素运算顺序 ((up·n − su) − xh·sux) / (std·n)
+            // 与旧链逐 bit 一致（金测试锁定）。样本间并行为纯 map，不改数值。
+            let mut dx_data = vec![0.0f32; up_s.len()];
+            dx_data
+                .par_chunks_mut(sample_size)
+                .enumerate()
+                .for_each(|(sample, dx_chunk)| {
+                    let base = sample * sample_size;
+                    for ch in 0..c {
+                        let su = sum_up[ch];
+                        let sux = sum_up_xh[ch];
+                        let denom = std_s[ch] * n;
+                        let row = ch * sp;
+                        for s in 0..sp {
+                            let idx = base + row + s;
+                            dx_chunk[row + s] = (up_s[idx] * n - su - xh_s[idx] * sux) / denom;
+                        }
+                    }
+                });
 
-            // dx = (1/N) * (1/std) * (N * upstream - sum_up - x_hat * sum_up_xh)
-            let dx = &(&(upstream_grad * n) - &sum_up_t - &(x_hat * &sum_up_xh_t)) / &(std * n);
-
+            let dx = Tensor::from_vec(dx_data, up_c.shape());
             Ok(GradResult::Computed(dx))
         } else {
             // 评估模式：简单除以 std

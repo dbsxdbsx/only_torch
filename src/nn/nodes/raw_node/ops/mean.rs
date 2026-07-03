@@ -64,13 +64,14 @@ impl Mean {
     ) -> Result<Self, GraphError> {
         // 验证 axis 有效性
         if let Some(ax) = axis
-            && ax >= input_shape.len() {
-                return Err(GraphError::InvalidOperation(format!(
-                    "Mean: axis {} 超出输入维度范围 {}",
-                    ax,
-                    input_shape.len()
-                )));
-            }
+            && ax >= input_shape.len()
+        {
+            return Err(GraphError::InvalidOperation(format!(
+                "Mean: axis {} 超出输入维度范围 {}",
+                ax,
+                input_shape.len()
+            )));
+        }
 
         // 计算输出形状
         let fixed_shape = match axis {

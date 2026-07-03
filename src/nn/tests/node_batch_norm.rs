@@ -577,3 +577,251 @@ fn test_batch_norm_op_running_stats_persist_across_forwards() {
         "eval 模式应使用积累的 running stats 产生非零输出"
     );
 }
+
+// ==================== 反向单趟融合 vs 旧表达式链逐 bit 金测试 ====================
+//
+// 2026-07-03 优化（优化候选 #7）：训练模式反向从张量表达式链
+// `&(&(upstream * n) - &sum_up_t - &(x_hat * &sum_up_xh_t)) / &(std * n)`
+// （~6 个全尺寸临时 + [1,C,1,1] 广播减/除慢路径）融合为单趟逐元素循环。
+// 参考实现在测试内以与前向完全相同的统计量算法（flat 循环 mean/var、
+// `(&var + eps).powf(0.5)`、张量链 x_hat）重建 x_hat/std，再走旧 dx 链，
+// 从输入数据出发端到端锁死逐 bit 一致。
+
+/// 与 BatchNormOp::channel_mean 逐 bit 相同的参考实现
+fn bn_ref_channel_mean(x: &Tensor) -> Tensor {
+    let shape = x.shape();
+    let ndim = shape.len();
+    let c = shape[1];
+    let spatial_size: usize = shape[2..].iter().product();
+    let n = shape[0];
+    let total = n * spatial_size;
+
+    let flat = x.flatten_view();
+    let mut means = vec![0.0f32; c];
+    for sample in 0..n {
+        for ch in 0..c {
+            for s in 0..spatial_size {
+                let idx = sample * c * spatial_size + ch * spatial_size + s;
+                means[ch] += flat[idx];
+            }
+        }
+    }
+    for m in &mut means {
+        *m /= total as f32;
+    }
+    let mut out_shape = vec![1usize; ndim];
+    out_shape[1] = c;
+    Tensor::new(&means, &out_shape)
+}
+
+/// 与 BatchNormOp::channel_var 逐 bit 相同的参考实现
+fn bn_ref_channel_var(x: &Tensor, mean: &Tensor) -> Tensor {
+    let shape = x.shape();
+    let ndim = shape.len();
+    let c = shape[1];
+    let spatial_size: usize = shape[2..].iter().product();
+    let n = shape[0];
+    let total = n * spatial_size;
+
+    let flat = x.flatten_view();
+    let mean_flat = mean.flatten_view();
+    let mut vars = vec![0.0f32; c];
+    for sample in 0..n {
+        for ch in 0..c {
+            let m = mean_flat[ch];
+            for s in 0..spatial_size {
+                let idx = sample * c * spatial_size + ch * spatial_size + s;
+                let diff = flat[idx] - m;
+                vars[ch] += diff * diff;
+            }
+        }
+    }
+    for v in &mut vars {
+        *v /= total as f32;
+    }
+    let mut out_shape = vec![1usize; ndim];
+    out_shape[1] = c;
+    Tensor::new(&vars, &out_shape)
+}
+
+/// 旧实现参考：dx 表达式链（升级前的原版反向）
+fn bn_ref_backward_old_chain(x: &Tensor, upstream: &Tensor, eps: f32) -> Tensor {
+    let shape = upstream.shape();
+    let ndim = shape.len();
+    let c = shape[1];
+    let spatial_size: usize = shape[2..].iter().product();
+    let batch_size = shape[0];
+    let n = (batch_size * spatial_size.max(1)) as f32;
+
+    // 重建与前向逐 bit 相同的 x_hat / std
+    let mean = bn_ref_channel_mean(x);
+    let var = bn_ref_channel_var(x, &mean);
+    let std = (&var + eps).powf(0.5);
+    let x_hat = &(x - &mean) / &std;
+
+    // per-channel sum(upstream) / sum(upstream * x_hat)（与旧实现同序）
+    let up_flat = upstream.flatten_view();
+    let xh_flat = x_hat.flatten_view();
+    let sp = spatial_size.max(1);
+    let mut sum_up = vec![0.0f32; c];
+    let mut sum_up_xh = vec![0.0f32; c];
+    for sample in 0..batch_size {
+        for ch in 0..c {
+            for s in 0..sp {
+                let idx = sample * c * sp + ch * sp + s;
+                sum_up[ch] += up_flat[idx];
+                sum_up_xh[ch] += up_flat[idx] * xh_flat[idx];
+            }
+        }
+    }
+    let mut bcast_shape = vec![1usize; ndim];
+    bcast_shape[1] = c;
+    let sum_up_t = Tensor::new(&sum_up, &bcast_shape);
+    let sum_up_xh_t = Tensor::new(&sum_up_xh, &bcast_shape);
+
+    // 旧版表达式链原样
+    &(&(upstream * n) - &sum_up_t - &(&x_hat * &sum_up_xh_t)) / &(&std * n)
+}
+
+/// 手动档微对照：旧表达式链 vs 单趟融合的隔离耗时（不受全链路 bench 稀释）
+///
+/// 用法：`cargo test --release --lib --features blas-mkl -- --ignored bn_backward_micro --nocapture`
+/// 两侧计时范围对齐（都含 per-channel sum 循环 + dx 计算），仅 dx 构造方式不同。
+#[test]
+#[ignore = "手动性能对照，需 --release 才有意义"]
+fn bn_backward_micro_timing_old_chain_vs_fused() {
+    use std::time::Instant;
+
+    let shape: &[usize] = &[32, 16, 28, 28];
+    let c = shape[1];
+    let spatial: usize = shape[2..].iter().product();
+    let batch = shape[0];
+    let n = (batch * spatial) as f32;
+    let sp = spatial;
+
+    let x_val = Tensor::normal_seeded(0.0, 1.0, shape, 42);
+    let upstream = Tensor::normal_seeded(0.0, 1.0, shape, 43);
+
+    // 统计量在计时外重建（两侧共享）
+    let mean = bn_ref_channel_mean(&x_val);
+    let var = bn_ref_channel_var(&x_val, &mean);
+    let std = (&var + 1e-5f32).powf(0.5);
+    let x_hat = &(&x_val - &mean) / &std;
+
+    // 旧链：sum 循环 + 表达式链
+    let old_run = || {
+        let up_flat = upstream.flatten_view();
+        let xh_flat = x_hat.flatten_view();
+        let mut sum_up = vec![0.0f32; c];
+        let mut sum_up_xh = vec![0.0f32; c];
+        for sample in 0..batch {
+            for ch in 0..c {
+                for s in 0..sp {
+                    let idx = sample * c * sp + ch * sp + s;
+                    sum_up[ch] += up_flat[idx];
+                    sum_up_xh[ch] += up_flat[idx] * xh_flat[idx];
+                }
+            }
+        }
+        let mut bcast_shape = vec![1usize; shape.len()];
+        bcast_shape[1] = c;
+        let sum_up_t = Tensor::new(&sum_up, &bcast_shape);
+        let sum_up_xh_t = Tensor::new(&sum_up_xh, &bcast_shape);
+        &(&(&upstream * n) - &sum_up_t - &(&x_hat * &sum_up_xh_t)) / &(&std * n)
+    };
+
+    // 新融合：走真实节点 backward（含相同的 sum 循环 + 单趟融合直写）
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+    let x = inner
+        .borrow_mut()
+        .create_basic_input_node(shape, Some("x"))
+        .unwrap();
+    let (rm, rv) = default_running_stats(c);
+    let bn = inner
+        .borrow_mut()
+        .create_batch_norm_op_node(x.clone(), 1e-5, 0.1, rm, rv, Some("bn"))
+        .unwrap();
+    x.set_value(Some(&x_val)).unwrap();
+    bn.forward_recursive(1, Mode::Train).unwrap();
+
+    let new_run = || {
+        bn.calc_grad_to_parent_index(0, &upstream)
+            .unwrap()
+            .resolve(&upstream)
+    };
+
+    let time_median_us = |f: &dyn Fn() -> Tensor| {
+        let mut times: Vec<f64> = (0..30)
+            .map(|_| {
+                let t0 = Instant::now();
+                let out = f();
+                let dt = t0.elapsed().as_secs_f64() * 1e6;
+                std::hint::black_box(out);
+                dt
+            })
+            .collect();
+        times.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        times[times.len() / 2]
+    };
+
+    let old_us = time_median_us(&old_run);
+    let new_us = time_median_us(&new_run);
+    println!("BatchNorm 反向 dx 隔离对照（[32,16,28,28]，中位 30 次）：");
+    println!("  旧表达式链: {old_us:.1} µs");
+    println!("  单趟融合:   {new_us:.1} µs");
+    println!("  加速比:     {:.2}x", old_us / new_us);
+}
+
+/// 单趟融合反向 vs 旧表达式链逐 bit（2D [N,C] 与 4D [N,C,H,W]）
+#[test]
+fn test_batch_norm_op_backward_bitwise_matches_old_chain() -> Result<(), GraphError> {
+    let cases: &[&[usize]] = &[&[8, 5], &[4, 3, 6, 7], &[2, 16, 14, 14]];
+
+    for (case_idx, &shape) in cases.iter().enumerate() {
+        let graph = Graph::new();
+        let inner = graph.inner_rc();
+
+        let x = inner
+            .borrow_mut()
+            .create_basic_input_node(shape, Some("x"))?;
+        let (rm, rv) = default_running_stats(shape[1]);
+        let bn = inner.borrow_mut().create_batch_norm_op_node(
+            x.clone(),
+            1e-5,
+            0.1,
+            rm,
+            rv,
+            Some("bn"),
+        )?;
+
+        let x_val = Tensor::normal_seeded(0.0, 1.0, shape, 20 + case_idx as u64);
+        x.set_value(Some(&x_val))?;
+        bn.forward_recursive(1, Mode::Train)?;
+
+        let upstream = Tensor::normal_seeded(0.0, 1.0, shape, 500 + case_idx as u64);
+        let grad = bn
+            .calc_grad_to_parent_index(0, &upstream)?
+            .resolve(&upstream);
+
+        let expected = bn_ref_backward_old_chain(&x_val, &upstream, 1e-5);
+        assert_eq!(
+            grad.shape(),
+            expected.shape(),
+            "case {case_idx}: 形状不一致"
+        );
+        let g = grad.data_as_slice();
+        let e = expected.data_as_slice();
+        for i in 0..g.len() {
+            assert_eq!(
+                g[i].to_bits(),
+                e[i].to_bits(),
+                "BatchNorm 反向融合与旧链不逐 bit 一致：case {case_idx} i={i} fused={} old={}",
+                g[i],
+                e[i]
+            );
+        }
+    }
+
+    Ok(())
+}

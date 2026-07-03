@@ -60,7 +60,9 @@ impl Divide {
         })?;
 
         // 3. 计算动态形状
-        let supports_dynamic = parent_dynamic_shapes.iter().any(crate::nn::shape::DynamicShape::has_dynamic_dims);
+        let supports_dynamic = parent_dynamic_shapes
+            .iter()
+            .any(crate::nn::shape::DynamicShape::has_dynamic_dims);
         let dynamic_shape = parent_dynamic_shapes[0].broadcast_with(&parent_dynamic_shapes[1]);
 
         // 4. 返回

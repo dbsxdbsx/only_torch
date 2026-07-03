@@ -86,7 +86,12 @@ pub fn letterbox_with_fill_to(
     let pad_y = (out_h.saturating_sub(new_h)) / 2;
     let mut canvas: ImageBuffer<Rgb<u8>, Vec<u8>> =
         ImageBuffer::from_pixel(out_w, out_h, Rgb(fill));
-    image::imageops::overlay(&mut canvas, &resized_rgb, i64::from(pad_x), i64::from(pad_y));
+    image::imageops::overlay(
+        &mut canvas,
+        &resized_rgb,
+        i64::from(pad_x),
+        i64::from(pad_y),
+    );
 
     LetterboxResult {
         image: DynamicImage::ImageRgb8(canvas),

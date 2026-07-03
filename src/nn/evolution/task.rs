@@ -79,10 +79,7 @@ impl ReportMetric {
         match task_metric {
             TaskMetric::Accuracy => matches!(
                 self,
-                Self::Accuracy
-                    | Self::Precision
-                    | Self::Recall
-                    | Self::F1
+                Self::Accuracy | Self::Precision | Self::Recall | Self::F1
             ),
             TaskMetric::R2 => matches!(
                 self,
@@ -95,10 +92,9 @@ impl ReportMetric {
                 self,
                 Self::MultiLabelLooseAccuracy | Self::MultiLabelStrictAccuracy
             ),
-            TaskMetric::BinaryIoU => matches!(
-                self,
-                Self::PixelAccuracy | Self::BinaryIoU | Self::Dice
-            ),
+            TaskMetric::BinaryIoU => {
+                matches!(self, Self::PixelAccuracy | Self::BinaryIoU | Self::Dice)
+            }
             TaskMetric::MeanIoU => {
                 matches!(self, Self::PixelAccuracy | Self::MeanIoU)
             }
@@ -107,12 +103,7 @@ impl ReportMetric {
 
     pub(crate) fn defaults_for_task(task_metric: &TaskMetric) -> Vec<Self> {
         match task_metric {
-            TaskMetric::Accuracy => vec![
-                Self::Accuracy,
-                Self::Precision,
-                Self::Recall,
-                Self::F1,
-            ],
+            TaskMetric::Accuracy => vec![Self::Accuracy, Self::Precision, Self::Recall, Self::F1],
             TaskMetric::R2 => vec![
                 Self::R2,
                 Self::MeanSquaredError,
@@ -123,11 +114,7 @@ impl ReportMetric {
                 Self::MultiLabelLooseAccuracy,
                 Self::MultiLabelStrictAccuracy,
             ],
-            TaskMetric::BinaryIoU => vec![
-                Self::PixelAccuracy,
-                Self::BinaryIoU,
-                Self::Dice,
-            ],
+            TaskMetric::BinaryIoU => vec![Self::PixelAccuracy, Self::BinaryIoU, Self::Dice],
             TaskMetric::MeanIoU => vec![Self::PixelAccuracy, Self::MeanIoU],
         }
     }
@@ -661,12 +648,13 @@ impl SupervisedTask {
                 head.train_targets[0].size()
             };
             if let Some(loss) = &head.loss_override
-                && !compatible_losses(&head.metric, output_dim).contains(loss) {
-                    return Err(EvolutionError::InvalidData(format!(
-                        "head '{}' 的 loss_override {:?} 与 metric {:?} / output_dim {} 不兼容",
-                        head.name, loss, head.metric, output_dim
-                    )));
-                }
+                && !compatible_losses(&head.metric, output_dim).contains(loss)
+            {
+                return Err(EvolutionError::InvalidData(format!(
+                    "head '{}' 的 loss_override {:?} 与 metric {:?} / output_dim {} 不兼容",
+                    head.name, loss, head.metric, output_dim
+                )));
+            }
             let train_refs: Vec<&Tensor> = head.train_targets.iter().collect();
             let test_refs: Vec<&Tensor> = head.test_targets.iter().collect();
             let report_metrics = ReportMetric::defaults_for_task(&head.metric);

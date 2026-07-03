@@ -30,6 +30,11 @@
 
 说明：baseline 保存在 Criterion 的 `target/criterion` 报告目录中，属于本地构建产物，不入仓。`pre-execution-context` 仅用于解释 `Mode` 重构前后差异；`smoke_conv2d_eval_1x1_b1` 已随语义改名为 `smoke_conv2d_inference_1x1_b1`，后续不再为重构前 baseline 兼容名称，统一从 `post-mode-refactor` 继续对比。
 
+> **`post-hotpath-opt` 对新依赖栈仍有效（2026-07-03 裁定）**：ndarray 0.17.2 + pyo3/numpy
+> 0.29 升级经三层归因（噪声金丝雀 / 复测翻转 / worktree 控制实验，详见 §4）判定性能中性，
+> 该基线无需因依赖升级重录；下次优化战役开跑时照常 `just bench-save pre-<名>` 即自然获得
+> 新栈起点。唯一纪律不变：**基线录制与对比跑尽量同为安静窗口**，白天对比只做方向参考。
+
 ### Mode 重构对比结果
 
 - `just bench-compare pre-execution-context` 跑到 `smoke` 时因 benchmark case 改名中断；中断前 `tensor_ops`、`conv2d_forward`、`backward`、`end_to_end` 多个分组相对重构前 baseline 已显示明显改善，但该 baseline 不再作为后续门禁基线。
@@ -117,8 +122,17 @@ use-after-free 被 yank）。
    （`auto-initialize` + `Python::attach` + `py.import`），**代码零改动**。numpy 0.29
    的 ndarray 区间仍为 `>=0.15,<=0.17`，与 0.17.2 兼容。验证：blas-mkl + 默认双口径
    全量测试 3317 全绿（含 RL / pyo3 桥测试）、examples + benches 编译通过、clippy
-   180 warnings 无新增。至此依赖栈定格：**ndarray 0.17.2 + pyo3 0.29.0 + numpy 0.29.0**，
-   Criterion bench 对比（vs `post-hotpath-opt`）应在此最终形态上跑，避免升一次测一次。
+   180 warnings 无新增。至此依赖栈定格：**ndarray 0.17.2 + pyo3 0.29.0 + numpy 0.29.0**。
+
+**升级后 bench 对比结论（2026-07-03 白天全量跑，104 case vs `post-hotpath-opt`）**：
+名义结果 80 回归 / 3 改善 / 21 持平，**经三层归因全部判定为白天环境噪声，无一项可归因于
+依赖升级**：① 噪声金丝雀齐涨——`tensor_clone`（~400 ps 空操作，代码零涉及）+8~21%、
+纯 MKL `tensor_matmul` +7~18%，与全场 +5~20% 均匀漂移同带；② 最大离群项
+`smoke_add_chain_backward_8` +226% 立即复测翻转为 No change；③ **worktree 控制实验**
+（检出基线录制 commit `6365d85`，连 ndarray 0.15.6 一并还原，与基线状态逐 bit 相同）
+当前环境复跑 pool2d backward「回归」+43~76%，**比 HEAD 新栈（+17~45%）还差**——同代码
+同依赖只换时段即回归，锤死环境归因；且旧栈（0.16.1 + pyo3 0.27）中间对照 +27~48% 居中。
+结论：**依赖升级在测量能力范围内性能中性**；干净的新栈基线待安静窗口录制（见下）。
 
 **冷水**：优化 J 踩的 `&a + &b` 广播慢路径上游 0.16/0.17 均未修（最后一次广播性能优化
 是 0.15.2），Add 三路分流修复升级后仍必要。
@@ -352,6 +366,42 @@ per-sample Rayon 并行策略在有无 BLAS 时完全一致。
 `add_chain_backward` 三档全部改善（-4% ~ -22%），无新回归。
 教训：**「消 clone」不能想当然——memcpy + 原地向量化两趟可以快于一趟广播分配**，
 广播场景的等价改写必须分形状档实测。
+
+### K. Pool2d 平铺直写 + BatchNorm 反向单趟融合（2026-07-03，bench 绝对值审计驱动）
+
+**来源**：依赖升级 bench 对比的绝对值审计（不看百分比看耗时）发现两处结构性浪费：
+`max/avg_pool2d_backward`（b32 规格 2.7/3.5ms）比含 GEMM 的 `conv2d_full_step`（1.9ms）
+还慢（~27ns/位置的 scatter）；`batch_norm_backward` 18.9ms 中 dx 表达式链贡献 ~6 个
+全尺寸临时 + `[1,C,1,1]` 广播减/除慢路径。
+
+| 改动 | 内容 |
+|------|------|
+| `avg_pool2d` 前向/反向 | 「IxDyn 逐元素索引 + `Vec<Vec>` flatten」（优化 C/J 未同步的旧模式）→ `contiguous()` 守卫 + 平铺 slice + `par_chunks_mut` 直写；窗口行内 slice 迭代，`upstream × grad_val` 外提 |
+| `max_pool2d` 前向 | per-sample `Vec<(Vec,Vec)>` + extend 拷贝 → 双输出 buffer `par_chunks_mut` zip 直写 + 平铺读；padding 行检查外提到 kh 层 |
+| `max_pool2d` 反向 | 保留 J 的直写结构，`upstream_grad[[b,c,oh,ow]]` / `max_indices[[...]]` IxDyn 读 → 平铺 slice 读 |
+| `BatchNorm` 反向（训练） | dx 表达式链 → 单趟融合 `dx[i] = (n·up[i] − sum_up[ch] − xh[i]·sum_up_xh[ch]) / (std[ch]·n)`，样本维 `par_chunks_mut` 并行；输出 `Tensor::from_vec` 零拷贝 |
+
+**正确性**（照 J 纪律）：3 个新逐 bit 金测试（全库金测试家族 9 → 12）——pool 双算子以
+旧实现（IxDyn 串行）为参考覆盖默认 stride/非方核/重叠窗口/padding/ceil_mode/全常数平局
+首胜共 7 case；BatchNorm 以「与前向逐 bit 相同的统计量重建 + 旧 dx 链」为参考覆盖
+2D/4D 共 3 case。双口径全量 3320 测试全绿，clippy 无新增。
+
+**实测**（同环境背靠背 `pre-pool-bn` 基线，白天窗口）：
+
+| bench | 中位变化 | 备注 |
+|---|---|---|
+| `avg_pool2d_backward/b32` | **-36%**（3.5ms→2.65ms，**优于夜间基线绝对值** 3.51ms） | 三轮复测稳定（含污染轮也 -36%），最硬的一条 |
+| `avg_pool2d_backward/b8` | -9~-10% | 稳定 |
+| `max_pool2d_backward/b32` | -9%（复测），首轮持平 | IxDyn 读占比小于 avg 的写扇出 |
+| `batch_norm_backward`（隔离对照） | **dx 计算 2.35x**（4.23ms→1.80ms，release+MKL 手动档 `bn_backward_micro`，30 次中位） | 全链路 bench 组含 MSE/SGD/前向稀释后 -14%，两口径吻合 |
+| `avg_pool2d_forward/b8`、k3 档 | 确证净代码收益：旧实现同窗对照 avg b8 **+0.6% → 新 -17%**、k3 avg **+13% → +3.7%** | 用 stash 旧实现同窗复跑对照法归因 |
+| `max/avg_pool2d_forward/b32` | 与旧实现同窗对照持平（旧 -21% vs 新 -16%，同噪声带） | 大 batch 下 rayon 摊薄了 IxDyn 开销，vs 基线的改善数字主要是环境恢复成分 |
+
+**测量插曲（教训）**：首轮对比跑在「隔壁 agent 编译任务」污染窗口，全场 +30~85% 假回归
+（含未改动的 layer/rms_norm）；金丝雀（未触碰的 `layer_norm_backward`）复测归零后重跑，
+数字才可用。**白天窗口跑 bench 前先跑一个未触碰组做金丝雀**已验证是必要程序。
+`avg/max_pool2d_forward/b16_c32_14x14_k3`（~9.5µs 小 case）在新旧实现间无显著差异
+（k=3 小窗口下平铺收益与 par 调度开销相抵），非回归。
 
 ---
 

@@ -182,9 +182,11 @@ impl TraitNode for AvgPool2d {
     }
 
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
-        let input = parent_values[0];
+        // 手写平铺偏移索引要求行主序连续；父节点可能传入 permute 等非连续视图
+        // （连续时零拷贝借用）。逐窗口 IxDyn 多维索引是此前 bench 实测的主开销。
+        let input_c = parent_values[0].contiguous();
         // 输入必须是 4D [batch, C, H, W]
-        let input_shape = input.shape();
+        let input_shape = input_c.shape().to_vec();
         let (batch_size, channels, in_h, in_w) = (
             input_shape[0],
             input_shape[1],
@@ -201,41 +203,41 @@ impl TraitNode for AvgPool2d {
         let output_shape = vec![batch_size, channels, out_h, out_w];
         let pool_size = (k_h * k_w) as f32;
         let single_sample_size = channels * out_h * out_w;
+        let sample_in_size = channels * in_h * in_w;
+        let in_s = input_c.data_as_slice();
 
-        // Rayon 并行处理每个 batch 样本
-        let batch_results: Vec<Vec<f32>> = (0..batch_size)
-            .into_par_iter()
-            .map(|b| {
-                let mut sample_output = vec![0.0f32; single_sample_size];
-
+        // 预分配单一连续 buffer + 按样本直写（消除 Vec<Vec> + flatten 双重分配）；
+        // 窗口内按 (kh, kw) 行序累加，与旧实现逐 bit 一致。
+        let mut all_data = vec![0.0f32; batch_size * single_sample_size];
+        all_data
+            .par_chunks_mut(single_sample_size)
+            .enumerate()
+            .for_each(|(b, sample_output)| {
+                let in_base = b * sample_in_size;
                 for c in 0..channels {
+                    let in_c_base = in_base + c * in_h * in_w;
+                    let out_c_base = c * out_h * out_w;
                     for oh in 0..out_h {
+                        let h_start = oh * s_h;
                         for ow in 0..out_w {
-                            let h_start = oh * s_h;
                             let w_start = ow * s_w;
 
                             let mut sum = 0.0f32;
                             for kh in 0..k_h {
-                                for kw in 0..k_w {
-                                    let ih = h_start + kh;
-                                    let iw = w_start + kw;
-                                    sum += input[[b, c, ih, iw]];
+                                let row_start = in_c_base + (h_start + kh) * in_w + w_start;
+                                for &v in &in_s[row_start..row_start + k_w] {
+                                    sum += v;
                                 }
                             }
 
-                            let idx = c * out_h * out_w + oh * out_w + ow;
-                            sample_output[idx] = sum / pool_size;
+                            sample_output[out_c_base + oh * out_w + ow] = sum / pool_size;
                         }
                     }
                 }
-                sample_output
-            })
-            .collect();
+            });
 
-        // 合并结果
-        let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
-        self.value = Some(Tensor::new(&all_data, &output_shape));
-        self.input_shape = input_shape.to_vec();
+        self.value = Some(Tensor::from_vec(all_data, &output_shape));
+        self.input_shape = input_shape;
         Ok(())
     }
 
@@ -268,36 +270,43 @@ impl TraitNode for AvgPool2d {
         let (in_h, in_w) = (input_shape[2], input_shape[3]);
         let single_sample_size = channels * in_h * in_w;
 
-        // Rayon 并行处理每个 batch 样本
-        let batch_results: Vec<Vec<f32>> = (0..batch_size)
-            .into_par_iter()
-            .map(|b| {
-                let mut sample_grad = vec![0.0f32; single_sample_size];
+        // 平铺读要求连续；upstream 可能来自非连续视图（连续时零拷贝借用）
+        let up_c = upstream_grad.contiguous();
+        let up_s = up_c.data_as_slice();
+        let sample_up_size = channels * out_h * out_w;
 
+        // 预分配单一连续 buffer + 按样本直写；`upstream * grad_val` 外提
+        // （同操作数乘积恒定，逐 bit 等价），窗口内写入序与旧实现一致。
+        let mut all_data = vec![0.0f32; batch_size * single_sample_size];
+        all_data
+            .par_chunks_mut(single_sample_size)
+            .enumerate()
+            .for_each(|(b, sample_grad)| {
+                let up_base = b * sample_up_size;
                 for c in 0..channels {
+                    let up_c_base = up_base + c * out_h * out_w;
+                    let in_c_base = c * in_h * in_w;
                     for oh in 0..out_h {
+                        let h_start = oh * s_h;
                         for ow in 0..out_w {
-                            let upstream = upstream_grad[[b, c, oh, ow]];
-                            let h_start = oh * s_h;
+                            let g = up_s[up_c_base + oh * out_w + ow] * grad_val;
                             let w_start = ow * s_w;
 
                             for kh in 0..k_h {
-                                for kw in 0..k_w {
-                                    let ih = h_start + kh;
-                                    let iw = w_start + kw;
-                                    let idx = c * in_h * in_w + ih * in_w + iw;
-                                    sample_grad[idx] += upstream * grad_val;
+                                let row_start = in_c_base + (h_start + kh) * in_w + w_start;
+                                for slot in &mut sample_grad[row_start..row_start + k_w] {
+                                    *slot += g;
                                 }
                             }
                         }
                     }
                 }
-                sample_grad
-            })
-            .collect();
+            });
 
-        let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
-        Ok(GradResult::Computed(Tensor::new(&all_data, input_shape)))
+        Ok(GradResult::Computed(Tensor::from_vec(
+            all_data,
+            input_shape,
+        )))
     }
 
     fn grad(&self) -> Option<&Tensor> {

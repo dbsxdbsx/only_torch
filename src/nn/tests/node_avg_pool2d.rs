@@ -743,3 +743,147 @@ fn test_create_avg_pool2d_drop_releases() {
     assert!(weak_pool.upgrade().is_none());
     assert!(weak_input.upgrade().is_none());
 }
+
+// ==================== 7. 平铺直写重构 vs 旧链逐 bit 金测试 ====================
+//
+// 2026-07-03 优化（优化候选 #6）：前向/反向从「IxDyn 逐元素索引 + Vec<Vec> flatten」
+// 改为「contiguous 守卫 + 平铺 slice + par_chunks_mut 直写」。
+// 本组测试以旧实现（IxDyn 索引、串行）为参考实现，锁死逐 bit 一致性。
+
+/// 旧实现参考：前向（IxDyn 索引逐窗口累加，窗口内 (kh, kw) 行序）
+fn avg_pool2d_reference_forward(
+    input: &Tensor,
+    kernel: (usize, usize),
+    stride: (usize, usize),
+) -> Tensor {
+    let shape = input.shape();
+    let (batch_size, channels, in_h, in_w) = (shape[0], shape[1], shape[2], shape[3]);
+    let (k_h, k_w) = kernel;
+    let (s_h, s_w) = stride;
+    let out_h = (in_h - k_h) / s_h + 1;
+    let out_w = (in_w - k_w) / s_w + 1;
+    let pool_size = (k_h * k_w) as f32;
+
+    let mut all_data = Vec::with_capacity(batch_size * channels * out_h * out_w);
+    for b in 0..batch_size {
+        for c in 0..channels {
+            for oh in 0..out_h {
+                for ow in 0..out_w {
+                    let mut sum = 0.0f32;
+                    for kh in 0..k_h {
+                        for kw in 0..k_w {
+                            sum += input[[b, c, oh * s_h + kh, ow * s_w + kw]];
+                        }
+                    }
+                    all_data.push(sum / pool_size);
+                }
+            }
+        }
+    }
+    Tensor::new(&all_data, &[batch_size, channels, out_h, out_w])
+}
+
+/// 旧实现参考：反向（`upstream * grad_val` 在窗口循环内逐次相乘）
+fn avg_pool2d_reference_backward(
+    upstream: &Tensor,
+    input_shape: &[usize],
+    kernel: (usize, usize),
+    stride: (usize, usize),
+) -> Tensor {
+    let grad_shape = upstream.shape();
+    let (batch_size, channels, out_h, out_w) =
+        (grad_shape[0], grad_shape[1], grad_shape[2], grad_shape[3]);
+    let (k_h, k_w) = kernel;
+    let (s_h, s_w) = stride;
+    let grad_val = 1.0 / (k_h * k_w) as f32;
+    let (in_h, in_w) = (input_shape[2], input_shape[3]);
+    let single_sample_size = channels * in_h * in_w;
+
+    let mut all_data = vec![0.0f32; batch_size * single_sample_size];
+    for b in 0..batch_size {
+        let sample_grad = &mut all_data[b * single_sample_size..(b + 1) * single_sample_size];
+        for c in 0..channels {
+            for oh in 0..out_h {
+                for ow in 0..out_w {
+                    let up = upstream[[b, c, oh, ow]];
+                    for kh in 0..k_h {
+                        for kw in 0..k_w {
+                            let ih = oh * s_h + kh;
+                            let iw = ow * s_w + kw;
+                            sample_grad[c * in_h * in_w + ih * in_w + iw] += up * grad_val;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Tensor::new(&all_data, input_shape)
+}
+
+fn assert_bitwise_eq(actual: &Tensor, expected: &Tensor, ctx: &str) {
+    assert_eq!(actual.shape(), expected.shape(), "{ctx}: 形状不一致");
+    let a = actual.data_as_slice();
+    let e = expected.data_as_slice();
+    for i in 0..a.len() {
+        assert_eq!(
+            a[i].to_bits(),
+            e[i].to_bits(),
+            "{ctx}: i={i} actual={} expected={}",
+            a[i],
+            e[i]
+        );
+    }
+}
+
+/// 平铺直写前向/反向 vs 旧实现逐 bit（含默认 stride、非方核、重叠窗口、多 batch 多通道）
+#[test]
+fn test_avg_pool2d_bitwise_matches_reference() -> Result<(), GraphError> {
+    // (输入形状, kernel, stride)
+    let cases: &[(&[usize], (usize, usize), Option<(usize, usize)>)] = &[
+        (&[2, 3, 8, 8], (2, 2), None),          // 默认 stride = kernel
+        (&[3, 2, 9, 11], (2, 3), Some((2, 2))), // 非方核 + 非整除尺寸
+        (&[1, 4, 7, 7], (3, 3), Some((1, 1))),  // 重叠窗口
+    ];
+
+    for (case_idx, &(shape, kernel, stride)) in cases.iter().enumerate() {
+        let graph = Graph::new();
+        let inner = graph.inner_rc();
+
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(shape, Some("input"))?;
+        let pool = inner.borrow_mut().create_avg_pool2d_node(
+            input.clone(),
+            kernel,
+            stride,
+            Some("pool"),
+        )?;
+
+        let input_val = Tensor::normal_seeded(0.0, 1.0, shape, 42 + case_idx as u64);
+        input.set_value(Some(&input_val))?;
+        pool.forward_recursive(1, Mode::Train)?;
+
+        let effective_stride = stride.unwrap_or(kernel);
+        let expected_fwd = avg_pool2d_reference_forward(&input_val, kernel, effective_stride);
+        let actual_fwd = pool.value().unwrap();
+        assert_bitwise_eq(
+            &actual_fwd,
+            &expected_fwd,
+            &format!("avg_pool2d 前向 case {case_idx}"),
+        );
+
+        let upstream = Tensor::normal_seeded(0.0, 1.0, expected_fwd.shape(), 100 + case_idx as u64);
+        let grad = pool
+            .calc_grad_to_parent_index(0, &upstream)?
+            .resolve(&upstream);
+        let expected_bwd =
+            avg_pool2d_reference_backward(&upstream, shape, kernel, effective_stride);
+        assert_bitwise_eq(
+            &grad,
+            &expected_bwd,
+            &format!("avg_pool2d 反向 case {case_idx}"),
+        );
+    }
+
+    Ok(())
+}
