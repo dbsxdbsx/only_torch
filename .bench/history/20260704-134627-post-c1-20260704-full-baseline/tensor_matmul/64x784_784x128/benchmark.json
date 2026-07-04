@@ -1,0 +1,1 @@
+{"group_id":"tensor_matmul","function_id":null,"value_str":"64x784_784x128","throughput":null,"full_id":"tensor_matmul/64x784_784x128","directory_name":"tensor_matmul/64x784_784x128","title":"tensor_matmul/64x784_784x128"}

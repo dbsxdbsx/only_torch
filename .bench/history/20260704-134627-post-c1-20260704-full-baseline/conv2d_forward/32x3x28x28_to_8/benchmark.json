@@ -1,0 +1,1 @@
+{"group_id":"conv2d_forward","function_id":null,"value_str":"32x3x28x28_to_8","throughput":null,"full_id":"conv2d_forward/32x3x28x28_to_8","directory_name":"conv2d_forward/32x3x28x28_to_8","title":"conv2d_forward/32x3x28x28_to_8"}
