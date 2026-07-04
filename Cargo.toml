@@ -67,6 +67,10 @@
     # BLAS 加速：OpenBLAS（跨平台备选）
     # 用法：cargo build --features blas-openblas
     blas-openblas=["ndarray/blas", "dep:openblas-src"]
+    # 分配画像（诊断用，默认关）：全局计数 allocator 统计 alloc 次数/字节，
+    # 配合 PROFILE 命名桶输出各阶段分配 delta。会替换 global allocator，
+    # 仅在性能诊断时开启：cargo run --features alloc-profile ...
+    alloc-profile=[]
 
 [dependencies]
     # BLAS 后端（可选，通过 feature 启用）
@@ -91,7 +95,7 @@
     # 0.16.1 起含 BLAS 全布局派发（#1419，注意转置 GEMM 可能输出 F 序，见 tensor/ops/mat_mul.rs 守卫）；
     # 0.17 纯增量（ArrayRef / IxDyn dot / 数组级数学函数），BLAS 路径与 0.16.1 相同。
     # 0.17.0 因 use-after-free 被 yank，最低用 0.17.1+。
-    ndarray    ={version="^0.17.1", features=["serde"]}
+    ndarray={version="^0.17.1", features=["serde"]}
 
     # 错误处理
     thiserror="1"
@@ -178,6 +182,10 @@
 
 [[bench]]
     name   ="rnn"
+    harness=false
+
+[[bench]]
+    name   ="rayon_threshold"
     harness=false
 
 [[bench]]

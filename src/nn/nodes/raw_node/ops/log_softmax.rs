@@ -16,7 +16,6 @@ use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::nn::{GraphError, Mode};
 use crate::tensor::Tensor;
-use rayon::prelude::*;
 
 /// LogSoftmax 节点
 ///
@@ -154,29 +153,47 @@ impl TraitNode for LogSoftmax {
         let batch_size = shape[0];
         let num_classes = shape[1];
 
-        // 并行计算每个样本的梯度
-        let batch_grads: Vec<Vec<f32>> = (0..batch_size)
-            .into_par_iter()
-            .map(|b| {
-                // 计算 sum(upstream_grad) 对当前行
+        // 行 slice 直取（免逐元素 IxDyn 索引）；非连续来源付一次物化兜底
+        let sm_owned;
+        let sm_slice = if softmax_output.is_contiguous() {
+            softmax_output.data_as_slice()
+        } else {
+            sm_owned = softmax_output.clone().into_contiguous();
+            sm_owned.data_as_slice()
+        };
+        let up_owned;
+        let up_slice = if upstream_grad.is_contiguous() {
+            upstream_grad.data_as_slice()
+        } else {
+            up_owned = upstream_grad.clone().into_contiguous();
+            up_owned.data_as_slice()
+        };
+
+        // 单块缓冲按行直写（消除 Vec<Vec> 每行分配 + flatten 二次拷贝），
+        // 逐元素运算顺序与旧实现一致、逐 bit 等价；小任务阈值分流免调度开销
+        let mut all_grads = vec![0.0f32; batch_size * num_classes];
+        crate::utils::parallel::for_each_chunk_mut(
+            &mut all_grads,
+            num_classes,
+            batch_size * num_classes * 3,
+            |b, row| {
+                let g = &up_slice[b * num_classes..(b + 1) * num_classes];
+                let y = &sm_slice[b * num_classes..(b + 1) * num_classes];
+
+                // 计算 sum(upstream_grad) 对当前行（顺序 fold，与旧实现累加序一致）
                 let mut sum_upstream = 0.0f32;
-                for c in 0..num_classes {
-                    sum_upstream += upstream_grad[[b, c]];
+                for &gv in g {
+                    sum_upstream += gv;
                 }
 
                 // dL/dx_i = upstream_grad_i - softmax_i * sum(upstream_grad)
-                let mut sample_grad = vec![0.0f32; num_classes];
                 for c in 0..num_classes {
-                    sample_grad[c] = upstream_grad[[b, c]] - softmax_output[[b, c]] * sum_upstream;
+                    row[c] = g[c] - y[c] * sum_upstream;
                 }
+            },
+        );
 
-                sample_grad
-            })
-            .collect();
-
-        // 合并结果
-        let all_grads: Vec<f32> = batch_grads.into_iter().flatten().collect();
-        Ok(GradResult::Computed(Tensor::new(&all_grads, shape)))
+        Ok(GradResult::Computed(Tensor::new(all_grads, shape)))
     }
 
     fn grad(&self) -> Option<&Tensor> {

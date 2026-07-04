@@ -115,6 +115,40 @@ impl Tensor {
         }
     }
 
+    /// 生成与 [`shuffle_mut_seeded`]`(Some(0), seed)` **同置换**的行索引数组
+    ///
+    /// 契约：`x.select_rows(&Tensor::shuffled_row_indices_seeded(n, seed))` 与
+    /// 「`x.clone()` 后 `shuffle_mut_seeded(Some(0), seed)`」逐 bit 等价
+    /// （同一 `StdRng` 种子 + 同一 `SliceRandom::shuffle` 算法，RNG 消耗仅依赖
+    /// 元素个数），由单测锁定。用途：大数据集 mini-batch 场景免整集物化拷贝，
+    /// 只按需 gather 批次行（演化 `SupervisedTask` 训练路径）。
+    ///
+    /// [`shuffle_mut_seeded`]: Self::shuffle_mut_seeded
+    pub fn shuffled_row_indices_seeded(n: usize, seed: u64) -> Vec<usize> {
+        let mut rng = StdRng::seed_from_u64(seed);
+        let mut indices: Vec<usize> = (0..n).collect();
+        indices.shuffle(&mut rng);
+        indices
+    }
+
+    /// 按给定行索引沿第 0 维 gather 行，产出连续新张量（行序 = `indices` 序）
+    ///
+    /// 与 PyTorch 的 `index_select(0, indices)` 同语义；行可重复、可乱序。
+    /// 底层走 ndarray `select`（逐行拷贝到新缓冲），非连续输入同样按逻辑序正确。
+    ///
+    /// # Panics
+    /// 任一索引越界（≥ `shape[0]`）时 panic。
+    pub fn select_rows(&self, indices: &[usize]) -> Self {
+        assert!(
+            self.dimension() >= 1,
+            "select_rows: 标量张量没有行维度可选取"
+        );
+        Self {
+            data: self.data.select(Axis(0), indices).into_shared(),
+            source_id: next_source_id(),
+        }
+    }
+
     /// 使用指定种子打乱张量中的元素顺序（影响原张量，确保可重复性）
     ///
     /// * `dim` - 可选的维度参数，指定沿哪个维度打乱；若为 None 则打乱所有元素

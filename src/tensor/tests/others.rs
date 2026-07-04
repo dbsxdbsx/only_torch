@@ -66,6 +66,60 @@ fn test_order_mut() {
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑order↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓shuffle↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+
+/// **契约金测试**：`shuffled_row_indices_seeded` + `select_rows` 必须与
+/// 「整集 clone + `shuffle_mut_seeded(Some(0), seed)` + `narrow` 切片」逐 bit 等价
+/// （演化 mini-batch 索引 shuffle 路径的等价性前提，覆盖 2D/3D、多种子、尾批）。
+#[test]
+fn test_shuffled_row_indices_select_rows_逐bit等价旧路径() {
+    for &(rows, cols) in &[(7usize, 3usize), (32, 5)] {
+        let data: Vec<f32> = (0..rows * cols).map(|v| v as f32 * 1.5 - 3.0).collect();
+        for seed in [0u64, 42, 20260704] {
+            // 2D
+            let base = Tensor::new(&data, &[rows, cols]);
+            let mut old_path = base.clone();
+            old_path.shuffle_mut_seeded(Some(0), seed);
+            let indices = Tensor::shuffled_row_indices_seeded(rows, seed);
+            let new_path = base.select_rows(&indices);
+            assert_eq!(old_path, new_path, "2D 全集置换应逐 bit 相同");
+
+            // narrow 批切片 vs 索引子段 gather（含尾批）
+            let bs = 5;
+            let mut offset = 0;
+            while offset < rows {
+                let end = (offset + bs).min(rows);
+                let old_batch = old_path.narrow(0, offset, end - offset);
+                let new_batch = base.select_rows(&indices[offset..end]);
+                assert_eq!(
+                    old_batch, new_batch,
+                    "batch [{offset}, {end}) 应逐 bit 相同"
+                );
+                offset = end;
+            }
+
+            // 3D（序列型标签场景）
+            let base3 = Tensor::new(&data, &[rows, cols, 1]);
+            let mut old3 = base3.clone();
+            old3.shuffle_mut_seeded(Some(0), seed);
+            assert_eq!(
+                old3,
+                base3.select_rows(&indices),
+                "3D 应复用同一置换且逐 bit 相同"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_select_rows_重复与乱序索引() {
+    let t = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]);
+    let picked = t.select_rows(&[2, 0, 2]);
+    assert_eq!(
+        picked,
+        Tensor::new(&[5.0, 6.0, 1.0, 2.0, 5.0, 6.0], &[3, 2])
+    );
+}
+
 #[test]
 fn test_shuffle() {
     let data = &[

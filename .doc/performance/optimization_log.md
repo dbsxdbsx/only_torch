@@ -7,6 +7,36 @@
 
 ---
 
+## Q. Rayon 治理批：dK 确定性修复 + 小任务阈值分流 + 分配画像工具 + Vec\<Vec\> 清尾 + 演化索引 shuffle（2026-07-04）
+
+**来源**：热路径审计两个遗留方向（分配画像先行 / Rayon 小任务反噬）+ Reviewer 二轮压测
+裁决（P1 复活为 row-take 方案、P6 IxDyn dot 否决、P4 剔除 dK 归约项单列为 R1）。
+六项均为**逐 bit 等价或确定性增强**类改动，不触碰 RL 数值冻结（CartPole = MLP，
+conv 系不在冻结路径）。
+
+| 项 | 改动 | 关键点 |
+|------|------|--------|
+| **R1 dK 确定性** | conv2d / conv_transpose2d 的 dK 由 rayon `reduce` 改「并行 map 保序 collect + 按 batch 序串行累加」 | rayon reduce 合并分组随工作窃取漂移 → 同输入两次运行 dK 可能不逐 bit 相同，破坏金测试方法论；修复后确定序。CE 前向 par `sum()` 同病但在冻结路径（loss 标量），留候选 #4b 解冻后修 |
+| **阈值分流** | 新增 `utils::parallel`（`for_each_chunk_mut(_2)` / `map_indexed`，`PAR_MIN_WORK=32768`），接入 conv2d（pad/前向/1x1/dX/dK）、conv_transpose2d、max/avg_pool2d、upsample2d、batch_norm dx、softmax/log_softmax 反向 | 定标 bench `rayon_threshold`：总工作 ~128 时串行快 ~9×（0.5µs vs 4.8µs），≥65k 并行稳定胜；串行/并行同一闭包，产物逐 bit 一致。batch=1（MCTS 推理形态）一律免调度开销 |
+| **P5 bmm 并行** | `batched_mat_mul` 按**单 GEMM flops ≥ 阈值**才并行 | 首版按总工作量判断被 attention bench 打回：「多而微」GEMM（N*H=128 个 ~4k flops）并行回归 +20~40%；改单 GEMM 判据后 vs `pre_p5` 基线各 case 落回噪声带 |
+| **P3 分配画像** | `alloc-profile` feature（默认关）：计数 allocator 只做两个全局 atomic（`utils/alloc_profile.rs`），`rl/profiling.rs::Scope` enter/drop 读 counter delta 归因到 PROFILE 桶 | Reviewer 缩版设计：allocator 内禁分配/加锁；不做 per-allocation map、不做 outstanding bytes。解锁候选 #6/#7 的「profiler 证明」触发条件 |
+| **P4 Vec\<Vec\> 清尾** | log_softmax 反向、conv_transpose2d 前向/dX、upsample2d 前向改预分配直写（+行 slice 免 IxDyn 索引；upsample 前向改行内展宽 + 行块复制） | 战报 J/K 同族改法收尾；conv_transpose dX 由 `dot` 分配改 `general_mat_mul` 直写 chunk（同一 GEMM 路径逐 bit）；纯数据搬运/同序累加，逐 bit 等价 |
+| **P1 演化索引 shuffle** | `Tensor::shuffled_row_indices_seeded`（与 `shuffle_mut_seeded(Some(0),_)` 同置换契约）+ `select_rows`（ndarray `select` 行 gather）；task.rs mini-batch 免每 epoch 整集 CoW 物化 + 置换搬运 | 同 seed 下批次构成与旧路径**逐 bit 一致**（契约金测试覆盖 2D/3D × 3 seed × 尾批）；Reviewer 原判 YAGNI，用户「能做的全做好」授权下以其认可的 row-take 方案落地 |
+
+**Rayon 定位结论**（用户关切「用户侧 rayon 与库内并行冲突」）：op 级并行继续用全局池、
+绝不自建常驻池——同大版本 rayon 全进程唯一池，嵌套并行是工作窃取的一等公民，不存在双池
+爆炸；外层饱和时内层退化近串行 + 阈值分流消掉小任务纯开销；MKL seq 已排除 BLAS 过订阅。
+完整模型见 [threading_model.md](../design/threading_model.md)。
+
+**验证**：全量 lib 测试 3352 全绿（含新增 parallel 逐 bit 分流测试 ×2、shuffle 契约金测试 ×2、
+alloc-profile 计数测试）；`--features alloc-profile` 定向测试通过；clippy `-D warnings` 零告警；
+attention bench vs `pre_p5` 落回噪声带；bench-smoke 复跑绝对值健康（白天窗口：
+`conv2d_inference_1x1_b1` 3.8µs、`cnn_train_step_b4` 759µs、`group_norm_fwd` 26µs，
+均在历史噪声带内，无回归信号）。
+**否决同批入册**：P6（IxDyn 直接 dot 删 `into_dimensionality` 样板）——见候选表已否决项。
+
+---
+
 ## P. 热路径审计留档项清账：卫生批（A3/B2/B8/D4/E1）+ 数值批（B7/C2）（2026-07-03）
 
 **动机**：[候选 #3 留档表](./optimization_candidates.md#3-热路径审计留档项2026-07-03-立项同日战报-p-清账收口)复审。

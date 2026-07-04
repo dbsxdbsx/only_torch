@@ -219,13 +219,14 @@ impl Conv2d {
         let input_slice = input_flat.as_slice().unwrap();
         let input_sample_size = c * h * w;
 
-        // 预分配整块输出（零值即 padding），Rayon 按样本 chunk 直写：
+        // 预分配整块输出（零值即 padding），按样本 chunk 直写（小任务阈值分流）：
         // 相比旧的 Vec<Vec> 收集 + flatten + 借用传参构造 Tensor，少两次全量拷贝。
         let mut all_data = vec![0.0f32; batch_size * single_sample_size];
-        all_data
-            .par_chunks_mut(single_sample_size)
-            .enumerate()
-            .for_each(|(bi, sample_data)| {
+        crate::utils::parallel::for_each_chunk_mut(
+            &mut all_data,
+            single_sample_size,
+            batch_size * input_sample_size,
+            |bi, sample_data| {
                 let input_base = bi * input_sample_size;
                 for ci in 0..c {
                     let input_channel_base = input_base + ci * h * w;
@@ -237,7 +238,8 @@ impl Conv2d {
                             .copy_from_slice(&input_slice[input_row_base..input_row_base + w]);
                     }
                 }
-            });
+            },
+        );
 
         Tensor::new(all_data, &new_shape)
     }
@@ -410,19 +412,30 @@ impl Conv2d {
         let sample_out_size = out_c * out_h * out_w;
         let spatial = out_h * out_w;
         let mut all_data = vec![0.0f32; batch_size * sample_out_size];
-        let im2col_cache: Vec<Array2<f32>> = all_data
-            .par_chunks_mut(sample_out_size)
-            .enumerate()
-            .map(|(b, chunk)| {
-                let col = Self::im2col(
-                    input, b, in_c, k_h, k_w, out_h, out_w, stride_h, stride_w, dil_h, dil_w,
-                );
-                let mut out_view =
-                    ndarray::ArrayViewMut2::from_shape((out_c, spatial), chunk).unwrap();
-                ndarray::linalg::general_mat_mul(1.0, &kernel_mat, &col.t(), 0.0, &mut out_view);
-                col
-            })
-            .collect();
+        let build_sample = |b: usize, chunk: &mut [f32]| -> Array2<f32> {
+            let col = Self::im2col(
+                input, b, in_c, k_h, k_w, out_h, out_w, stride_h, stride_w, dil_h, dil_w,
+            );
+            let mut out_view = ndarray::ArrayViewMut2::from_shape((out_c, spatial), chunk).unwrap();
+            ndarray::linalg::general_mat_mul(1.0, &kernel_mat, &col.t(), 0.0, &mut out_view);
+            col
+        };
+        // GEMM 工作量近似 2·out_c·spatial·col_w/样本；batch=1（如 MCTS 推理）走串行免调度开销
+        let work = batch_size * sample_out_size * col_w * 2;
+        let im2col_cache: Vec<Array2<f32>> = if crate::utils::parallel::should_par(batch_size, work)
+        {
+            all_data
+                .par_chunks_mut(sample_out_size)
+                .enumerate()
+                .map(|(b, chunk)| build_sample(b, chunk))
+                .collect()
+        } else {
+            all_data
+                .chunks_mut(sample_out_size)
+                .enumerate()
+                .map(|(b, chunk)| build_sample(b, chunk))
+                .collect()
+        };
 
         (Tensor::new(all_data, &output_shape), im2col_cache)
     }
@@ -449,13 +462,15 @@ impl Conv2d {
         let input_slice = input_flat.as_slice().unwrap();
         let sample_size = in_c * spatial;
 
-        // 预分配整块输出 + 按样本 chunk 直写 GEMM（同 convolve，少两次全量拷贝）
+        // 预分配整块输出 + 按样本 chunk 直写 GEMM（同 convolve，少两次全量拷贝；
+        // 小任务阈值分流：b=1 推理免 rayon 调度开销）
         let sample_out_size = out_c * spatial;
         let mut all_data = vec![0.0f32; batch_size * sample_out_size];
-        all_data
-            .par_chunks_mut(sample_out_size)
-            .enumerate()
-            .for_each(|(b, chunk)| {
+        crate::utils::parallel::for_each_chunk_mut(
+            &mut all_data,
+            sample_out_size,
+            batch_size * sample_out_size * in_c * 2,
+            |b, chunk| {
                 let start = b * sample_size;
                 let sample = ArrayView2::from_shape(
                     (in_c, spatial),
@@ -465,7 +480,8 @@ impl Conv2d {
                 let mut out_view =
                     ndarray::ArrayViewMut2::from_shape((out_c, spatial), chunk).unwrap();
                 ndarray::linalg::general_mat_mul(1.0, &kernel_mat, &sample, 0.0, &mut out_view);
-            });
+            },
+        );
 
         Tensor::new(all_data, &output_shape)
     }
@@ -663,10 +679,11 @@ impl TraitNode for Conv2d {
                 let grad_flat_slice = grad_flat.as_slice().unwrap();
                 let sample_grad_size = out_c * spatial;
 
-                all_data
-                    .par_chunks_mut(sample_in_size)
-                    .enumerate()
-                    .for_each(|(b, chunk)| {
+                crate::utils::parallel::for_each_chunk_mut(
+                    &mut all_data,
+                    sample_in_size,
+                    batch_size * spatial * col_w * 2,
+                    |b, chunk| {
                         let gs = b * sample_grad_size;
                         let grad_b = ArrayView2::from_shape(
                             (out_c, spatial),
@@ -675,7 +692,8 @@ impl TraitNode for Conv2d {
                         .unwrap();
                         let dx_col = grad_b.t().dot(&kernel_mat);
                         col2im_crop_into(&dx_col, chunk);
-                    });
+                    },
+                );
             }
 
             Ok(GradResult::Computed(Tensor::new(
@@ -694,9 +712,13 @@ impl TraitNode for Conv2d {
                 let im2col_cache = self.im2col_cache.as_ref().ok_or_else(|| {
                     GraphError::backward_cache_missing(self.display_node(), "im2col")
                 })?;
-                (0..batch_size)
-                    .into_par_iter()
-                    .map(|b| {
+                // 逐样本部分梯度并行计算后按 batch 序串行累加。
+                // 不用 rayon `reduce`：其合并分组取决于运行时工作窃取，f32 累加
+                // 顺序会随运行漂移，破坏 dK 的逐 bit 可复现性（金测试方法论前提）。
+                let partials: Vec<Array2<f32>> = crate::utils::parallel::map_indexed(
+                    batch_size,
+                    batch_size * out_c * col_w * spatial * 2,
+                    |b| {
                         let gs = b * sample_grad_size;
                         let grad_b = ArrayView2::from_shape(
                             (out_c, spatial),
@@ -705,17 +727,19 @@ impl TraitNode for Conv2d {
                         .unwrap();
                         // 小 GEMM: [out_c, spatial] × [spatial, col_w] → [out_c, col_w]
                         grad_b.dot(&im2col_cache[b])
-                    })
-                    .reduce(
-                        || Array2::<f32>::zeros((out_c, col_w)),
-                        |mut acc, g| {
-                            acc += &g;
-                            acc
-                        },
-                    )
+                    },
+                );
+                let mut iter = partials.into_iter();
+                let mut acc = iter
+                    .next()
+                    .unwrap_or_else(|| Array2::<f32>::zeros((out_c, col_w)));
+                for g in iter {
+                    acc += &g;
+                }
+                acc
             };
 
-            // reduce 产物为新分配的标准布局矩阵（offset 恒 0），into_raw_vec_and_offset
+            // 累加产物为新分配的标准布局矩阵（offset 恒 0），into_raw_vec_and_offset
             // 零拷贝取出底层缓冲，owned Vec 传入 new 零拷贝按 4D kernel 形状接管
             // （旧路径 to_vec 借用传参拷两次）
             Ok(GradResult::Computed(Tensor::new(

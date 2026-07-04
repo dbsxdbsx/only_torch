@@ -20,8 +20,6 @@ use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
-use rayon::prelude::*;
-
 /// 2D 最大池化节点
 #[derive(Clone)]
 pub(crate) struct MaxPool2d {
@@ -281,11 +279,12 @@ impl TraitNode for MaxPool2d {
         let mut all_output = vec![0.0f32; total_size];
         let mut all_indices = vec![0.0f32; total_size];
 
-        all_output
-            .par_chunks_mut(single_sample_size)
-            .zip(all_indices.par_chunks_mut(single_sample_size))
-            .enumerate()
-            .for_each(|(b, (sample_output, sample_indices))| {
+        crate::utils::parallel::for_each_chunk_mut2(
+            &mut all_output,
+            &mut all_indices,
+            single_sample_size,
+            batch_size * single_sample_size * k_h * k_w,
+            |b, sample_output, sample_indices| {
                 let in_base = b * sample_in_size;
                 for c in 0..channels {
                     let in_c_base = in_base + c * in_h * in_w;
@@ -337,7 +336,8 @@ impl TraitNode for MaxPool2d {
                         }
                     }
                 }
-            });
+            },
+        );
 
         self.value = Some(Tensor::new(all_output, &output_shape));
         self.max_indices = Some(Tensor::new(all_indices, &output_shape));
@@ -393,10 +393,11 @@ impl TraitNode for MaxPool2d {
         // max_indices 存的是 padded 空间索引：max_pos = ih_padded * padded_w + iw_padded
         // 反向时减去 (pad_t, pad_l) 还原到原始输入坐标。
         // padding 区域因前向被设为 -inf 永不被选为 max，所以反算的 (ih, iw) 必在原图范围内。
-        all_data
-            .par_chunks_mut(single_sample_size)
-            .enumerate()
-            .for_each(|(b, sample_grad)| {
+        crate::utils::parallel::for_each_chunk_mut(
+            &mut all_data,
+            single_sample_size,
+            batch_size * sample_up_size * 2,
+            |b, sample_grad| {
                 let up_base = b * sample_up_size;
                 for c in 0..channels {
                     let up_c_base = up_base + c * out_h * out_w;
@@ -424,7 +425,8 @@ impl TraitNode for MaxPool2d {
                         }
                     }
                 }
-            });
+            },
+        );
         let _ = padded_h_check; // 仅用于命名意图，实际上限校验在前向已做
 
         Ok(GradResult::Computed(Tensor::new(all_data, input_shape)))

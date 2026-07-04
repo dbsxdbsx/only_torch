@@ -11,8 +11,6 @@ use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::nn::{GraphError, Mode};
 use crate::tensor::Tensor;
-use rayon::prelude::*;
-
 /// Softmax 激活节点
 ///
 /// 对输入张量沿最后一维计算 softmax，输出与输入形状相同。
@@ -159,13 +157,16 @@ impl TraitNode for Softmax {
             up_owned.data_as_slice()
         };
 
-        // 单块缓冲按行并行直写（与旧逐元素索引版运算顺序一致，逐 bit 等价；
-        // 消除 Vec<Vec> 每行分配 + flatten 二次拷贝）
+        // 单块缓冲按行直写（与旧逐元素索引版运算顺序一致，逐 bit 等价；
+        // 消除 Vec<Vec> 每行分配 + flatten 二次拷贝）。
+        // map-only 行独立写入，经阈值分流：小任务（如 [1,N] 推理）串行免调度开销。
         let mut grad_data = vec![0.0f32; batch_size * num_classes];
-        grad_data
-            .par_chunks_mut(num_classes)
-            .enumerate()
-            .for_each(|(b, row)| {
+        let total_work = batch_size * num_classes * 4;
+        crate::utils::parallel::for_each_chunk_mut(
+            &mut grad_data,
+            num_classes,
+            total_work,
+            |b, row| {
                 let y = &out_slice[b * num_classes..(b + 1) * num_classes];
                 let g = &up_slice[b * num_classes..(b + 1) * num_classes];
 
@@ -179,7 +180,8 @@ impl TraitNode for Softmax {
                 for c in 0..num_classes {
                     row[c] = y[c] * (g[c] - dot_product);
                 }
-            });
+            },
+        );
 
         // owned Vec 传入 new 零拷贝接管
         Ok(GradResult::Computed(Tensor::new(grad_data, shape)))

@@ -81,6 +81,7 @@ just smoke-rl                  # 全部 RL smoke 聚合（发版固定关卡，�
 - 记忆 / RNN / Attention（含 Phase 进度与留坑表）：[记忆机制设计](.doc/design/memory_mechanism_design.md)
 - 强化学习（当前主线）：[MyZero 算法纲领](.doc/design/my_zero_algorithm_vision.md)、[RL 路线图](.doc/design/rl_roadmap.md)、[MyZero 示例总览](examples/my_zero/README.md)、[Python 环境配置](.doc/rl_python_env_setup.md)
 - 空间视觉任务路线：[空间视觉任务路线图](.doc/design/spatial_vision_tasks_roadmap.md)
+- 并行 / Rayon / 线程与分配画像：[线程模型](.doc/design/threading_model.md)
 - DataLoader / 变长序列：[数据加载设计](.doc/design/data_loader_design.md)
 - 开发环境 / rust-analyzer：[开发环境配置](.doc/dev_environment_setup.md)
 - 术语规范：[术语约定](.doc/terminology_convention.md)

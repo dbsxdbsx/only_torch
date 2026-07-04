@@ -21,8 +21,6 @@ use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
-use rayon::prelude::*;
-
 /// 2D 平均池化节点
 #[derive(Clone)]
 pub(crate) struct AvgPool2d {
@@ -209,10 +207,11 @@ impl TraitNode for AvgPool2d {
         // 预分配单一连续 buffer + 按样本直写（消除 Vec<Vec> + flatten 双重分配）；
         // 窗口内按 (kh, kw) 行序累加，与旧实现逐 bit 一致。
         let mut all_data = vec![0.0f32; batch_size * single_sample_size];
-        all_data
-            .par_chunks_mut(single_sample_size)
-            .enumerate()
-            .for_each(|(b, sample_output)| {
+        crate::utils::parallel::for_each_chunk_mut(
+            &mut all_data,
+            single_sample_size,
+            batch_size * single_sample_size * k_h * k_w,
+            |b, sample_output| {
                 let in_base = b * sample_in_size;
                 for c in 0..channels {
                     let in_c_base = in_base + c * in_h * in_w;
@@ -234,7 +233,8 @@ impl TraitNode for AvgPool2d {
                         }
                     }
                 }
-            });
+            },
+        );
 
         self.value = Some(Tensor::new(all_data, &output_shape));
         self.input_shape = input_shape;
@@ -278,10 +278,11 @@ impl TraitNode for AvgPool2d {
         // 预分配单一连续 buffer + 按样本直写；`upstream * grad_val` 外提
         // （同操作数乘积恒定，逐 bit 等价），窗口内写入序与旧实现一致。
         let mut all_data = vec![0.0f32; batch_size * single_sample_size];
-        all_data
-            .par_chunks_mut(single_sample_size)
-            .enumerate()
-            .for_each(|(b, sample_grad)| {
+        crate::utils::parallel::for_each_chunk_mut(
+            &mut all_data,
+            single_sample_size,
+            batch_size * sample_up_size * k_h * k_w,
+            |b, sample_grad| {
                 let up_base = b * sample_up_size;
                 for c in 0..channels {
                     let up_c_base = up_base + c * out_h * out_w;
@@ -301,7 +302,8 @@ impl TraitNode for AvgPool2d {
                         }
                     }
                 }
-            });
+            },
+        );
 
         Ok(GradResult::Computed(Tensor::new(all_data, input_shape)))
     }

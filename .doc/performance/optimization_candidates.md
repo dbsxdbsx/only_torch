@@ -2,7 +2,7 @@
 
 > 本文档只回答两件事：**还有什么可做**（待优化项，每项必须带触发条件）与**什么已被否决**（防止重复发明）。
 > 条目实施完成后整体移入[实施战报](./optimization_log.md)，不在本文留尸体；验证流程与 baseline 台账见 [benchmark_workflow.md](./benchmark_workflow.md)。
-> 最后更新: 2026-07-03
+> 最后更新: 2026-07-04
 
 ---
 
@@ -40,13 +40,24 @@
 
 ### 4. 演化 SupervisedTask mini-batch 路径 per-epoch 整集 clone-shuffle
 
-**位置**：`src/nn/evolution/task.rs` → `SupervisedTask::train` mini-batch 分支
+✅ **已实施（2026-07-04，战报 Q）**：索引 shuffle（`Tensor::shuffled_row_indices_seeded`
+同置换契约 + `select_rows` 行 gather），批次构成与旧路径逐 bit 一致（契约金测试锁定），
+每 epoch 整集 CoW 物化拷贝消除。
 
-**现状**：每个 epoch 把整个训练集（train_x + 全部 head 的 train_y）`clone()` 一份再原地 `shuffle_mut_seeded`。MNIST 规模下不构成热点，但数据集变大后是 O(数据集大小 × epoch 数) 的纯冗余拷贝。
+---
 
-**推荐方案**：改为索引 shuffle——shuffle 一个 `Vec<usize>` 索引数组，batch 切片时按索引 gather；不需要引入 DataLoader 即可实施。
+### 4b. 小分配残留观察池（2026-07-04 Reviewer 补充立项，统一等分配画像证据）
 
-**状态**：暂缓（YAGNI）。触发条件 = 演化任务上大规模数据集（如图像演化线）且 profiling 显示 shuffle/clone 进入热点。届时若同时撞到内存墙，与 [future_enhancements.md 演化对接项](../_archive/future_enhancements.md#9-演化系统对接项2026-07-03-清账) 的 DataLoader 接入合并评估。
+热路径审计 Reviewer 复审识别的候选，共同触发条件 = `alloc-profile` 画像（战报 Q 工具）
+证明该项进入分配热点前列，逐项单独实施：
+
+| 项 | 位置 | 现状 |
+|---|---|---|
+| 节点前向/反向父值 borrow `Vec` | `node_inner.rs` 执行路径 | 每节点每次执行分配 `Vec`，绝大多数节点 arity 1/2，可做 small-arity 快路（SmallVec/栈数组） |
+| builder 形状 `Vec` 簇 | `graph/inner/node_builders.rs` | 每次建节点构造 `parent_shapes` / `parent_dynamic_shapes` 等多个 Vec，图构建密集路径（演化/MCTS 持久图一次性，权重低） |
+| backward 种子张量 | `graph` backward 入口 `Tensor::ones(&[1,1])` | 每次 backward 一次小分配，可缓存 |
+| `gather` 逐元素索引 | `tensor/ops/others.rs` | 前后向逐元素动态索引 Vec 构造；SAC/categorical 若成热点再做 2D 专用快路 |
+| CE 前向 par `sum()` 确定性 | `softmax_cross_entropy.rs` | rayon sum 合并序随运行漂移（loss 标量 run-to-run 可能 ulp 抖动，梯度路径不经过）；**数值冻结解除后**改「map 收集 + 串行序累加」（同 dK 修复，战报 Q） |
 
 ---
 
@@ -87,9 +98,11 @@ Arc 分配进入热点前列；届时候选方向 = 小张量池化 / 输出缓�
 
 **来源**：Tensor 存储 Arc/CoW 化（战报 O）后 Reviewer 复查发现：这些算子仍走
 `to_owned()` 物化拷贝，而 `ArcArray` 原生支持 `slice_move` / `index_axis_move`
-等 O(1) 共享视图（保留整块缓冲 + offset/strides）。热路径消费者：演化 mini-batch
-切片（`task.rs` narrow）、attention 逐 head 切片（`attention.rs` narrow）、RNN
-时间步 select（候选 #1）。
+等 O(1) 共享视图（保留整块缓冲 + offset/strides）。热路径消费者变迁：attention
+逐 head 切片已被 C1（3D batched MatMul）整体消除、演化 mini-batch narrow 已被
+索引 shuffle（候选 #4，战报 Q）替换为 `select_rows`（gather 本就必须物化）——
+剩余消费者只剩 RNN 时间步 select（候选 #1）等低频点，触发条件更难满足，但条目
+保留不删（未来新增视图类调用点时仍是正解方向）。
 
 **为什么不随战报 O 一起做**：共享视图会让产物变成带 offset / 可能非连续的张量，
 下游 `flatten_view` / `data_as_slice` 等连续性假设路径行为改变（panic 面扩大）+
@@ -101,6 +114,16 @@ Arc 分配进入热点前列；届时候选方向 = 小张量池化 / 输出缓�
 ---
 
 ## 已否决项
+
+### `mat_mul` 系 IxDyn 直接 `dot` 卫生改写（2026-07-04 Reviewer 否决）
+
+**原设想**：ndarray 0.17 支持 IxDyn 直接 `dot`，可删 `mat_mul` 系的
+`into_dimensionality::<Ix2>` 样板（依赖升级战报曾列为"可选后续"）。
+
+**否决理由**：碰的是核心 GEMM 入口 + RL 训练路径；现有 `Ix2` 写法显式锁定 BLAS 派发
+与 F 序输出修正（`into_standard_dyn` 守卫），IxDyn 路径是否走完全相同派发无法靠
+"理论零行为"担保，验证成本（NN/NT/TN × 非连续 × 布局 × 逐 bit × MKL 性能）与
+纯卫生收益完全不成比例。
 
 ### 借用型张量视图（零拷贝到底）（2026-07-03 判死）
 

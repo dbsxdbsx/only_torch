@@ -22,8 +22,6 @@ use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 use ndarray::Array2;
-use rayon::prelude::*;
-
 /// 2D 转置卷积节点
 #[derive(Clone)]
 pub(crate) struct ConvTranspose2d {
@@ -211,7 +209,9 @@ impl ConvTranspose2d {
     }
 
     /// 前向 col2im：将 [H_in*W_in, C_out*kH*kW] 按转置卷积几何 scatter-add 到 [C_out, H_out, W_out]
-    fn col2im_transpose_forward(
+    /// 就地版：结果累加直写调用方提供的零值 chunk（消除每样本中间 Vec）
+    #[allow(clippy::too_many_arguments)]
+    fn col2im_transpose_forward_into(
         col_t: &Array2<f32>,
         c_out: usize,
         h_out: usize,
@@ -224,8 +224,9 @@ impl ConvTranspose2d {
         stride_w: usize,
         pad_h: usize,
         pad_w: usize,
-    ) -> Vec<f32> {
-        let mut out = vec![0.0f32; c_out * h_out * w_out];
+        out: &mut [f32],
+    ) {
+        debug_assert_eq!(out.len(), c_out * h_out * w_out);
         for ih in 0..h_in {
             for iw in 0..w_in {
                 let row = ih * w_in + iw;
@@ -245,7 +246,6 @@ impl ConvTranspose2d {
                 }
             }
         }
-        out
     }
 
     /// col2im 的伴随：将上游梯度 [C_out, H_out, W_out] 分配回 [H_in*W_in, C_out*kH*kW]
@@ -313,20 +313,24 @@ impl ConvTranspose2d {
 
         let output_shape = vec![batch_size, out_c, h_out, w_out];
 
-        let batch_results: Vec<Vec<f32>> = (0..batch_size)
-            .into_par_iter()
-            .map(|b| {
+        // 预分配整块输出按样本 chunk 直写（消除 Vec<Vec> 每样本分配 + flatten
+        // 二次拷贝）；GEMM 工作量近似 2·m·(h_in·w_in)·in_c/样本，小任务阈值分流
+        let sample_out_size = out_c * h_out * w_out;
+        let mut all_data = vec![0.0f32; batch_size * sample_out_size];
+        crate::utils::parallel::for_each_chunk_mut(
+            &mut all_data,
+            sample_out_size,
+            batch_size * m * h_in * w_in * in_c * 2,
+            |b, chunk| {
                 let input_b = Self::input_batch_matrix(input, b, in_c, h_in, w_in);
                 let col = kernel_mat.t().dot(&input_b);
                 let col_t = col.t().to_owned();
-                Self::col2im_transpose_forward(
+                Self::col2im_transpose_forward_into(
                     &col_t, out_c, h_out, w_out, k_h, k_w, h_in, w_in, stride_h, stride_w, pad_h,
-                    pad_w,
-                )
-            })
-            .collect();
-
-        let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
+                    pad_w, chunk,
+                );
+            },
+        );
         Tensor::new(all_data, &output_shape)
     }
 }
@@ -445,9 +449,15 @@ impl TraitNode for ConvTranspose2d {
         let kernel_mat = Array2::from_shape_vec((in_c, m), k_flat.to_vec()).unwrap();
 
         if target_parent_index == 0 {
-            let batch_results: Vec<Vec<f32>> = (0..batch_size)
-                .into_par_iter()
-                .map(|b| {
+            // 预分配整块 dX 按样本 chunk 直写（消除 Vec<Vec> + iter().collect +
+            // flatten 的多级拷贝）；GEMM 直写 chunk 视图，小任务阈值分流
+            let sample_in_size = in_c * h_in * w_in;
+            let mut all_data = vec![0.0f32; batch_size * sample_in_size];
+            crate::utils::parallel::for_each_chunk_mut(
+                &mut all_data,
+                sample_in_size,
+                batch_size * in_c * h_in * w_in * m * 2,
+                |b, chunk| {
                     let d_col = Self::col2im_transpose_adjoint(
                         upstream_grad,
                         b,
@@ -463,23 +473,31 @@ impl TraitNode for ConvTranspose2d {
                         pad_h,
                         pad_w,
                     );
-                    let d_in = kernel_mat.dot(&d_col.t());
-                    d_in.iter().copied().collect::<Vec<f32>>()
-                })
-                .collect();
-
-            let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
+                    let mut out_view =
+                        ndarray::ArrayViewMut2::from_shape((in_c, h_in * w_in), chunk).unwrap();
+                    ndarray::linalg::general_mat_mul(
+                        1.0,
+                        &kernel_mat,
+                        &d_col.t(),
+                        0.0,
+                        &mut out_view,
+                    );
+                },
+            );
             Ok(GradResult::Computed(Tensor::new(
-                &all_data,
+                all_data,
                 orig_input_shape,
             )))
         } else {
             let kernel_shape = kernel.shape();
 
             let kernel_grad_data: Vec<f32> = {
-                let kernel_grad = (0..batch_size)
-                    .into_par_iter()
-                    .map(|b| {
+                // 逐样本部分梯度并行计算后按 batch 序串行累加（不用 rayon `reduce`：
+                // 其合并分组随工作窃取漂移，f32 累加顺序不确定会破坏逐 bit 可复现性）。
+                let partials: Vec<Array2<f32>> = crate::utils::parallel::map_indexed(
+                    batch_size,
+                    batch_size * in_c * m * h_in * w_in * 2,
+                    |b| {
                         let input_b = Self::input_batch_matrix(input, b, in_c, h_in, w_in);
                         let d_col = Self::col2im_transpose_adjoint(
                             upstream_grad,
@@ -497,20 +515,21 @@ impl TraitNode for ConvTranspose2d {
                             pad_w,
                         );
                         input_b.dot(&d_col)
-                    })
-                    .reduce(
-                        || Array2::<f32>::zeros((in_c, m)),
-                        |mut acc, g| {
-                            acc += &g;
-                            acc
-                        },
-                    );
+                    },
+                );
+                let mut iter = partials.into_iter();
+                let mut kernel_grad = iter
+                    .next()
+                    .unwrap_or_else(|| Array2::<f32>::zeros((in_c, m)));
+                for g in iter {
+                    kernel_grad += &g;
+                }
 
-                kernel_grad.as_slice().unwrap().to_vec()
+                kernel_grad.into_raw_vec_and_offset().0
             };
 
             Ok(GradResult::Computed(Tensor::new(
-                &kernel_grad_data,
+                kernel_grad_data,
                 kernel_shape,
             )))
         }

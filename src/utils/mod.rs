@@ -7,6 +7,11 @@ mod tests;
 
 pub mod macro_for_unit_test;
 
+#[cfg(feature = "alloc-profile")]
+pub mod alloc_profile;
+
+pub(crate) mod parallel;
+
 // TODO: move traits to utils/traits relatively
 pub mod traits {
     pub mod float;

@@ -4,6 +4,18 @@
 
 ### Changed
 
+- **perf(nn/tensor/evolution): Rayon 治理批——dK 确定性修复 + 小任务阈值分流 + 分配画像工具 + Vec\<Vec\> 清尾 + 演化索引 shuffle（优化 Q）**（2026-07-04）
+  - 背景：热路径审计两个遗留方向（分配画像 / Rayon 小任务反噬）经 Reviewer 二轮压测后收口；六项均为逐 bit 等价或确定性增强，不触碰 RL 数值冻结（conv 系不在 CartPole 哨兵路径）
+  - **dK 可复现性修复（R1）**：conv2d / conv_transpose2d 的 dL/dK 由 rayon `reduce`（合并分组随工作窃取漂移 → 同输入两次运行可能不逐 bit 相同）改「并行 map 保序 collect + 按 batch 序串行累加」；CE 前向 par `sum()` 同病但在冻结路径（仅 loss 标量），留候选表解冻后修
+  - **小任务阈值分流**：新增 `utils::parallel` 统一入口（`PAR_MIN_WORK=32768`，`benches/rayon_threshold.rs` 定标：总工作 ~128 时串行快 ~9×，≥65k 并行稳定胜），接入 conv2d / conv_transpose2d / pool2d / upsample2d / batch_norm / softmax / log_softmax 全部 map-only 并行点；batch=1（MCTS 推理形态）一律免 rayon 调度开销；串行/并行同一闭包逐 bit 一致；**仅限 map-only，跨样本归约不分流**（f32 累加序纪律）
+  - **bmm 阈值并行（P5）**：`batched_mat_mul` 按单 GEMM flops ≥ 阈值才并行——首版按总工作量判断被 attention bench 打回（「多而微」形态 N*H=128 个小 GEMM 并行回归 +20~40%），改判据后 vs `pre_p5` 基线落回噪声带
+  - **分配画像工具（P3）**：新增 `alloc-profile` feature（默认关）——计数 allocator 只做两个全局 atomic（次数/字节），`PROFILE` 命名桶 enter/drop 读 delta 归因；解锁候选 #6/#7「profiler 证明进入热点」触发条件
+  - **Vec\<Vec\> collect+flatten 清尾（P4）**：log_softmax 反向、conv_transpose2d 前向/dX、upsample2d 前向改预分配直写 + 行 slice 免 IxDyn 索引（战报 J/K 同族收尾），conv_transpose dX 改 `general_mat_mul` 直写 chunk
+  - **演化索引 shuffle（P1）**：`Tensor::shuffled_row_indices_seeded`（与 `shuffle_mut_seeded(Some(0),_)` 同置换契约）+ `select_rows` 行 gather，mini-batch 免每 epoch 整集 CoW 物化拷贝；同 seed 批次构成与旧路径逐 bit 一致（契约金测试 2D/3D × 3 seed × 尾批）
+  - **Rayon 定位定稿**：op 级用全局池不自建（用户侧 rayon 嵌套安全，同版本全进程唯一池 + 工作窃取可组合），演化级 scoped pool 维持，MKL seq 排除 BLAS 过订阅——见新增 [threading_model.md](.doc/design/threading_model.md)
+  - 否决入册：IxDyn 直接 `dot` 卫生改写（核心 GEMM 入口 + RL 路径，验证成本与纯卫生收益不成比例）
+  - 验证：全量 lib 测试 3352 全绿（新增分流逐 bit / shuffle 契约 / 计数器测试 ×5）+ `alloc-profile` 口径定向测试 + clippy 零告警 + attention bench 噪声带内，详见[优化战报 Q](.doc/performance/optimization_log.md)
+
 - **perf(nn/tensor): C1 清账——MultiHeadAttention 逐 head 循环建图改 3D batched MatMul（attention 前向/反向 -70~80%）**（2026-07-04）
   - 背景：热路径审计留档最后一项 C1（战报 P 时因「归属演化阶段 D + 非 RL 主线」维持暂缓）；本次以基础设施定位单独收口——3D 批量 MatMul 是通用算子缺口，attention 不在 RL 哨兵路径上，无数值窗口约束
   - Tensor 层新增 `batched_mat_mul` / `_nt` / `_tn`（`[B,m,k] @ [B,k,n]`，batch 维严格相等、**不做跨 batch 隐式广播**；逐 batch 切 2D 视图走同一 GEMM 路径，单 batch 与 2D `mat_mul` 逐 bit 一致，NT/TN 以转置视图参与零物化）

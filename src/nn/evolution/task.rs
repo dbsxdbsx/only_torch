@@ -847,25 +847,23 @@ impl EvolutionTask for SupervisedTask {
                 let mut offset = 0;
                 let shuffle_seed: u64 = rng.r#gen();
                 let shuffle_start = Instant::now();
-                let mut shuffled_x = self.train_x.as_ref().clone();
-                let mut shuffled_ys: Vec<Tensor> = self
-                    .heads
-                    .iter()
-                    .map(|head| head.train_y.as_ref().clone())
-                    .collect();
-                shuffled_x.shuffle_mut_seeded(Some(0), shuffle_seed);
-                for shuffled_y in &mut shuffled_ys {
-                    shuffled_y.shuffle_mut_seeded(Some(0), shuffle_seed);
-                }
+                // 索引 shuffle：只置换一个 usize 数组，batch 时按索引段 gather 行，
+                // 免去旧路径每 epoch「整集 CoW 物化拷贝 + 原地行置换」（数据集越大
+                // 越贵）。同 seed 下 `shuffled_row_indices_seeded` 与
+                // `shuffle_mut_seeded(Some(0), _)` 同置换，批次构成与旧路径逐 bit
+                // 一致（tensor tests 契约金测试锁定）。
+                let indices = Tensor::shuffled_row_indices_seeded(n_samples, shuffle_seed);
                 timing.shuffle += shuffle_start.elapsed();
 
                 while offset < n_samples {
                     let end = (offset + bs).min(n_samples);
                     let slice_start = Instant::now();
-                    let batch_x = shuffled_x.narrow(0, offset, end - offset);
-                    let batch_ys: Vec<Tensor> = shuffled_ys
+                    let batch_idx = &indices[offset..end];
+                    let batch_x = self.train_x.select_rows(batch_idx);
+                    let batch_ys: Vec<Tensor> = self
+                        .heads
                         .iter()
-                        .map(|y| y.narrow(0, offset, end - offset))
+                        .map(|head| head.train_y.select_rows(batch_idx))
                         .collect();
                     timing.batch_slice += slice_start.elapsed();
 

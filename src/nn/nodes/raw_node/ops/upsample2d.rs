@@ -34,8 +34,6 @@ use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
-use rayon::prelude::*;
-
 /// 2D 最近邻上采样节点
 #[derive(Clone)]
 pub(crate) struct Upsample2d {
@@ -198,27 +196,50 @@ impl TraitNode for Upsample2d {
         let output_shape = vec![batch_size, channels, out_h, out_w];
         let single_sample_size = channels * out_h * out_w;
 
-        // Rayon 并行处理每个 batch 样本
-        let batch_results: Vec<Vec<f32>> = (0..batch_size)
-            .into_par_iter()
-            .map(|b| {
-                let mut sample_output = vec![0.0f32; single_sample_size];
+        // 预分配整块输出按样本 chunk 直写（消除 Vec<Vec> 每样本分配 + flatten
+        // 二次拷贝），行 slice 复制替代逐元素 IxDyn 索引；小任务阈值分流。
+        // nearest 上采样 = 输入行内逐像素展宽 s_w 倍 + 行块复制 s_h 倍。
+        let in_owned;
+        let in_slice = if input.is_contiguous() {
+            input.data_as_slice()
+        } else {
+            in_owned = input.clone().into_contiguous();
+            in_owned.data_as_slice()
+        };
+        let in_sample_size = channels * in_h * in_w;
+
+        let mut all_data = vec![0.0f32; batch_size * single_sample_size];
+        crate::utils::parallel::for_each_chunk_mut(
+            &mut all_data,
+            single_sample_size,
+            batch_size * single_sample_size,
+            |b, sample_output| {
                 for c in 0..channels {
-                    for oh in 0..out_h {
-                        let ih = oh / s_h;
-                        for ow in 0..out_w {
-                            let iw = ow / s_w;
-                            let idx = c * out_h * out_w + oh * out_w + ow;
-                            sample_output[idx] = input[[b, c, ih, iw]];
+                    let in_ch_base = b * in_sample_size + c * in_h * in_w;
+                    let out_ch_base = c * out_h * out_w;
+                    for ih in 0..in_h {
+                        let in_row =
+                            &in_slice[in_ch_base + ih * in_w..in_ch_base + (ih + 1) * in_w];
+                        // 先构造第一行（行内展宽 s_w 倍）
+                        let first_row_base = out_ch_base + (ih * s_h) * out_w;
+                        {
+                            let out_row =
+                                &mut sample_output[first_row_base..first_row_base + out_w];
+                            for (iw, &v) in in_row.iter().enumerate() {
+                                out_row[iw * s_w..(iw + 1) * s_w].fill(v);
+                            }
+                        }
+                        // 其余 s_h-1 行块直接复制第一行
+                        for di in 1..s_h {
+                            let dst_base = first_row_base + di * out_w;
+                            sample_output
+                                .copy_within(first_row_base..first_row_base + out_w, dst_base);
                         }
                     }
                 }
-                sample_output
-            })
-            .collect();
-
-        let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
-        self.value = Some(Tensor::new(&all_data, &output_shape));
+            },
+        );
+        self.value = Some(Tensor::new(all_data, &output_shape));
         self.input_shape = input_shape.to_vec();
         Ok(())
     }
@@ -269,21 +290,33 @@ impl TraitNode for Upsample2d {
         let total_size = batch_size * single_sample_size;
         let mut all_data = vec![0.0f32; total_size];
 
-        // Rayon 并行处理每个 batch 样本，写入预分配 buffer
-        all_data
-            .par_chunks_mut(single_sample_size)
-            .enumerate()
-            .for_each(|(b, sample_grad)| {
+        // 行 slice 直取（免逐元素 IxDyn 索引）；非连续来源付一次物化兜底
+        let up_owned;
+        let up_slice = if upstream_grad.is_contiguous() {
+            upstream_grad.data_as_slice()
+        } else {
+            up_owned = upstream_grad.clone().into_contiguous();
+            up_owned.data_as_slice()
+        };
+        let up_sample_size = channels * out_h * out_w;
+
+        // 按样本 chunk 直写预分配 buffer（小任务阈值分流）；
+        // (di, dj) 累加顺序与旧实现一致，逐 bit 等价
+        crate::utils::parallel::for_each_chunk_mut(
+            &mut all_data,
+            single_sample_size,
+            batch_size * up_sample_size,
+            |b, sample_grad| {
                 for c in 0..channels {
+                    let up_ch_base = b * up_sample_size + c * out_h * out_w;
                     for ih in 0..in_h {
                         for iw in 0..in_w {
                             // 累加该输入位置对应的 (s_h × s_w) 输出块的梯度
                             let mut acc = 0.0f32;
                             for di in 0..s_h {
+                                let row_base = up_ch_base + (ih * s_h + di) * out_w + iw * s_w;
                                 for dj in 0..s_w {
-                                    let oh = ih * s_h + di;
-                                    let ow = iw * s_w + dj;
-                                    acc += upstream_grad[[b, c, oh, ow]];
+                                    acc += up_slice[row_base + dj];
                                 }
                             }
                             let idx = c * in_h * in_w + ih * in_w + iw;
@@ -291,9 +324,10 @@ impl TraitNode for Upsample2d {
                         }
                     }
                 }
-            });
+            },
+        );
 
-        Ok(GradResult::Computed(Tensor::new(&all_data, input_shape)))
+        Ok(GradResult::Computed(Tensor::new(all_data, input_shape)))
     }
 
     fn grad(&self) -> Option<&Tensor> {

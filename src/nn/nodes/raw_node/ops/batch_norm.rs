@@ -23,7 +23,6 @@ use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::nn::{GraphError, Mode};
 use crate::tensor::Tensor;
-use rayon::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -382,10 +381,11 @@ impl TraitNode for BatchNormOp {
             // 减/除的 ndarray 慢路径）；每元素运算顺序 ((up·n − su) − xh·sux) / (std·n)
             // 与旧链逐 bit 一致（金测试锁定）。样本间并行为纯 map，不改数值。
             let mut dx_data = vec![0.0f32; up_s.len()];
-            dx_data
-                .par_chunks_mut(sample_size)
-                .enumerate()
-                .for_each(|(sample, dx_chunk)| {
+            crate::utils::parallel::for_each_chunk_mut(
+                &mut dx_data,
+                sample_size,
+                batch_size * sample_size * 6,
+                |sample, dx_chunk| {
                     let base = sample * sample_size;
                     for ch in 0..c {
                         let su = sum_up[ch];
@@ -397,7 +397,8 @@ impl TraitNode for BatchNormOp {
                             dx_chunk[row + s] = (up_s[idx] * n - su - xh_s[idx] * sux) / denom;
                         }
                     }
-                });
+                },
+            );
 
             let dx = Tensor::new(dx_data, up_c.shape());
             Ok(GradResult::Computed(dx))

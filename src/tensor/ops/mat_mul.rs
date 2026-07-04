@@ -181,19 +181,35 @@ impl Tensor {
             "batched_mat_mul: 内维不匹配（A[...,-1]={k_a} vs B[...,-2]={k_b}）"
         );
 
-        let mut out = ndarray::Array3::<f32>::zeros((batch, m, n));
-        for i in 0..batch {
+        // 逐 batch GEMM 相互独立（无跨 batch 归约），按**单 GEMM 工作量**分流并行：
+        // 只有每个 GEMM 本身足够大（≥ PAR_MIN_WORK flops）才值得 rayon 并行——
+        // 实测（benches/attention.rs vs pre_p5 基线）「多而微」形态（如 attention
+        // 的 N*H=128 个 ~4k flops GEMM）并行反而回归 +20~40%（调度开销 > 收益），
+        // 该形态维持串行。单个 GEMM 内部运算与串行版完全相同（同一
+        // general_mat_mul 调用直写输出 chunk），产物逐 bit 一致。
+        let gemm = |i: usize, chunk: &mut [f32]| {
             let a_i = a.index_axis(Axis(0), i);
             let b_i = b.index_axis(Axis(0), i);
             let a_i = if trans_a { a_i.reversed_axes() } else { a_i };
             let b_i = if trans_b { b_i.reversed_axes() } else { b_i };
-            let mut out_i = out.index_axis_mut(Axis(0), i);
+            let mut out_i = ndarray::ArrayViewMut2::from_shape((m, n), chunk).unwrap();
             general_mat_mul(1.0, &a_i, &b_i, 0.0, &mut out_i);
+        };
+        let mut out_data = vec![0.0f32; batch * m * n];
+        let per_gemm_flops = 2 * m * n * k_a;
+        if batch > 1 && per_gemm_flops >= crate::utils::parallel::PAR_MIN_WORK {
+            use rayon::prelude::*;
+            out_data
+                .par_chunks_mut(m * n)
+                .enumerate()
+                .for_each(|(i, chunk)| gemm(i, chunk));
+        } else {
+            out_data
+                .chunks_mut(m * n)
+                .enumerate()
+                .for_each(|(i, chunk)| gemm(i, chunk));
         }
 
-        Self {
-            data: out.into_dyn().into_shared(),
-            source_id: next_source_id(),
-        }
+        Self::new(out_data, &[batch, m, n])
     }
 }
