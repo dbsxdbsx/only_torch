@@ -140,17 +140,19 @@ pub(super) fn softmax_row(logits: &[f32]) -> Vec<f32> {
 ///
 /// `s_norm = (s - min(s)) / (max(s) - min(s) + eps)`，每行（样本）独立取 min/max。
 /// batch 从 `latent` 的静态期望形状推断（`[B, dim]`），故同一份代码 batch=1（搜索/推理）
-/// 与 batch>1（训练）通用；B=1 时 `reshape(&[1,1])` + `repeat(&[1,dim])` 与旧实现逐 bit 一致。
+/// 与 batch>1（训练）通用。
 ///
-/// 梯度经 `amin`/`amax`（梯度只流向极值位置）+ `repeat`（梯度求和回传）正确反传。
-fn min_max_normalize(latent: &Var, dim: usize) -> Result<Var, GraphError> {
+/// 梯度经 `amin`/`amax`（梯度只流向极值位置）+ 广播反向（`sum_to_shape` 归约回 `[B,1]`）正确反传。
+fn min_max_normalize(latent: &Var) -> Result<Var, GraphError> {
     let batch = latent.value_expected_shape()[0]; // [B, dim] → B
     let min_v = latent.amin(1).reshape(&[batch, 1])?; // [B,1]，逐样本最小
     let max_v = latent.amax(1).reshape(&[batch, 1])?; // [B,1]，逐样本最大
     let range = (&max_v - &min_v) + 1e-5_f32; // [B,1]，加 eps 防除零
-    let min_b = min_v.repeat(&[1, dim])?; // [B, dim]
-    let range_b = range.repeat(&[1, dim])?; // [B, dim]
-    Ok(&(latent - &min_b) / &range_b)
+    // Subtract/Divide 原生支持 [B,dim] ⊙ [B,1] 广播，无需 repeat 物化
+    // （旧版两个 repeat 节点纯冗余；反向由 sum_to_shape 归约回 [B,1]，
+    // 前向逐 bit 等价，反向归约顺序与 Repeat 反向可能有 ulp 级差异——
+    // 与 2026-07 数值流重定基线同批收口）
+    Ok(&(latent - &min_v) / &range)
 }
 
 // ============================================================================
@@ -180,7 +182,6 @@ impl ObsSpec {
 pub struct RepresentationNet {
     fc1: Linear,
     fc2: Linear,
-    latent_dim: usize,
 }
 
 impl RepresentationNet {
@@ -189,7 +190,6 @@ impl RepresentationNet {
         Ok(Self {
             fc1: Linear::new(&graph, obs_dim, 128, true, "fc1")?,
             fc2: Linear::new(&graph, 128, latent_dim, true, "fc2")?,
-            latent_dim,
         })
     }
 
@@ -197,7 +197,7 @@ impl RepresentationNet {
     pub fn forward(&self, x: impl IntoVar) -> Result<Var, GraphError> {
         let h = self.fc1.forward(x).relu();
         let latent = self.fc2.forward(&h);
-        min_max_normalize(&latent, self.latent_dim)
+        min_max_normalize(&latent)
     }
 }
 
@@ -217,7 +217,6 @@ pub struct ConvRepresentationNet {
     fc_latent: Linear,
     channels: usize,
     side: usize,
-    latent_dim: usize,
 }
 
 impl ConvRepresentationNet {
@@ -261,7 +260,6 @@ impl ConvRepresentationNet {
             fc_latent,
             channels,
             side,
-            latent_dim,
         })
     }
 
@@ -275,7 +273,7 @@ impl ConvRepresentationNet {
         }
         let flat = h.flatten()?;
         let latent = self.fc_latent.forward(&flat);
-        min_max_normalize(&latent, self.latent_dim)
+        min_max_normalize(&latent)
     }
 }
 
@@ -331,7 +329,6 @@ pub struct DynamicsNet {
     fc_latent: Linear,
     fc_reward: Linear,
     fc_continuation: Linear,
-    latent_dim: usize,
 }
 
 impl DynamicsNet {
@@ -343,7 +340,6 @@ impl DynamicsNet {
             fc_latent: Linear::new(&graph, 128, latent_dim, true, "fc_latent")?,
             fc_reward: Linear::new(&graph, 128, SUPPORT.size(), true, "fc_reward")?,
             fc_continuation: Linear::new(&graph, 128, 1, true, "fc_continuation")?,
-            latent_dim,
         })
     }
 
@@ -355,7 +351,7 @@ impl DynamicsNet {
     ) -> Result<(Var, Var, Var), GraphError> {
         let input = Var::concat(&[latent, action_onehot], 1)?;
         let h = self.fc1.forward(&input).relu();
-        let next_latent = min_max_normalize(&self.fc_latent.forward(&h), self.latent_dim)?;
+        let next_latent = min_max_normalize(&self.fc_latent.forward(&h))?;
         let reward_logits = self.fc_reward.forward(&h);
         let continuation_logit = self.fc_continuation.forward(&h);
         Ok((next_latent, reward_logits, continuation_logit))

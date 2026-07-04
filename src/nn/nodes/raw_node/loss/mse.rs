@@ -120,21 +120,20 @@ impl TraitNode for MSE {
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         let input = parent_values[0];
         let target = parent_values[1];
-        // 计算 diff = input - target
+        // 计算 diff = input - target（反向传播需要缓存，无法省去这次分配）
         let diff = input - target;
-        // 计算 squared_diff = diff^2
-        let squared_diff = &diff * &diff;
+        // 单趟 fold 出平方和：与旧链（diff*diff 全尺寸临时 + sum 再一趟）逐 bit 等价
+        // （d*d 的 f32 舍入与存进临时张量再累加完全相同，累加顺序同为逻辑序），
+        // 省去一次全尺寸分配 + 一趟遍历。
+        let sum_sq: f32 = diff.map_fold(0.0, |acc, d| acc + d * d);
         // 更新 numel（支持动态 batch size）
         self.numel_cache = input.size();
         // 缓存 diff 用于反向传播
         self.diff_cache = Some(diff);
         // 根据 reduction 模式计算损失
         let loss_value = match self.reduction {
-            Reduction::Mean => {
-                let sum_tensor = squared_diff.sum();
-                sum_tensor.get_data_number().unwrap() / (self.numel_cache as f32)
-            }
-            Reduction::Sum => squared_diff.sum().get_data_number().unwrap(),
+            Reduction::Mean => sum_sq / (self.numel_cache as f32),
+            Reduction::Sum => sum_sq,
         };
         self.value = Some(Tensor::new(&[loss_value], &[1, 1]));
         Ok(())
@@ -173,10 +172,8 @@ impl TraitNode for MSE {
             };
             Ok(GradResult::Computed(grad))
         } else {
-            // 对 target 的梯度（通常不需要）
-            Err(GraphError::InvalidOperation(
-                "不应该对 target 计算梯度".to_string(),
-            ))
+            // 对 target 不传播梯度（target 是训练目标，非可学习参数）
+            Ok(GradResult::NoGrad)
         }
     }
 

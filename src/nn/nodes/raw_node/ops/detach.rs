@@ -137,11 +137,8 @@ impl TraitNode for Detach {
         _parent_values: &[&Tensor],
         _upstream_grad: &Tensor,
     ) -> Result<GradResult, GraphError> {
-        // Detach 的核心：不应该向上游传播梯度
-        Err(GraphError::InvalidOperation(format!(
-            "{}不应该向上游传播梯度（Detach 节点是梯度屏障）",
-            self.display_node()
-        )))
+        // Detach 的核心：不向上游传播梯度（梯度屏障）
+        Ok(GradResult::NoGrad)
     }
 
     fn grad(&self) -> Option<&Tensor> {

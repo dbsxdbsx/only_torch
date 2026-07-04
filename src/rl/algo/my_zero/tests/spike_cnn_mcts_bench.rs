@@ -357,14 +357,12 @@ struct MlpRec {
 }
 
 /// latent min-max 归一化(照抄 MyZero network.rs 口径,成本一致)
-fn min_max_normalize(latent: &Var, dim: usize) -> Result<Var, GraphError> {
+fn min_max_normalize(latent: &Var) -> Result<Var, GraphError> {
     let batch = latent.value_expected_shape()[0];
     let min_v = latent.amin(1).reshape(&[batch, 1])?;
     let max_v = latent.amax(1).reshape(&[batch, 1])?;
     let range = (&max_v - &min_v) + 1e-5_f32;
-    let min_b = min_v.repeat(&[1, dim])?;
-    let range_b = range.repeat(&[1, dim])?;
-    Ok(&(latent - &min_b) / &range_b)
+    Ok(&(latent - &min_v) / &range)
 }
 
 impl MlpRec {
@@ -378,7 +376,7 @@ impl MlpRec {
         let fc_cont = Linear::new(graph, 128, 1, true, "dyn_cont")?;
         let input = Var::concat(&[&latent_in, &action_in], 1)?;
         let h = fc1.forward(&input).relu();
-        let next_latent = min_max_normalize(&fc_latent.forward(&h), LATENT_DIM)?;
+        let next_latent = min_max_normalize(&fc_latent.forward(&h))?;
         let reward_logits = fc_reward.forward(&h);
         let continuation_logit = fc_cont.forward(&h);
         // prediction f

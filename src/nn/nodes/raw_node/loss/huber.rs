@@ -228,10 +228,8 @@ impl TraitNode for Huber {
 
             Ok(GradResult::Computed(grad))
         } else {
-            // 对 target 的梯度（通常不需要）
-            Err(GraphError::InvalidOperation(
-                "不应该对 target 计算梯度".to_string(),
-            ))
+            // 对 target 不传播梯度（target 是训练目标，非可学习参数）
+            Ok(GradResult::NoGrad)
         }
     }
 

@@ -79,22 +79,42 @@ impl SoftmaxCrossEntropy {
         let num_classes = shape[1];
         let mut softmax_data = vec![0.0f32; batch_size * num_classes];
 
+        // 行 slice 直取（免逐元素 IxDyn 索引/边界检查）；框架约定运算产物为标准布局，
+        // 极少数非连续来源（转置视图等）付一次物化兜底。
+        let logits_owned;
+        let logits_slice = if logits.is_contiguous() {
+            logits.data_as_slice()
+        } else {
+            logits_owned = logits.clone().into_contiguous();
+            logits_owned.data_as_slice()
+        };
+        let labels_owned;
+        let labels_slice = if labels.is_contiguous() {
+            labels.data_as_slice()
+        } else {
+            labels_owned = labels.clone().into_contiguous();
+            labels_owned.data_as_slice()
+        };
+
         let total_loss: f32 = softmax_data
             .par_chunks_mut(num_classes)
             .enumerate()
             .map(|(b, sample_result)| {
+                let x = &logits_slice[b * num_classes..(b + 1) * num_classes];
+                let y = &labels_slice[b * num_classes..(b + 1) * num_classes];
+
                 // 找到该样本的最大值
-                let mut max_val = logits[[b, 0]];
-                for c in 1..num_classes {
-                    if logits[[b, c]] > max_val {
-                        max_val = logits[[b, c]];
+                let mut max_val = x[0];
+                for &v in &x[1..] {
+                    if v > max_val {
+                        max_val = v;
                     }
                 }
 
                 // 计算 exp(x - max) 和 sum
                 let mut sum_exp = 0.0f32;
-                for (c, out) in sample_result.iter_mut().enumerate().take(num_classes) {
-                    let exp_val = (logits[[b, c]] - max_val).exp();
+                for (out, &v) in sample_result.iter_mut().zip(x) {
+                    let exp_val = (v - max_val).exp();
                     *out = exp_val;
                     sum_exp += exp_val;
                 }
@@ -110,7 +130,7 @@ impl SoftmaxCrossEntropy {
                 // L = -Σ y_i * (x_i - max - log_sum_exp)
                 let mut dot_product = 0.0f32;
                 for c in 0..num_classes {
-                    dot_product += logits[[b, c]] * labels[[b, c]];
+                    dot_product += x[c] * y[c];
                 }
 
                 -dot_product + max_val + log_sum_exp
@@ -184,10 +204,8 @@ impl TraitNode for SoftmaxCrossEntropy {
             let grad = ((softmax - labels) / batch_size) * upstream;
             Ok(GradResult::Computed(grad))
         } else {
-            // 对 labels 的梯度（通常不需要，labels 是常量）
-            Err(GraphError::InvalidOperation(
-                "不应该对 labels 计算梯度".to_string(),
-            ))
+            // 对 labels 不传播梯度（labels 是常量）
+            Ok(GradResult::NoGrad)
         }
     }
 

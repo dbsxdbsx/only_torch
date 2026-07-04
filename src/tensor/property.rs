@@ -218,21 +218,48 @@ impl Tensor {
             return self.reshape(target_shape);
         }
 
-        // 先 reshape 到 padded 形状（如果维度数不同）
-        let working_tensor = if current_shape.len() < max_ndim {
-            self.reshape(&padded_current)
-        } else {
-            self.clone()
-        };
-
-        // 沿需要求和的维度依次求和（从后向前，避免索引偏移）
-        let mut result = working_tensor;
-        for &axis in axes_to_sum.iter().rev() {
-            result = result.sum_axis_keepdims(axis);
+        // 快速路径：单轴归约（最常见，如 [B,dim]→[B,1]、[B,d]→[1,d]）——
+        // ndarray 向量化 sum_axis 一趟即完成，与旧实现逐 bit 一致
+        if let [axis] = axes_to_sum[..] {
+            let working = if current_shape.len() < max_ndim {
+                self.reshape(&padded_current)
+            } else {
+                self.clone()
+            };
+            return working.sum_axis_keepdims(axis).reshape(target_shape);
         }
 
-        // 最后 reshape 到目标形状
-        result.reshape(target_shape)
+        // 多轴：单趟归约——按逻辑序遍历输入，直接累加到目标缓冲。
+        // 被求和的维度目标 stride 置 0（广播技巧），一次遍历替代旧实现
+        // 「逐轴 sum_axis_keepdims 多趟 + 每趟一次全尺寸分配」。
+        // 注意：累加顺序与旧逐轴分组不同，f32 结果可能有 ulp 级差异
+        // （与 2026-07 数值流重定基线同批，见 optimization_log）。
+        let out_numel: usize = padded_target.iter().product();
+        let mut out = vec![0.0f32; out_numel];
+
+        // 目标缓冲的行主序 strides；dim==1（被求和/广播维）置 0
+        let mut out_strides = vec![0usize; max_ndim];
+        {
+            let mut s = 1usize;
+            for k in (0..max_ndim).rev() {
+                out_strides[k] = if padded_target[k] == 1 { 0 } else { s };
+                s *= padded_target[k];
+            }
+        }
+
+        // self.data 的维度数可能少于 max_ndim（左侧补 1 对齐），idx 从右对齐
+        use ndarray::Dimension;
+        let offset = max_ndim - current_shape.len();
+        for (idx, &v) in self.data.indexed_iter() {
+            let idx = idx.slice();
+            let mut flat = 0usize;
+            for k in offset..max_ndim {
+                flat += idx[k - offset] * out_strides[k];
+            }
+            out[flat] += v;
+        }
+
+        Self::new(out, target_shape)
     }
 
     /// 将张量广播到指定形状（返回新张量）

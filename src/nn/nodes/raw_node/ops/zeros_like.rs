@@ -106,12 +106,8 @@ impl TraitNode for ZerosLike {
         _parent_values: &[&Tensor],
         _upstream_grad: &Tensor,
     ) -> Result<GradResult, GraphError> {
-        // ZerosLike 的梯度对父节点是零（因为它是常量）
-        // 但实际上这个方法不应该被调用，因为 ZerosLike 的输出不依赖于父节点的值
-        Err(GraphError::InvalidOperation(format!(
-            "{} 不支持梯度计算（它是常量节点）",
-            self.display_node()
-        )))
+        // ZerosLike 输出不依赖父节点的值（常量节点），不传播梯度
+        Ok(GradResult::NoGrad)
     }
 
     fn clear_value(&mut self) -> Result<(), GraphError> {

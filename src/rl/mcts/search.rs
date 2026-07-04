@@ -73,6 +73,10 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
         scheduler.on_search_start(&root_child_stats, root_out.value, cfg, rng);
     }
 
+    // selection 逐层子节点统计的 scratch buffer：跨层/跨 simulation 复用容量，
+    // 消除每层一次的 Vec 分配（每 sim 深度次 × sims 次的高频路径）
+    let mut select_scratch: Vec<ChildStat> = Vec::new();
+
     for sim_idx in 0..cfg.num_simulations as usize {
         // 根调度：Gumbel 等可强制本次模拟的根起步子节点；默认 None=走 PUCT
         let forced_root = if use_scheduler {
@@ -85,7 +89,14 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
         // selection: 从根往下选择
         let leaf_id = {
             crate::prof_scope!("mcts.select");
-            select(&tree, policy, &min_max, cfg, forced_root)
+            select(
+                &tree,
+                policy,
+                &min_max,
+                cfg,
+                forced_root,
+                &mut select_scratch,
+            )
         };
 
         // 若叶子已终止，只做 backup
@@ -231,12 +242,16 @@ fn expand_root<M: MctsModel>(
 }
 
 /// Selection：从根沿 PUCT 策略向下选择到未展开叶子
+///
+/// `scratch` 为调用方持有的 `ChildStat` 复用缓冲：每层 `clear()` 后重填，
+/// 容量跨层/跨 simulation 保留，避免高频路径上每层一次 Vec 分配。
 fn select<S: Clone + 'static, P: SearchPolicy>(
     tree: &Tree<S>,
     policy: &P,
     stats: &MinMaxStats,
     cfg: &MctsConfig,
     forced_root: Option<usize>,
+    scratch: &mut Vec<ChildStat>,
 ) -> usize {
     let mut current = tree.root;
     // 根调度 hook：若指定，强制第一步走该根子节点（其下仍走 PUCT 选择）
@@ -253,25 +268,22 @@ fn select<S: Clone + 'static, P: SearchPolicy>(
         }
 
         let parent_to_play = node.to_play;
-        let child_stats: Vec<ChildStat> = node
-            .children
-            .iter()
-            .map(|edge| {
-                let child_node = &tree.nodes[edge.child];
-                ChildStat {
-                    action_id: edge.action_id,
-                    action: edge.action.clone(),
-                    visit_count: edge.visit_count,
-                    value_sum: edge.value_sum,
-                    prior: edge.prior,
-                    reward: edge.reward,
-                    to_play: child_node.to_play,
-                    discount: edge.discount,
-                }
-            })
-            .collect();
+        scratch.clear();
+        scratch.extend(node.children.iter().map(|edge| {
+            let child_node = &tree.nodes[edge.child];
+            ChildStat {
+                action_id: edge.action_id,
+                action: edge.action.clone(),
+                visit_count: edge.visit_count,
+                value_sum: edge.value_sum,
+                prior: edge.prior,
+                reward: edge.reward,
+                to_play: child_node.to_play,
+                discount: edge.discount,
+            }
+        }));
 
-        let idx = policy.select_child(node.visit_count, parent_to_play, &child_stats, stats, cfg);
+        let idx = policy.select_child(node.visit_count, parent_to_play, scratch, stats, cfg);
         let idx = idx.min(node.children.len().saturating_sub(1));
         current = node.children[idx].child;
     }

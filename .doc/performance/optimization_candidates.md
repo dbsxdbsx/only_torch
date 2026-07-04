@@ -26,20 +26,15 @@
 
 ---
 
-### 3. 热路径审计留档项（2026-07-03，批量优化 J 时降级未做）
+### 3. 热路径审计留档项（2026-07-03 立项；同日战报 P 清账收口）
 
-2026-07-02/03 全库分配/拷贝热路径审计（[战报 J](./optimization_log.md)）中识别、经 Reviewer 评估后**刻意不随批实施**的项。共同特点：真实存在但缺 profiler 证据排进热点前列，或改动会触碰图结构/行为（需单独 3-seed 重验），不值得为其扩大批量改动的验证面。
+2026-07-02/03 全库分配/拷贝热路径审计（[战报 J](./optimization_log.md)）中识别、经 Reviewer 评估后**刻意不随批实施**的项。2026-07-03 复审裁决：哨兵红灯 + 系数复裁待跑 = 数值扰动类改动的唯一低成本窗口，除 C1 外全部实施（见[战报 P](./optimization_log.md)）。
 
-| 项 | 位置 | 问题 | 优先级与备注 |
-|---|---|---|---|
-| A3 | `node_inner.rs` `propagate_grad_to_parents` | 用 `msg.contains("不应该")` 字符串匹配做控制流（loss 对 target 不传梯度）；实际因 target 是叶子会被 `branch_needs_gradient()` 提前跳过，无热路径开销 | P2，纯代码卫生：正解是 `GradResult::NoGrad` 变体 |
-| B2 | `softmax.rs` / CE 反向 | 逐 batch IxDyn 逐元素索引，可改行 slice 直取 | P1，等 profiler 证据 |
-| B7 | `tensor/property.rs` `sum_to_shape` | 多趟归约（逐轴循环 sum_axis），可单趟 | P2 |
-| B8 | `loss/mse.rs` 前向 | 平方和走张量表达式链，可单趟 fold | P2 |
-| D4 | `mcts/search.rs` `select` | 每次 simulation 重建全量 `ChildStat` Vec | P2，等 tree-reuse 改造时一起做 |
-| E1 | `graph/inner` CSE | CSE key 用 String 拼接，可换紧凑 hash key | P2 |
-| C2 | `my_zero/network.rs` `min_max_normalize` | 两个 repeat 节点冗余（Subtract/Divide 本就支持 `[B,dim] ÷ [B,1]` 广播），代数成立 | 改图结构 → 必须单独一项 + 3-seed 哨兵重验，勿与其他改动混批 |
-| C1 | `layer/attention.rs` | 逐 head 循环建图 | 正解是 3D batched MatMul，归属演化阶段 D（刻意暂缓），不单独开口子 |
+| 项 | 去向 |
+|---|---|
+| A3 / B2 / B7 / B8 / D4 / E1 / C2 | ✅ 已实施（战报 P，2026-07-03） |
+| B1（sigmoid 反向多趟临时） | ✅ 更早已随激活反向融合完成（`zip_map` 单趟，见 `sigmoid.rs` 注释），本表曾误留 |
+| C1（`layer/attention.rs` 逐 head 循环建图） | **维持暂缓**：正解是 3D batched MatMul，归属演化阶段 D（刻意暂缓）；且非 RL 主线路径（图像线用 CNN），不为「顺手」开口子 |
 
 ---
 

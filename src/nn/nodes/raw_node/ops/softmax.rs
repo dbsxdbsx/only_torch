@@ -142,29 +142,47 @@ impl TraitNode for Softmax {
         let batch_size = shape[0];
         let num_classes = shape[1];
 
-        // 并行计算每个样本的梯度
-        let batch_grads: Vec<Vec<f32>> = (0..batch_size)
-            .into_par_iter()
-            .map(|b| {
+        // 行 slice 直取（免逐元素 IxDyn 索引/边界检查）；框架约定运算产物为标准布局，
+        // 极少数非连续来源（转置视图等）付一次物化兜底。
+        let out_owned;
+        let out_slice = if softmax_output.is_contiguous() {
+            softmax_output.data_as_slice()
+        } else {
+            out_owned = softmax_output.clone().into_contiguous();
+            out_owned.data_as_slice()
+        };
+        let up_owned;
+        let up_slice = if upstream_grad.is_contiguous() {
+            upstream_grad.data_as_slice()
+        } else {
+            up_owned = upstream_grad.clone().into_contiguous();
+            up_owned.data_as_slice()
+        };
+
+        // 单块缓冲按行并行直写（与旧逐元素索引版运算顺序一致，逐 bit 等价；
+        // 消除 Vec<Vec> 每行分配 + flatten 二次拷贝）
+        let mut grad_data = vec![0.0f32; batch_size * num_classes];
+        grad_data
+            .par_chunks_mut(num_classes)
+            .enumerate()
+            .for_each(|(b, row)| {
+                let y = &out_slice[b * num_classes..(b + 1) * num_classes];
+                let g = &up_slice[b * num_classes..(b + 1) * num_classes];
+
                 // 计算 <dL/dy, y> = Σ_j (dL/dy_j * y_j)
                 let mut dot_product = 0.0f32;
                 for c in 0..num_classes {
-                    dot_product += upstream_grad[[b, c]] * softmax_output[[b, c]];
+                    dot_product += g[c] * y[c];
                 }
 
                 // dL/dx_i = y_i * (dL/dy_i - dot_product)
-                let mut sample_grad = vec![0.0f32; num_classes];
                 for c in 0..num_classes {
-                    sample_grad[c] = softmax_output[[b, c]] * (upstream_grad[[b, c]] - dot_product);
+                    row[c] = y[c] * (g[c] - dot_product);
                 }
+            });
 
-                sample_grad
-            })
-            .collect();
-
-        // 合并结果（owned Vec 传入 new 零拷贝接管，行主序由按 batch 顺序 flatten 保证）
-        let all_grads: Vec<f32> = batch_grads.into_iter().flatten().collect();
-        Ok(GradResult::Computed(Tensor::new(all_grads, shape)))
+        // owned Vec 传入 new 零拷贝接管
+        Ok(GradResult::Computed(Tensor::new(grad_data, shape)))
     }
 
     fn grad(&self) -> Option<&Tensor> {

@@ -34,6 +34,25 @@ use rand::rngs::StdRng;
 use std::collections::HashMap;
 use std::rc::Weak;
 
+/// CSE 去重缓存 key（紧凑形态，避免旧 `(String, …, Option<NodeGroupTag>)`
+/// 元组 key 每次建节点的 String / Tag 多重 clone 分配）
+///
+/// 去重充要条件与 [`crate::nn::nodes::raw_node::TraitNode::dedup_fingerprint`]
+/// 文档一致；`group` 用 `(instance_id, hidden)` 等价替代完整 `NodeGroupTag`：
+/// `instance_id` 全局递增唯一，同一实例内除 `hidden`（RNN 步进时切换）外
+/// 其余字段（`group_type` / `display_name` / …）在 guard 创建时一次性固定。
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(in crate::nn::graph) struct CseKey {
+    /// 节点类型（builder 传入的 `'static` 字面量）
+    pub node_type: &'static str,
+    /// 父节点 ID 列表（按序）
+    pub parents: Vec<NodeId>,
+    /// 节点配置指纹（`dedup_fingerprint`）
+    pub fingerprint: u64,
+    /// 分组上下文等价键：`(instance_id, hidden)`
+    pub group: Option<(usize, bool)>,
+}
+
 /// 图的完整定义（核心实现）
 ///
 /// 这是计算图的核心实现。用户通常通过 `Graph` 句柄使用此结构，
@@ -89,12 +108,10 @@ pub struct GraphInner {
     // ========== CSE 去重缓存 ==========
     /// CSE（公共子表达式消除）节点去重缓存
     ///
-    /// key: (`node_type_str`, `parent_node_ids`, fingerprint, `group_context`)
     /// value: `Weak<NodeInner>`（不阻止节点被 Rc 回收）
     ///
     /// 随 `forward_pass_id` 变化自动清空（同 `node_type_counts` 机制）。
-    pub(in crate::nn::graph) cse_cache:
-        HashMap<(String, Vec<NodeId>, u64, Option<NodeGroupTag>), Weak<NodeInner>>,
+    pub(in crate::nn::graph) cse_cache: HashMap<CseKey, Weak<NodeInner>>,
     /// CSE 缓存上次重置时的 `forward_pass_id`
     pub(in crate::nn::graph) cse_cache_reset_pass_id: u64,
 

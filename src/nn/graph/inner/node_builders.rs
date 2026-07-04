@@ -30,9 +30,10 @@ impl GraphInner {
         &mut self,
         raw_node: NodeType,
         name: Option<&str>,
-        node_type_str: &str,
+        node_type_str: &'static str,
         parents: Vec<Rc<NodeInner>>,
     ) -> Result<Rc<NodeInner>, GraphError> {
+        use super::CseKey;
         use crate::nn::nodes::raw_node::TraitNode;
 
         // ===== CSE：计算去重 key（raw_node move 前）=====
@@ -45,8 +46,15 @@ impl GraphInner {
                     self.cse_cache_reset_pass_id = self.last_forward_pass_id;
                 }
                 let parent_ids: Vec<_> = parents.iter().map(|p| p.id()).collect();
-                let group_ctx = self.node_group_context.clone();
-                (node_type_str.to_string(), parent_ids, fp, group_ctx)
+                CseKey {
+                    node_type: node_type_str,
+                    parents: parent_ids,
+                    fingerprint: fp,
+                    group: self
+                        .node_group_context
+                        .as_ref()
+                        .map(|t| (t.instance_id, t.hidden)),
+                }
             })
         } else {
             None

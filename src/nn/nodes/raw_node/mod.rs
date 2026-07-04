@@ -474,6 +474,7 @@ use std::any::type_name;
 /// - `PassThrough`：梯度直接等于 `upstream_grad`（零拷贝）
 /// - `Negated`：梯度等于 `-upstream_grad`（累加时零分配）
 /// - `Computed(Tensor)`：新计算的梯度
+/// - `NoGrad`：设计上不对该父节点传播梯度（如 loss 的 target/labels、Detach 屏障）
 ///
 /// # 性能收益
 /// - Add / Identity / Dropout(eval)：`PassThrough` 消除 clone
@@ -495,6 +496,13 @@ pub(in crate::nn) enum GradResult {
 
     /// 新计算的梯度
     Computed(Tensor),
+
+    /// 设计上不对该父节点传播梯度（反向传播时静默跳过）
+    ///
+    /// 适用于 loss 节点的 target/labels 父分支、Detach 梯度屏障、
+    /// ZerosLike 等输出不依赖父节点值的常量节点。
+    /// 取代旧的「返回 Err + 调用方按报错文案子串匹配跳过」控制流。
+    NoGrad,
 }
 
 impl GradResult {
@@ -507,6 +515,7 @@ impl GradResult {
             GradResult::PassThrough => upstream_grad.clone(),
             GradResult::Negated => -upstream_grad,
             GradResult::Computed(t) => t,
+            GradResult::NoGrad => panic!("NoGrad 分支无梯度可解析（测试应直接断言变体）"),
         }
     }
 }

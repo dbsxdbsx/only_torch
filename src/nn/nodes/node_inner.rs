@@ -483,23 +483,8 @@ impl NodeInner {
                 continue;
             }
 
-            // 计算对该父节点的梯度
-            let result = match self.calc_grad_to_parent_index(i, upstream_grad) {
-                Ok(r) => r,
-                Err(GraphError::InvalidOperation(msg))
-                    if msg.contains("不应该")
-                        || msg.contains("不需要")
-                        || msg.contains("不支持") =>
-                {
-                    // 某些节点设计上不需要计算对特定父节点的梯度
-                    // 例如：labels 不需要梯度、某些常量节点等
-                    continue;
-                }
-                Err(e) => return Err(e),
-            };
-
             // 根据 GradResult 类型选择累加策略
-            match result {
+            match self.calc_grad_to_parent_index(i, upstream_grad)? {
                 GradResult::PassThrough => {
                     // 零拷贝：直接用 upstream_grad 累加
                     parent.accumulate_grad(upstream_grad)?;
@@ -510,6 +495,9 @@ impl NodeInner {
                 }
                 GradResult::Computed(grad) => {
                     parent.accumulate_grad(&grad)?;
+                }
+                GradResult::NoGrad => {
+                    // 设计上不对该父分支传播梯度（loss 的 target/labels、Detach 屏障等）
                 }
             }
         }

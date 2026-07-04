@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **perf(nn/tensor/rl): 热路径审计留档项清账——卫生批（A3/B2/B8/D4/E1）+ 数值批（B7/C2）（优化 P）**（2026-07-03）
+  - 背景：候选 #3 留档表复审裁决——卫生批五项逐 bit 中性、验证便宜，「等 profiler」门槛对其成本不成比例；数值批两项会扰动 f32 轨迹，而**哨兵红灯 + 系数复裁未跑恰是唯一免额外重验的窗口**（复裁直接建立在含本批的最终数值流上）
+  - **卫生批**（数值逐 bit 等价）：`GradResult::NoGrad` 变体取代「Err + 报错文案子串匹配」控制流（A3）；softmax 反向 / CE 前向逐元素 IxDyn 索引改行 slice 直取 + 单块缓冲直写（B2）；MSE 前向 `map_fold` 单趟（新增 Tensor 内部原语，B8）；MCTS `select` 逐层 `ChildStat` Vec 改 scratch buffer 复用（D4）；CSE 缓存 key 由 `(String, …, Option<NodeGroupTag>)` 元组改紧凑 `CseKey` 结构（`&'static str` + `(instance_id, hidden)` 等价键，E1）
+  - **数值批**（ulp 级漂移可能，复裁前数值路径就此冻结）：`sum_to_shape` 单轴保留逐 bit 一致快速路径、多轴改单趟归约（B7）；MyZero `min_max_normalize` 删两个 repeat 节点走原生 `[B,dim] ⊙ [B,1]` 广播（C2）
+  - 留档表清账：B1（sigmoid 反向多趟）核实更早已完成、划掉；C1（attention 逐 head 建图）维持阶段 D 暂缓不开口子
+  - 实测：`my_zero_train_batch/batched_x32` **-33.8%**（3.77→2.54ms）；教训：B7 首版单轴也走 indexed 路径致 +6.4% 回归，加回向量化快速路径后转为改善
+  - 验证：全量测试双轮全绿（lib 3337 + 全 target 0 失败）+ clippy 零告警 + `smoke-rl` 7 目标全过；哨兵不单独重验，由预注册系数复裁一并裁决，详见[优化战报 P](.doc/performance/optimization_log.md)
+
 ### Fixed
 
 - **fix(rl/nn): 哨兵退化审查落地六项逻辑改良（GroupNorm 梯度断流 / per-seed 独立性 / 温度调度解耦等）**（2026-07-03）

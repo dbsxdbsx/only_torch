@@ -37,6 +37,20 @@ impl Tensor {
         }
     }
 
+    /// 单趟「逐元素映射 + 归约」融合（内部原语）
+    ///
+    /// `acc = f(acc, self[i])` 按逻辑序累积，一次 Zip 遍历、零分配。
+    /// 用于把「全尺寸中间张量 + 再一趟归约」链（如 MSE 前向的
+    /// `diff*diff` 临时 + `sum()`）融合为单趟；与两趟写法逐 bit 等价
+    /// （逐元素 f32 舍入与累加顺序均不变）。
+    ///
+    /// Zip 是 stride 感知的：对非连续布局也按逻辑序遍历。
+    pub(crate) fn map_fold(&self, init: f32, f: impl Fn(f32, f32) -> f32) -> f32 {
+        let mut acc = init;
+        Zip::from(&self.data).for_each(|&v| acc = f(acc, v));
+        acc
+    }
+
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓minimum/maximum↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     /// 逐元素取两个张量的最小值
     ///

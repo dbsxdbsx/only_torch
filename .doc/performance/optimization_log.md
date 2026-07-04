@@ -7,6 +7,61 @@
 
 ---
 
+## P. 热路径审计留档项清账：卫生批（A3/B2/B8/D4/E1）+ 数值批（B7/C2）（2026-07-03）
+
+**动机**：[候选 #3 留档表](./optimization_candidates.md#3-热路径审计留档项2026-07-03-立项同日战报-p-清账收口)复审。
+裁决依据：① 卫生批五项逐 bit 中性、验证便宜，「等 profiler」门槛对其成本不成比例；
+② 数值批两项会扰动 f32 轨迹（归约顺序/图结构），而**哨兵红灯 + 系数复裁未跑**恰是唯一
+不需要额外 3-seed 重验的窗口——复裁将直接建立在含本批的最终数值流上；复裁后数值路径冻结。
+③ B1 检查发现更早已完成（sigmoid 反向 `zip_map` 单趟融合在库），从留档表划掉；
+C1 维持阶段 D 暂缓（非 RL 路径、属特性开发非清理）。
+
+**卫生批**（数值逐 bit 等价）：
+- **A3**：`GradResult` 新增 `NoGrad` 变体；MSE/MAE/Huber/BCE/SoftmaxCE 的 target/labels
+  分支、Detach 屏障、ZerosLike 由「返回 Err + 调用方按报错文案子串匹配跳过」改为显式
+  `Ok(NoGrad)`，`node_inner.rs::propagate_grad_to_parents` 删除 `msg.contains("不应该")`
+  三连字符串匹配控制流（消除"改报错文案即改语义"的脆弱点）。
+- **B2**：`softmax.rs` 反向、`softmax_cross_entropy.rs` 前向由逐元素 `IxDyn` 索引改
+  行 slice 直取（非连续输入付一次物化兜底）；softmax 反向同时消除 `Vec<Vec>` 每行分配
+  + flatten 二次拷贝，改单块缓冲 `par_chunks_mut` 直写。运算顺序不变，逐 bit 等价。
+- **B8**：MSE 前向 `diff*diff` 全尺寸临时 + `sum()` 两趟改 `map_fold` 单趟（新增
+  `Tensor::map_fold` 内部原语，与 `zip_map` 同族）；逐元素舍入与累加顺序不变，逐 bit 等价。
+- **D4**：`mcts/search.rs::select` 每层重建的 `ChildStat` Vec 改调用方持有的 scratch
+  buffer（`clear()` + `extend`，容量跨层/跨 simulation 复用）。保守版：不动 trait 签名、
+  不预支 tree-reuse；`ActionPayload` clone 仍在（连续动作场景的下一刀，挂 tree-reuse）。
+- **E1**：CSE 缓存 key 由 `(String, Vec<NodeId>, u64, Option<NodeGroupTag>)` 改紧凑
+  `CseKey` 结构（`&'static str` 类型名 + `(instance_id, hidden)` 等价替代完整 Tag），
+  消除每次建节点的 String / Tag 多重 clone；`create_node_inner` 签名收紧 `&'static str`。
+  等价性依据：`instance_id` 全局递增唯一，同一 guard 内除 `hidden` 外字段一次性固定。
+
+**数值批**（f32 轨迹可能 ulp 级漂移，与复裁窗口同批收口）：
+- **B7**：`sum_to_shape` 分两径——**单轴归约走快速路径**（一次向量化
+  `sum_axis_keepdims`，与旧实现逐 bit 一致；覆盖 `[B,dim]→[B,1]` 等绝大多数广播反向）；
+  多轴才走单趟归约（目标 stride 置 0 的广播索引，一次逻辑序遍历直写目标缓冲，替代旧
+  「逐轴多趟 + 每趟全尺寸分配」）。多轴累加分组与旧实现不同 → ulp 级差异可能。
+  教训：首版把单轴也走 indexed 逐元素路径，`my_zero_train_batch/batched_x32` 立即 +6.4%
+  回归（indexed_iter 慢于向量化 sum_axis）——加回快速路径后转为显著改善。
+- **C2**：MyZero `min_max_normalize` 删除两个 `repeat` 物化节点，Subtract/Divide 走
+  原生 `[B,dim] ⊙ [B,1]` 广播（前向逐元素运算相同；反向由 Repeat 梯度求和改
+  `sum_to_shape` 归约，顺序可能 ulp 级差异）。每次建图少 2 节点（B=1 推理与 batch 训练
+  路径同时受益）；spike bench 内联副本同步更新，三个网络 struct 顺手删除死字段 `latent_dim`。
+
+**实测**（release+MKL，Criterion 相对前一状态）：
+
+| case | 变化 | 归因 |
+|---|---|---|
+| `my_zero_train_batch/batched_x32` | **-33.8%**（3.77ms → 2.54ms） | C2 少 2 repeat 节点 + B7 快速路径 |
+| `my_zero_train_batch/per_sample_x32` 组另两 case | -1.6% / -22.4% | 同上 |
+| bench-smoke 其余组 | No change | 与预期一致 |
+| `smoke_conv2d_inference_1x1_b1` | 高方差抖动（复跑三次 -17%/+23%/+50%） | 判读为噪声非回归 |
+
+**验证**：全量测试双批各一轮全绿（lib 3337 + 全 target 0 失败）；clippy `-D warnings` 零告警；
+`smoke-rl` 7 目标全过。
+**哨兵纪律**：CartPole 哨兵当前红灯（ndarray 漂移 issue），本批数值扰动**不单独重验**，
+由预注册的系数复裁（recon {4,16} × 5-seed）在含本批的数值流上一并裁决——复裁前不得再动数值路径。
+
+---
+
 ## O. Tensor 共享存储 Arc/CoW：clone 变 O(1) 浅拷贝 + owned 双轨 API 收敛删除（2026-07-03，架构收敛）
 
 **动机**：候选 #6 落地。触发时机 = 图像线 S1/S2 已进库（拷贝类收益首次有真实消费者）+
