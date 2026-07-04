@@ -102,17 +102,24 @@ pub trait RootScheduler {
     /// 搜索循环开始前调用一次（`prepare_root` 之后、首次模拟之前）。
     ///
     /// Gumbel 在此采样 Gumbel 噪声并初始化 Sequential Halving 候选集。
+    /// `root_to_play`：根节点执子方——双人零和时子节点 value 为子方视角，
+    /// 打分中的 q̂ 须按 negamax 翻转回根方（单智能体恒 0，行为不变）。
     fn on_search_start(
         &mut self,
         root_children: &[ChildStat],
         network_value: f32,
+        root_to_play: u8,
         cfg: &MctsConfig,
         rng: &mut dyn RngCore,
     ) {
-        let _ = (root_children, network_value, cfg, rng);
+        let _ = (root_children, network_value, root_to_play, cfg, rng);
     }
 
     /// 第 `sim_idx` 次模拟应**强制**从哪个根子节点起步（其下仍用 `select_child`）。
+    ///
+    /// `q_range` 为搜索至今的 tree-level Q 值范围（[`MinMaxStats::range`]；`None` = 尚无
+    /// 有效范围），供 σ 归一化用——局部 over-children min-max 在 `|A|=2` 时退化为符号
+    /// 开关（completedQ 侧同病已修，见 `SearchResult::q_range` 文档）。
     ///
     /// 返回 `None` → 该次模拟从根用 `select_child` 正常选择。仅在 `is_active()` 为真时被调用。
     fn next_root_child(
@@ -120,16 +127,22 @@ pub trait RootScheduler {
         root_children: &[ChildStat],
         sim_idx: usize,
         cfg: &MctsConfig,
+        q_range: Option<(f32, f32)>,
     ) -> Option<usize> {
-        let _ = (root_children, sim_idx, cfg);
+        let _ = (root_children, sim_idx, cfg, q_range);
         None
     }
 
     /// 搜索结束后覆盖最终推荐动作索引（Gumbel 用最终幸存者）。
     ///
+    /// `q_range` 语义同 [`next_root_child`](Self::next_root_child)。
     /// 返回 `None` → 用 [`SearchPolicy::recommend`]。
-    fn final_recommendation(&self, root_children: &[ChildStat]) -> Option<usize> {
-        let _ = root_children;
+    fn final_recommendation(
+        &self,
+        root_children: &[ChildStat],
+        q_range: Option<(f32, f32)>,
+    ) -> Option<usize> {
+        let _ = (root_children, q_range);
         None
     }
 }

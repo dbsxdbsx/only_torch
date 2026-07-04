@@ -7,7 +7,7 @@
 //! | 15   | 26,306 @ ep500 | （待测） | — |
 //! | 10   | 16,152 @ ep875 ✅ | （待测） | 峰值 greedy 154 @ ep1800+ ❌ |
 //!
-//! 详见 `.issue/items/my_zero_gumbel_completedq_cartpole_negative.md`
+//! 详见 `.issue/_archive/my_zero_gumbel_completedq_cartpole_negative.md`
 //!
 //! ```bash
 //! # sim=20 基线（多 seed，Phase 1 never-worse 对照）

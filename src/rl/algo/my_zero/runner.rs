@@ -151,7 +151,7 @@ fn self_play_one_episode(
         };
 
         let root_value = result.root_value();
-        let policy_target = mcts_policy_target(&result, cq, adapter.action_dim());
+        let policy_target = mcts_policy_target(&result, cq, adapter.action_dim(), 0);
 
         steps.push(SelfPlayStep {
             obs: store_obs.clone(),
@@ -192,7 +192,7 @@ fn self_play_one_episode(
 /// 该状态**非终止**（真值应为 bootstrap 而非 absorbing 0），当前训练器无逐位置 mask，
 /// 强行纳入会注入错误 value 监督。代价是末步 reward 少一次监督（与 terminated 局的
 /// absorbing padding 轻微不对称），见 `.issue/items/my_zero_truncated_final_step_reward.md`。
-fn unroll_len_at(steps: &[SelfPlayStep], start: usize, k_unroll: usize) -> usize {
+pub(crate) fn unroll_len_at(steps: &[SelfPlayStep], start: usize, k_unroll: usize) -> usize {
     let len = steps.len();
     if len == 0 || start >= len {
         return 0;

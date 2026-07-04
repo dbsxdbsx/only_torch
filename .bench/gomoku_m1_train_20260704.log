@@ -1,0 +1,193 @@
+   Compiling only_torch v0.25.0 (D:\DATA\BaiduSyncdisk\project\personal\only_torch)
+    Finished `release` profile [optimized] target(s) in 1m 31s
+     Running unittests src\lib.rs (target\release\deps\only_torch-45d502c1e61c3f90.exe)
+
+running 1 test
+test rl::algo::my_zero::tests::gomoku_m1_bench::gomoku_m1_train ... [MyZero-board Gomoku-selfplay-v0] obs=243(3×9²) |A|=81 sims=100 γ=1.0 negamax
+Ep    1: len= 52 白胜 loss=0.0000 temp=1.00 total_env_steps=52 t=0.18s
+Ep    2: len= 35 黑胜 loss=0.0000 temp=1.00 total_env_steps=87 t=0.11s
+Ep    3: len= 54 白胜 loss=0.0000 temp=1.00 total_env_steps=141 t=0.18s
+Ep    4: len= 58 白胜 loss=0.0000 temp=1.00 total_env_steps=199 t=0.19s
+Ep    5: len= 57 黑胜 loss=0.0000 temp=1.00 total_env_steps=256 t=0.19s
+Ep    6: len= 67 黑胜 loss=0.0000 temp=1.00 total_env_steps=323 t=0.24s
+Ep    7: len= 35 黑胜 loss=0.0000 temp=1.00 total_env_steps=358 t=0.13s
+Ep    8: len= 73 黑胜 loss=0.0000 temp=1.00 total_env_steps=431 t=0.24s
+Ep    9: len= 43 黑胜 loss=0.0000 temp=1.00 total_env_steps=474 t=0.14s
+Ep   10: len= 59 黑胜 loss=36.3356 temp=1.00 total_env_steps=533 t=0.21s
+Ep   11: len= 58 白胜 loss=29.1660 temp=1.00 total_env_steps=591 t=0.18s
+Ep   12: len= 57 黑胜 loss=28.1204 temp=1.00 total_env_steps=648 t=0.18s
+Ep   13: len= 51 黑胜 loss=28.2882 temp=1.00 total_env_steps=699 t=0.17s
+Ep   14: len= 46 白胜 loss=28.2439 temp=1.00 total_env_steps=745 t=0.15s
+Ep   15: len= 61 黑胜 loss=28.1428 temp=1.00 total_env_steps=806 t=0.19s
+Ep   16: len= 45 黑胜 loss=28.1952 temp=1.00 total_env_steps=851 t=0.23s
+Ep   17: len= 36 白胜 loss=28.4246 temp=1.00 total_env_steps=887 t=0.12s
+Ep   18: len= 77 黑胜 loss=27.8833 temp=1.00 total_env_steps=964 t=0.26s
+Ep   19: len= 72 白胜 loss=28.3619 temp=1.00 total_env_steps=1036 t=0.22s
+Ep   20: len= 63 黑胜 loss=28.2181 temp=1.00 total_env_steps=1099 t=0.20s
+Ep   21: len= 49 黑胜 loss=28.3327 temp=1.00 total_env_steps=1148 t=0.15s
+Ep   22: len= 50 白胜 loss=28.4738 temp=1.00 total_env_steps=1198 t=0.27s
+Ep   23: len= 47 黑胜 loss=28.1861 temp=1.00 total_env_steps=1245 t=0.19s
+Ep   24: len= 70 白胜 loss=28.0184 temp=1.00 total_env_steps=1315 t=0.23s
+Ep   25: len= 41 黑胜 loss=28.4346 temp=1.00 total_env_steps=1356 t=0.15s
+  eval vs Gomoku-random-v0: win_rate=0.90 mean_return=0.80（20 局，total_env_steps=1356）
+Ep   26: len= 68 白胜 loss=28.3752 temp=1.00 total_env_steps=1424 t=0.23s
+Ep   27: len= 66 白胜 loss=28.1904 temp=1.00 total_env_steps=1490 t=0.22s
+Ep   28: len= 50 白胜 loss=28.1535 temp=1.00 total_env_steps=1540 t=0.18s
+Ep   29: len= 56 白胜 loss=28.3651 temp=1.00 total_env_steps=1596 t=0.19s
+Ep   30: len= 60 白胜 loss=28.2673 temp=1.00 total_env_steps=1656 t=0.19s
+Ep   31: len= 12 白胜 loss=28.6220 temp=1.00 total_env_steps=1668 t=0.05s
+Ep   32: len= 51 黑胜 loss=28.3694 temp=1.00 total_env_steps=1719 t=0.20s
+Ep   33: len= 42 白胜 loss=28.1322 temp=1.00 total_env_steps=1761 t=0.14s
+Ep   34: len= 59 黑胜 loss=28.3750 temp=1.00 total_env_steps=1820 t=0.24s
+Ep   35: len= 67 黑胜 loss=28.2440 temp=1.00 total_env_steps=1887 t=0.22s
+Ep   36: len= 46 白胜 loss=28.3191 temp=1.00 total_env_steps=1933 t=0.16s
+Ep   37: len= 48 白胜 loss=28.2177 temp=1.00 total_env_steps=1981 t=0.18s
+Ep   38: len= 67 黑胜 loss=28.0442 temp=1.00 total_env_steps=2048 t=0.21s
+Ep   39: len= 35 黑胜 loss=27.8542 temp=1.00 total_env_steps=2083 t=0.14s
+Ep   40: len= 65 黑胜 loss=27.7335 temp=1.00 total_env_steps=2148 t=0.22s
+Ep   41: len= 64 白胜 loss=28.1499 temp=1.00 total_env_steps=2212 t=0.21s
+Ep   42: len= 47 黑胜 loss=28.6001 temp=1.00 total_env_steps=2259 t=0.16s
+Ep   43: len= 39 黑胜 loss=28.0437 temp=1.00 total_env_steps=2298 t=0.13s
+Ep   44: len= 39 黑胜 loss=28.3135 temp=1.00 total_env_steps=2337 t=0.14s
+Ep   45: len= 48 白胜 loss=28.5108 temp=1.00 total_env_steps=2385 t=0.16s
+Ep   46: len= 45 黑胜 loss=28.2419 temp=1.00 total_env_steps=2430 t=0.15s
+Ep   47: len= 42 白胜 loss=28.3436 temp=1.00 total_env_steps=2472 t=0.15s
+Ep   48: len= 38 白胜 loss=28.2621 temp=1.00 total_env_steps=2510 t=0.12s
+Ep   49: len= 49 黑胜 loss=28.3348 temp=1.00 total_env_steps=2559 t=0.18s
+Ep   50: len= 56 白胜 loss=28.3685 temp=1.00 total_env_steps=2615 t=0.22s
+  eval vs Gomoku-random-v0: win_rate=0.80 mean_return=0.60（20 局，total_env_steps=2615）
+Ep   51: len= 59 黑胜 loss=28.1332 temp=1.00 total_env_steps=2674 t=0.22s
+Ep   52: len= 52 白胜 loss=29.1451 temp=1.00 total_env_steps=2726 t=0.18s
+Ep   53: len= 32 白胜 loss=28.3554 temp=1.00 total_env_steps=2758 t=0.15s
+Ep   54: len= 37 黑胜 loss=27.7917 temp=1.00 total_env_steps=2795 t=0.14s
+Ep   55: len= 59 黑胜 loss=28.4541 temp=1.00 total_env_steps=2854 t=0.21s
+Ep   56: len= 65 黑胜 loss=27.8846 temp=1.00 total_env_steps=2919 t=0.23s
+Ep   57: len= 41 黑胜 loss=27.8458 temp=1.00 total_env_steps=2960 t=0.15s
+Ep   58: len= 37 黑胜 loss=28.2580 temp=1.00 total_env_steps=2997 t=0.14s
+Ep   59: len= 69 黑胜 loss=28.3810 temp=1.00 total_env_steps=3066 t=0.27s
+Ep   60: len= 52 白胜 loss=28.1868 temp=1.00 total_env_steps=3118 t=0.18s
+Ep   61: len= 57 黑胜 loss=28.0820 temp=1.00 total_env_steps=3175 t=0.22s
+Ep   62: len= 45 黑胜 loss=28.0617 temp=1.00 total_env_steps=3220 t=0.19s
+Ep   63: len= 59 黑胜 loss=28.0920 temp=1.00 total_env_steps=3279 t=0.22s
+Ep   64: len= 67 黑胜 loss=28.1589 temp=1.00 total_env_steps=3346 t=0.23s
+Ep   65: len= 66 白胜 loss=28.2090 temp=1.00 total_env_steps=3412 t=0.23s
+Ep   66: len= 55 黑胜 loss=28.3728 temp=1.00 total_env_steps=3467 t=0.24s
+Ep   67: len= 64 白胜 loss=28.1647 temp=1.00 total_env_steps=3531 t=0.24s
+Ep   68: len= 35 黑胜 loss=28.3522 temp=1.00 total_env_steps=3566 t=0.14s
+Ep   69: len= 49 黑胜 loss=28.1288 temp=1.00 total_env_steps=3615 t=0.17s
+Ep   70: len= 49 黑胜 loss=28.0199 temp=1.00 total_env_steps=3664 t=0.18s
+Ep   71: len= 40 白胜 loss=27.9406 temp=1.00 total_env_steps=3704 t=0.15s
+Ep   72: len= 39 黑胜 loss=27.8769 temp=1.00 total_env_steps=3743 t=0.16s
+Ep   73: len= 31 黑胜 loss=27.9736 temp=1.00 total_env_steps=3774 t=0.12s
+Ep   74: len= 45 黑胜 loss=28.0200 temp=1.00 total_env_steps=3819 t=0.16s
+Ep   75: len= 51 黑胜 loss=27.9702 temp=1.00 total_env_steps=3870 t=0.18s
+  eval vs Gomoku-random-v0: win_rate=0.65 mean_return=0.30（20 局，total_env_steps=3870）
+Ep   76: len= 54 白胜 loss=27.8755 temp=1.00 total_env_steps=3924 t=0.22s
+Ep   77: len= 34 白胜 loss=27.8339 temp=1.00 total_env_steps=3958 t=0.13s
+Ep   78: len= 63 黑胜 loss=27.9051 temp=1.00 total_env_steps=4021 t=0.20s
+Ep   79: len= 71 黑胜 loss=27.9440 temp=1.00 total_env_steps=4092 t=0.23s
+Ep   80: len= 63 黑胜 loss=27.9425 temp=1.00 total_env_steps=4155 t=0.20s
+Ep   81: len= 70 白胜 loss=28.0486 temp=1.00 total_env_steps=4225 t=0.24s
+Ep   82: len= 65 黑胜 loss=28.1360 temp=1.00 total_env_steps=4290 t=0.23s
+Ep   83: len= 46 白胜 loss=28.0836 temp=1.00 total_env_steps=4336 t=0.16s
+Ep   84: len= 60 白胜 loss=28.1456 temp=1.00 total_env_steps=4396 t=0.20s
+Ep   85: len= 47 黑胜 loss=28.0326 temp=1.00 total_env_steps=4443 t=0.16s
+Ep   86: len= 49 黑胜 loss=27.9566 temp=1.00 total_env_steps=4492 t=0.16s
+Ep   87: len= 38 白胜 loss=27.9565 temp=1.00 total_env_steps=4530 t=0.14s
+Ep   88: len= 73 黑胜 loss=27.9856 temp=1.00 total_env_steps=4603 t=0.25s
+Ep   89: len= 69 黑胜 loss=27.8958 temp=1.00 total_env_steps=4672 t=0.21s
+Ep   90: len= 19 黑胜 loss=28.1055 temp=1.00 total_env_steps=4691 t=0.07s
+Ep   91: len= 50 白胜 loss=27.8967 temp=1.00 total_env_steps=4741 t=0.18s
+Ep   92: len= 35 黑胜 loss=28.0836 temp=1.00 total_env_steps=4776 t=0.13s
+Ep   93: len= 46 白胜 loss=27.9436 temp=1.00 total_env_steps=4822 t=0.17s
+Ep   94: len= 49 黑胜 loss=27.9573 temp=1.00 total_env_steps=4871 t=0.17s
+Ep   95: len= 37 黑胜 loss=28.0853 temp=1.00 total_env_steps=4908 t=0.14s
+Ep   96: len= 38 白胜 loss=27.9026 temp=1.00 total_env_steps=4946 t=0.13s
+Ep   97: len= 33 黑胜 loss=28.2841 temp=1.00 total_env_steps=4979 t=0.11s
+Ep   98: len= 47 黑胜 loss=27.7797 temp=1.00 total_env_steps=5026 t=0.17s
+Ep   99: len= 59 黑胜 loss=27.9453 temp=1.00 total_env_steps=5085 t=0.21s
+Ep  100: len= 49 黑胜 loss=28.0213 temp=1.00 total_env_steps=5134 t=0.19s
+  eval vs Gomoku-random-v0: win_rate=0.65 mean_return=0.30（20 局，total_env_steps=5134）
+Ep  101: len= 62 白胜 loss=27.8820 temp=1.00 total_env_steps=5196 t=0.21s
+Ep  102: len= 60 白胜 loss=27.7859 temp=0.99 total_env_steps=5256 t=0.22s
+Ep  103: len= 39 黑胜 loss=28.1332 temp=0.99 total_env_steps=5295 t=0.15s
+Ep  104: len= 56 白胜 loss=27.9484 temp=0.98 total_env_steps=5351 t=0.21s
+Ep  105: len= 41 黑胜 loss=27.6983 temp=0.97 total_env_steps=5392 t=0.14s
+Ep  106: len= 47 黑胜 loss=27.7272 temp=0.96 total_env_steps=5439 t=0.20s
+Ep  107: len= 50 白胜 loss=27.9237 temp=0.95 total_env_steps=5489 t=0.21s
+Ep  108: len= 43 黑胜 loss=27.7763 temp=0.95 total_env_steps=5532 t=0.18s
+Ep  109: len= 65 黑胜 loss=27.8143 temp=0.94 total_env_steps=5597 t=0.23s
+Ep  110: len= 57 黑胜 loss=27.8141 temp=0.93 total_env_steps=5654 t=0.20s
+Ep  111: len= 61 黑胜 loss=27.9307 temp=0.93 total_env_steps=5715 t=0.22s
+Ep  112: len= 48 白胜 loss=27.9833 temp=0.92 total_env_steps=5763 t=0.22s
+Ep  113: len= 42 白胜 loss=27.7983 temp=0.91 total_env_steps=5805 t=0.17s
+Ep  114: len= 46 白胜 loss=27.7730 temp=0.90 total_env_steps=5851 t=0.15s
+Ep  115: len= 38 白胜 loss=27.7604 temp=0.89 total_env_steps=5889 t=0.13s
+Ep  116: len= 37 黑胜 loss=27.5625 temp=0.89 total_env_steps=5926 t=0.13s
+Ep  117: len= 49 黑胜 loss=27.7614 temp=0.88 total_env_steps=5975 t=0.20s
+Ep  118: len= 22 白胜 loss=27.8352 temp=0.87 total_env_steps=5997 t=0.10s
+Ep  119: len= 62 白胜 loss=27.7536 temp=0.87 total_env_steps=6059 t=0.26s
+Ep  120: len= 44 白胜 loss=27.6184 temp=0.86 total_env_steps=6103 t=0.16s
+Ep  121: len= 45 黑胜 loss=27.6381 temp=0.85 total_env_steps=6148 t=0.18s
+Ep  122: len= 59 黑胜 loss=27.6868 temp=0.84 total_env_steps=6207 t=0.21s
+Ep  123: len= 60 白胜 loss=27.6397 temp=0.84 total_env_steps=6267 t=0.22s
+Ep  124: len= 31 黑胜 loss=27.6840 temp=0.83 total_env_steps=6298 t=0.13s
+Ep  125: len= 39 黑胜 loss=27.5428 temp=0.82 total_env_steps=6337 t=0.15s
+  eval vs Gomoku-random-v0: win_rate=0.85 mean_return=0.70（20 局，total_env_steps=6337）
+Ep  126: len= 47 黑胜 loss=27.5914 temp=0.81 total_env_steps=6384 t=0.17s
+Ep  127: len= 47 黑胜 loss=27.7809 temp=0.81 total_env_steps=6431 t=0.18s
+Ep  128: len= 76 白胜 loss=27.5036 temp=0.80 total_env_steps=6507 t=0.27s
+Ep  129: len= 57 黑胜 loss=27.8556 temp=0.79 total_env_steps=6564 t=0.21s
+Ep  130: len= 53 黑胜 loss=28.1042 temp=0.78 total_env_steps=6617 t=0.19s
+Ep  131: len= 53 黑胜 loss=27.8424 temp=0.77 total_env_steps=6670 t=0.21s
+Ep  132: len= 41 黑胜 loss=27.7708 temp=0.77 total_env_steps=6711 t=0.15s
+Ep  133: len= 43 黑胜 loss=27.8219 temp=0.76 total_env_steps=6754 t=0.16s
+Ep  134: len= 48 白胜 loss=27.6996 temp=0.75 total_env_steps=6802 t=0.18s
+Ep  135: len= 58 白胜 loss=27.7195 temp=0.75 total_env_steps=6860 t=0.19s
+Ep  136: len= 30 白胜 loss=28.0259 temp=0.74 total_env_steps=6890 t=0.14s
+Ep  137: len= 43 黑胜 loss=27.8772 temp=0.73 total_env_steps=6933 t=0.17s
+Ep  138: len= 44 白胜 loss=27.8745 temp=0.72 total_env_steps=6977 t=0.17s
+Ep  139: len= 45 黑胜 loss=27.7748 temp=0.72 total_env_steps=7022 t=0.18s
+Ep  140: len= 45 黑胜 loss=27.5356 temp=0.71 total_env_steps=7067 t=0.18s
+Ep  141: len= 45 黑胜 loss=27.5850 temp=0.70 total_env_steps=7112 t=0.20s
+Ep  142: len= 46 白胜 loss=27.5733 temp=0.69 total_env_steps=7158 t=0.17s
+Ep  143: len= 64 白胜 loss=27.4903 temp=0.69 total_env_steps=7222 t=0.21s
+Ep  144: len= 64 白胜 loss=27.7305 temp=0.68 total_env_steps=7286 t=0.23s
+Ep  145: len= 36 白胜 loss=27.8625 temp=0.67 total_env_steps=7322 t=0.13s
+Ep  146: len= 50 白胜 loss=27.7029 temp=0.66 total_env_steps=7372 t=0.17s
+Ep  147: len= 41 黑胜 loss=27.6424 temp=0.65 total_env_steps=7413 t=0.18s
+Ep  148: len= 42 白胜 loss=27.7025 temp=0.65 total_env_steps=7455 t=0.18s
+Ep  149: len= 30 白胜 loss=27.6810 temp=0.64 total_env_steps=7485 t=0.12s
+Ep  150: len= 54 白胜 loss=27.7437 temp=0.63 total_env_steps=7539 t=0.21s
+  eval vs Gomoku-random-v0: win_rate=0.95 mean_return=0.90（20 局，total_env_steps=7539）
+  ✅ 达标 ep=150 total_env_steps=7539
+📈 Gomoku-selfplay-v0 win_rate=0.95（best 0.95）| 门槛 0.95 | 36.4s
+[M1] final_win_rate=0.95 best=0.95 solved_at=Some(7539) total_env_steps=7539 wall=36s
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3406 filtered out; finished in 36.41s
+
+     Running tests\cse_dedup.rs (target\release\deps\cse_dedup-7a657e998c2a0176.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests\mode_invariants.rs (target\release\deps\mode_invariants-12496c59841ba5c8.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+
+     Running tests\onnx_otm_load_bench.rs (target\release\deps\onnx_otm_load_bench-39da60dd6dcd2511.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests\yolov5_xiangqi_import.rs (target\release\deps\yolov5_xiangqi_import-5a55f6b67c0e8a85.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+

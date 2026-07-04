@@ -254,7 +254,7 @@ baseline = 上节哨兵（12,519 / 8,643 / 9,826，中位 ~9.8k，range 8.6k–1
 | +cons+recon · sims=15 | **500.0** @ ep500 | 26,306 | ~167s | 2026-06-21 |
 | +cons+recon · sims=50（旧默认） | **500.0** @ ep275 | 11,682 | 183.9s | 2026-06-21；wall ~2.3× |
 | +cons+recon · sims=50 · +completedQ | **500.0** @ ep575 | 34,490 | 381s | ❌ 不 promote |
-| +cons+recon · sims=20 · +completedQ | **500.0** @ ep450 | 30,409 | 180s | ❌ [issue](../../../.issue/items/my_zero_gumbel_completedq_cartpole_negative.md) |
+| +cons+recon · sims=20 · +completedQ | **500.0** @ ep450 | 30,409 | 180s | ❌ [issue](../../../.issue/_archive/my_zero_gumbel_completedq_cartpole_negative.md) |
 | +cons+recon · sims=20 · Gumbel-root | 峰值 **123** @ ep750+ | ~142k 手动停 | — | ❌ 同上 issue |
 | +cons+recon · sims=10 · Gumbel-root | 峰值 **154** @ ep1800+ | ~101k+ 未达标 | — | ❌ 同上 issue |
 | +consistency +reanalyze +写回 | **9.4**（ep200 仍随机） | 未达标 | — | ❌ [issue](../../../.issue/items/my_zero_reanalyze_cartpole_regression.md) |

@@ -97,6 +97,8 @@ pub(in crate::rl) struct GumbelRootScheduler {
     gumbel: Vec<f32>,
     pub(in crate::rl) active: Vec<usize>,
     v_pi: f32,
+    /// 根节点执子方（negamax q̂ 视角翻转用；单智能体恒 0）
+    root_to_play: u8,
     num_phases: usize,
     phase: usize,
     phase_budget: usize,
@@ -114,6 +116,7 @@ impl GumbelRootScheduler {
             gumbel: Vec::new(),
             active: Vec::new(),
             v_pi: 0.0,
+            root_to_play: 0,
             num_phases: 0,
             phase: 0,
             phase_budget: 0,
@@ -127,6 +130,7 @@ impl GumbelRootScheduler {
         &mut self,
         root_children: &[ChildStat],
         network_value: f32,
+        root_to_play: u8,
         cfg: &MctsConfig,
         rng: &mut dyn RngCore,
     ) {
@@ -135,8 +139,16 @@ impl GumbelRootScheduler {
             return;
         }
         self.v_pi = network_value;
+        self.root_to_play = root_to_play;
         self.total_sims = cfg.num_simulations.max(1);
-        self.gumbel = (0..k).map(|_| sample_gumbel(rng)).collect();
+        // greedy（temperature=0）：噪声向量置零（= mctx gumbel_scale=0 评测口径），
+        // Top-m / halving / 终选全程确定——修复 greedy eval 被注入探索噪声的 bug
+        //（负结果 issue §7.1：|A|=2 时噪声 std ≈ σ 信号量级，eval 近半随机）。
+        self.gumbel = if cfg.temperature < 1e-6 {
+            vec![0.0; k]
+        } else {
+            (0..k).map(|_| sample_gumbel(rng)).collect()
+        };
 
         let m = k
             .min(self.max_considered)
@@ -158,7 +170,7 @@ impl GumbelRootScheduler {
         self.round_robin = 0;
     }
 
-    fn end_phase(&mut self, root_children: &[ChildStat]) {
+    fn end_phase(&mut self, root_children: &[ChildStat], q_range: Option<(f32, f32)>) {
         if self.active.len() <= 1 {
             return;
         }
@@ -172,8 +184,10 @@ impl GumbelRootScheduler {
                         i,
                         &self.gumbel,
                         self.v_pi,
+                        self.root_to_play,
                         self.c_visit,
                         self.c_scale,
+                        q_range,
                     ),
                     i,
                 )
@@ -204,10 +218,11 @@ impl RootScheduler for GumbelRootScheduler {
         &mut self,
         root_children: &[ChildStat],
         network_value: f32,
+        root_to_play: u8,
         cfg: &MctsConfig,
         rng: &mut dyn RngCore,
     ) {
-        self.init(root_children, network_value, cfg, rng);
+        self.init(root_children, network_value, root_to_play, cfg, rng);
     }
 
     fn next_root_child(
@@ -215,6 +230,7 @@ impl RootScheduler for GumbelRootScheduler {
         root_children: &[ChildStat],
         sim_idx: usize,
         cfg: &MctsConfig,
+        q_range: Option<(f32, f32)>,
     ) -> Option<usize> {
         if root_children.is_empty() || self.active.is_empty() {
             return None;
@@ -223,7 +239,7 @@ impl RootScheduler for GumbelRootScheduler {
             && self.active.len() > 1
             && self.phase + 1 < self.num_phases
         {
-            self.end_phase(root_children);
+            self.end_phase(root_children, q_range);
         }
         let idx = self.active[self.round_robin % self.active.len()];
         self.round_robin += 1;
@@ -232,7 +248,11 @@ impl RootScheduler for GumbelRootScheduler {
         Some(idx)
     }
 
-    fn final_recommendation(&self, root_children: &[ChildStat]) -> Option<usize> {
+    fn final_recommendation(
+        &self,
+        root_children: &[ChildStat],
+        q_range: Option<(f32, f32)>,
+    ) -> Option<usize> {
         if self.active.is_empty() || root_children.is_empty() {
             return None;
         }
@@ -244,16 +264,20 @@ impl RootScheduler for GumbelRootScheduler {
                     a,
                     &self.gumbel,
                     self.v_pi,
+                    self.root_to_play,
                     self.c_visit,
                     self.c_scale,
+                    q_range,
                 );
                 let sb = gumbel_halving_score(
                     root_children,
                     b,
                     &self.gumbel,
                     self.v_pi,
+                    self.root_to_play,
                     self.c_visit,
                     self.c_scale,
+                    q_range,
                 );
                 sa.partial_cmp(&sb).unwrap_or(std::cmp::Ordering::Equal)
             })
@@ -288,40 +312,55 @@ fn phase_budget(total_sims: u32, num_phases: usize) -> usize {
 }
 
 /// 根 Sequential Halving 打分：`g(a) + ln π(a) + σ(q̂(a))`（论文 Algorithm 2）。
+///
+/// σ 归一化优先用 `tree_q_range`（tree-level 全局 Q 范围）——局部 over-children
+/// min-max 在 `|A|=2` 时恒把两动作拉成 `{0,1}`、σ 退化为符号开关（completedQ 侧
+/// 同源 bug 已先修，见 `completed_q_policy_target`）；`None`/退化时 fallback 局部。
+#[allow(clippy::too_many_arguments)]
 fn gumbel_halving_score(
     children: &[ChildStat],
     idx: usize,
     gumbel: &[f32],
     v_pi: f32,
+    root_to_play: u8,
     c_visit: f32,
     c_scale: f32,
+    tree_q_range: Option<(f32, f32)>,
 ) -> f32 {
     let c = &children[idx];
     let logit = c.prior.max(1e-12).ln();
-    let q_hat = if c.visit_count > 0 {
-        let child_v = c.value_sum / c.visit_count as f32;
-        c.discount.mul_add(child_v, c.reward)
-    } else {
-        v_pi
+    let q_hat = child_q_hat(c, v_pi, root_to_play);
+    let (lo, hi) = match tree_q_range {
+        Some((lo, hi)) if hi > lo => (lo, hi),
+        _ => q_range(children, v_pi, root_to_play),
     };
-    let (lo, hi) = q_range(children, v_pi);
     let range = (hi - lo).max(1e-8);
-    let norm_q = (q_hat - lo) / range;
+    // tree-level range 下 vmix 类填充值可能略超界，clamp 保险（同 completedQ 口径）
+    let norm_q = ((q_hat - lo) / range).clamp(0.0, 1.0);
     let max_n = children.iter().map(|x| x.visit_count).max().unwrap_or(0) as f32;
     let sigma = (c_visit + max_n) * c_scale * norm_q;
     gumbel[idx] + logit + sigma
 }
 
-fn q_range(children: &[ChildStat], v_pi: f32) -> (f32, f32) {
+/// 已访问子节点的 q̂（根方视角）：`r + discount·perspective·V(child)`；未访问回填 `v_pi`。
+///
+/// perspective：子节点 value_sum 为**子方视角**（backup 契约），双人零和时子方 ≠ 根方
+/// 须取负（negamax，与 PUCT select / completedQ 同口径）；单智能体恒 +1、行为不变。
+fn child_q_hat(c: &ChildStat, v_pi: f32, root_to_play: u8) -> f32 {
+    if c.visit_count > 0 {
+        let child_v = c.value_sum / c.visit_count as f32;
+        let perspective = if c.to_play == root_to_play { 1.0 } else { -1.0 };
+        c.reward + c.discount * perspective * child_v
+    } else {
+        v_pi
+    }
+}
+
+fn q_range(children: &[ChildStat], v_pi: f32, root_to_play: u8) -> (f32, f32) {
     let mut lo = v_pi;
     let mut hi = v_pi;
     for c in children {
-        let q = if c.visit_count > 0 {
-            let child_v = c.value_sum / c.visit_count as f32;
-            c.discount.mul_add(child_v, c.reward)
-        } else {
-            v_pi
-        };
+        let q = child_q_hat(c, v_pi, root_to_play);
         lo = lo.min(q);
         hi = hi.max(q);
     }

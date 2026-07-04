@@ -1,14 +1,19 @@
 ---
-status: active
+status: archived
 created: 2026-06-21
-updated: 2026-07-02
+updated: 2026-07-05
 owners: []
 reviewers: []
 ---
 
 # MyZero · completedQ / Gumbel-root：CartPole 消融失败（暂缓 promote）
 
-> **状态**：active —— 库内已实现 `completed_q_target` / `GumbelPolicy` + bench 用例；CartPole recipe **保持关**，当前 recipe 为 **consistency + reconstruction + Sampled · PUCT · sims=20 · td=5**（基线数字见 [CartPole 基准账本](../../examples/my_zero/cartpole/README.md)）。
+> **状态**：**archived（2026-07-05 终局归档）**——关闭条件「Gomoku |A|≫sims 场景复裁出结果」已达成，见 §八。
+> 裁决：棋盘域两组件**中性**（无 CartPole 式灾难、亦无增益）→ 全部 recipe 保持关、代码保留；
+> CartPole 灾难归因闭合 = n≫|A| regime 无筛选空间 + 前置双 bug（§七，已修）。
+> 数字唯一账本：[Gomoku 棋盘账本](../../examples/my_zero/gomoku/README.md)。
+>
+> 原始状态：库内已实现 `completed_q_target` / `GumbelPolicy` + bench 用例；CartPole recipe **保持关**，当时 recipe 为 **consistency + reconstruction + Sampled · PUCT · sims=20 · td=5**（基线数字见 [CartPole 基准账本](../../examples/my_zero/cartpole/README.md)）。
 > **⚠️ 口径提示（2026-07-02）**：下文全部实测数字为 **pre-autograd-fix 旧口径**（MSE 系 loss 反向忽略 `upstream_grad` 时代 + 纯 Rust BLAS + 单 seed 为主）。v0.25 修复后官方口径改 **3-seed 中位（release + MKL）** 且全量重测（见账本）；本文数字仅保留**方向性结论**（completedQ / Gumbel 系统性慢于 visit），复测（v0.26+，`|A| > sims` 或低延迟 acting 场景）时须按新口径重跑。
 > **关联**：[CartPole README](../../examples/my_zero/cartpole/README.md) · [MyZero 总览](../../examples/my_zero/README.md) · [算法纲领 §5.1](../../.doc/design/my_zero_algorithm_vision.md#51-组件与方向)
 > **代码**：`src/rl/mcts/gumbel.rs` · `search_policy.rs` · `target.rs`（completedQ）· `tests/completed_q_cartpole_bench.rs`
@@ -122,6 +127,15 @@ completedQ 的 σ 归一化（[target.rs](../../src/rl/algo/my_zero/target.rs) `
 ## 七、Gumbel 复裁前置修复清单（2026-07-02 补记，防丢失）
 
 > 复测排期已定：[收口规划 Phase 2](../../.doc/design/rl_closure_plan.md)（Gomoku，|A|=225 ≫ sims）。**下述两项不修，复裁结果无效。**
+>
+> **✅ 双修复已落地（2026-07-04，Gomoku M3 前置）**：
+> ① `temperature=0` 时 Gumbel 噪声向量置零（= mctx `gumbel_scale=0` 评测口径），
+> greedy 路径 Top-m / halving / 终选全程确定，self-play（temp>0）噪声保留；
+> ② `gumbel_halving_score` σ 归一化改用 `MinMaxStats::range()` 的 tree-level q_range
+> （`RootScheduler` trait 增 `q_range` 参数透传），`None`/退化 fallback 局部 min-max。
+> 回归测试 3 项新增于 `src/rl/tests/mcts_gumbel.rs`（greedy 跨 rng 确定且选 Q 最优、
+> self-play 保留噪声多样性、tree-level 范围下微小 Q 差不压倒 prior）。
+> 本 issue 关闭条件不变：Gomoku |A|=81/225 ≫ sims 场景复裁出结果。
 
 ### 7.1 greedy eval 注入 Gumbel 噪声 bug（已核实存在，无修复）
 
@@ -132,3 +146,23 @@ completedQ 的 σ 归一化（[target.rs](../../src/rl/algo/my_zero/target.rs) `
 ### 7.2 `q_range` 局部归一化同源 bug
 
 §六已留档：completedQ 侧已改 tree-level range，`gumbel.rs::q_range` 仍是局部 over-children min-max（`|A|=2` 退化同病）。修复时直接复用 `SearchResult.q_range`。
+
+---
+
+## 八、Gomoku 终局复裁（2026-07-05，关闭条件达成 → 归档）
+
+> 载体 = Gomoku M3 消融（9×9 · |A|=81 · 3-seed · 同 M2 载体），前置双修复（§七）已落地。
+> 完整表与口径见[棋盘账本](../../examples/my_zero/gomoku/README.md)。
+
+| 臂 | vs random（中位） | vs 快照（中位） | naive0 | 判读 |
+|---|---|---|---|---|
+| base s100（对照） | 1.000 | 0.950 | 0.00–0.15 | — |
+| Gumbel+completedQ s100 | 1.000 | 0.875 | 0.05–0.10 | 中性（n=100 > \|A\|=81，仍属 n>\|A\| regime） |
+| base s16（对照） | 0.925 | 0.925 | ≈0 | — |
+| **Gumbel+completedQ s16** | 0.975 | 0.825 | ≈0 | **中性**（\|A\|≫sims native 场景，关闭条件所指） |
+
+**终局裁决**：
+
+1. **无灾难**：CartPole 式「未收敛/系统性 2–3× 慢」在棋盘域未复现——支持归因 = CartPole 的 n≫\|A\| regime（无筛选空间放大样本浪费）+ 双 bug（greedy 噪声污染 eval + q_range 局部退化，均已修）。
+2. **无增益**：\|A\|≫sims 的 native 场景下亦未跑赢 PUCT+visit 对照 → 两组件全域 recipe 保持关、代码保留（少 sim acting 时 Gumbel 降档可用：s16 对 s100 战力损失有限）。
+3. 「三件套正交分层」文档债已沉淀 [vision §5.4](../../.doc/design/my_zero_algorithm_vision.md#54-三件套正交分层sampled--gumbel--completedq2026-07-05-定稿)。

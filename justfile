@@ -391,6 +391,11 @@ smoke-my-zero-pong:
     @echo "=== Running MyZero Pong Smoke [{{_blas_name}}] ==="
     SMOKE=1 cargo run --example my_zero_pong {{_blas_flag}}
 
+# MyZero Gomoku smoke（3 局 self-play 管线验证：训练/快照/gating/naive 梯队全路径，需 Python + gym_env/gomoku）
+smoke-my-zero-gomoku:
+    @echo "=== Running MyZero Gomoku Smoke [{{_blas_name}}] ==="
+    cargo test {{_blas_flag}} --lib gomoku_m1_smoke -- --ignored --nocapture --test-threads=1
+
 # Phase 1 风险 spike：CNN × MCTS 单步 wall-clock（假输入纯计时，不需 Python；手动档 bench）
 spike-cnn-mcts:
     @echo "=== Phase 1 spike: CNN x MCTS wall-clock [{{_blas_name}}] ==="
@@ -405,7 +410,7 @@ example-pendulum-my-zero:
 examples-rl: example-cartpole-sac example-pendulum-sac example-platform-sac example-lunarlander-sac example-cartpole-ppo example-cartpole-my-zero
 
 # 全部 RL smoke（管线验证聚合；发版固定关卡。需 Python + gymnasium + box2d + hybrid-platform）
-smoke-rl: smoke-my-zero-cartpole smoke-my-zero-pendulum smoke-cartpole-ppo smoke-cartpole-sac smoke-pendulum-sac smoke-platform-sac smoke-lunarlander-sac
+smoke-rl: smoke-my-zero-cartpole smoke-my-zero-pendulum smoke-my-zero-gomoku smoke-cartpole-ppo smoke-cartpole-sac smoke-pendulum-sac smoke-platform-sac smoke-lunarlander-sac
     @echo "=== smoke-rl 全部通过 ==="
 
 # 验证 Platform-v0 Python 环境可用

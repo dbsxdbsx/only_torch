@@ -555,6 +555,7 @@ impl RootScheduler for ForceChild0Scheduler {
         _root_children: &[ChildStat],
         _sim_idx: usize,
         _cfg: &MctsConfig,
+        _q_range: Option<(f32, f32)>,
     ) -> Option<usize> {
         Some(0)
     }

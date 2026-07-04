@@ -140,7 +140,7 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 | SVE 自适应 mixed target | 🔲 Phase 2 改进候选 | EZ 论文为自适应 mixed target，非固定权重；须单独消融 |
 | consistency 正规化（SimSiam target encoder + EMA） | 🔲 Phase 2 改进候选 | 现简化实现 CartPole 有效；见 [Pendulum 诊断 issue](../../.issue/items/pendulum_failure_diagnosis.md) §六 |
 | value head 上游 target（Pendulum 坍缩） | 🔲 Phase 2 改进候选 | head 容量已证伪；根因在上游 n-step / 搜索，见同上 issue |
-| completedQ / Gumbel-root | ❌ CartPole 实测失败；⏸ 复测留 `\|A\| > n` 环境与低延迟 acting 场景（§2.3） | 见 [issue](../../.issue/items/my_zero_gumbel_completedq_cartpole_negative.md)；库内已实现 |
+| completedQ / Gumbel-root | ❌ CartPole 灾难 · ❌ Gomoku 中性（`\|A\|≫sims` 复裁完毕，2026-07-05 终局）；代码保留，少 sim acting 降档留用 | 分层与裁决见 §5.4；[issue 已归档](../../.issue/_archive/my_zero_gumbel_completedq_cartpole_negative.md) |
 | Sampled MuZero（高维连续候选） | ✅ CartPole recipe 已开（N=2 退化全枚举、接入不回归）；⏸ factorized B=7 待连续环境 | 实测见[账本](../../examples/my_zero/cartpole/README.md)；**B/K/N 公式**见 [issue](../../.issue/items/my_zero_action_space_sampled_policy.md) |
 | BTS/DENTS 式 backup | 🔲 仅当动 `SearchPolicy` | 避免 MENTS 式「max-entropy 最优 ≠ 回报最优」 |
 | ANTS 自适应温度闭环 | ⏸ 借鉴思想，不搬整套 | 与 MuZero 训练循环结构不同 |
@@ -191,6 +191,29 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 
 **可单独借鉴、不打包 BetaZero**：Q-weighted visit policy、prioritized action widening 等训练/搜索技巧——若未来有证据再单项 ablation，**不**引入 belief 树或已知 \(T,O\) 依赖。
 
+### 5.4 三件套正交分层：Sampled / Gumbel / completedQ（2026-07-05 定稿）
+
+> 旧规划遗留文档债，随 Gomoku M3 复裁收口一并沉淀。三者常被并称「Gumbel MuZero 三件套」，
+> 但在本框架中是**三个正交层**，可独立开关、按环境分别裁决：
+
+| 层 | 组件 | 回答的问题 | 库内落点 |
+|----|------|-----------|---------|
+| **候选层** | Sampled（Hubert et al. 2021） | 动作空间太大/连续时，根节点**评估哪些动作**（子采样 K 个候选 + 重要性修正） | `sampled_params.rs` · `CandidateSet` |
+| **根层** | Gumbel-root（Danihelka et al. 2022） | 有限 sims **怎么分配**给候选（Gumbel Top-m + Sequential Halving 取代根节点 PUCT） | `mcts/gumbel.rs`（`RootScheduler`） |
+| **目标层** | completedQ（同上论文 Eq.10–12） | 搜索完了**policy target 怎么构造**（completed Q + σ 变换取代 visit 分布） | `target.rs::completed_q_policy_target` |
+
+**融合契约**：三层经由 `MctsConfig` / `Components` 独立注入，任意子集组合合法——
+Sampled 不要求 Gumbel（CartPole promoted 栈即 Sampled + PUCT + visit target）；
+Gumbel 不要求 completedQ（论文推荐同开，但库内可拆测）；completedQ 可单独接 PUCT 树。
+
+**实测裁决现状**（数字见 [CartPole](../../examples/my_zero/cartpole/README.md) / [Gomoku](../../examples/my_zero/gomoku/README.md) 账本）：
+
+- **Sampled**：✅ CartPole recipe 已开（K=N 退化全枚举、接入不回归）；真实子采样待连续域。
+- **Gumbel-root / completedQ**：❌ CartPole（n≫\|A\| 灾难，归因 = regime 无筛选空间 + 双 bug 已修）·
+  ❌ Gomoku 中性（s100 与 s16 \|A\|≫sims native 场景均无增益）→ **全域 recipe 关、代码保留**；
+  唯一留用场景 = 少 sim acting 降档（Gomoku s16 战力损失有限）。
+  终局档案：[负结果 issue（已归档）](../../.issue/_archive/my_zero_gumbel_completedq_cartpole_negative.md)。
+
 ---
 
 ## 6. 环境 × 默认算法 × 插件位（规划）
@@ -199,9 +222,9 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 
 | 优先 | 环境 | 观测 | 动作 | MyZero 状态 | 默认对照 | 远期插件位 |
 |------|------|------|------|-------------|----------|------------|
-| 哨兵 | CartPole-v1 | 向量 | 离散 | ✅ 回归哨兵（cons+recon+Sampled · PUCT · sims=20，数字见账本） | SAC / PPO（同账本） | completedQ / Gumbel ❌ CartPole · [issue](../../.issue/items/my_zero_gumbel_completedq_cartpole_negative.md) |
+| 哨兵 | CartPole-v1 | 向量 | 离散 | ✅ 回归哨兵（cons+recon+Sampled · PUCT · sims=20，数字见账本） | SAC / PPO（同账本） | completedQ / Gumbel ❌ CartPole · [issue](../../.issue/_archive/my_zero_gumbel_completedq_cartpole_negative.md) |
 | **P0** | 图像离散（Atari-100k 类） | **图像** | 离散 | — v0.26 主推（商业游戏代理） | — | CNN 表征、帧堆叠、reanalyze、Gumbel 少 sim acting |
-| **P1** | Gomoku（→ 象棋） | 离散棋盘 | 离散 | — v0.26 主推（self-play 踏脚石） | — | self-play、legal_mask、negamax backup |
+| **P1** | Gomoku（→ 象棋） | 离散棋盘 | 离散 | ✅ 支柱已立（M2 双门槛 3/3 · recipe=base，[账本](../../examples/my_zero/gomoku/README.md)；naive0 战术墙留 [issue](../../.issue/items/gomoku_naive0_tactical_wall.md)） | naive 梯队（观察性） | 树内真规则诊断、sims=400、D4 增广复核 |
 | 降级 | Pendulum-v1 | 向量 | 连续 | ⏳ 诊断中（[issue](../../.issue/items/pendulum_failure_diagnosis.md)），非门禁 | SAC | Gumbel-root、连续候选 B=7 |
 | 降级 | Platform-v0 | 向量 | 混合 Tuple | — 待具体需求 | Hybrid SAC ✅ | `ActionAdapter` Tuple、混合 MCTS |
 | ⏸ | 随机转移 / 长 horizon | — | — | ⏸ | — | stochastic dynamics |

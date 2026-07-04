@@ -11,10 +11,13 @@ use crate::rl::mcts::{ChildStat, SearchResult};
 /// 从 MCTS 搜索结果构造策略训练目标（visit-count 或 completedQ，与 self-play / reanalyze 共用）。
 ///
 /// `action_dim` 为完整 joint 动作数；Sampled MuZero 搜索子集长度为 K 时，会投射回全长向量。
+/// `root_to_play`：根节点执子方（单智能体恒 0）——双人零和时子节点 value 是子方视角，
+/// completedQ 的 Q 需按 negamax 翻转回根方视角（与 PUCT select / backup 同口径）。
 pub fn mcts_policy_target(
     result: &SearchResult,
     cq: Option<(f32, f32)>,
     action_dim: usize,
+    root_to_play: u8,
 ) -> Vec<f32> {
     let partial = match cq {
         Some((c_visit, c_scale)) => completed_q_policy_target(
@@ -23,6 +26,7 @@ pub fn mcts_policy_target(
             result.q_range,
             c_visit,
             c_scale,
+            root_to_play,
         ),
         None => result.learn_policy.clone(),
     };
@@ -86,6 +90,7 @@ pub fn completed_q_policy_target(
     q_range: Option<(f32, f32)>,
     c_visit: f32,
     c_scale: f32,
+    root_to_play: u8,
 ) -> Vec<f32> {
     let n = children.len();
     if n == 0 {
@@ -95,10 +100,10 @@ pub fn completed_q_policy_target(
     // 每动作 completedQ：已访问用搜索 Q，未访问补 vmix。
     // 这里对齐 mctx qtransform_completed_by_mix_value：
     // qvalues -> complete_by_mix_value -> rescale -> visit_scale * value_scale。
-    let mix_value = v_mix(children, v_hat_pi);
+    let mix_value = v_mix(children, v_hat_pi, root_to_play);
     let completed: Vec<f32> = children
         .iter()
-        .map(|c| child_q(c).unwrap_or(mix_value))
+        .map(|c| child_q(c, root_to_play).unwrap_or(mix_value))
         .collect();
 
     // σ 归一化的 Q 范围：优先用 tree-level 全局范围（search 维护的 MinMaxStats）。
@@ -143,7 +148,7 @@ pub fn completed_q_policy_target(
 ///
 /// `v_hat_pi` 是当前状态 value network 的原始估计；已访问动作的 Q 按 prior 加权，
 /// 再按总访问数与 `v_hat_pi` 做一致性混合。未访问动作在 completedQ 中用该值填充。
-pub(super) fn v_mix(children: &[ChildStat], v_hat_pi: f32) -> f32 {
+pub(super) fn v_mix(children: &[ChildStat], v_hat_pi: f32, root_to_play: u8) -> f32 {
     let total_visits: u32 = children.iter().map(|c| c.visit_count).sum();
     if total_visits == 0 {
         return v_hat_pi;
@@ -161,15 +166,20 @@ pub(super) fn v_mix(children: &[ChildStat], v_hat_pi: f32) -> f32 {
     let weighted_q: f32 = children
         .iter()
         .filter(|c| c.visit_count > 0)
-        .filter_map(|c| child_q(c).map(|q| safe_prior(c.prior) * q / prior_sum))
+        .filter_map(|c| child_q(c, root_to_play).map(|q| safe_prior(c.prior) * q / prior_sum))
         .sum();
     (v_hat_pi + total_visits as f32 * weighted_q) / (total_visits as f32 + 1.0)
 }
 
-fn child_q(c: &ChildStat) -> Option<f32> {
+/// 已访问子节点的 Q（根方视角）：`Q(a) = r(a) + discount·perspective·V(child)`。
+///
+/// `perspective`：子节点 value_sum 是**子方视角**累计（backup 契约），双人零和时
+/// 子方 ≠ 根方须取负（negamax）；单智能体 to_play 恒同 → 恒 +1，行为不变。
+fn child_q(c: &ChildStat, root_to_play: u8) -> Option<f32> {
     (c.visit_count > 0).then(|| {
         let child_v = c.value_sum / c.visit_count as f32;
-        c.reward + c.discount * child_v
+        let perspective = if c.to_play == root_to_play { 1.0 } else { -1.0 };
+        c.reward + c.discount * perspective * child_v
     })
 }
 

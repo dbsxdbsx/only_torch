@@ -15,8 +15,8 @@
 |------|---------|------|------|
 | [**CartPole-v1**](cartpole/README.md) | 离散（2） | greedy eval ≥ 475 | ✅ 回归哨兵（官方口径 3-seed 中位 env-steps，数字见[账本](cartpole/README.md)） |
 | [**Pendulum-v1**](pendulum/README.md) | 纯连续（1） | return ≥ -200 | 诊断中·已降级（当前 recipe 复用 CartPole 栈作诊断，不代表组件已裁决；[issue](../../.issue/items/pendulum_failure_diagnosis.md)） |
-| 图像离散（Atari-100k 类） | 离散 | 任务指标 | v0.26 P0（[路线图 §5](../../.doc/design/rl_roadmap.md#5-v026-方向2026-07-01-战略转向定稿)） |
-| Gomoku（→ 象棋） | 离散棋盘 | 胜率 | v0.26 P1（self-play 踏脚石；环境已备 `python/gym_env/gomoku/`） |
+| 图像离散（Atari-100k 类） | 离散 | 任务指标 | 后台预算标定中（S2 基准 0/3 平直，[负结果 issue](../../.issue/items/my_zero_pong_image_flat_negative.md)） |
+| [**Gomoku 9×9**](gomoku/README.md)（→ 象棋） | 离散棋盘（81） | vs random ≥0.95 + gating ≥0.55 | ✅ 支柱已立（M2 双门槛 3/3 · recipe=base；naive0 战术墙留 [issue](../../.issue/items/gomoku_naive0_tactical_wall.md)） |
 | Platform-v0 | 混合 Tuple | return 趋势上升 | 已降级，待具体需求 |
 
 ## 内部组件进展（团队 · promote 时改 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)）
@@ -25,25 +25,28 @@
 > 图例：`✅ 已验收` · `❌ 实测有害/无增益` · `⏳ 待测` · `⏸ 此环境不适用` · `— 未实现`
 > 用户 API **不暴露**组件开关；实测数字一律见[基准账本](cartpole/README.md)，本表只记裁决结论。
 
-| 组件         | [CartPole-v1](cartpole/README.md) | [Pendulum-v1](pendulum/README.md) | 图像/Gomoku | 备注 |
-| ------------ | :-------------------------------: | :-------------------------------: | :---------: | --------------------------- |
-| consistency  |                ✅                 |                 ⏳                 |      ⏳      | SimSiam 一致性 loss |
-| reconstruction |              ✅※                |                 ⏳                 |      ⏳      | ※ autograd 修复后 3-seed 中位不再显示增益（方差大、未回滚），v0.26 P0 重标定 loss 系数后复裁，见[账本结论](cartpole/README.md#结论v025-收口) |
-| Sampled（连续采样候选） |       ✅ 接入不回归        |                 ⏳                 |      ⏸      | CartPole K=N 退化全枚举、与无 Sampled 逐步等价；Pendulum B=7 才是真实子采样 |
-| HL-Gauss value/reward 编码 | ❌ 显著劣化（中位 9.8k→27.6k） | ⏸ | ⏳ **native 场景** | 窄 support 低噪声下 two-hot 尖标签是信息优势；开关留库，Phase 1 图像域复测（[账本](cartpole/README.md#v026-phase-0编码--量纲消融2026-07-02)） |
-| obs symlog 无量纲化 | ❌ 无增益且系数不回移 | ⏳ | ⏸ 图像走 [0,1] 归一 | CartPole obs 本就小量纲；开关留库，触发条件回归 [Simulus 计划 §3](../../.doc/design/my_zero_simulus_ablation_plan.md)（连续特征范围失控时） |
-| reanalyze    | ❌ 当前实现有害（[issue](../../.issue/items/my_zero_reanalyze_cartpole_regression.md)） | ⏳ | **v0.26 战略组件** | 「实时轻 acting + 离线重 reanalyze」解耦，图像线优先验证 |
-| value_prefix |                ❌                 |                 ⏳                 |      ⏳      | CartPole 有害（≠ 全局坏） |
-| target_net   |                 ⏳                 |                 ⏳                 |      ⏳      | 已入库，训练循环待接 |
-| SVE          |                 ⏳                 |                 ⏳                 |      ⏳      | 已入库，训练循环待接；🔲 改进：固定权重 → 自适应 mixed target |
-| completedQ   | ❌ 系统性慢于 visit（[issue](../../.issue/items/my_zero_gumbel_completedq_cartpole_negative.md)） |                 ⏳                 |      ⏳      | 复测留 `\|A\| > sims` 场景 |
-| Gumbel-root  | ❌ 未收敛（同上 issue） |                 ⏳                 | ⏳ 少 sim acting 候选 | 库内已实现；低延迟 acting 场景 v0.26 复测 |
+| 组件         | [CartPole-v1](cartpole/README.md) | [Pendulum-v1](pendulum/README.md) | 图像 | [Gomoku](gomoku/README.md) | 备注 |
+| ------------ | :-------------------------------: | :-------------------------------: | :--: | :---: | --------------------------- |
+| consistency  |                ✅                 |                 ⏳                 |  ⏳   | ❌ 中性无增益 | SimSiam 一致性 loss；棋盘 M3 消融见[账本](gomoku/README.md) |
+| reconstruction |              ✅※                |                 ⏳                 |  ⏳   | ❌ 中性偏害 | ※ autograd 修复后 3-seed 中位不再显示增益（方差大、未回滚），v0.26 P0 重标定 loss 系数后复裁，见[账本结论](cartpole/README.md#结论v025-收口)；棋盘 coef=16 为 CartPole 域标定未重标 |
+| Sampled（连续采样候选） |       ✅ 接入不回归        |                 ⏳                 |  ⏸   |  ⏸   | CartPole K=N 退化全枚举、与无 Sampled 逐步等价；Pendulum B=7 才是真实子采样 |
+| HL-Gauss value/reward 编码 | ❌ 显著劣化（中位 9.8k→27.6k） | ⏸ | ⏳ **native 场景** | ⏸ | 窄 support 低噪声下 two-hot 尖标签是信息优势；开关留库，Phase 1 图像域复测（[账本](cartpole/README.md#v026-phase-0编码--量纲消融2026-07-02)）；图像域初裁中性 |
+| obs symlog 无量纲化 | ❌ 无增益且系数不回移 | ⏳ | ⏸ 图像走 [0,1] 归一 | ⏸ 0/1 平面 | CartPole obs 本就小量纲；开关留库，触发条件回归 [Simulus 计划 §3](../../.doc/design/my_zero_simulus_ablation_plan.md)（连续特征范围失控时） |
+| reanalyze    | ❌ 当前实现有害（[issue](../../.issue/items/my_zero_reanalyze_cartpole_regression.md)） | ⏳ | **v0.26 战略组件** | ⏸ | 「实时轻 acting + 离线重 reanalyze」解耦，图像线优先验证；棋盘 target = 终局事实不过期，非 native 场景 |
+| ROSMO 一步刷新 | ✅ 回归闸门 3/3（不 promote 进 recipe） | ⏳ | ⏳ 价值裁决待图像基线 | ⏸ | `.rosmo(true)` 消融开关，recipe 默认关 |
+| value_prefix |                ❌                 |                 ⏳                 |  ⏳   |  ⏸ 无中间 reward  | CartPole 有害（≠ 全局坏） |
+| target_net   |                 ⏳                 |                 ⏳                 |  ⏳   |  ⏳   | 已入库，训练循环待接 |
+| SVE          |                 ⏳                 |                 ⏳                 |  ⏳   |  ⏳   | 已入库，训练循环待接；🔲 改进：固定权重 → 自适应 mixed target |
+| completedQ   | ❌ 系统性慢于 visit（[issue](../../.issue/_archive/my_zero_gumbel_completedq_cartpole_negative.md)） |                 ⏳                 |  ⏳   | ❌ 中性（s100+s16 复裁） | `\|A\|≫sims` 复裁已完成（棋盘 s16），无灾难亦无增益 |
+| Gumbel-root  | ❌ 未收敛（同上 issue） |                 ⏳                 | ⏳ 少 sim acting 候选 | ❌ 中性（同左） | 前置双修复（greedy 去噪 + tree-level q_range）后棋盘复裁中性；少 sim acting 可用降档 |
 
 > 论文全称与 arXiv：[算法纲领 §4.1 — 组件文献对照](../../.doc/design/my_zero_algorithm_vision.md#41-组件文献对照单一事实源)
 
 **CartPole-v1 当前内置**：base + **consistency + reconstruction + Sampled**（PUCT · sims=20 · td=5 · continuation 二值门）。
 
 **Pendulum-v1 当前内置**：复用 CartPole 栈做**诊断**（B=7 · sims=20 · `reward_scale(0.1)`），仍在失败区间；不要据此给组件下 ✅/❌ 裁决。
+
+**Gomoku 当前内置**：**base 全关**（Flat MLP · negamax MC target · sims=100 · D4 增广关）；M3 九臂消融裁决与数字见[棋盘账本](gomoku/README.md)。
 
 ## 快速开始
 

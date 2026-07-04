@@ -45,3 +45,11 @@ fn unknown_env_is_base() {
     let c = components_for("LunarLander-v3");
     assert_eq!(c, Components::base());
 }
+
+/// 棋盘栈 = base 全关（M4 收口定型；M3 九臂消融无组件过 promote 线）。
+#[test]
+fn gomoku_is_base() {
+    for env in ["Gomoku-selfplay-v0", "Gomoku-random-v0"] {
+        assert_eq!(components_for(env), Components::base(), "env={env}");
+    }
+}

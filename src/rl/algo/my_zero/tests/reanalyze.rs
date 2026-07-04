@@ -121,7 +121,7 @@ fn reanalyze_completed_q_matches_mcts_policy_target() {
 
     let mut rng2 = StdRng::seed_from_u64(13);
     let result = mcts_search(&model, &policy, step.obs.as_f32(), &cfg, &mut rng2);
-    let expected = mcts_policy_target(&result, cq, 2);
+    let expected = mcts_policy_target(&result, cq, 2, 0);
     assert_eq!(step.policy_target, expected);
     // 与 visit target 应不同（completedQ 在此 mock 下会放大 Q 差）
     assert_ne!(step.policy_target, result.learn_policy);
@@ -131,6 +131,7 @@ fn reanalyze_completed_q_matches_mcts_policy_target() {
         result.q_range,
         50.0,
         1.0,
+        0,
     );
     assert_eq!(step.policy_target, expected_direct);
 }

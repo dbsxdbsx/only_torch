@@ -70,7 +70,13 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
     let mut scheduler = policy.make_root_scheduler(num_root_children, cfg);
     let use_scheduler = scheduler.is_active();
     if use_scheduler {
-        scheduler.on_search_start(&root_child_stats, root_out.value, cfg, rng);
+        scheduler.on_search_start(
+            &root_child_stats,
+            root_out.value,
+            root_out.to_play,
+            cfg,
+            rng,
+        );
     }
 
     // selection 逐层子节点统计的 scratch buffer：跨层/跨 simulation 复用容量，
@@ -81,7 +87,7 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
         // 根调度：Gumbel 等可强制本次模拟的根起步子节点；默认 None=走 PUCT
         let forced_root = if use_scheduler {
             let root_children = collect_child_stats(&tree, tree.root);
-            scheduler.next_root_child(&root_children, sim_idx, cfg)
+            scheduler.next_root_child(&root_children, sim_idx, cfg, min_max.range())
         } else {
             None
         };
@@ -157,7 +163,7 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
 
     // 5. 推荐动作 + 学习目标（scheduler 可覆盖推荐，如 Gumbel 用最终幸存者）
     let rec_idx = scheduler
-        .final_recommendation(&final_children)
+        .final_recommendation(&final_children, min_max.range())
         .unwrap_or_else(|| policy.recommend(&final_children, cfg, rng));
     let recommended = if rec_idx < final_children.len() {
         final_children[rec_idx].action.clone()

@@ -167,6 +167,10 @@ pub enum ObsSpec {
     /// 图像 obs（CNN 编码器）：`channels`（帧堆叠数）× `side`²，
     /// 展平后进模型（`[B, c·side²]`），conv 前向内部 reshape 回 4D。
     Image { channels: usize, side: usize },
+    /// 棋盘 obs（stride-1 CNN 编码器）：`channels` 平面 × `side`² 小棋盘。
+    /// 与 `Image` 的差异：不做 stride-2 降采样——棋类的局部模式（连珠等）
+    /// 依赖满分辨率空间结构（AlphaZero 系棋盘塔均为 stride-1）。
+    Board { channels: usize, side: usize },
 }
 
 impl ObsSpec {
@@ -174,7 +178,9 @@ impl ObsSpec {
     pub const fn dim(&self) -> usize {
         match *self {
             Self::Flat(d) => d,
-            Self::Image { channels, side } => channels * side * side,
+            Self::Image { channels, side } | Self::Board { channels, side } => {
+                channels * side * side
+            }
         }
     }
 }
@@ -285,10 +291,76 @@ impl Module for ConvRepresentationNet {
     }
 }
 
+/// 棋盘 representation 编码器：conv3×3 stride-1 ×2（c→32→64，padding 保形）
+/// → flatten → fc → latent（min-max 归一化，与 MLP/Conv 编码器同契约）。
+pub struct BoardConvRepresentationNet {
+    c1: Conv2d,
+    c2: Conv2d,
+    fc_latent: Linear,
+    channels: usize,
+    side: usize,
+}
+
+impl BoardConvRepresentationNet {
+    pub fn new(
+        graph: &Graph,
+        channels: usize,
+        side: usize,
+        latent_dim: usize,
+    ) -> Result<Self, GraphError> {
+        let graph = graph.with_model_name("BoardRepr");
+        let c1 = Conv2d::new(
+            &graph,
+            channels,
+            32,
+            (3, 3),
+            (1, 1),
+            (1, 1),
+            (1, 1),
+            true,
+            "c1",
+        )?;
+        let c2 = Conv2d::new(&graph, 32, 64, (3, 3), (1, 1), (1, 1), (1, 1), true, "c2")?;
+        let fc_latent = Linear::new(&graph, 64 * side * side, latent_dim, true, "fc_latent")?;
+        Ok(Self {
+            c1,
+            c2,
+            fc_latent,
+            channels,
+            side,
+        })
+    }
+
+    /// `[B, c·side²]` 展平棋盘 → latent（min-max 归一化）。
+    pub fn forward(&self, x: impl IntoVar) -> Result<Var, GraphError> {
+        let x = x.into_var(&self.fc_latent.parameters()[0].get_graph())?;
+        let batch = x.value_expected_shape()[0];
+        let h = x.reshape(&[batch, self.channels, self.side, self.side])?;
+        let h = self.c1.forward(&h).relu();
+        let h = self.c2.forward(&h).relu();
+        let flat = h.flatten()?;
+        let latent = self.fc_latent.forward(&flat);
+        min_max_normalize(&latent)
+    }
+}
+
+impl Module for BoardConvRepresentationNet {
+    fn parameters(&self) -> Vec<Var> {
+        [
+            self.c1.parameters(),
+            self.c2.parameters(),
+            self.fc_latent.parameters(),
+        ]
+        .concat()
+    }
+}
+
 /// representation 编码器统一封装（recipe 按 [`ObsSpec`] 注入）。
 pub enum ReprNet {
     Mlp(RepresentationNet),
     Conv(ConvRepresentationNet),
+    // Box：Conv2d 按值内联使该变体显著大于其余两支（clippy large_enum_variant）
+    Board(Box<BoardConvRepresentationNet>),
 }
 
 impl ReprNet {
@@ -300,6 +372,9 @@ impl ReprNet {
             ObsSpec::Image { channels, side } => Ok(Self::Conv(ConvRepresentationNet::new(
                 graph, channels, side, latent_dim,
             )?)),
+            ObsSpec::Board { channels, side } => Ok(Self::Board(Box::new(
+                BoardConvRepresentationNet::new(graph, channels, side, latent_dim)?,
+            ))),
         }
     }
 
@@ -307,6 +382,7 @@ impl ReprNet {
         match self {
             Self::Mlp(net) => net.forward(x),
             Self::Conv(net) => net.forward(x),
+            Self::Board(net) => net.forward(x),
         }
     }
 }
@@ -316,6 +392,7 @@ impl Module for ReprNet {
         match self {
             Self::Mlp(net) => net.parameters(),
             Self::Conv(net) => net.parameters(),
+            Self::Board(net) => net.parameters(),
         }
     }
 }

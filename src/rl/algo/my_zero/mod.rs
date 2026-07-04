@@ -64,6 +64,7 @@
 //! - [`sve`]：search-based value estimation blend（可用组件，接线属后续消融）
 
 pub mod action;
+pub(crate) mod board;
 pub mod builder;
 pub mod checkpoint;
 pub mod component;

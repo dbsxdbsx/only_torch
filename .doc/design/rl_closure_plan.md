@@ -9,9 +9,9 @@
 ## 0. 终态验收（"收口"的操作定义，四条全绿才算完成）
 
 1. **组件×环境裁决矩阵零 ⏳**：[组件矩阵](../../examples/my_zero/README.md#内部组件进展团队--promote-时改-recipers)每格 ✅/❌/⏸ 有据，❌ 有 issue、✅ 有账本数字。
-2. **四类环境支柱各有 promoted recipe + 3-seed 账本数字**：低维离散（CartPole，已有）· 图像离散（待建）· 棋盘 self-play（Gomoku，待建）· 连续（Pendulum 终审后两出口，见 §5）。
+2. **四类环境支柱各有 promoted recipe + 3-seed 账本数字**：低维离散（CartPole，已有）· 图像离散（待建）· 棋盘 self-play（**✅ Gomoku 已立**，2026-07-05，[账本](../../examples/my_zero/gomoku/README.md)）· 连续（Pendulum 终审后两出口，见 §5）。
 3. **全部 RL open issue 归档**（映射见 §6）。
-4. **发版关卡覆盖全部支柱**：`smoke-rl` 扩容纳入图像 + Gomoku，三层验收协议不变。
+4. **发版关卡覆盖全部支柱**：`smoke-rl` 扩容纳入图像 + Gomoku（**✅ Gomoku 已入**，`smoke-my-zero-gomoku`），三层验收协议不变。
 
 「万金油」的操作定义 = 第 2 条：`MyZero::new(env_id)` 四类环境开箱即用、recipe 有实测背书。
 
@@ -55,8 +55,19 @@
 > - **纪律**：最小 base recipe 先过预注册门槛（见下），之后**一次一臂**消融；结论只填
 >   组件矩阵的**棋盘列**（域裁决不迁移，图像列的债不因此注销）。
 
+> **✅ Phase 2 主体已收口（2026-07-05，M0–M4 全程闭环）**：
+> M1 训练闭环 ✅ → M2 预注册双门槛 **3/3 达标**（vs random 中位 1.000 / gating 0.950）→
+> M3 九臂消融全跑完（全中性/弱阳，无组件过 promote 线）→ M4 工程收口
+> （recipe=base 进 `recipe.rs`、`smoke-rl` 纳入 `smoke-my-zero-gomoku`、
+> [棋盘账本](../../examples/my_zero/gomoku/README.md) 落地、Gumbel/completedQ
+> 负结果 issue 终局归档、三件套分层沉淀 [vision §5.4](./my_zero_algorithm_vision.md#54-三件套正交分层sampled--gumbel--completedq2026-07-05-定稿)）。
+> 退出判据三项全兑现。遗留 = naive0 战术墙（结构性，[issue](../../.issue/items/gomoku_naive0_tactical_wall.md)，不阻塞支柱）；
+> 15×15 / 象棋扩展随战略推进另立。
+>
+> 以下为原规划内容（留档）：
+
 - **Gumbel 复裁前置修复（必做，否则复裁无效）**：
-  - ① greedy eval 去噪 bug：`gumbel.rs::final_recommendation` 无视 `temperature=0` 仍用 Gumbel 噪声打分，eval 分数被污染（疑似"Gumbel 未收敛"负结果真因）——详见[负结果 issue §七](../../.issue/items/my_zero_gumbel_completedq_cartpole_negative.md)
+  - ① greedy eval 去噪 bug：`gumbel.rs::final_recommendation` 无视 `temperature=0` 仍用 Gumbel 噪声打分，eval 分数被污染（疑似"Gumbel 未收敛"负结果真因）——详见[负结果 issue §七](../../.issue/_archive/my_zero_gumbel_completedq_cartpole_negative.md)
   - ② `q_range` 局部归一化同源 bug（completedQ 已修 tree-level，Gumbel 侧未修，issue §六留档）
 - Gomoku 训练闭环（棋盘 2D 表征复用 Phase 1 CNN）→ **预注册棋盘账本口径**（建议 vs random ≥95% + vs 旧 checkpoint ≥55%）→ Gumbel-root / completedQ 终局复裁（兼 P2 少 sim acting 复测）
 - 条件项：self-play 对弈吞吐成实测瓶颈时，兑现 `predict_batch` 批量叶子评估接缝（挂需求、不主动做；缓解杠杆背景见 [CPU 风险 issue](../../.issue/items/cpu_only_mcts_image_realtime_risk.md)）
@@ -87,7 +98,7 @@
 | Open issue | 裁决阶段 |
 |---|---|
 | [CPU-only × 图像 × MCTS 一级风险](../../.issue/items/cpu_only_mcts_image_realtime_risk.md) | Phase 1（spike 数据裁决） |
-| [Gumbel / completedQ 负结果](../../.issue/items/my_zero_gumbel_completedq_cartpole_negative.md) | Phase 2（前置修复 + native 复测） |
+| [Gumbel / completedQ 负结果](../../.issue/_archive/my_zero_gumbel_completedq_cartpole_negative.md) | Phase 2（前置修复 + native 复测） |
 | [CartPole 哨兵红灯（ndarray 漂移）](../../.issue/_archive/cartpole_sentinel_red_ndarray_drift.md) | ✅ **已收口（2026-07-04）**：新数值流预注册复裁两臂均 5/5，recon=16 维持 promote、recipe 零变更，官方 3-seed 哨兵回绿（中位 ~8.7k）；Phase 1 前置阻断解除 |
 | [reanalyze 回归](../../.issue/items/my_zero_reanalyze_cartpole_regression.md) | Phase 1（ROSMO-first 阶梯复活，2026-07-03 自 Phase 3 提前） |
 | [Pendulum 诊断](../../.issue/items/pendulum_failure_diagnosis.md) | Phase 4（固定预算终审） |

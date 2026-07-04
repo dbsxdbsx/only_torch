@@ -4,6 +4,15 @@
 
 ### Added
 
+- **feat(rl): Gomoku 棋盘支柱立柱——self-play 训练闭环 M0–M4 全程闭环（M2 双门槛 3/3 · M3 九臂消融 · recipe=base 定型 · smoke-rl 扩容）**（2026-07-04/05）
+  - **训练闭环**（`src/rl/algo/my_zero/board.rs`）：双人零和棋盘 self-play 管线——`BoardMctsModel` 把 `to_play` 藏进 `MctsModel::State` 逐层轮转（内核 negamax backup / PUCT 视角翻转自动生效），树内全程 learned dynamics（万金油铁律：真环境仅 self-play/eval 走子、根节点 legal_mask、终局判定三处）；negamax MC value target（`G_t = r_t − G_{t+1}`，MuZero 棋类口径）经 `PreparedBatch::Refreshed` 通道喂给既有 `train_batch`，单智能体路径零改动；含半程快照 gating、随机开局镜像成对评测、naive 梯队观察性评测、D4 8 重对称增广（`symmetry_perm`/`augment_game`，obs 平面 + action + policy target 整局同构变换）
+  - **Gumbel 复裁前置双修复**（`src/rl/mcts/gumbel.rs`，收口规划 §3 必做项）：① `temperature=0` 时 Gumbel 噪声置零（= mctx `gumbel_scale=0` 评测口径），greedy eval 不再被探索噪声污染（CartPole "未收敛"负结果疑似真因）；② `gumbel_halving_score` σ 归一化改用 tree-level `q_range`（`RootScheduler` trait 透传，`|A|=2` 局部 min-max 退化同源 bug 修复）；回归测试 3 项新增 `src/rl/tests/mcts_gumbel.rs`
+  - **M2 预注册正裁 3/3 达标**（400 局满预算 · sims=100 · seeds 42/43/44）：vs random 中位 **1.000**（门槛 ≥0.95）· vs 半程快照 gating 中位 **0.950**（门槛 ≥0.55）——棋盘支柱立柱；协议修订公开记录（gating 对弈随机开局 2 步 + 黑白镜像成对，修复纯贪心确定性对局的测量仪器缺陷）
+  - **M3 九臂消融全程 3-seed 预注册**：Gumbel+completedQ（s100/s16）/ consistency / reconstruction / CNN 表征（新增 `ObsSpec::Board` + stride-1 棋盘卷积塔）/ 预算×5 / replay×8 / lr 3e-3 全中性或偏害，唯一弱阳性 = **D4 增广**（naive0 中位 0.10→0.15，未达 promote 线）；组合臂（增广+RR32+lr3e3）不超单臂——「配方合力」未兑现
+  - **M4 收口**：棋盘 recipe 定型 **base 全关** 进 `recipe.rs`（`board_stack`，`BoardTrainConfig` 默认组件改走 recipe 唯一事实源）；`just smoke-my-zero-gomoku` 进 `smoke-rl` 发版关卡（8 目标）；[棋盘账本](examples/my_zero/gomoku/README.md) 落地为棋盘数字唯一 owner；组件矩阵拆分图像/Gomoku 双列
+  - **Gumbel/completedQ 负结果 issue 终局归档**（`.issue/_archive/my_zero_gumbel_completedq_cartpole_negative.md`）：关闭条件「|A|≫sims 复裁」达成——棋盘 s16 中性（无灾难亦无增益）→ 全域 recipe 关、代码保留、少 sim acting 降档留用；CartPole 灾难归因闭合（n≫|A| regime + 双 bug）；「三件套正交分层」文档债沉淀 [vision §5.4](.doc/design/my_zero_algorithm_vision.md)（Sampled=候选层 / Gumbel=根层 / completedQ=目标层 + 融合契约）
+  - **naive0 战术墙立 issue**（`.issue/items/gomoku_naive0_tactical_wall.md`）：九臂全平/弱阳收口档案，头号假设 = MuZero 规则学习税（参照 AlphaZero 实现树内真规则零学习负担）；后续裁决入口（sims 400 / 树内真规则诊断 / 增广大预算复核 / recon coef 重标）预注册留档，不阻塞支柱
+
 - **feat(rl): ROSMO 一步 target 刷新进库（reanalyze 复活阶梯一）+ Pong 图像线诊断收敛 + Gomoku 提前为主线**（2026-07-04）
   - **ROSMO 机制**（Xiao et al., ICLR 2023 · arXiv:2210.05980）：新增 `src/rl/algo/my_zero/rosmo.rs`——训练采样时现算 target：一步 look-ahead 改进分布 `p ∝ π_prior·exp(adv)`（`adv = r_g + γ·v(s'_g) − v(s)`）+ n-step value 现算 bootstrap（不读 stale `root_value`；`compute_n_step_target_indexed` 新缝）+ 优势过滤行为正则（α=0.2，`train_unroll_batch` 注入 `−(α/G)Σ w·log π(a)`）；**不写回 buffer**（与官方 MuZero Reanalyse 流式设计同构，旧全树 reanalyze 的写回属自创偏差、其覆盖嫌疑随架构消灭）；`PreparedBatch::Refreshed` 零克隆路径，采样 RNG 消耗与 Borrowed 逐 bit 一致（默认关时数值路径零变化，有单测锁死）；`.rosmo(true)` 消融开关、与 `reanalyze` 互斥、图像模式原生支持（帧堆叠组装）；7 项单测 + 手动档回归闸门 `rosmo_cartpole_bench.rs`
   - **CartPole 回归闸门实测绿**：promoted recipe + rosmo × seeds 42/43/44 = **3/3 达标**（中位 29,585 env-steps，预注册绿灯带内）；兼裁 reanalyze issue §三假设 4——同一管线底座换一步刷新即正常收敛 → 旧灾难（greedy 钉死 9.4）主因是**机制病理**（弱网全树重搜 + 写回投毒）而非实现 bug

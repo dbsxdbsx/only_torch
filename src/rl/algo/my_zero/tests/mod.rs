@@ -4,6 +4,7 @@
 
 // ---- 单元测试（按源模块分文件）----
 mod action;
+mod board;
 mod builder;
 mod checkpoint;
 mod component;
@@ -36,9 +37,13 @@ mod value_head_capacity;
 // ---- 手动档 bench（--ignored）----
 mod baseline_matrix_bench;
 mod completed_q_cartpole_bench;
+mod gomoku_m1_bench;
+mod gomoku_m2_bench;
+mod gomoku_m3_bench;
 mod hl_gauss_ablation_bench;
 mod loss_coef_ablation_bench;
 mod obs_symlog_ablation_bench;
 mod pong_image_ablation_bench;
 mod rosmo_cartpole_bench;
 mod spike_cnn_mcts_bench;
+mod spike_gomoku_mcts_bench;

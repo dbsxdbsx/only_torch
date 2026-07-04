@@ -32,10 +32,24 @@ fn image_base_stack() -> Components {
     c
 }
 
+/// 棋盘（Gomoku）栈 = **base 组件全关**（M4 收口定型，2026-07-05）。
+///
+/// M3 消融九臂 3-seed 裁决（账本见 `examples/my_zero/gomoku/README.md`）：
+/// Gumbel+completedQ / consistency / reconstruction / CNN 表征 / 预算×5 /
+/// replay×8 / lr 3e-3 全部中性或偏害，唯一弱阳性 = D4 对称增广
+/// （naive0 中位 0.10 → 0.15，未达 promote 线，复核入口见
+/// `.issue/items/gomoku_naive0_tactical_wall.md`）。base 即 M2 双门槛 3/3 的达标配置。
+fn board_stack() -> Components {
+    Components::base()
+}
+
 /// 给定 Gymnasium `env_id` 返回当前内置组件组合。
 pub(crate) fn components_for(env_id: &str) -> Components {
     if env_id.starts_with("ALE/") {
         return image_base_stack();
+    }
+    if env_id.starts_with("Gomoku-") {
+        return board_stack();
     }
     match env_id {
         "CartPole-v1" => cartpole_stack(),

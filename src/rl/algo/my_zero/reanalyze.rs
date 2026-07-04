@@ -33,7 +33,7 @@ pub fn reanalyze_step<M, P>(
     if result.children.is_empty() {
         return;
     }
-    step.policy_target = mcts_policy_target(&result, cq, action_dim);
+    step.policy_target = mcts_policy_target(&result, cq, action_dim, 0);
     step.root_value = Some(result.root_value());
 }
 

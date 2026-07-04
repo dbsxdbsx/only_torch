@@ -39,7 +39,7 @@
 | 状态 | 组件 |
 |------|------|
 | ✅ CartPole promoted | consistency(coef 2) + reconstruction(**coef 16**，v0.26 P0 重标定) + Sampled（PUCT · sims=20 · td=5 · continuation 二值门） |
-| ❌ CartPole 负结果（代码保留、recipe 关） | completedQ / Gumbel-root（[issue](../../.issue/items/my_zero_gumbel_completedq_cartpole_negative.md)）、reanalyze 写回（[issue](../../.issue/items/my_zero_reanalyze_cartpole_regression.md)）、value_prefix |
+| ❌ CartPole 负结果（代码保留、recipe 关） | completedQ / Gumbel-root（[issue](../../.issue/_archive/my_zero_gumbel_completedq_cartpole_negative.md)）、reanalyze 写回（[issue](../../.issue/items/my_zero_reanalyze_cartpole_regression.md)）、value_prefix |
 | ⏳ 已入库待接/待测 | target_net、SVE |
 
 组件×环境全矩阵见 [MyZero 总览](../../examples/my_zero/README.md#内部组件进展团队--promote-时改-recipers)；实测数字一律以[基准账本](../../examples/my_zero/cartpole/README.md)为准。
@@ -51,7 +51,7 @@
 | 层 | 命令 | 判什么 | 何时跑 |
 |----|------|--------|--------|
 | **单元/集成测试** | `just test`（RL 子集 `just test-filter rl`，~229 个 `#[test]`，其中 33 个依赖 Python） | 正确性 | 每次改动 |
-| **管线 smoke** | `just smoke-rl`（聚合 7 目标：MyZero cartpole/pendulum + PPO cartpole + SAC cartpole/pendulum/platform/lunarlander） | 管线通、loss 有限；**不验收敛** | 每次发版 |
+| **管线 smoke** | `just smoke-rl`（聚合 8 目标：MyZero cartpole/pendulum/gomoku + PPO cartpole + SAC cartpole/pendulum/platform/lunarlander） | 管线通、loss 有限；**不验收敛** | 每次发版 |
 | **统计基线** | MyZero：`SEEDS=3 cargo run --example my_zero_cartpole --release`；增量链 4 档：`my_zero::tests::baseline_matrix_bench`（`--ignored` 手动）；PPO/SAC：`SEED=42/43/44` 各跑一次 | **3-seed 中位 env-steps-to-solved + 达标率**（官方哨兵口径） | 发版前 / 改算法行为后 |
 
 ### 3.1 基线判据原则（2026-07-02 定稿）
@@ -89,9 +89,9 @@
 | **P0 ✅（2026-07-02 完成）** | loss 系数重标定消融 | 已裁决：**recon_coef 1→16 promote**（新哨兵中位 **~9.8k** env-steps、3/3，超过 bug 时代 13.1k；cont 保持 1.0，cons 无重标定理由）；同批 5-seed 复裁「recon=1 有害、recon 去留终审留图像环境」。数字与预注册协议见[基准账本](../../examples/my_zero/cartpole/README.md#v026-p0loss-系数重标定2026-07-02--当前官方哨兵) |
 | **P0 ✅（2026-07-02 完成）** | **收口规划 Phase 0 全项闭环**（训练信号收口） | 梯度流审计：现状 canonical，sg 两臂不追加；**HL-Gauss 编码负结果**（中位 9.8k→27.6k，回退 two-hot，开关留库 Phase 1 图像域复测）；**obs symlog 负结果**（三臂系数不回移，recon_coef=16 裁决为权衡旋钮非单位换算，开关留库）。recipe 零变更定稿、哨兵逐 bit 复现 ~9.8k，**CartPole 自此冻结为纯回归哨兵（条款二生效）**。细节见[收口规划 §1](./rl_closure_plan.md)与[账本](../../examples/my_zero/cartpole/README.md#v026-phase-0编码--量纲消融2026-07-02) |
 | **P0** | CNN 图像表征 + 图像离散基准（Atari-100k 类） | 商业游戏直接代理；复用已验收 consistency + reconstruction（自监督正是图像+少样本的命门组件） |
-| **P1** | Gomoku self-play → 象棋踏脚石 | `SelfPlayGame` / negamax backup / legal_mask 地基已在库；环境 `python/gym_env/gomoku/` 已备 |
+| **P1 ✅（2026-07-05 完成）** | Gomoku self-play → 象棋踏脚石 | **棋盘支柱已立，M0–M4 闭环**：M2 预注册双门槛 3/3（vs random 中位 1.000 / gating 0.950）、M3 九臂消融全中性/弱阳 → recipe=base 定型、`smoke-my-zero-gomoku` 进发版关卡；数字见[棋盘账本](../../examples/my_zero/gomoku/README.md)；Gumbel/completedQ 负结果 issue 借 \|A\|≫sims 复裁终局归档；遗留 naive0 战术墙（[issue](../../.issue/items/gomoku_naive0_tactical_wall.md)，结构性、不阻塞） |
 | **P1** | reanalyze 复活 + acting/reanalyze 解耦 | 「实时轻 acting（少 sim / policy 先验）+ 离线重 reanalyze（榨样本）」是商业游戏路线的战略组件；CartPole 负结果不构成否定 |
-| **P2** | Gumbel 少 sim acting 复测 | 在 `|A| > sims` 或低延迟场景重估（CartPole `sims ≫ |A|` 不构成否定） |
+| **P2 ✅（2026-07-05 完成）** | Gumbel 少 sim acting 复测 | Gomoku s16（\|A\|=81 ≫ sims）复裁**中性**：无 CartPole 式灾难亦无增益 → 全域 recipe 关、代码保留，少 sim acting 降档可用；[issue 终局归档](../../.issue/_archive/my_zero_gumbel_completedq_cartpole_negative.md) |
 | **降级** | Pendulum / Platform | 不在两大目标关键路径；Pendulum 保留诊断态，Platform 待具体需求再排 |
 
 **一级风险**（显式管理）：CPU-only × 图像 CNN × MCTS × 实时的结构性冲突——见 [.issue/items/cpu_only_mcts_image_realtime_risk.md](../../.issue/items/cpu_only_mcts_image_realtime_risk.md)（§三b 已录 planning-free 退路）。
