@@ -13,6 +13,12 @@ const SELF_T: usize = 8;
 const CROSS_T_Q: usize = 6;
 const CROSS_T_KV: usize = 10;
 
+// 大规模 case：batch×head 数量大时逐 head 建图的痛点场景（C1）
+const BIG_BATCH: usize = 16;
+const BIG_EMBED_DIM: usize = 64;
+const BIG_NUM_HEADS: usize = 8;
+const BIG_T: usize = 16;
+
 fn parameter(graph: &Graph, shape: &[usize], name: &str) -> Var {
     graph
         .parameter(
@@ -49,6 +55,17 @@ fn bench_attention_forward(c: &mut Criterion) {
 
         bench.iter(|| {
             let out = attn.forward(&query, &kv, &kv);
+            out.forward().unwrap();
+        });
+    });
+
+    group.bench_function("self_b16_t16_d64_h8", |bench| {
+        let graph = Graph::new();
+        let attn = MultiHeadAttention::new(&graph, BIG_EMBED_DIM, BIG_NUM_HEADS, "attn").unwrap();
+        let input = Tensor::random(0.0, 1.0, &[BIG_BATCH, BIG_T, BIG_EMBED_DIM]);
+
+        bench.iter(|| {
+            let out = attn.forward(&input, &input, &input);
             out.forward().unwrap();
         });
     });
@@ -92,6 +109,26 @@ fn bench_attention_backward(c: &mut Criterion) {
         let mut params = attn.parameters();
         params.push(query);
         params.push(kv);
+        let mut opt = SGD::new(&graph, &params, 0.001);
+
+        bench.iter(|| {
+            loss.forward().unwrap();
+            opt.zero_grad().unwrap();
+            let _ = loss.backward().unwrap();
+            opt.step().unwrap();
+        });
+    });
+
+    group.bench_function("self_b16_t16_d64_h8", |bench| {
+        let graph = Graph::new();
+        let attn = MultiHeadAttention::new(&graph, BIG_EMBED_DIM, BIG_NUM_HEADS, "attn").unwrap();
+        let input = parameter(&graph, &[BIG_BATCH, BIG_T, BIG_EMBED_DIM], "big_input");
+        let target = Tensor::zeros(&[BIG_BATCH, BIG_T, BIG_EMBED_DIM]);
+        let out = attn.forward(&input, &input, &input);
+        let loss = out.mse_loss(&target).unwrap();
+        graph.snapshot_once_from(&[&loss]);
+        let mut params = attn.parameters();
+        params.push(input);
         let mut opt = SGD::new(&graph, &params, 0.001);
 
         bench.iter(|| {

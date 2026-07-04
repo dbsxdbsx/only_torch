@@ -634,7 +634,7 @@ v0.26 方向（[RL 路线图 §5](.doc/design/rl_roadmap.md#5-v026-方向2026-07
 
 > 已完成：MVP → NodeLevel 统一内核（Phase 1-10）→ Pareto/NSGA-II 多目标搜索 → ONNX 桥接 → Spatial / Sequential / Flat 三域演化 → FM 粒度 EXACT 级演化 → Net2Net 函数保持性变异 → ASHA 多保真评估 → MultiHeadAttention（CellAttention 复合模板节点 + `SequenceOpSet` 配置）。详见 [设计文档](.doc/design/neural_architecture_evolution_design.md) 与 [记忆机制 — 状态速览](.doc/design/memory_mechanism_design.md#-实现状态速览)。
 
-- 阶段 D：Conv2d Attention、3D 批量 MatMul、`CellAttention` ONNX 拆解导出、Attention Net2Net 函数保持（⏳，见 memory_mechanism Phase D 表）
+- 阶段 D：Conv2d Attention、`CellAttention` ONNX 拆解导出、Attention Net2Net 函数保持（⏳，见 [memory_mechanism Phase D 表](.doc/design/memory_mechanism_design.md#-后续-phase-d刻意未做)——「阶段 D」的唯一权威定义；3D 批量 MatMul 已于 2026-07-04 完成）
 - 阶段 E：搜索效率优化（权重共享、Surrogate 模型、分布式演化等）
 - MNIST 演化示例性能优化（当前运行较慢）
 - RL 任务对接（演化 + 强化学习联合搜索，长期项）

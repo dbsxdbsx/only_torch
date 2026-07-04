@@ -34,7 +34,7 @@
 |---|---|
 | A3 / B2 / B7 / B8 / D4 / E1 / C2 | ✅ 已实施（战报 P，2026-07-03） |
 | B1（sigmoid 反向多趟临时） | ✅ 更早已随激活反向融合完成（`zip_map` 单趟，见 `sigmoid.rs` 注释），本表曾误留 |
-| C1（`layer/attention.rs` 逐 head 循环建图） | **维持暂缓**：正解是 3D batched MatMul，归属演化阶段 D（刻意暂缓）；且非 RL 主线路径（图像线用 CNN），不为「顺手」开口子 |
+| C1（`layer/attention.rs` 逐 head 循环建图） | ✅ 已实施（2026-07-04）：`Tensor::batched_mat_mul(_nt/_tn)` + `MatMul` 节点 3D@3D + attention 常数节点数重写，forward -75~77% / backward -70~80%（baseline `pre_c1`）；留档表就此**全部清账** |
 
 ---
 

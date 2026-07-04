@@ -33,12 +33,14 @@
 
 ### ⏳ 后续 Phase D（刻意未做）
 
+> **命名溯源**：「阶段 D / Phase D」沿用演化模块历史路线的字母分期（A–C 已完成并随版本收口，编号不再单列），现仅存本表作为该分期的唯一权威定义；README「演化模块（阶段 D 暂缓）」与 AGENTS.md「刻意暂缓」均链回此处。
+
 | 项 | 状态 | 影响 | 说明 |
 |----|------|------|------|
 | `CellAttention` ONNX 导出 | ⏳ | 演化模型无法 ONNX deploy | 需拆成 MatMul / Softmax 等原子子图（`onnx_ops.rs` 现返回 `Unsupported`） |
 | Attention 块 Net2Net 函数保持 | ⏳ | 扩 embed / head 时权重不能平滑继承 | `net2net.rs` 对 `NodeBlockKind::Attention` 返回 `Ok(false)`，走朴素重初始化 |
 | Conv2d Attention | ⏳ | 无空间域 attention | README 演化「阶段 D」 |
-| 3D 批量 MatMul | ⏳ | attention 大 batch 性能未优化 | 基础设施项 |
+| 3D 批量 MatMul | ✅（2026-07-04，C1 清账） | attention 前向/反向 -70~80% | `Tensor::batched_mat_mul(_nt/_tn)` + `MatMul` 节点 3D@3D 形态；`attention.rs` 逐 head 循环建图改常数节点数，见 CHANGELOG |
 | ∆-RNN 模板层 | 🔲 | 无 | EXAMM 推荐的高性价比单元，尚未实现 |
 | IT-3a 原子节点 + mask 变长路径 | 📦 | 无 | 旧 `tests/archive/test_parity_detection_varlen.rs` 已整文件注释；当前变长 parity 改用 **桶式同长度 batch**（见 `DataLoader::from_var_len`） |
 

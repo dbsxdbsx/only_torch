@@ -4,6 +4,15 @@
 
 ### Changed
 
+- **perf(nn/tensor): C1 清账——MultiHeadAttention 逐 head 循环建图改 3D batched MatMul（attention 前向/反向 -70~80%）**（2026-07-04）
+  - 背景：热路径审计留档最后一项 C1（战报 P 时因「归属演化阶段 D + 非 RL 主线」维持暂缓）；本次以基础设施定位单独收口——3D 批量 MatMul 是通用算子缺口，attention 不在 RL 哨兵路径上，无数值窗口约束
+  - Tensor 层新增 `batched_mat_mul` / `_nt` / `_tn`（`[B,m,k] @ [B,k,n]`，batch 维严格相等、**不做跨 batch 隐式广播**；逐 batch 切 2D 视图走同一 GEMM 路径，单 batch 与 2D `mat_mul` 逐 bit 一致，NT/TN 以转置视图参与零物化）
+  - `MatMul` 节点扩展支持 3D@3D 批量形态（前向 + VJP：`dA = up bmm Bᵀ`、`dB = Aᵀ bmm up`，无跨 batch 求和归约）；descriptor / ONNX 导出（ONNX MatMul 原生批量）/ 演化 shape 推断（本就按 N-D 定义）零变更，`Var::matmul` 按秩自动派发
+  - `attention.rs` forward 第 3 步逐 head 循环（每 head ~12+ 节点 × N*H 个 head）改**常数节点数**：Q bmm Kᵀ → scale → mask（2D 广播 / 3D 沿 head 平铺）→ softmax（reshape 借 2D 节点，行集合不变逐 bit 等价）→ bmm V；`TransformerEncoder` / 演化 `CellAttention` rebuild 同路径受益
+  - 实测（Criterion baseline `pre_c1`，release+MKL）：attention forward **-75~77%**、backward **-70~80%**（新增大 case `self_b16_t16_d64_h8`：forward 2.98ms→682µs、backward 10.6ms→2.13ms）
+  - 验证：全量 lib 测试 3355+ 全绿（attention / transformer / 演化 CellAttention 均过）+ clippy 零告警；tensor / node 层新增 bitwise 单测（NT/TN 物化转置对照、非连续输入、批量 e2e 手算字面值、形状校验错误路径）
+  - 收尾：演化「阶段 D」留坑表划掉 3D 批量 MatMul（`CellAttention` ONNX / Attention Net2Net / Conv2d Attention 维持暂缓），并为「阶段 D」命名补溯源注记
+
 - **perf(nn/tensor/rl): 热路径审计留档项清账——卫生批（A3/B2/B8/D4/E1）+ 数值批（B7/C2）（优化 P）**（2026-07-03）
   - 背景：候选 #3 留档表复审裁决——卫生批五项逐 bit 中性、验证便宜，「等 profiler」门槛对其成本不成比例；数值批两项会扰动 f32 轨迹，而**哨兵红灯 + 系数复裁未跑恰是唯一免额外重验的窗口**（复裁直接建立在含本批的最终数值流上）
   - **卫生批**（数值逐 bit 等价）：`GradResult::NoGrad` 变体取代「Err + 报错文案子串匹配」控制流（A3）；softmax 反向 / CE 前向逐元素 IxDyn 索引改行 slice 直取 + 单块缓冲直写（B2）；MSE 前向 `map_fold` 单趟（新增 Tensor 内部原语，B8）；MCTS `select` 逐层 `ChildStat` Vec 改 scratch buffer 复用（D4）；CSE 缓存 key 由 `(String, …, Option<NodeGroupTag>)` 元组改紧凑 `CseKey` 结构（`&'static str` + `(instance_id, hidden)` 等价键，E1）

@@ -27,15 +27,15 @@ use std::rc::Rc;
 /// - `reshape(shape)`: 变形
 /// - `flatten()`: 展平
 pub trait VarMatrixOps {
-    /// 矩阵乘法
+    /// 矩阵乘法（2D）或批量矩阵乘法（3D，类似 `torch.bmm`）
     ///
     /// # 参数
     /// - `other`: 右侧矩阵
     ///
-    /// # 形状要求
-    /// - self: [m, k]
-    /// - other: [k, n]
-    /// - 输出: [m, n]
+    /// # 形状要求（两个操作数必须同秩）
+    /// - 2D：self [m, k] @ other [k, n] → [m, n]
+    /// - 3D：self [B, m, k] @ other [B, k, n] → [B, m, n]
+    ///   （batch 维严格相等，不做跨 batch 隐式广播）
     fn matmul(&self, other: &Var) -> Result<Var, GraphError>;
 }
 

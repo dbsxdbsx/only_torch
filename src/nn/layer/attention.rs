@@ -338,68 +338,53 @@ impl MultiHeadAttention {
             .reshape(&[nh, t_k, self.head_dim])
             .expect("V batch 失败"); // [N*H, T_k, d_k]
 
-        // 3. 逐 head 做 scaled dot-product attention（2D matmul）
+        // 3. 批量 scaled dot-product attention（3D batched MatMul，一次建图）
+        //    旧实现逐 head 循环建图（每 head 约 12+ 个节点，N*H 个 head），
+        //    现在整层只建常数个节点；单 batch 切片与旧 2D 路径逐 bit 一致。
         let scale_tensor = Tensor::new(&[self.scale], &[1, 1]);
 
-        let head_outputs: Vec<Var> = (0..nh)
-            .map(|h| {
-                // Q_h: [T_q, d_k], K_h: [T_k, d_k], V_h: [T_k, d_k]
-                let q_h = q
-                    .narrow(0, h, 1)
-                    .expect("Q narrow 失败")
-                    .reshape(&[t_q, self.head_dim])
-                    .expect("Q_h reshape 失败");
-                let k_h = k
-                    .narrow(0, h, 1)
-                    .expect("K narrow 失败")
-                    .reshape(&[t_k, self.head_dim])
-                    .expect("K_h reshape 失败");
-                let v_h = v
-                    .narrow(0, h, 1)
-                    .expect("V narrow 失败")
-                    .reshape(&[t_k, self.head_dim])
-                    .expect("V_h reshape 失败");
+        // scores = (Q bmm K^T) * scale: [N*H, T_q, d_k] bmm [N*H, d_k, T_k] = [N*H, T_q, T_k]
+        let k_t = k.permute(&[0, 2, 1]).expect("K permute 失败");
+        let scores = q.matmul(&k_t).expect("QK batched matmul 失败");
+        let scores = &scores * &scale_tensor;
 
-                // Q_h @ K_h^T: [T_q, d_k] @ [d_k, T_k] = [T_q, T_k]
-                let k_t = k_h.transpose(0, 1).expect("K transpose 失败");
-                let scores = q_h.matmul(&k_t).expect("QK matmul 失败");
-                let scores = &scores * &scale_tensor;
-
-                // 应用 mask（如有）：scores + (mask - 1) * 1e9
-                let scores = match attn_mask {
-                    Some(mask) => {
-                        let m_shape = mask.node().shape();
-                        let mask_2d = if m_shape.len() == 2 {
-                            // 全 head 共享 [T_q, T_k]
-                            mask.clone()
-                        } else {
-                            // [N, T_q, T_k] — 当前 head 对应的 batch 子矩阵
-                            let batch_idx = h / self.num_heads;
-                            mask.narrow(0, batch_idx, 1)
-                                .expect("mask narrow 失败")
-                                .reshape(&[t_q, t_k])
-                                .expect("mask reshape 失败")
-                        };
-                        // mask=1 → +0；mask=0 → -1e9
-                        let bias = (&mask_2d - 1.0_f32) * 1e9_f32;
-                        &scores + &bias
-                    }
-                    None => scores,
+        // 应用 mask（如有）：scores + (mask - 1) * 1e9（mask=1 → +0；mask=0 → -1e9）
+        let scores = match attn_mask {
+            Some(mask) => {
+                let m_shape = mask.node().shape();
+                let bias_source = if m_shape.len() == 2 {
+                    // 全 batch、全 head 共享 [T_q, T_k]，广播加到 [N*H, T_q, T_k]
+                    mask.clone()
+                } else {
+                    // [N, T_q, T_k] — 沿 head 维平铺成 [N*H, T_q, T_k]
+                    // （q/k/v 的 batch 布局是 [N, H] 合并，因此按 N 外层、H 内层展开）
+                    mask.reshape(&[n, 1, t_q * t_k])
+                        .expect("mask reshape 失败")
+                        .repeat(&[1, self.num_heads, 1])
+                        .expect("mask repeat 失败")
+                        .reshape(&[nh, t_q, t_k])
+                        .expect("mask 展开失败")
                 };
+                let bias = (&bias_source - 1.0_f32) * 1e9_f32;
+                &scores + &bias
+            }
+            None => scores,
+        };
 
-                // softmax → [T_q, T_k]
-                let attn_w = scores.softmax();
+        // softmax 沿最后一维：借 2D reshape 走现有 Softmax 节点，行集合不变、逐 bit 等价
+        let attn_w = scores
+            .reshape(&[nh * t_q, t_k])
+            .expect("scores flatten 失败")
+            .softmax()
+            .reshape(&[nh, t_q, t_k])
+            .expect("attn_w reshape 失败");
 
-                // attn_w @ V_h: [T_q, T_k] @ [T_k, d_k] = [T_q, d_k]
-                attn_w.matmul(&v_h).expect("attn@V matmul 失败")
-            })
-            .collect();
+        // attn_w bmm V: [N*H, T_q, T_k] bmm [N*H, T_k, d_k] = [N*H, T_q, d_k]
+        let context = attn_w.matmul(&v).expect("attn@V batched matmul 失败");
 
-        // 4. 拼接 heads: stack([T_q, d_k] * N*H) → [N*H, T_q, d_k]
-        //    → [N, H, T_q, d_k] → permute [N, T_q, H, d_k] → [N, T_q, D]
-        let head_refs: Vec<&Var> = head_outputs.iter().collect();
-        let stacked = Var::stack(&head_refs, 0).expect("stack heads 失败");
-        let context = stacked
+        // 4. 合并 heads: [N*H, T_q, d_k] → [N, H, T_q, d_k]
+        //    → permute [N, T_q, H, d_k] → [N, T_q, D]
+        let context = context
             .reshape(&[n, self.num_heads, t_q, self.head_dim])
             .expect("context reshape 失败")
             .permute(&[0, 2, 1, 3])

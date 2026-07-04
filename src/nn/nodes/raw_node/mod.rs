@@ -108,7 +108,7 @@ define_node_types! {
     // ==================== 矩阵/卷积运算 ====================
     MatMul(MatMul) {
         category: "矩阵/卷积",
-        description: "矩阵乘法",
+        description: "矩阵乘法（2D / 3D 批量）",
         var_method: Some("matmul()"),
     },
     Conv2d(Conv2d) {

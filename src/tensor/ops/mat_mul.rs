@@ -111,4 +111,89 @@ impl Tensor {
             source_id: next_source_id(),
         }
     }
+
+    /// 3D 批量矩阵乘法 `[B, m, k] @ [B, k, n] → [B, m, n]`（NN 形式）
+    ///
+    /// 类似 PyTorch 的 `torch.bmm`：两个操作数必须都是 3D 且 batch 维严格相等，
+    /// **不做跨 batch 隐式广播**（符合本项目显式 broadcast 约定）。
+    /// 逐 batch 切 2D 视图走与 [`mat_mul`](Self::mat_mul) 相同的 GEMM 路径
+    /// （BLAS feature 开启时派发 BLAS），单个 batch 与 2D `mat_mul` 逐 bit 一致。
+    pub fn batched_mat_mul(&self, other: &Self) -> Self {
+        self.batched_mat_mul_impl(other, false, false)
+    }
+
+    /// 3D 批量矩阵乘法 `self @ other^T`（NT 形式，`other` 以转置视图参与）
+    ///
+    /// 要求 `self: [B, m, k]`、`other: [B, n, k]`，输出 `[B, m, n]`。
+    /// 转置只翻转 stride 元数据、零物化拷贝。典型用途：
+    /// 批量 MatMul 反向 `dL/dA = upstream @ B^T`。
+    pub fn batched_mat_mul_nt(&self, other: &Self) -> Self {
+        self.batched_mat_mul_impl(other, false, true)
+    }
+
+    /// 3D 批量矩阵乘法 `self^T @ other`（TN 形式，`self` 以转置视图参与）
+    ///
+    /// 要求 `self: [B, k, m]`、`other: [B, k, n]`，输出 `[B, m, n]`。
+    /// 转置零拷贝。典型用途：批量 MatMul 反向 `dL/dB = A^T @ upstream`。
+    pub fn batched_mat_mul_tn(&self, other: &Self) -> Self {
+        self.batched_mat_mul_impl(other, true, false)
+    }
+
+    /// 批量 GEMM 核心：逐 batch 切 2D 视图调 `general_mat_mul` 直写预分配输出
+    fn batched_mat_mul_impl(&self, other: &Self, trans_a: bool, trans_b: bool) -> Self {
+        use ndarray::{Axis, linalg::general_mat_mul};
+
+        assert!(self.dimension() == 3, "batched_mat_mul: 左操作数必须为 3D");
+        assert!(other.dimension() == 3, "batched_mat_mul: 右操作数必须为 3D");
+
+        let a = self
+            .data
+            .view()
+            .into_dimensionality::<ndarray::Ix3>()
+            .unwrap();
+        let b = other
+            .data
+            .view()
+            .into_dimensionality::<ndarray::Ix3>()
+            .unwrap();
+
+        let batch = a.dim().0;
+        assert!(
+            batch == b.dim().0,
+            "batched_mat_mul: batch 维必须严格相等（{} vs {}），本框架不做跨 batch 隐式广播",
+            batch,
+            b.dim().0
+        );
+
+        // 逻辑形状（转置视图翻转 m/k、k/n）
+        let (m, k_a) = if trans_a {
+            (a.dim().2, a.dim().1)
+        } else {
+            (a.dim().1, a.dim().2)
+        };
+        let (k_b, n) = if trans_b {
+            (b.dim().2, b.dim().1)
+        } else {
+            (b.dim().1, b.dim().2)
+        };
+        assert!(
+            k_a == k_b,
+            "batched_mat_mul: 内维不匹配（A[...,-1]={k_a} vs B[...,-2]={k_b}）"
+        );
+
+        let mut out = ndarray::Array3::<f32>::zeros((batch, m, n));
+        for i in 0..batch {
+            let a_i = a.index_axis(Axis(0), i);
+            let b_i = b.index_axis(Axis(0), i);
+            let a_i = if trans_a { a_i.reversed_axes() } else { a_i };
+            let b_i = if trans_b { b_i.reversed_axes() } else { b_i };
+            let mut out_i = out.index_axis_mut(Axis(0), i);
+            general_mat_mul(1.0, &a_i, &b_i, 0.0, &mut out_i);
+        }
+
+        Self {
+            data: out.into_dyn().into_shared(),
+            source_id: next_source_id(),
+        }
+    }
 }

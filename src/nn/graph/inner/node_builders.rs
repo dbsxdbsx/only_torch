@@ -336,6 +336,7 @@ impl GraphInner {
 
     /// 创建 MatMul 节点    ///
     /// 矩阵乘法 (left @ right)，要求 left 的列数等于 right 的行数。
+    /// 2D 为普通矩阵乘法；3D 为批量矩阵乘法（batch 维严格相等）。
     /// 返回 `Rc<NodeInner>`，父节点引用由 `parents` 参数传入。
     pub fn create_mat_mul_node(
         &mut self,

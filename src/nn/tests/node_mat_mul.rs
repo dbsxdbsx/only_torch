@@ -652,3 +652,176 @@ fn test_create_mat_mul_requires_two_parents() {
     let result = inner.borrow_mut().create_mat_mul_node(vec![a], None);
     assert!(result.is_err());
 }
+
+// ==================== 3D 批量 MatMul（bmm）====================
+//
+// [B, m, k] @ [B, k, n] = [B, m, n]，batch 维严格相等（不做跨 batch 广播）。
+// VJP：grad_A = upstream bmm B^T；grad_B = A^T bmm upstream（逐 batch，无求和归约）。
+
+/// 3D 批量前向：每个 batch 与对应 2D matmul 逐 bit 一致
+#[test]
+fn test_mat_mul_batched_forward() -> Result<(), GraphError> {
+    let graph = Graph::new();
+
+    // batch=2：第 0 个 batch 与 2D basic 测试同数据，第 1 个 batch 数据平移
+    let a_data: Vec<f32> = (1..=12).map(|i| i as f32).collect(); // [2,2,3]
+    let b_data: Vec<f32> = (7..=30).map(|i| i as f32).collect(); // [2,3,4]
+    let a = graph.input(&Tensor::new(&a_data, &[2, 2, 3]))?;
+    let b = graph.input(&Tensor::new(&b_data, &[2, 3, 4]))?;
+
+    let result = a.matmul(&b)?;
+    result.forward()?;
+
+    let output = result.value()?.unwrap();
+    assert_eq!(output.shape(), &[2, 2, 4]);
+
+    // 期望值 = 逐 batch 2D matmul
+    let out_flat = output.to_vec();
+    for i in 0..2 {
+        let a_i = Tensor::new(&a_data[i * 6..(i + 1) * 6], &[2, 3]);
+        let b_i = Tensor::new(&b_data[i * 12..(i + 1) * 12], &[3, 4]);
+        let expected = a_i.mat_mul(&b_i).to_vec();
+        let actual = &out_flat[i * 8..(i + 1) * 8];
+        for j in 0..8 {
+            assert_eq!(
+                actual[j].to_bits(),
+                expected[j].to_bits(),
+                "batch {i} 元素 {j} 与 2D matmul 不一致"
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// 3D 批量 VJP：对左右父节点的梯度与 NT/TN 原语一致
+#[test]
+fn test_mat_mul_batched_vjp() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let left = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2, 3], Some("left"))
+        .unwrap();
+    let right = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3, 4], Some("right"))
+        .unwrap();
+    let mm = inner
+        .borrow_mut()
+        .create_mat_mul_node(vec![left.clone(), right.clone()], Some("mm"))
+        .unwrap();
+
+    let left_value = Tensor::normal_seeded(0.0, 1.0, &[2, 2, 3], 71);
+    let right_value = Tensor::normal_seeded(0.0, 1.0, &[2, 3, 4], 72);
+    left.set_value(Some(&left_value))?;
+    right.set_value(Some(&right_value))?;
+    mm.forward_recursive(1, Mode::Train)?;
+
+    let upstream = Tensor::normal_seeded(0.0, 1.0, &[2, 2, 4], 73);
+
+    let grad_to_left = mm
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
+    let expected_left = upstream.batched_mat_mul_nt(&right_value);
+    assert_eq!(grad_to_left.shape(), &[2, 2, 3]);
+    assert_eq!(&grad_to_left, &expected_left);
+
+    let grad_to_right = mm
+        .calc_grad_to_parent_index(1, &upstream)?
+        .resolve(&upstream);
+    let expected_right = left_value.batched_mat_mul_tn(&upstream);
+    assert_eq!(grad_to_right.shape(), &[2, 3, 4]);
+    assert_eq!(&grad_to_right, &expected_right);
+
+    Ok(())
+}
+
+/// 3D 批量端到端反向传播（手算字面值对照）
+///
+/// A=[[[1,2],[3,4]], [[5,6],[7,8]]] (2,2,2)，B = 两个单位阵 (2,2,2)，target=0
+/// C = A；loss = mean(A^2) = (1+4+9+16+25+36+49+64)/8 = 25.5
+/// dL/dC = 2*A/8 = A/4
+/// grad_A = dL/dC bmm I^T = A/4
+/// grad_B = A^T bmm dL/dC = A^T @ A / 4（逐 batch）
+///   batch0: A0^T@A0 = [[10,14],[14,20]] → /4 = [[2.5,3.5],[3.5,5]]
+///   batch1: A1^T@A1 = [[74,86],[86,100]] → /4 = [[18.5,21.5],[21.5,25]]
+#[test]
+fn test_mat_mul_batched_backward_e2e() -> Result<(), GraphError> {
+    let graph = Graph::new();
+
+    let left = graph.parameter(&[2, 2, 2], Init::Zeros, "left")?;
+    let right = graph.parameter(&[2, 2, 2], Init::Zeros, "right")?;
+
+    left.set_value(&Tensor::new(
+        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+        &[2, 2, 2],
+    ))?;
+    right.set_value(&Tensor::new(
+        &[1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0],
+        &[2, 2, 2],
+    ))?;
+
+    let result = left.matmul(&right)?;
+    let target = graph.input(&Tensor::zeros(&[2, 2, 2]))?;
+    let loss = result.mse_loss(&target)?;
+
+    loss.forward().unwrap();
+    let loss_value = loss.value().unwrap().unwrap();
+    assert_abs_diff_eq!(loss_value.get_data_number().unwrap(), 25.5, epsilon = 1e-6);
+
+    graph.zero_grad()?;
+    loss.backward()?;
+
+    let left_grad = left.grad()?.expect("left 应有 grad");
+    let right_grad = right.grad()?.expect("right 应有 grad");
+    assert_eq!(left_grad.shape(), &[2, 2, 2]);
+    assert_eq!(right_grad.shape(), &[2, 2, 2]);
+
+    let expected_left_grad = Tensor::new(&[0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0], &[2, 2, 2]);
+    assert_eq!(left_grad, &expected_left_grad);
+
+    let expected_right_grad =
+        Tensor::new(&[2.5, 3.5, 3.5, 5.0, 18.5, 21.5, 21.5, 25.0], &[2, 2, 2]);
+    assert_eq!(right_grad, &expected_right_grad);
+
+    Ok(())
+}
+
+/// 3D 批量 MatMul 建图校验：batch 不等 / 内维不匹配 / 混秩均应报错
+#[test]
+fn test_create_mat_mul_batched_shape_validation() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let make = |shape: &[usize]| {
+        inner
+            .borrow_mut()
+            .create_basic_input_node(shape, None)
+            .unwrap()
+    };
+
+    // batch 维不等：[2,3,4] @ [3,4,5]
+    let (a, b) = (make(&[2, 3, 4]), make(&[3, 4, 5]));
+    let r = inner.borrow_mut().create_mat_mul_node(vec![a, b], None);
+    assert_err!(r, GraphError::ShapeMismatch { message, .. } if message.contains("batch 维必须严格相等"));
+
+    // 内维不匹配：[2,3,4] @ [2,5,6]
+    let (a, b) = (make(&[2, 3, 4]), make(&[2, 5, 6]));
+    let r = inner.borrow_mut().create_mat_mul_node(vec![a, b], None);
+    assert_err!(r, GraphError::ShapeMismatch { message, .. } if message.contains("内维不匹配"));
+
+    // 混秩：[2,3,4] @ [4,5]
+    let (a, b) = (make(&[2, 3, 4]), make(&[4, 5]));
+    let r = inner.borrow_mut().create_mat_mul_node(vec![a, b], None);
+    assert_err!(r, GraphError::InvalidOperation(msg) if msg.contains("2D@2D 或 3D@3D"));
+
+    // 合法 3D：输出形状正确
+    let (a, b) = (make(&[2, 3, 4]), make(&[2, 4, 5]));
+    let ok = inner
+        .borrow_mut()
+        .create_mat_mul_node(vec![a, b], None)
+        .unwrap();
+    assert_eq!(ok.shape(), vec![2, 3, 5]);
+}
