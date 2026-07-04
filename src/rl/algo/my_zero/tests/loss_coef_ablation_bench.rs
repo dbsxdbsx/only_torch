@@ -38,7 +38,8 @@
 //!
 //! 实测结果回填 `examples/my_zero/cartpole/README.md`（唯一基准账本）。
 //!
-//! # 哨兵红灯复裁（2026-07-03 · 新数值流；见 `.issue/items/cartpole_sentinel_red_ndarray_drift.md`）
+//! # 哨兵红灯复裁（2026-07-03 立项 · **2026-07-04 已收口**；归档见
+//! `.issue/_archive/cartpole_sentinel_red_ndarray_drift.md`）
 //!
 //! ndarray 0.16/0.17 升级致 BLAS 轨迹漂移后，recon=16 达标率跌破门槛（3/5 与 1/3）。
 //! 按红灯 issue 待办，在**新依赖栈 + 当前 HEAD**上重跑系数矩阵重点档位：
@@ -49,6 +50,10 @@
 //! - **裁决（预注册）**：达标率 ≥ 4/5 的臂中取中位更优者重新 promote；
 //!   两臂均 <4/5 → 升级追加温度调度常数臂（红灯 issue 可选臂）再裁；
 //! - 结果回填账本「哨兵红灯」节并收口该 issue。
+//!
+//! **实测裁决（2026-07-04）**：两臂均 5/5 达标（recon=4 中位 13,556 · recon=16 中位 9,765）
+//! → recon=16 维持 promote、recipe 零变更，官方 3-seed 哨兵回绿（中位 ~8.7k）；
+//! 数字见账本「哨兵复裁收口」节。
 //!
 //! ```bash
 //! cargo test --release --features blas-mkl cartpole_recal -- --ignored --nocapture --test-threads=1

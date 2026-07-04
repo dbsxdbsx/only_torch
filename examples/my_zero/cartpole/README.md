@@ -29,6 +29,9 @@ cargo test --release --features blas-mkl cartpole_baseline_t0_base -- --ignored 
 cargo test --release --features blas-mkl cartpole_coef -- --ignored --nocapture --test-threads=1
 cargo test --release --features blas-mkl cartpole_seedext -- --ignored --nocapture --test-threads=1
 
+# 哨兵红灯复裁（2026-07-04 已收口；recon {4,16} × 5-seed）
+cargo test --release --features blas-mkl cartpole_recal -- --ignored --nocapture --test-threads=1
+
 # v0.26 Phase 0 编码 / 量纲消融（预注册协议见各测试文件 doc 注释）
 cargo test --release --features blas-mkl cartpole_hlgauss -- --ignored --nocapture --test-threads=1
 cargo test --release --features blas-mkl cartpole_symlog -- --ignored --nocapture --test-threads=1
@@ -38,7 +41,43 @@ cargo test --release --features blas-mkl cartpole_symlog -- --ignored --nocaptur
 
 ---
 
-## ⚠️ 哨兵红灯（2026-07-03 · ndarray 升级后实测 · **基线待重建**）
+## 哨兵复裁收口（2026-07-04 · **当前官方哨兵**）
+
+**口径**：`release`（thin LTO + cg16）+ Intel MKL · ndarray 0.17.2 · **最终数值流**（优化战报 P/Q/C1/R 全部落地后的 HEAD）· recipe 零变更（recon=16）。预注册协议（r1/r2 两臂、裁决规则）见 [`loss_coef_ablation_bench.rs`](../../../src/rl/algo/my_zero/tests/loss_coef_ablation_bench.rs) doc 注释「哨兵红灯复裁」节。
+
+### 复裁臂（seeds 42–46，promoted recipe 为底、单变量）
+
+| 臂 | seed42 / 43 / 44 / 45 / 46 env-steps | **中位** | 达标率 | range |
+|----|----------------------------------------|----------|--------|-------|
+| recon=4 | 11,419 / 15,527 / 13,556 / 9,520 / 14,954 | 13,556 | 5/5 | 9.5k–15.5k |
+| **recon=16（现 recipe）** | **8,741 / 71,969 / 6,744 / 9,765 / 11,772** | **9,765** | **5/5** | 6.7k–72.0k |
+
+### 裁决（按预注册规则）
+
+1. **recon=16 维持 promote，recipe 零变更**：两臂均 5/5 达标，预注册规则「达标率 ≥ 4/5 的臂中取中位更优者」→ 16（9,765 < 13,556）。
+2. **备注（未进裁决、留档供参考）**：recon=4 的 range 显著更紧（9.5k–15.5k，无长尾），recon=16 有一个 71,969 长尾 seed（43）；达标率打平时预注册规则以中位裁决，不事后改规则——若未来哨兵再现临界震荡，recon=4 是现成的稳健后备档。
+3. **红灯根因复核闭合**：红灯 1/3 实测发生在战报 P 数值定稿**之前**；P（`sum_to_shape` 单趟 / `min_max_normalize` 广播）落地后轨迹再次漂移，当前流上 recipe 零变更即回绿——进一步支持「达标率对具体浮点轨迹敏感、非逻辑回归」的判读。哨兵继续只回答「崩没崩」（条款二），env-steps 绝对值跨数值流不可比。
+
+### 官方哨兵定格（`SEEDS=3`，example + recipe 路径）
+
+**8,741 / 71,969 / 6,744，中位 ~8.7k，3/3 达标**（与消融臂 42/43/44 逐 bit 一致，example 路径 ≡ bench 路径实证）。
+
+### 跨算法对照（同口径同日重测，应本批框架优化后轨迹漂移全量刷新）
+
+| 算法 | seed42 / 43 / 44 env-steps | **中位** | 达标率 | 备注 |
+|------|----------------------------|----------|--------|------|
+| **MyZero promoted** | 8,741 / 71,969 / 6,744 | **8,741** | 3/3 | 官方哨兵 |
+| PPO | 61,440 / 122,880 / 122,880 | **122,880** | 3/3 | 粒度受 rollout(2048)×eval 节奏量化 |
+| SAC | 127,751 / 136,130 / 122,157 | **127,751** | 3/3 | |
+
+样本效率领先：PPO **14.1×** · SAC **14.6×**（中位对中位；PPO 粒度粗，倍数仅方向性）。
+
+---
+
+## 📦 哨兵红灯（2026-07-03 · ndarray 升级后实测 · **已收口，见上节**）
+
+> **✅ 已收口（2026-07-04）**：上方「哨兵复裁收口」节为现行基线；本节保留为红灯现场历史记录。
+> issue 已归档：`.issue/_archive/cartpole_sentinel_red_ndarray_drift.md`。
 
 **口径**：`release`（thin LTO + cg16）+ Intel MKL · **ndarray 0.17.2 + pyo3/numpy 0.29 新依赖栈** ·
 recipe 与超参零变更（recon=16）。两轮实测：
@@ -188,7 +227,7 @@ baseline = 上节哨兵（12,519 / 8,643 / 9,826，中位 ~9.8k，range 8.6k–1
 > **显式常数调度**（hold 1000 局恒 1.0 → 1000 局线性退火到 0.25；`TrainSettings::temp_hold/decay_episodes`）——
 > 官方 CartPole 口径（2000 局预算）下逐点等价（有单测锤），但改预算不再静默改变探索行为。
 >
-> **ndarray 0.16.1/0.17.2 升级致轨迹漂移（2026-07-03）**：ndarray 0.15.6 → 0.16.1（同日连升 0.17.2）后，BLAS 全布局派发（#1419）使转置视图 GEMM 改走 MKL 转置标志路径，浮点累加顺序变化 → 「~9.8k 逐 bit 复现」**自此不再可复现**。正式重测已执行（见顶部「哨兵红灯」节）：达标率跌破门槛，非孤例——已从「重定数字」升级为「新数值流上复裁系数」待办；在收口前本文件所有 env-steps 绝对值仅作方向性参考。0.16.1 → 0.17.2 无 BLAS 改动，数值与 0.16.1 一致。
+> **ndarray 0.16.1/0.17.2 升级致轨迹漂移（2026-07-03）**：ndarray 0.15.6 → 0.16.1（同日连升 0.17.2）后，BLAS 全布局派发（#1419）使转置视图 GEMM 改走 MKL 转置标志路径，浮点累加顺序变化 → 「~9.8k 逐 bit 复现」**自此不再可复现**。正式重测已执行（见「哨兵红灯」历史节）：达标率跌破门槛，非孤例——升级为「新数值流上复裁系数」待办，**已于 2026-07-04 复裁收口**（见顶部「哨兵复裁收口」节，recipe 零变更回绿）；旧数值流的 env-steps 绝对值仅作方向性参考。0.16.1 → 0.17.2 无 BLAS 改动，数值与 0.16.1 一致。
 >
 > **哨兵口径变更（batch-native + autograd 修复后，2026-07-01）**：修复了 MSE/MAE/BCE/Huber 反向忽略 `upstream_grad` 的框架 bug（作中间 loss 时丢链式缩放因子），训练同时改 batch-native（与逐样本数学等价）。梯度归约顺序改变 → env-steps 不再逐 bit 复现，验收改**统计口径**（3-seed 中位 + 达标率）。旧的 ~10–13k env-steps 部分依赖该 bug 使 continuation/reconstruction 辅助 loss 偏强；修复后辅助 loss 回到正确量级。若要收回样本效率，正道是显式调大 `RECONSTRUCTION_LOSS_COEF` / `CONTINUATION_LOSS_COEF`（v0.26 P0 消融）。
 >

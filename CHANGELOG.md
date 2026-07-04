@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **fix(rl): CartPole 哨兵红灯复裁收口——recon=16 维持 promote、recipe 零变更，官方 3-seed 哨兵回绿**（2026-07-04）
+  - 背景：ndarray 0.16/0.17 升级 BLAS 轨迹漂移致哨兵红灯（2026-07-03，官方 3-seed 1/3），按红灯 issue 待办在**最终数值流**（优化战报 P/Q/C1/R 全部落地后的 HEAD）上执行预注册复裁
+  - 复裁（`cartpole_recal_r1_recon4` / `r2_recon16`，各 5-seed 42–46）：**两臂均 5/5 达标**（recon=4 中位 13,556、range 紧 9.5k–15.5k；recon=16 中位 9,765、含一个 72.0k 长尾）；按预注册规则（达标率 ≥4/5 中取中位更优者）**recon=16 维持 promote，recipe 零变更**；recon=4 留档为临界震荡再现时的稳健后备档
+  - 官方 `SEEDS=3` 哨兵定格：**8,741 / 71,969 / 6,744，中位 ~8.7k，3/3 达标**（与消融臂逐 bit 一致，example 路径 ≡ bench 路径实证）；根因判读闭合——红灯实测发生在战报 P 数值定稿之前，P 落地后轨迹再漂、当前流 recipe 零变更即回绿，坐实「达标率对具体浮点轨迹敏感（临界震荡），非逻辑回归」
+  - 跨算法对照同日刷新（框架优化后轨迹全量漂移）：PPO 3-seed 中位 122,880（3/3）、SAC 中位 127,751（3/3），MyZero 样本效率领先 ~14×
+  - 收尾：issue 归档 `.issue/_archive/cartpole_sentinel_red_ndarray_drift.md`，账本新增「哨兵复裁收口」节（红灯节转历史留档），收口规划 §6 Phase 1 前置阻断解除，AGENTS 当前态同步
+
 ### Changed
 
 - **perf(nn): RNN 输入投影批量化——逐时间步小 GEMM 合并为单次大 GEMM（forward -22%，优化 R）**（2026-07-04）

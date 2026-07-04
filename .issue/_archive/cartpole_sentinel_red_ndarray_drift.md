@@ -1,14 +1,33 @@
 ---
-status: active
+status: resolved
 created: 2026-07-03
-updated: 2026-07-03
+updated: 2026-07-04
 owners: []
 reviewers: []
 ---
 
-# CartPole 哨兵红灯：ndarray 升级轨迹漂移后达标率跌破门槛（需新数值流复裁系数）
+# CartPole 哨兵红灯：ndarray 升级轨迹漂移后达标率跌破门槛（已复裁收口）
 
-> **状态**：active —— 已实测确认非孤例、非新逻辑 bug；数字与完整判读见
+## 收口（2026-07-04）：新数值流预注册复裁完成，recon=16 维持 promote、recipe 零变更，哨兵回绿 ✅
+
+> **最终结论**：按待办第 1 项在最终数值流（战报 P/Q/C1/R 全部落地后的 HEAD）上跑完预注册两臂
+> `cartpole_recal_r1_recon4` / `r2_recon16`（各 5-seed 42–46）：**两臂均 5/5 达标**
+> （recon=4 中位 13,556 · range 紧 9.5k–15.5k；recon=16 中位 9,765 · 一个 72.0k 长尾），按预注册规则
+> （达标率 ≥4/5 中取中位更优者）**recon=16 维持 promote，recipe 零变更**；官方 `SEEDS=3` 哨兵
+> 8,741 / 71,969 / 6,744，**3/3 达标、中位 ~8.7k**。PPO / SAC 同日 3-seed 重测均 3/3（框架优化后
+> 轨迹全量刷新）。数字唯一账本见
+> [cartpole 账本「哨兵复裁收口」节](../../examples/my_zero/cartpole/README.md)。
+>
+> **根因判读闭合**：红灯 1/3 实测发生在战报 P 数值定稿**之前**；P 落地后轨迹再次漂移，当前流上
+> recipe 零变更即回绿——坐实「达标率对具体浮点轨迹敏感（临界震荡），非逻辑回归」。可选臂
+> （温度调度常数消融）预注册的触发条件「两臂均 <4/5」未满足，不跑。recon=4（range 更紧、无长尾）
+> 留档为未来哨兵再现临界震荡时的现成稳健后备档。CartPole 哨兵恢复「崩没崩」绿灯职责（条款二）。
+
+---
+
+以下为红灯现场原始记录（历史）。
+
+> **状态**：~~active~~ —— 已实测确认非孤例、非新逻辑 bug；数字与完整判读见
 > [cartpole 账本「哨兵红灯」节](../../examples/my_zero/cartpole/README.md)（唯一账本，此处不重复数字）。
 > **关联**：CHANGELOG deps 条目（ndarray 0.16/0.17 升级）· `.doc/design/rl_closure_plan.md`（CartPole 纯回归哨兵定位）
 

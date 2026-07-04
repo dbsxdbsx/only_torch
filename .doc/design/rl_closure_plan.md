@@ -78,7 +78,7 @@
 |---|---|
 | [CPU-only × 图像 × MCTS 一级风险](../../.issue/items/cpu_only_mcts_image_realtime_risk.md) | Phase 1（spike 数据裁决） |
 | [Gumbel / completedQ 负结果](../../.issue/items/my_zero_gumbel_completedq_cartpole_negative.md) | Phase 2（前置修复 + native 复测） |
-| [CartPole 哨兵红灯（ndarray 漂移）](../../.issue/items/cartpole_sentinel_red_ndarray_drift.md) | Phase 1 **前置阻断项**（新数值流复裁系数，收口前哨兵不作绿灯） |
+| [CartPole 哨兵红灯（ndarray 漂移）](../../.issue/_archive/cartpole_sentinel_red_ndarray_drift.md) | ✅ **已收口（2026-07-04）**：新数值流预注册复裁两臂均 5/5，recon=16 维持 promote、recipe 零变更，官方 3-seed 哨兵回绿（中位 ~8.7k）；Phase 1 前置阻断解除 |
 | [reanalyze 回归](../../.issue/items/my_zero_reanalyze_cartpole_regression.md) | Phase 1（ROSMO-first 阶梯复活，2026-07-03 自 Phase 3 提前） |
 | [Pendulum 诊断](../../.issue/items/pendulum_failure_diagnosis.md) | Phase 4（固定预算终审） |
 | [Sampled 决策备忘](../../.issue/items/my_zero_action_space_sampled_policy.md) | Phase 4（随 Pendulum B=7 落地） |

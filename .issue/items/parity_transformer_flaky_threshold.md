@@ -24,7 +24,7 @@ reviewers: []
 ## 疑似诱因（未验证）
 
 - 示例上一次全绿验证在 ndarray 0.16/0.17 升级 + BLAS 轨迹漂移（见
-  `cartpole_sentinel_red_ndarray_drift.md`）之前；transformer 对初始化/数值流
+  `cartpole_sentinel_red_ndarray_drift.md`，已于 2026-07-04 复裁收口归档）之前；transformer 对初始化/数值流
   敏感，漂移后贴线掉到门槛下方是合理假设。
 - 与 2026-07-04 RNN 输入投影批量化无关（transformer 路径未动，干净 master 复现）。
 
@@ -38,4 +38,4 @@ reviewers: []
 
 - 示例：`examples/traditional/parity_transformer_var_len/`
 - 聚合命令：`justfile` → `examples-memory-unit`
-- 关联 issue：`.issue/items/cartpole_sentinel_red_ndarray_drift.md`（数值流漂移背景）
+- 关联 issue：`.issue/_archive/cartpole_sentinel_red_ndarray_drift.md`（数值流漂移背景，已收口归档）
