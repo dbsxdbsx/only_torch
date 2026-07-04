@@ -22,7 +22,13 @@
 
 ### 2. RNN 场景更多优化
 
-参见 #1，等 RNN 处理大规模数据时统一评估
+参见 #1，等 RNN 处理大规模数据时统一评估。
+
+**已出表项（2026-07-04，战报 R）**：RNN 输入投影批量化（`x_t @ W_ih` 逐时间步
+小 GEMM 合并为一次 `[N*T, in]` 大 GEMM）已实施，forward -22%；**LSTM/GRU 同款
+改造实测负收益已回滚**（4/3 路输入投影的 select/reshape 节点开销吃掉 GEMM 合并
+收益，LSTM forward +8%、backward +20%），若未来权重合并为 `[in, 4H]` 单矩阵
+（PyTorch 布局，参数结构破坏性变更）可重新评估。
 
 ---
 
@@ -115,15 +121,23 @@ Arc 分配进入热点前列；届时候选方向 = 小张量池化 / 输出缓�
 
 ## 已否决项
 
-### `mat_mul` 系 IxDyn 直接 `dot` 卫生改写（2026-07-04 Reviewer 否决）
+### `mat_mul` 系 IxDyn 直接 `dot` 卫生改写（2026-07-04 Reviewer 否决，同日复核修正论据）
 
 **原设想**：ndarray 0.17 支持 IxDyn 直接 `dot`，可删 `mat_mul` 系的
 `into_dimensionality::<Ix2>` 样板（依赖升级战报曾列为"可选后续"）。
 
-**否决理由**：碰的是核心 GEMM 入口 + RL 训练路径；现有 `Ix2` 写法显式锁定 BLAS 派发
-与 F 序输出修正（`into_standard_dyn` 守卫），IxDyn 路径是否走完全相同派发无法靠
-"理论零行为"担保，验证成本（NN/NT/TN × 非连续 × 布局 × 逐 bit × MKL 性能）与
-纯卫生收益完全不成比例。
+**否决理由**（复核修正：初版「数值风险」论据已证伪，改按收益≈0 维持否决）：
+
+- ~~初版论据「IxDyn 路径是否走完全相同 BLAS 派发无法担保」~~ **不成立**：读 ndarray
+  0.17.2 源码（`impl_linalg.rs` 的 `Dot<ArrayRef<A, IxDyn>>`）确认 IxDyn `dot` 是
+  薄包装——2D 分支内部同样 `into_dimensionality::<Ix2>` 后调同一条 Ix2 `dot`，
+  逐 bit 等价、同一 BLAS 派发，数值风险为零。
+- 维持否决的真实理由：可删样板仅 `mat_mul`/`_nt`/`_tn` 三处 ×6 行，集中在
+  `src/tensor/ops/mat_mul.rs` 单文件、不扩散（新算子走 `general_mat_mul` /
+  batched `Ix3` 路径，IxDyn dot 覆盖不到）；`Ix2` 显式写法把二维契约锁在类型层，
+  比 IxDyn 运行时 match 更自文档化；`into_standard_dyn` F 序守卫需跟着改写成
+  `ArrayD` 版，净省行数≈0。纯卫生收益不抵表达力损失；放着无利息、不阻塞任何
+  后续（ndarray 升级/BLAS 切换/新增 op 均不依赖此处写法），不构成技术债。
 
 ### 借用型张量视图（零拷贝到底）（2026-07-03 判死）
 

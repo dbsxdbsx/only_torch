@@ -98,10 +98,11 @@ impl Rnn {
         let b_h = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{full_name}_b_h"))?;
 
         // 注册折叠渲染元信息（仅保留折叠所需的最小信息）
-        // RNN 每个时间步的节点数：6 (select, matmul_xw, matmul_hw, add1, add2, tanh)
+        // RNN 每个时间步的节点数：5 (select_xw, matmul_hw, add1, add2, tanh)
+        // （输入投影 x @ W_ih 已批量化提出循环，见 unroll）
         graph
             .inner_mut()
-            .register_recurrent_folding_meta(&full_name, 6);
+            .register_recurrent_folding_meta(&full_name, 5);
 
         let instance_id = graph.inner_mut().next_node_group_instance_id();
 
@@ -195,6 +196,18 @@ impl Rnn {
         let init_state_node_ids = vec![h0.node_id()];
         let mut h = h0;
 
+        // 输入投影批量化：x_t @ W_ih 不依赖递归，把 seq_len 个小 GEMM 合并为
+        // 一次大 GEMM（[N, T, in] → [N*T, in] @ W_ih → [N, T, H]），
+        // 循环内每步只需 select 取已投影的行。
+        let batch_size = x
+            .value()?
+            .ok_or_else(|| GraphError::ComputationError("Rnn.unroll 需要输入有值".to_string()))?
+            .shape()[0];
+        let xw_seq = x
+            .reshape(&[batch_size * seq_len, self.input_size])?
+            .matmul(&self.w_ih)?
+            .reshape(&[batch_size, seq_len, self.hidden_size])?;
+
         // 记录第一个时间步的信息（用于折叠渲染）
         let mut first_step_start_id = None;
         let mut repr_output_node_ids = Vec::new();
@@ -213,16 +226,15 @@ impl Rnn {
                 _guard.set_hidden(true);
             }
 
-            // 选择第 t 个时间步: x_t = x[:, t, :] -> [batch, input_size]
-            let x_t = x.select(1, t)?;
+            // 选择第 t 个时间步的已投影输入: xw = (x @ W_ih)[:, t, :] -> [batch, hidden_size]
+            let xw = xw_seq.select(1, t)?;
 
             // 记录第一个时间步的起始节点 ID
             if t == 0 {
-                first_step_start_id = Some(x_t.node_id());
+                first_step_start_id = Some(xw.node_id());
             }
 
-            // h_new = tanh(x_t @ W_ih + h @ W_hh + b_h)
-            let xw = x_t.matmul(&self.w_ih)?;
+            // h_new = tanh(xw + h @ W_hh + b_h)
             let hw = h.matmul(&self.w_hh)?;
             let sum1 = &xw + &hw;
             let sum2 = &sum1 + &self.b_h;
@@ -303,7 +315,7 @@ impl Rnn {
     ) -> Self {
         let graph = w_ih.get_graph();
         let name = "rnn_rebuilt".to_string();
-        graph.inner_mut().register_recurrent_folding_meta(&name, 6);
+        graph.inner_mut().register_recurrent_folding_meta(&name, 5);
         let instance_id = graph.inner_mut().next_node_group_instance_id();
         Self {
             w_ih,

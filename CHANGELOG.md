@@ -4,6 +4,14 @@
 
 ### Changed
 
+- **perf(nn): RNN 输入投影批量化——逐时间步小 GEMM 合并为单次大 GEMM（forward -22%，优化 R）**（2026-07-04）
+  - 背景：batched_mat_mul 全局适用性排查（C1 后续）确认层内已无遗漏 bmm 场景；唯一相邻候选 = RNN 系「输入投影不依赖递归」，用 2D reshape 技巧（权重共享场景，非 bmm）出表候选 #2 一项
+  - `Rnn::unroll` 前置 `x.reshape([N*T, in]) @ W_ih → [N, T, H]`，循环内 `select` 取已投影行；每步节点 6 → 5（seq_len=16 时全图 96 → 83 节点），T 个小 GEMM → 1 个大 GEMM；折叠可视化 `nodes_per_step` 同步
+  - 实测（`benches/rnn.rs` vs `pre_rnn_proj`）：rnn_forward **-22%**（288µs → 222µs），backward 噪声带
+  - **LSTM/GRU 同款负结果已回滚**：4/3 路独立门权重下 matmul→select 只是节点等量替换（无节点数收益），前置投影组反而净增开销（lstm forward +8% / backward +20%）；权重合并 `[in, 4H]` 布局是参数结构破坏性变更，不值得为微秒级收益做——归因落档[战报 R](.doc/performance/optimization_log.md)
+  - 候选表同步：IxDyn `dot` 否决条目论据复核修正（「BLAS 派发不等价」数值风险论据经 ndarray 0.17.2 源码证伪——IxDyn `dot` 即 Ix2 薄包装逐 bit 等价；改按「收益≈0 + 类型表达力损失」维持否决）
+  - 验证：全量 lib 测试 3352 全绿 + clippy 零告警；memory-unit 示例全跑达标（parity RNN 97.4%/100%、LSTM 91.5%、GRU 100%、演化 seq 三例均过）；`parity_transformer_var_len` 68.5% 未达 70% 门槛为存量 flaky（干净 master 复现同值，已记 issue）
+
 - **perf(nn/tensor/evolution): Rayon 治理批——dK 确定性修复 + 小任务阈值分流 + 分配画像工具 + Vec\<Vec\> 清尾 + 演化索引 shuffle（优化 Q）**（2026-07-04）
   - 背景：热路径审计两个遗留方向（分配画像 / Rayon 小任务反噬）经 Reviewer 二轮压测后收口；六项均为逐 bit 等价或确定性增强，不触碰 RL 数值冻结（conv 系不在 CartPole 哨兵路径）
   - **dK 可复现性修复（R1）**：conv2d / conv_transpose2d 的 dL/dK 由 rayon `reduce`（合并分组随工作窃取漂移 → 同输入两次运行可能不逐 bit 相同）改「并行 map 保序 collect + 按 batch 序串行累加」；CE 前向 par `sum()` 同病但在冻结路径（仅 loss 标量），留候选表解冻后修

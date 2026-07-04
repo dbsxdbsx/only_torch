@@ -7,6 +7,44 @@
 
 ---
 
+## R. RNN 输入投影批量化（2026-07-04）+ LSTM/GRU 同款负结果回滚
+
+**来源**：batched_mat_mul 全局适用性排查（C1 后续）——层内逐 batch/逐 head 循环
+已无遗漏 bmm 场景，唯一相邻候选是 RNN 系「输入投影不依赖递归」：`x_t @ W_ih`
+每时间步一个小 GEMM，可整段合并为一次大 GEMM（权重共享场景用 2D reshape 技巧，
+**不是** bmm 适用场景）。
+
+**改动**（`src/nn/layer/rnn.rs`）：unroll 前置
+`x.reshape([N*T, in]).matmul(W_ih).reshape([N, T, H])`，循环内 `select` 取已投影行；
+每步节点 6 → 5（seq_len=16 时 96 → 83 节点），T 个 `[N,in]@[in,H]` 小 GEMM
+→ 1 个 `[N*T,in]@[in,H]` 大 GEMM。折叠可视化 `nodes_per_step` 同步 6→5。
+
+**实测**（`cargo bench --bench rnn` vs `pre_rnn_proj`，b16_t16_i16_h32）：
+
+| case | 变化 |
+|---|---|
+| rnn_forward | **-22%**（288µs → 222µs） |
+| rnn_backward | 噪声带（+3%，p=0.37） |
+| lstm_forward（已回滚） | **+8% 回归** |
+| lstm_backward（已回滚） | **+20% 回归** |
+| gru forward/backward（已回滚） | 噪声带 |
+
+**LSTM/GRU 负结果与回滚归因**：RNN 只有 1 路输入投影，省 T-1 个 MatMul 节点、
+新增 3 个 reshape/matmul 节点，净赚；LSTM/GRU 是 4/3 路独立权重投影，每步
+matmul→select 只是节点等量替换（省不掉节点数），却新增 4/3 组
+reshape+matmul+reshape 前置节点 + select 反向的 pad 梯度路径，图执行开销
+（借用/调度/小分配）吃掉 GEMM 合并收益。**教训**：GEMM 合并收益的前提是
+「省节点数」，多路权重不合并（`[in, 4H]` 单矩阵布局）就没有省节点空间——
+而权重合并是参数结构破坏性变更（ONNX/演化/序列化连带），不值得为微秒级收益做。
+
+**验证**：全量 lib 测试 3352 全绿；clippy `-D warnings` 零告警；memory-unit
+示例全跑：parity RNN 定长/变长（97.4% / 100%，epoch 数与历史量级一致）、
+LSTM 91.5%、GRU 100%、演化 seq/var-len/attention 三例均达标；
+`parity_transformer_var_len` 68.5% 未达 70% 门槛为**存量 flaky**（干净 master
+复现同值，与本批改动无关，transformer 未动）。
+
+---
+
 ## Q. Rayon 治理批：dK 确定性修复 + 小任务阈值分流 + 分配画像工具 + Vec\<Vec\> 清尾 + 演化索引 shuffle（2026-07-04）
 
 **来源**：热路径审计两个遗留方向（分配画像先行 / Rayon 小任务反噬）+ Reviewer 二轮压测
