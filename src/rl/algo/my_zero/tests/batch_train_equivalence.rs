@@ -70,6 +70,7 @@ fn to_item(
         target_rewards: trs.to_vec(),
         target_continuations: tcs.to_vec(),
         next_obs: next_obs.iter().cloned().map(Into::into).collect(),
+        bc_weights: Vec::new(),
     }
 }
 
@@ -114,7 +115,7 @@ fn bitexact_g1_without_consistency() {
 
     let item = to_item(&obs, &actions, &tps, &tvs, &trs, &tcs, &next_obs);
     let batch_loss = model
-        .train_unroll_batch(&[item], cons, recon, cont, vp)
+        .train_unroll_batch(&[item], cons, recon, cont, vp, 0.0)
         .unwrap();
     let batch_val = batch_loss.value().unwrap().unwrap().data_as_slice()[0];
 
@@ -160,7 +161,7 @@ fn grad_equivalence_g1_full_stack() {
     graph.zero_grad().unwrap();
     let item = to_item(&obs, &actions, &tps, &tvs, &trs, &tcs, &next_obs);
     let batch_loss = model
-        .train_unroll_batch(&[item], cons, recon, cont, vp)
+        .train_unroll_batch(&[item], cons, recon, cont, vp, 0.0)
         .unwrap();
     let batch_val = batch_loss.value().unwrap().unwrap().data_as_slice()[0];
     batch_loss.backward().unwrap();
@@ -271,7 +272,7 @@ fn g2_grad_max_diff(cons: f32, recon: f32) -> (f32, usize) {
     ];
     let g = items.len() as f32;
     let loss = model
-        .train_unroll_batch(&items, cons, recon, cont, vp)
+        .train_unroll_batch(&items, cons, recon, cont, vp, 0.0)
         .unwrap()
         * (g / batch_size);
     loss.backward().unwrap();

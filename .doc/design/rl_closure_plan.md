@@ -29,6 +29,10 @@
 
 **为什么第二**：唯一可能否定整条路线的风险要最早、用最便宜的实验裁决；同时这是 consistency/reconstruction 的 native 场景（CartPole 上的暧昧表现到此才见分晓）。
 
+> **⚠️ 次序修订（2026-07-04）**：S0 ✅（spike GO，一级风险裁决已完成——本阶段排第二的首要理由已兑现）、S1 ✅；但 **S2 基准两跑皆 0/3 平直**（旧/新数值流各一次），**S3 三臂诊断全平**（recon pilot {1,4,16} / cons-off / HL-Gauss 均无差异）→ 组件层排除，嫌疑收敛到「训练预算差 2 个数量级 + 稀疏 reward」（[负结果 issue](../../.issue/items/my_zero_pong_image_flat_negative.md)）。
+> 裁决：**图像线降级为后台预算标定**（replay ratio ↑ × ROSMO 刷新 / lr 扫描 / DIAG，吃机器时间不吃注意力），**Phase 2 Gomoku 提前为当前主线**（§3；棋盘域是本派系最强场、直接服务象棋战略目标、对图像线仅依赖已闭环的 S1 CNN）。图像支柱的退出判据不变、账本债保留，标定臂出证据后回头收口。
+> reanalyze 阶梯一变更：**机制已进库**（`rosmo.rs`，2026-07-04；CartPole 回归闸门 3/3 绿、裁定旧灾难为机制病理而非实现 bug），图像域价值裁决随图像基线一并顺延。
+
 - **风险 spike 先行**：最小 CNN 栈 + 假图像输入，实测「CNN 前向 × sims」单步 wall-clock，对照 [CPU 风险 issue](../../.issue/items/cpu_only_mcts_image_realtime_risk.md) 的触发线，产出去/留/改道决策
 - 图像 obs 管线（复用 `src/vision/preprocess`：降采样/灰度/帧堆叠）→ CNN representation 进 `network.rs`（按 recipe 注入）→ **预注册基准门槛**（Pong 类；验收 = 3-seed 可复现学习曲线 + 预注册分数，**非 SOTA**）
 - native 域复裁：consistency / reconstruction / HL-Gauss 各一次 A/B；recon_coef=16 为 CartPole 域标定值，图像 obs 走 [0,1] 像素归一并**在该域重标**（Phase 0 symlog 负结果已裁决：该系数是权衡旋钮而非单位换算，跨量纲不免重调）
@@ -41,9 +45,15 @@
 - Simulus 暂缓项触发点：若环境奖励稀疏且探索成实测瓶颈，ensemble JSD 内在奖励在此转正（唯一入口）
 - **退出判据**：图像支柱 3-seed 账本 + CPU 风险 issue 第一格勾选 + reanalyze 阶梯一裁决入账本（[reanalyze issue](../../.issue/items/my_zero_reanalyze_cartpole_regression.md) 可归档或降级为全树版残留项）。
 
-## 3. Phase 2 · self-play 线：Gomoku 踏脚石（v0.27 上半）
+## 3. Phase 2 · self-play 线：Gomoku 踏脚石（v0.27 上半 → **2026-07-04 提前启动，当前主线**）
 
 **为什么第三**：象棋战略目标的既定踏脚石（地基已备：`SelfPlayGame` / negamax backup / legal_mask / `python/gym_env/gomoku/`）；且 **Gumbel/completedQ 两个负结果 issue 的关闭条件就是在 |A|≫sims 场景复测**——Gomoku |A|=225 正是。
+
+> **提前启动口径（2026-07-04，随 §2 修订）**：
+> - **万金油铁律不破**：树内全程 learned dynamics（canonical MuZero 口径）；真环境仅用于
+>   self-play/eval 走子、**根节点** legal_mask、终局判定三处。
+> - **纪律**：最小 base recipe 先过预注册门槛（见下），之后**一次一臂**消融；结论只填
+>   组件矩阵的**棋盘列**（域裁决不迁移，图像列的债不因此注销）。
 
 - **Gumbel 复裁前置修复（必做，否则复裁无效）**：
   - ① greedy eval 去噪 bug：`gumbel.rs::final_recommendation` 无视 `temperature=0` 仍用 Gumbel 噪声打分，eval 分数被污染（疑似"Gumbel 未收敛"负结果真因）——详见[负结果 issue §七](../../.issue/items/my_zero_gumbel_completedq_cartpole_negative.md)

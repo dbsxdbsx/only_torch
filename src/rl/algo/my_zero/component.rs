@@ -35,6 +35,13 @@ pub(crate) struct Components {
     /// reanalyze：position 级 MCTS 重搜 + buffer 写回（`Components.reanalyze`）。
     /// CartPole recipe 默认关；见 `.issue/items/my_zero_reanalyze_cartpole_regression.md`。
     pub reanalyze: bool,
+    /// ROSMO 式一步 target 刷新（reanalyze 复活阶梯一，arXiv:2210.05980）：
+    /// 采样时现算 policy/value target（一步 look-ahead + 现算 bootstrap）+ 优势过滤
+    /// 行为正则，**不写回 buffer**。与 `reanalyze`（全树重搜 + 写回）互斥。
+    /// 见 [`rosmo`](super::rosmo)。
+    pub rosmo: bool,
+    /// ROSMO 行为正则系数 α（仅 `rosmo=true` 时生效；论文 Atari 口径 0.2）。
+    pub rosmo_alpha: f32,
     /// target network（EMA/hard 同步，配合 reanalyze）
     pub target_net: bool,
     /// SVE 权重（0.0 = 关；> 0 = search value blend 进 n-step target）
@@ -66,6 +73,8 @@ impl Default for Components {
             obs_symlog: false,
             value_prefix: false,
             reanalyze: false,
+            rosmo: false,
+            rosmo_alpha: 0.2,
             target_net: false,
             sve_weight: 0.0,
             gumbel: false,

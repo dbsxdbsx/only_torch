@@ -54,6 +54,7 @@
 //! - [`obs_pipeline`]：图像 obs 管线（灰度 84² 降采样 + 4 帧堆叠；buffer 只存单帧，v0.26 Phase 1）
 //! - [`n_step`]：n-step bootstrap value target（区分 terminated / truncated，并使用 transition continuation）
 //! - [`reanalyze`]：position 级 MCTS 重搜 + train 后写回（`Components.reanalyze`；CartPole 暂不 promote）
+//! - [`rosmo`]：ROSMO 式一步 target 刷新 + 优势过滤行为正则（reanalyze 复活阶梯一，不写回；arXiv:2210.05980）
 //! - [`loss`]：loss 系数与梯度缩放常量
 //! - [`consistency`]：自监督 consistency loss（SimSiam）
 //! - [`reconstruction`]：自监督 reconstruction loss（Scholz et al. 2021 · arXiv:2102.05599）
@@ -81,6 +82,7 @@ pub mod reanalyze;
 pub mod recipe;
 pub mod reconstruction;
 pub mod report;
+pub mod rosmo;
 pub mod runner;
 pub(crate) mod sampled_params;
 pub(crate) mod search_policy;
@@ -106,6 +108,7 @@ pub use n_step::{compute_n_step_target, compute_n_step_target_with};
 pub use network::MyZeroModel;
 pub use reanalyze::{reanalyze_game, reanalyze_step, reanalyze_unroll_window};
 pub use report::{EvalReport, RunReport, TrainReport};
+pub use rosmo::{RosmoTargets, one_step_improved_policy, rosmo_refresh_window};
 pub use sve::sve_blend;
 pub use target::completed_q_policy_target;
 pub use target_net::{TargetConfig, ema_update, hard_update, is_hard_sync_step, sync_target};

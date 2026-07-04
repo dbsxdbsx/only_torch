@@ -875,6 +875,10 @@ impl MyZeroModel {
     ///
     /// # 前置条件
     /// `items` 非空，且所有元素 `actions.len()`、`next_obs.len()`、`obs_t.len()` 一致。
+    ///
+    /// # ROSMO 行为正则（`bc_coef > 0` 时）
+    /// 槽位 j（j < K）追加 `−(bc_coef/G)·Σ_g w_gj·log π(a_gj | s_gj)`（优势过滤 BC，
+    /// arXiv:2210.05980 Eq.11）；`w` 来自 [`UnrollItem::bc_weights`]，全 0 槽位零开销跳过。
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn train_unroll_batch(
         &self,
@@ -883,6 +887,7 @@ impl MyZeroModel {
         reconstruction_coef: f32,
         continuation_coef: f32,
         use_value_prefix: bool,
+        bc_coef: f32,
     ) -> Result<Var, GraphError> {
         let g = items.len();
         debug_assert!(g > 0, "train_unroll_batch: 空组");
@@ -923,6 +928,29 @@ impl MyZeroModel {
             let xs: Vec<f32> = items.iter().map(|it| it.target_values[slot]).collect();
             self.two_hot_batch(&xs)
         };
+        // ROSMO 行为正则：槽位 slot 的加权 one-hot [G, action_dim]（全 0 → None，跳过）
+        let bc_target_at = |slot: usize| -> Option<Tensor> {
+            if bc_coef <= 0.0 {
+                return None;
+            }
+            let mut flat = vec![0.0f32; g * self.action_dim];
+            let mut any = false;
+            for (row, it) in items.iter().enumerate() {
+                let w = it.bc_weights.get(slot).copied().unwrap_or(0.0);
+                if w > 0.0 {
+                    let a = it.actions[slot];
+                    if a < self.action_dim {
+                        flat[row * self.action_dim + a] = w;
+                        any = true;
+                    }
+                }
+            }
+            any.then(|| Tensor::new(flat, &[g, self.action_dim]))
+        };
+        // BC 项：−(bc_coef/G)·Σ w·log π(a)（log_softmax 与 CE 共享同一 logits 节点）
+        let bc_term = |logits: &Var, wt: Tensor| -> Var {
+            (&logits.log_softmax() * wt).sum() * (-bc_coef / g as f32)
+        };
 
         // ---- k=0：repr → pred（policy + value）+ reconstruction ----
         // recon 开启时 obs 数据在图里需要两份（repr 输入节点 + recon 目标节点），clone 一次；
@@ -939,6 +967,9 @@ impl MyZeroModel {
         let mut total_loss = pred_policy.cross_entropy(tp0)?;
         total_loss =
             &total_loss + &(&pred_value_logits.cross_entropy(tv0)? * loss::VALUE_LOSS_COEF);
+        if let Some(wt) = bc_target_at(0) {
+            total_loss = &total_loss + &bc_term(&pred_policy, wt);
+        }
 
         if let Some(target0) = recon_target0 {
             let recon0 = self.recon.forward(&latent);
@@ -1008,6 +1039,13 @@ impl MyZeroModel {
                 + &(&step_value_loss * loss::VALUE_LOSS_COEF)
                 + &(&step_reward_loss * loss::REWARD_LOSS_COEF)
                 + &(&step_continuation_loss * continuation_coef);
+
+            // ROSMO 行为正则：槽位 i+1 的执行动作（槽位 K 无动作，天然跳过）
+            if i + 1 < k
+                && let Some(wt) = bc_target_at(i + 1)
+            {
+                step_loss = &step_loss + &bc_term(&pred_p, wt);
+            }
 
             // consistency / reconstruction：仅在该步有真实 next_obs 时（组内 i<n_next 统一成立）
             if i < n_next && (consistency_coef > 0.0 || reconstruction_coef > 0.0) {
@@ -1113,6 +1151,9 @@ pub(crate) struct UnrollItem<'a> {
     pub target_rewards: Vec<f32>,       // len = actual_k（value_prefix 时为前缀目标）
     pub target_continuations: Vec<f32>, // len = actual_k
     pub next_obs: Vec<ObsSource<'a>>,   // len = next_obs 有效步数（≤ actual_k）
+    /// ROSMO 优势过滤行为正则权重（len = actual_k，槽位 j 对应执行动作 `actions[j]`；
+    /// 空 = 非 ROSMO 路径，BC 不参与）。
+    pub bc_weights: Vec<f32>,
 }
 
 // ============================================================================

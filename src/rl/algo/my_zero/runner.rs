@@ -10,6 +10,7 @@ use super::network::{MyZeroModel, ObsSource, UnrollItem};
 use super::obs_pipeline::ObsAdapter;
 use super::reanalyze::reanalyze_unroll_window;
 use super::report::TrainReport;
+use super::rosmo::{RosmoTargets, rosmo_refresh_window};
 use super::sampled_params::{
     compute_sampled_k_cfg, format_sampled_log, resolve_sampled_params, sampled_k_effective,
 };
@@ -62,6 +63,9 @@ fn print_components(c: &Components) {
     }
     if c.reanalyze {
         tags.push("reanalyze");
+    }
+    if c.rosmo {
+        tags.push("ROSMO");
     }
     if !tags.is_empty() {
         println!("[MyZero] {}", tags.join(" + "));
@@ -210,27 +214,34 @@ pub(crate) struct TrainBatchItem {
     pub start: usize,
 }
 
-/// 训练 batch 的两种来源：
-/// - `Borrowed`：非 reanalyze 路径，只记 `(buffer 下标, 起点)`，训练时从 buffer
+/// 训练 batch 的三种来源：
+/// - `Borrowed`：非刷新路径，只记 `(buffer 下标, 起点)`，训练时从 buffer
 ///   借引用——**零整局 clone**（图像 obs 单局可达数十 MB，clone+drop 是实测主瓶颈）。
 /// - `Owned`：reanalyze 路径，clone 副本刷标签，train 后写回（语义同旧实现）。
+/// - `Refreshed`：ROSMO 路径，零克隆借引用 + 随行现算 target（**不写回**）。
 pub(crate) enum PreparedBatch {
     Borrowed(Vec<(usize, usize)>),
     Owned(Vec<TrainBatchItem>),
+    Refreshed(Vec<(usize, usize)>, Vec<RosmoTargets>),
 }
 
-/// 从 buffer 抽样并（若开启 reanalyze）刷新 unroll 窗口内 policy/value 标签。
+/// 从 buffer 抽样并（若开启 reanalyze / ROSMO）刷新 unroll 窗口内 policy/value 标签。
 ///
 /// # 流程（reanalyze 开启时）
 /// 1. `sample_indexed` clone 出 owned 副本（不对 buffer 内引用原地改）
 /// 2. `reanalyze_unroll_window` 刷新 `[start, start+K]` 内各步
 /// 3. 交给 `train_batch` 消费同一副本
 /// 4. train 后 `writeback_reanalyzed_samples` move 写回 buffer
+///
+/// # 流程（ROSMO 开启时）
+/// 零克隆采样（RNG 消耗与 Borrowed 路径逐 bit 一致）+ 逐样本一步 look-ahead
+/// 现算 target（[`rosmo_refresh_window`]），**不写回**——见 [`super::rosmo`] 模块文档。
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn prepare_train_batch(
     buffer: &ReplayBuffer<SelfPlayGame>,
     train_batch_size: usize,
     k_unroll: usize,
+    td_steps: usize,
     reanalyze: bool,
     components: &Components,
     model: &MyZeroModel,
@@ -238,6 +249,7 @@ pub(crate) fn prepare_train_batch(
     gamma: f32,
     num_simulations: u32,
     cq: Option<(f32, f32)>,
+    image_stack: Option<usize>,
     rng: &mut StdRng,
 ) -> PreparedBatch {
     if reanalyze {
@@ -290,7 +302,42 @@ pub(crate) fn prepare_train_batch(
             }
             out.push((idx, rng.gen_range(0..len)));
         }
-        PreparedBatch::Borrowed(out)
+        if !components.rosmo {
+            return PreparedBatch::Borrowed(out);
+        }
+        // ROSMO：对采出的每个 unroll 窗口现算 target（模型前向不消耗 rng，确定性）
+        let targets: Vec<RosmoTargets> = out
+            .iter()
+            .map(|&(idx, start)| {
+                let game = buffer.get_ref(idx).expect("buffer 下标应有效");
+                let steps = &game.steps;
+                let actual_k = unroll_len_at(steps, start, k_unroll);
+                let obs_at = |pos: usize| -> Vec<f32> {
+                    let src = match image_stack {
+                        None => ObsSource::Single(&steps[pos].obs),
+                        Some(k) => ObsSource::Stacked {
+                            steps,
+                            t: pos,
+                            stack: k,
+                        },
+                    };
+                    let mut v = Vec::with_capacity(src.dim());
+                    src.append_into(&mut v);
+                    v
+                };
+                rosmo_refresh_window(
+                    &model,
+                    steps,
+                    start,
+                    actual_k,
+                    td_steps,
+                    gamma,
+                    adapter.action_dim(),
+                    &obs_at,
+                )
+            })
+            .collect();
+        PreparedBatch::Refreshed(out, targets)
     }
 }
 
@@ -325,6 +372,7 @@ pub(crate) fn train_batch(
     model: &MyZeroModel,
     optimizer: &mut Adam,
     samples: &[(&SelfPlayGame, usize)],
+    refreshed: Option<&[RosmoTargets]>,
     k_unroll: usize,
     td_steps: usize,
     gamma: f32,
@@ -346,15 +394,26 @@ pub(crate) fn train_batch(
     } else {
         0.0
     };
+    // ROSMO 行为正则系数（仅现算 target 路径生效）
+    let bc_coef = if refreshed.is_some() {
+        components.rosmo_alpha
+    } else {
+        0.0
+    };
     let want_next_obs = components.consistency || components.reconstruction;
 
     // 1) 逐样本展开成 UnrollItem，并按 (actual_k, next_obs 步数) 分组（结构对齐才能同批堆叠）
     let mut groups: BTreeMap<(usize, usize), Vec<UnrollItem<'_>>> = BTreeMap::new();
-    for (game, start) in samples {
+    for (i, (game, start)) in samples.iter().enumerate() {
         let steps = &game.steps;
         let len = steps.len();
         let t = *start;
         let actual_k = unroll_len_at(steps, t, k_unroll);
+        // ROSMO 现算 target（与存量 target 同槽位结构；prepare 期用同一 unroll_len_at 计算）
+        let rosmo_t = refreshed.map(|rts| &rts[i]);
+        if let Some(rt) = rosmo_t {
+            debug_assert_eq!(rt.policies.len(), actual_k + 1, "ROSMO 槽位结构应对齐");
+        }
 
         // 模型入口 obs：只记录来源（borrow buffer），batch 组装时融合反量化/堆叠
         // 一次性写入最终 flat（Flat 直通；图像模式老 → 新堆叠，语义同 assemble_stacked_obs）
@@ -371,25 +430,32 @@ pub(crate) fn train_batch(
 
         let uniform_policy = vec![1.0 / model.action_dim as f32; model.action_dim];
 
-        let target_policies: Vec<Vec<f32>> = (0..=actual_k)
-            .map(|i| {
-                if t + i < len {
-                    steps[t + i].policy_target.clone()
-                } else {
-                    uniform_policy.clone()
-                }
-            })
-            .collect();
+        // policy / value target：ROSMO 路径用现算值（不读 buffer 存量），否则读存量
+        let target_policies: Vec<Vec<f32>> = match rosmo_t {
+            Some(rt) => rt.policies.clone(),
+            None => (0..=actual_k)
+                .map(|i| {
+                    if t + i < len {
+                        steps[t + i].policy_target.clone()
+                    } else {
+                        uniform_policy.clone()
+                    }
+                })
+                .collect(),
+        };
 
-        let target_values: Vec<f32> = (0..=actual_k)
-            .map(|i| {
-                if t + i < len {
-                    compute_n_step_target(steps, t + i, td_steps, gamma)
-                } else {
-                    0.0
-                }
-            })
-            .collect();
+        let target_values: Vec<f32> = match rosmo_t {
+            Some(rt) => rt.values.clone(),
+            None => (0..=actual_k)
+                .map(|i| {
+                    if t + i < len {
+                        compute_n_step_target(steps, t + i, td_steps, gamma)
+                    } else {
+                        0.0
+                    }
+                })
+                .collect(),
+        };
 
         let target_rewards: Vec<f32> = (0..actual_k)
             .map(|i| {
@@ -446,6 +512,7 @@ pub(crate) fn train_batch(
             target_rewards: final_rewards,
             target_continuations,
             next_obs,
+            bc_weights: rosmo_t.map(|rt| rt.bc_weights.clone()).unwrap_or_default(),
         });
     }
 
@@ -460,6 +527,7 @@ pub(crate) fn train_batch(
             reconstruction_coef,
             components.continuation_coef,
             components.value_prefix,
+            bc_coef,
         )?;
         total_loss_val += (&loss * scale).backward()?;
     }
@@ -991,6 +1059,7 @@ fn train_one_seed(
                     &buffer,
                     t.train_batch_size,
                     t.k_unroll,
+                    t.td_steps,
                     cfg.components.reanalyze,
                     &cfg.components,
                     &model,
@@ -998,11 +1067,12 @@ fn train_one_seed(
                     gamma,
                     t.num_simulations,
                     cq,
+                    obs_adapter.image_stack(),
                     &mut rng,
                 );
                 prof_batch_prepare += prep_t0.elapsed().as_secs_f32();
                 let train_view: Vec<(&SelfPlayGame, usize)> = match &batch {
-                    PreparedBatch::Borrowed(items) => items
+                    PreparedBatch::Borrowed(items) | PreparedBatch::Refreshed(items, _) => items
                         .iter()
                         .map(|&(idx, start)| {
                             (buffer.get_ref(idx).expect("buffer 下标应有效"), start)
@@ -1012,11 +1082,16 @@ fn train_one_seed(
                         items.iter().map(|item| (&item.game, item.start)).collect()
                     }
                 };
+                let refreshed = match &batch {
+                    PreparedBatch::Refreshed(_, targets) => Some(targets.as_slice()),
+                    _ => None,
+                };
                 let train_t0 = std::time::Instant::now();
                 let l = train_batch(
                     &model,
                     &mut optimizer,
                     &train_view,
+                    refreshed,
                     t.k_unroll,
                     t.td_steps,
                     gamma,

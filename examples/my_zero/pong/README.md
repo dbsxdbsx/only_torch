@@ -29,6 +29,7 @@ SEEDS=3 cargo run --example my_zero_pong --release --features blas-mkl    # 官�
 | 日期 | 配置 | seeds | best greedy（各 seed） | 中位 | 裁决 |
 |------|------|-------|------------------------|------|------|
 | 2026-07-03 | image base（预注册栈）· **旧数值流 ⚠️** | 42/43/44 | −20.4 / −21.0 / −21.0 | **−21.0** | **未达标，曲线平直** → 按预注册判读记负结果，见 [issue](../../../.issue/items/my_zero_pong_image_flat_negative.md)；14 个 eval 点 greedy 恒 −21 级（仅偶发 −20.x），self-play avg 恒 −20~−21，loss 下降但不转化为策略改进；每 seed 满 150 局 ≈134k env-steps，wall ~26min/seed；450 局全程零 panic。**代码基线 `b697e95`，先于 `adfc02f` 框架修复批（per-seed reset 派生 / GroupNorm 梯度 / 温度调度显式化等）——数字仅作历史参考，图像支柱裁决以新数值流复跑为准** |
+| 2026-07-04 | image base（同栈）· **新数值流复跑**（哨兵复裁收口后 HEAD，per-seed env 流独立已生效） | 42/43/44 | −21.0 / −20.3 / −20.6 | **−21.0** | **0/3，曲线仍平直 → 负结果确认**（排除"旧数值流 / seed 共享 reset 序列"两个嫌疑）；self-play 偶见 −17~−18 但 greedy 恒 −20.3 以下、无上升趋势；每 seed 满 150 局 ≈134k env-steps，wall ~30min/seed。下一步按负结果 issue 预注册：S3 三臂兼当诊断（首查 recon ON 臂——CartPole 域最大杠杆组件在 base 臂恰好关闭）；ROSMO 阶梯一已进库（`.rosmo(true)`，2026-07-04）可作"训练量不足"嫌疑的后续单变量臂 |
 
 ### 工程基线（非学习指标）
 
@@ -37,10 +38,15 @@ SEEDS=3 cargo run --example my_zero_pong --release --features blas-mkl    # 官�
 | 2026-07-02 | f32 帧 | Ep1 2.4s → 随 buffer 占用爬升 → 满（Ep32）后平台 65~110s | Run A/B + 3-seed 首跑一致复现 |
 | 2026-07-03 | **u8 量化帧** | **Ep5~Ep60 全程 ~10s 平坦，无增长** | 60 局 716.8s（含 eval）；归因与 PROFILE 见[优化战报 M](../../../.doc/performance/optimization_log.md) |
 
-## A/B 消融（§S3，基准裁决后半额预算 60k env-steps/seed × 3 seeds）
+## A/B 消融（§S3，半额预算 75 局/seed；2026-07-04 实跑，兼当 S2 平直诊断）
 
-| 臂 | 变更 | 状态 |
-|----|------|------|
-| recon | reconstruction ON（coef 先 1-seed pilot {1,4,16}） | 待跑 |
-| cons-off | consistency OFF | 待跑 |
-| hl-gauss | HL-Gauss 编码 ON（CartPole 负结果的图像域复测） | 待跑 |
+| 臂 | 变更 | 结果（best greedy） | 判读 |
+|----|------|------|------|
+| recon pilot | reconstruction ON，coef {1,4,16} × 1-seed | −21.0 / −20.4 / −21.0 | **全平**，无 coef 拉起曲线 → 嫌疑 3（recon OFF 是主因）排除 |
+| cons-off | consistency OFF × 3-seed | −21.0 / −20.7 / −21.0，中位 −21.0，0/3 | **平**（与 base 无差异）→ 嫌疑 2（cons 图像域反噬）排除 |
+| hl-gauss | HL-Gauss ON × 3-seed | −21.0 / −21.0 / −21.0，中位 −21.0，0/3 | **平** → 编码不是瓶颈；Simulus A1 图像复测记「无差异」 |
+
+**S3 诊断裁决（2026-07-04）**：三臂 + base 全平 → 组件层排除，**嫌疑 1（训练量不足：9.6k updates/batch16 vs EfficientZero 参考 ~120k/batch256，差两个数量级）与嫌疑 4（稀疏 reward + γ=0.997）上位**。
+按 2026-07-04 规划修订：**Gomoku（Phase 2）提前为主线**，图像线降级为后台预算标定
+（replay ratio ↑ × ROSMO 现算刷新 / lr 扫描 / DIAG，见负结果 issue「下一步」）。
+日志：`.bench/pong_s3_*.log`。

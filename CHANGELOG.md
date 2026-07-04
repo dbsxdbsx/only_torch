@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- **feat(rl): ROSMO 一步 target 刷新进库（reanalyze 复活阶梯一）+ Pong 图像线诊断收敛 + Gomoku 提前为主线**（2026-07-04）
+  - **ROSMO 机制**（Xiao et al., ICLR 2023 · arXiv:2210.05980）：新增 `src/rl/algo/my_zero/rosmo.rs`——训练采样时现算 target：一步 look-ahead 改进分布 `p ∝ π_prior·exp(adv)`（`adv = r_g + γ·v(s'_g) − v(s)`）+ n-step value 现算 bootstrap（不读 stale `root_value`；`compute_n_step_target_indexed` 新缝）+ 优势过滤行为正则（α=0.2，`train_unroll_batch` 注入 `−(α/G)Σ w·log π(a)`）；**不写回 buffer**（与官方 MuZero Reanalyse 流式设计同构，旧全树 reanalyze 的写回属自创偏差、其覆盖嫌疑随架构消灭）；`PreparedBatch::Refreshed` 零克隆路径，采样 RNG 消耗与 Borrowed 逐 bit 一致（默认关时数值路径零变化，有单测锁死）；`.rosmo(true)` 消融开关、与 `reanalyze` 互斥、图像模式原生支持（帧堆叠组装）；7 项单测 + 手动档回归闸门 `rosmo_cartpole_bench.rs`
+  - **CartPole 回归闸门实测绿**：promoted recipe + rosmo × seeds 42/43/44 = **3/3 达标**（中位 29,585 env-steps，预注册绿灯带内）；兼裁 reanalyze issue §三假设 4——同一管线底座换一步刷新即正常收敛 → 旧灾难（greedy 钉死 9.4）主因是**机制病理**（弱网全树重搜 + 写回投毒）而非实现 bug
+  - **Pong S2 复跑负结果确认**（新数值流）：0/3 仍平直（best greedy −21.0/−20.3/−20.6），排除「旧数值流 / seed 共享 reset 序列」嫌疑；**S3 三臂诊断全平**：recon pilot {1,4,16}（−21.0/−20.4/−21.0）、cons-off 3-seed 中位 −21.0、HL-Gauss 3-seed 中位 −21.0 → 组件层排除，嫌疑收敛「训练预算差 2 个数量级（9.6k updates/batch16 vs EfficientZero 参考 ~120k/batch256）+ 稀疏 reward」
+  - **规划次序修订**：图像线降级后台预算标定（replay ratio ↑ × ROSMO 刷新 / lr 扫描 / DIAG，预注册于负结果 issue），**Phase 2 Gomoku 提前为当前主线**（棋盘域 = 本派系最强场、直接服务象棋战略目标；万金油铁律与一次一臂纪律写入收口规划 §3 注记）；账本、负结果 issue、reanalyze issue、AGENTS 当前态同步
+
 ### Fixed
 
 - **fix(rl): CartPole 哨兵红灯复裁收口——recon=16 维持 promote、recipe 零变更，官方 3-seed 哨兵回绿**（2026-07-04）

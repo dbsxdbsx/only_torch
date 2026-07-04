@@ -112,6 +112,7 @@ fn prepare_reanalyze_then_writeback_updates_buffer() {
         &buf,
         1,
         1,
+        5,
         true,
         &components,
         &model,
@@ -119,11 +120,12 @@ fn prepare_reanalyze_then_writeback_updates_buffer() {
         0.99,
         8,
         None,
+        None,
         &mut rng,
     );
     let batch = match prepared {
         PreparedBatch::Owned(items) => items,
-        PreparedBatch::Borrowed(_) => panic!("reanalyze 路径应返回 Owned 副本"),
+        _ => panic!("reanalyze 路径应返回 Owned 副本"),
     };
     assert_eq!(batch.len(), 1);
     let idx = batch[0]
@@ -137,6 +139,7 @@ fn prepare_reanalyze_then_writeback_updates_buffer() {
         &model,
         &mut opt,
         &train_view,
+        None,
         1,
         5,
         0.99,
@@ -180,12 +183,14 @@ fn prepare_without_reanalyze_returns_borrowed_indices() {
         &buf,
         1,
         1,
+        5,
         false,
         &components,
         &model,
         &adapter,
         0.99,
         4,
+        None,
         None,
         &mut rng,
     );
@@ -197,6 +202,6 @@ fn prepare_without_reanalyze_returns_borrowed_indices() {
             assert_eq!(idx, 0);
             assert!(start < 2);
         }
-        PreparedBatch::Owned(_) => panic!("未开 reanalyze 时应返回 Borrowed"),
+        _ => panic!("未开 reanalyze 时应返回 Borrowed"),
     }
 }

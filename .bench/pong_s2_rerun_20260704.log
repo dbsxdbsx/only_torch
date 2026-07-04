@@ -1,0 +1,545 @@
+    Finished `release` profile [optimized] target(s) in 0.54s
+     Running `target\release\examples\my_zero_pong.exe`
+[MyZero] consistency
+
+--- seed 42 (1/3) ---
+A.L.E: Arcade Learning Environment (version 0.11.2+ecc1138)
+[Powered by Stella]
+[MyZero ALE/Pong-v5] obs=image→28224(灰度84²×4帧) 离散 6 档 γ=0.997 sims=20 r_scale=1
+Ep    1: R=   -20.0 len=876 avg_R=   -20.0 loss=0.0000 temp=1.00 total_env_steps=876 t=1.49s
+Ep    2: R=   -21.0 len=812 avg_R=   -20.5 loss=0.7752 temp=1.00 total_env_steps=1688 t=9.59s
+Ep    3: R=   -21.0 len=764 avg_R=   -20.7 loss=-1.9178 temp=1.00 total_env_steps=2452 t=9.12s
+Ep    4: R=   -20.0 len=865 avg_R=   -20.5 loss=-2.3723 temp=1.00 total_env_steps=3317 t=9.07s
+Ep    5: R=   -19.0 len=944 avg_R=   -20.2 loss=-2.6963 temp=1.00 total_env_steps=4261 t=9.18s
+Ep    6: R=   -20.0 len=843 avg_R=   -20.2 loss=-2.8982 temp=1.00 total_env_steps=5104 t=9.25s
+Ep    7: R=   -20.0 len=908 avg_R=   -20.1 loss=-3.0480 temp=1.00 total_env_steps=6012 t=9.33s
+Ep    8: R=   -19.0 len=949 avg_R=   -20.0 loss=-3.1106 temp=1.00 total_env_steps=6961 t=9.59s
+Ep    9: R=   -21.0 len=792 avg_R=   -20.1 loss=-3.1314 temp=1.00 total_env_steps=7753 t=9.23s
+Ep   10: R=   -21.0 len=764 avg_R=   -20.2 loss=-3.2928 temp=1.00 total_env_steps=8517 t=9.42s
+Ep   11: R=   -21.0 len=764 avg_R=   -20.3 loss=-3.4296 temp=1.00 total_env_steps=9281 t=9.42s
+Ep   12: R=   -20.0 len=927 avg_R=   -20.2 loss=-3.5925 temp=1.00 total_env_steps=10208 t=9.71s
+Ep   13: R=   -21.0 len=811 avg_R=   -20.3 loss=-3.5506 temp=1.00 total_env_steps=11019 t=9.26s
+Ep   14: R=   -19.0 len=963 avg_R=   -20.2 loss=-3.5732 temp=1.00 total_env_steps=11982 t=10.03s
+Ep   15: R=   -20.0 len=945 avg_R=   -20.2 loss=-3.6374 temp=1.00 total_env_steps=12927 t=9.73s
+Ep   16: R=   -19.0 len=963 avg_R=   -20.1 loss=-3.6879 temp=1.00 total_env_steps=13890 t=9.96s
+Ep   17: R=   -21.0 len=764 avg_R=   -20.2 loss=-3.8274 temp=1.00 total_env_steps=14654 t=9.47s
+Ep   18: R=   -19.0 len=999 avg_R=   -20.1 loss=-3.7121 temp=1.00 total_env_steps=15653 t=9.87s
+Ep   19: R=   -20.0 len=926 avg_R=   -20.1 loss=-3.7838 temp=1.00 total_env_steps=16579 t=9.89s
+Ep   20: R=   -19.0 len=1118 avg_R=   -20.0 loss=-3.8627 temp=1.00 total_env_steps=17697 t=10.06s
+  greedy eval -21.0 / -18（近20局 self-play -20.0，total_env_steps=17697）
+[MyZero] best 模型 greedy=-21.0 ep=20 total_env_steps=17697 -> models/my_zero/Pong-v5\seed_42\best.otm
+Ep   21: R=   -19.0 len=949 avg_R=   -20.0 loss=-3.7222 temp=1.00 total_env_steps=18646 t=9.83s
+Ep   22: R=   -20.0 len=861 avg_R=   -20.0 loss=-3.8672 temp=1.00 total_env_steps=19507 t=9.58s
+Ep   23: R=   -20.0 len=842 avg_R=   -20.0 loss=-3.7127 temp=1.00 total_env_steps=20349 t=9.64s
+Ep   24: R=   -20.0 len=935 avg_R=   -20.0 loss=-3.9522 temp=1.00 total_env_steps=21284 t=10.05s
+Ep   25: R=   -21.0 len=906 avg_R=   -20.0 loss=-3.8165 temp=1.00 total_env_steps=22190 t=9.83s
+Ep   26: R=   -20.0 len=918 avg_R=   -20.0 loss=-3.8813 temp=1.00 total_env_steps=23108 t=9.92s
+Ep   27: R=   -18.0 len=1045 avg_R=   -20.0 loss=-3.9768 temp=1.00 total_env_steps=24153 t=10.22s
+Ep   28: R=   -21.0 len=839 avg_R=   -20.0 loss=-3.8239 temp=1.00 total_env_steps=24992 t=9.79s
+Ep   29: R=   -19.0 len=978 avg_R=   -20.0 loss=-3.9703 temp=1.00 total_env_steps=25970 t=10.26s
+Ep   30: R=   -19.0 len=1054 avg_R=   -19.9 loss=-3.9475 temp=1.00 total_env_steps=27024 t=10.21s
+  greedy eval -21.0 / -18（近20局 self-play -19.8，total_env_steps=27024）
+[MyZero] best 模型 greedy=-21.0 ep=30 total_env_steps=27024 -> models/my_zero/Pong-v5\seed_42\best.otm
+Ep   31: R=   -19.0 len=1092 avg_R=   -19.9 loss=-3.9276 temp=1.00 total_env_steps=28116 t=10.36s
+Ep   32: R=   -20.0 len=989 avg_R=   -19.9 loss=-3.9556 temp=1.00 total_env_steps=29105 t=10.19s
+Ep   33: R=   -20.0 len=904 avg_R=   -19.9 loss=-4.0991 temp=1.00 total_env_steps=30009 t=10.14s
+Ep   34: R=   -21.0 len=810 avg_R=   -19.9 loss=-4.3200 temp=1.00 total_env_steps=30819 t=9.89s
+Ep   35: R=   -21.0 len=958 avg_R=   -20.0 loss=-4.3998 temp=1.00 total_env_steps=31777 t=10.26s
+Ep   36: R=   -20.0 len=917 avg_R=   -20.0 loss=-4.3113 temp=1.00 total_env_steps=32694 t=10.16s
+Ep   37: R=   -20.0 len=842 avg_R=   -20.0 loss=-4.3760 temp=1.00 total_env_steps=33536 t=9.96s
+Ep   38: R=   -19.0 len=977 avg_R=   -19.9 loss=-4.3392 temp=1.00 total_env_steps=34513 t=10.33s
+Ep   39: R=   -20.0 len=837 avg_R=   -19.9 loss=-4.1583 temp=1.00 total_env_steps=35350 t=9.96s
+Ep   40: R=   -21.0 len=764 avg_R=   -20.0 loss=-4.4430 temp=1.00 total_env_steps=36114 t=9.86s
+  greedy eval -21.0 / -18（近20局 self-play -19.9，total_env_steps=36114）
+[MyZero] best 模型 greedy=-21.0 ep=40 total_env_steps=36114 -> models/my_zero/Pong-v5\seed_42\best.otm
+Ep   41: R=   -16.0 len=1169 avg_R=   -19.9 loss=-4.3199 temp=1.00 total_env_steps=37283 t=10.79s
+Ep   42: R=   -18.0 len=1117 avg_R=   -19.8 loss=-4.4407 temp=1.00 total_env_steps=38400 t=10.83s
+Ep   43: R=   -21.0 len=811 avg_R=   -19.9 loss=-4.2932 temp=1.00 total_env_steps=39211 t=10.12s
+Ep   44: R=   -21.0 len=783 avg_R=   -19.9 loss=-4.4166 temp=1.00 total_env_steps=39994 t=10.04s
+Ep   45: R=   -14.0 len=1442 avg_R=   -19.8 loss=-4.4344 temp=1.00 total_env_steps=41436 t=11.50s
+Ep   46: R=   -20.0 len=969 avg_R=   -19.8 loss=-4.3618 temp=1.00 total_env_steps=42405 t=10.37s
+Ep   47: R=   -21.0 len=882 avg_R=   -19.8 loss=-4.4236 temp=1.00 total_env_steps=43287 t=10.37s
+Ep   48: R=   -19.0 len=967 avg_R=   -19.8 loss=-4.3895 temp=1.00 total_env_steps=44254 t=10.51s
+Ep   49: R=   -20.0 len=889 avg_R=   -19.8 loss=-4.3990 temp=1.00 total_env_steps=45143 t=10.34s
+Ep   50: R=   -20.0 len=862 avg_R=   -19.8 loss=-4.4684 temp=1.00 total_env_steps=46005 t=10.27s
+  greedy eval -21.0 / -18（近20局 self-play -19.5，total_env_steps=46005）
+[MyZero] best 模型 greedy=-21.0 ep=50 total_env_steps=46005 -> models/my_zero/Pong-v5\seed_42\best.otm
+Ep   51: R=   -19.0 len=1056 avg_R=   -19.8 loss=-4.3394 temp=1.00 total_env_steps=47061 t=10.60s
+Ep   52: R=   -20.0 len=889 avg_R=   -19.8 loss=-4.4034 temp=1.00 total_env_steps=47950 t=10.19s
+Ep   53: R=   -21.0 len=848 avg_R=   -19.8 loss=-4.3927 temp=1.00 total_env_steps=48798 t=10.06s
+Ep   54: R=   -20.0 len=870 avg_R=   -19.8 loss=-4.4602 temp=1.00 total_env_steps=49668 t=10.08s
+Ep   55: R=   -21.0 len=839 avg_R=   -19.8 loss=-4.4952 temp=1.00 total_env_steps=50507 t=10.13s
+Ep   56: R=   -20.0 len=936 avg_R=   -19.8 loss=-4.3918 temp=1.00 total_env_steps=51443 t=10.73s
+Ep   57: R=   -20.0 len=973 avg_R=   -19.8 loss=-4.4107 temp=1.00 total_env_steps=52416 t=11.46s
+Ep   58: R=   -20.0 len=942 avg_R=   -19.8 loss=-4.5227 temp=1.00 total_env_steps=53358 t=10.88s
+Ep   59: R=   -21.0 len=801 avg_R=   -19.8 loss=-4.5050 temp=1.00 total_env_steps=54159 t=10.33s
+Ep   60: R=   -20.0 len=870 avg_R=   -19.9 loss=-4.4572 temp=1.00 total_env_steps=55029 t=10.93s
+  greedy eval -21.0 / -18（近20局 self-play -19.6，total_env_steps=55029）
+[MyZero] best 模型 greedy=-21.0 ep=60 total_env_steps=55029 -> models/my_zero/Pong-v5\seed_42\best.otm
+Ep   61: R=   -21.0 len=802 avg_R=   -19.9 loss=-4.4581 temp=1.00 total_env_steps=55831 t=10.49s
+Ep   62: R=   -20.0 len=856 avg_R=   -19.9 loss=-4.5384 temp=1.00 total_env_steps=56687 t=10.43s
+Ep   63: R=   -21.0 len=811 avg_R=   -19.9 loss=-4.4147 temp=1.00 total_env_steps=57498 t=10.40s
+Ep   64: R=   -21.0 len=951 avg_R=   -19.9 loss=-4.4546 temp=1.00 total_env_steps=58449 t=10.97s
+Ep   65: R=   -20.0 len=941 avg_R=   -19.9 loss=-4.5242 temp=1.00 total_env_steps=59390 t=11.11s
+Ep   66: R=   -21.0 len=873 avg_R=   -19.9 loss=-4.4628 temp=1.00 total_env_steps=60263 t=11.18s
+Ep   67: R=   -20.0 len=885 avg_R=   -19.9 loss=-4.5625 temp=1.00 total_env_steps=61148 t=10.93s
+Ep   68: R=   -21.0 len=782 avg_R=   -19.9 loss=-4.4859 temp=1.00 total_env_steps=61930 t=10.36s
+Ep   69: R=   -21.0 len=792 avg_R=   -20.0 loss=-4.5087 temp=1.00 total_env_steps=62722 t=10.23s
+Ep   70: R=   -18.0 len=1101 avg_R=   -19.9 loss=-4.5604 temp=1.00 total_env_steps=63823 t=10.96s
+  greedy eval -21.0 / -18（近20局 self-play -20.3，total_env_steps=63823）
+[MyZero] best 模型 greedy=-21.0 ep=70 total_env_steps=63823 -> models/my_zero/Pong-v5\seed_42\best.otm
+Ep   71: R=   -17.0 len=1165 avg_R=   -19.9 loss=-4.5592 temp=1.00 total_env_steps=64988 t=16.93s
+Ep   72: R=   -21.0 len=819 avg_R=   -19.9 loss=-4.4939 temp=1.00 total_env_steps=65807 t=15.88s
+Ep   73: R=   -18.0 len=1053 avg_R=   -19.9 loss=-4.5209 temp=1.00 total_env_steps=66860 t=16.85s
+Ep   74: R=   -20.0 len=870 avg_R=   -19.9 loss=-4.4665 temp=1.00 total_env_steps=67730 t=16.23s
+Ep   75: R=   -21.0 len=792 avg_R=   -19.9 loss=-4.5509 temp=1.00 total_env_steps=68522 t=16.30s
+Ep   76: R=   -21.0 len=764 avg_R=   -19.9 loss=-4.5514 temp=1.00 total_env_steps=69286 t=15.85s
+Ep   77: R=   -21.0 len=854 avg_R=   -19.9 loss=-4.5594 temp=0.99 total_env_steps=70140 t=16.46s
+Ep   78: R=   -18.0 len=1026 avg_R=   -19.9 loss=-4.6544 temp=0.98 total_env_steps=71166 t=17.30s
+Ep   79: R=   -19.0 len=1047 avg_R=   -19.9 loss=-4.6346 temp=0.97 total_env_steps=72213 t=13.67s
+Ep   80: R=   -20.0 len=870 avg_R=   -19.9 loss=-4.5380 temp=0.96 total_env_steps=73083 t=10.92s
+  greedy eval -21.0 / -18（近20局 self-play -20.0，total_env_steps=73083）
+[MyZero] best 模型 greedy=-21.0 ep=80 total_env_steps=73083 -> models/my_zero/Pong-v5\seed_42\best.otm
+Ep   81: R=   -21.0 len=839 avg_R=   -19.9 loss=-4.6567 temp=0.95 total_env_steps=73922 t=10.21s
+Ep   82: R=   -20.0 len=871 avg_R=   -19.9 loss=-4.6125 temp=0.94 total_env_steps=74793 t=10.40s
+Ep   83: R=   -18.0 len=1102 avg_R=   -19.9 loss=-4.5819 temp=0.93 total_env_steps=75895 t=10.79s
+Ep   84: R=   -20.0 len=837 avg_R=   -19.9 loss=-4.6836 temp=0.92 total_env_steps=76732 t=10.30s
+Ep   85: R=   -20.0 len=856 avg_R=   -19.9 loss=-4.7028 temp=0.91 total_env_steps=77588 t=10.20s
+Ep   86: R=   -21.0 len=905 avg_R=   -19.9 loss=-4.6647 temp=0.90 total_env_steps=78493 t=10.35s
+Ep   87: R=   -21.0 len=820 avg_R=   -19.9 loss=-4.6395 temp=0.89 total_env_steps=79313 t=10.17s
+Ep   88: R=   -21.0 len=820 avg_R=   -19.9 loss=-4.6568 temp=0.88 total_env_steps=80133 t=10.13s
+Ep   89: R=   -20.0 len=918 avg_R=   -19.9 loss=-4.6342 temp=0.87 total_env_steps=81051 t=10.21s
+Ep   90: R=   -18.0 len=1042 avg_R=   -19.9 loss=-4.6400 temp=0.86 total_env_steps=82093 t=10.50s
+  greedy eval -21.0 / -18（近20局 self-play -19.8，total_env_steps=82093）
+[MyZero] best 模型 greedy=-21.0 ep=90 total_env_steps=82093 -> models/my_zero/Pong-v5\seed_42\best.otm
+Ep   91: R=   -20.0 len=898 avg_R=   -19.9 loss=-4.7214 temp=0.85 total_env_steps=82991 t=10.05s
+Ep   92: R=   -20.0 len=870 avg_R=   -19.9 loss=-4.5417 temp=0.84 total_env_steps=83861 t=10.03s
+Ep   93: R=   -20.0 len=941 avg_R=   -19.9 loss=-4.5697 temp=0.83 total_env_steps=84802 t=10.26s
+Ep   94: R=   -21.0 len=832 avg_R=   -19.9 loss=-4.6105 temp=0.82 total_env_steps=85634 t=9.95s
+Ep   95: R=   -19.0 len=949 avg_R=   -19.9 loss=-4.8143 temp=0.81 total_env_steps=86583 t=10.35s
+Ep   96: R=   -21.0 len=764 avg_R=   -19.9 loss=-4.7532 temp=0.80 total_env_steps=87347 t=10.19s
+Ep   97: R=   -20.0 len=1017 avg_R=   -19.9 loss=-4.6468 temp=0.79 total_env_steps=88364 t=10.56s
+Ep   98: R=   -20.0 len=917 avg_R=   -19.9 loss=-4.7196 temp=0.78 total_env_steps=89281 t=10.33s
+Ep   99: R=   -21.0 len=867 avg_R=   -19.9 loss=-4.8196 temp=0.77 total_env_steps=90148 t=10.49s
+Ep  100: R=   -21.0 len=867 avg_R=   -19.9 loss=-4.8053 temp=0.76 total_env_steps=91015 t=10.73s
+  greedy eval -21.0 / -18（近20局 self-play -20.1，total_env_steps=91015）
+[MyZero] best 模型 greedy=-21.0 ep=100 total_env_steps=91015 -> models/my_zero/Pong-v5\seed_42\best.otm
+Ep  101: R=   -19.0 len=953 avg_R=   -19.9 loss=-4.8163 temp=0.75 total_env_steps=91968 t=10.49s
+Ep  102: R=   -20.0 len=946 avg_R=   -19.9 loss=-4.8078 temp=0.74 total_env_steps=92914 t=10.29s
+Ep  103: R=   -19.0 len=1062 avg_R=   -19.9 loss=-4.8861 temp=0.73 total_env_steps=93976 t=10.56s
+Ep  104: R=   -21.0 len=820 avg_R=   -19.9 loss=-4.9083 temp=0.72 total_env_steps=94796 t=10.07s
+Ep  105: R=   -18.0 len=1116 avg_R=   -19.9 loss=-4.6740 temp=0.71 total_env_steps=95912 t=10.54s
+Ep  106: R=   -20.0 len=997 avg_R=   -19.9 loss=-4.8676 temp=0.70 total_env_steps=96909 t=10.34s
+Ep  107: R=   -21.0 len=891 avg_R=   -19.9 loss=-5.0036 temp=0.69 total_env_steps=97800 t=10.08s
+Ep  108: R=   -20.0 len=843 avg_R=   -19.9 loss=-4.9399 temp=0.68 total_env_steps=98643 t=10.02s
+Ep  109: R=   -20.0 len=884 avg_R=   -19.9 loss=-4.8961 temp=0.67 total_env_steps=99527 t=10.11s
+Ep  110: R=   -19.0 len=1001 avg_R=   -19.9 loss=-4.9894 temp=0.66 total_env_steps=100528 t=10.25s
+  greedy eval -21.0 / -18（近20局 self-play -20.0，total_env_steps=100528）
+[MyZero] best 模型 greedy=-21.0 ep=110 total_env_steps=100528 -> models/my_zero/Pong-v5\seed_42\best.otm
+Ep  111: R=   -21.0 len=867 avg_R=   -19.9 loss=-4.9294 temp=0.65 total_env_steps=101395 t=10.00s
+Ep  112: R=   -21.0 len=839 avg_R=   -19.9 loss=-4.9948 temp=0.64 total_env_steps=102234 t=9.91s
+Ep  113: R=   -18.0 len=1051 avg_R=   -19.9 loss=-4.8896 temp=0.63 total_env_steps=103285 t=10.45s
+Ep  114: R=   -19.0 len=972 avg_R=   -19.9 loss=-5.0024 temp=0.62 total_env_steps=104257 t=10.45s
+Ep  115: R=   -20.0 len=889 avg_R=   -19.9 loss=-5.0017 temp=0.61 total_env_steps=105146 t=10.24s
+Ep  116: R=   -21.0 len=840 avg_R=   -19.9 loss=-5.0282 temp=0.60 total_env_steps=105986 t=10.16s
+Ep  117: R=   -21.0 len=839 avg_R=   -19.9 loss=-4.9246 temp=0.59 total_env_steps=106825 t=10.20s
+Ep  118: R=   -19.0 len=939 avg_R=   -19.9 loss=-5.0231 temp=0.58 total_env_steps=107764 t=10.28s
+Ep  119: R=   -20.0 len=861 avg_R=   -19.9 loss=-5.0193 temp=0.57 total_env_steps=108625 t=10.22s
+Ep  120: R=   -20.0 len=866 avg_R=   -19.9 loss=-4.9393 temp=0.56 total_env_steps=109491 t=10.19s
+  greedy eval -21.0 / -18（近20局 self-play -19.9，total_env_steps=109491）
+[MyZero] best 模型 greedy=-21.0 ep=120 total_env_steps=109491 -> models/my_zero/Pong-v5\seed_42\best.otm
+Ep  121: R=   -20.0 len=842 avg_R=   -19.9 loss=-5.0425 temp=0.55 total_env_steps=110333 t=10.58s
+Ep  122: R=   -20.0 len=913 avg_R=   -19.9 loss=-4.9137 temp=0.54 total_env_steps=111246 t=10.58s
+Ep  123: R=   -21.0 len=839 avg_R=   -19.9 loss=-5.0505 temp=0.53 total_env_steps=112085 t=10.09s
+Ep  124: R=   -20.0 len=889 avg_R=   -19.9 loss=-5.0685 temp=0.52 total_env_steps=112974 t=10.43s
+Ep  125: R=   -19.0 len=949 avg_R=   -19.9 loss=-4.9094 temp=0.51 total_env_steps=113923 t=10.53s
+Ep  126: R=   -20.0 len=857 avg_R=   -19.9 loss=-5.0310 temp=0.50 total_env_steps=114780 t=10.41s
+Ep  127: R=   -20.0 len=899 avg_R=   -19.9 loss=-4.9778 temp=0.49 total_env_steps=115679 t=10.42s
+Ep  128: R=   -21.0 len=840 avg_R=   -19.9 loss=-4.9756 temp=0.48 total_env_steps=116519 t=10.34s
+Ep  129: R=   -19.0 len=1005 avg_R=   -19.9 loss=-5.0805 temp=0.47 total_env_steps=117524 t=10.54s
+Ep  130: R=   -21.0 len=844 avg_R=   -19.9 loss=-4.9890 temp=0.46 total_env_steps=118368 t=10.03s
+  greedy eval -21.0 / -18（近20局 self-play -20.0，total_env_steps=118368）
+[MyZero] best 模型 greedy=-21.0 ep=130 total_env_steps=118368 -> models/my_zero/Pong-v5\seed_42\best.otm
+Ep  131: R=   -20.0 len=902 avg_R=   -20.0 loss=-4.9871 temp=0.45 total_env_steps=119270 t=10.11s
+Ep  132: R=   -20.0 len=941 avg_R=   -20.0 loss=-4.9689 temp=0.44 total_env_steps=120211 t=10.18s
+Ep  133: R=   -21.0 len=764 avg_R=   -20.0 loss=-4.9431 temp=0.43 total_env_steps=120975 t=10.06s
+Ep  134: R=   -19.0 len=1009 avg_R=   -19.9 loss=-4.8961 temp=0.42 total_env_steps=121984 t=10.43s
+Ep  135: R=   -20.0 len=931 avg_R=   -19.9 loss=-4.9969 temp=0.41 total_env_steps=122915 t=10.31s
+Ep  136: R=   -21.0 len=811 avg_R=   -19.9 loss=-4.8737 temp=0.40 total_env_steps=123726 t=10.01s
+Ep  137: R=   -21.0 len=764 avg_R=   -20.0 loss=-4.8834 temp=0.39 total_env_steps=124490 t=10.05s
+Ep  138: R=   -21.0 len=848 avg_R=   -20.0 loss=-4.8988 temp=0.38 total_env_steps=125338 t=10.17s
+Ep  139: R=   -18.0 len=1073 avg_R=   -20.0 loss=-4.8761 temp=0.37 total_env_steps=126411 t=10.80s
+Ep  140: R=   -21.0 len=869 avg_R=   -20.0 loss=-4.7913 temp=0.36 total_env_steps=127280 t=10.41s
+  greedy eval -21.0 / -18（近20局 self-play -20.1，total_env_steps=127280）
+[MyZero] best 模型 greedy=-21.0 ep=140 total_env_steps=127280 -> models/my_zero/Pong-v5\seed_42\best.otm
+Ep  141: R=   -20.0 len=971 avg_R=   -20.0 loss=-4.8513 temp=0.35 total_env_steps=128251 t=10.25s
+Ep  142: R=   -20.0 len=917 avg_R=   -20.0 loss=-4.8292 temp=0.34 total_env_steps=129168 t=10.24s
+Ep  143: R=   -19.0 len=1000 avg_R=   -20.0 loss=-4.8200 temp=0.33 total_env_steps=130168 t=10.53s
+Ep  144: R=   -21.0 len=792 avg_R=   -20.0 loss=-4.9111 temp=0.32 total_env_steps=130960 t=10.05s
+Ep  145: R=   -20.0 len=842 avg_R=   -20.0 loss=-4.8799 temp=0.31 total_env_steps=131802 t=9.98s
+Ep  146: R=   -20.0 len=917 avg_R=   -20.0 loss=-4.7877 temp=0.30 total_env_steps=132719 t=10.57s
+Ep  147: R=   -21.0 len=839 avg_R=   -20.0 loss=-4.7707 temp=0.29 total_env_steps=133558 t=10.38s
+Ep  148: R=   -20.0 len=898 avg_R=   -20.1 loss=-4.6534 temp=0.28 total_env_steps=134456 t=10.34s
+Ep  149: R=   -17.0 len=1085 avg_R=   -20.0 loss=-4.6752 temp=0.27 total_env_steps=135541 t=10.68s
+Ep  150: R=   -18.0 len=995 avg_R=   -20.0 loss=-4.6381 temp=0.26 total_env_steps=136536 t=10.64s
+  greedy eval -21.0 / -18（近20局 self-play -19.9，total_env_steps=136536）
+[MyZero] best 模型 greedy=-21.0 ep=150 total_env_steps=136536 -> models/my_zero/Pong-v5\seed_42\best.otm
+📈 ALE/Pong-v5 greedy=-21.0 | 门槛 -18: 未达标 | 1801.9s
+
+--- seed 43 (2/3) ---
+Ep    1: R=   -20.0 len=903 avg_R=   -20.0 loss=0.0000 temp=1.00 total_env_steps=903 t=1.62s
+Ep    2: R=   -21.0 len=884 avg_R=   -20.5 loss=1.6519 temp=1.00 total_env_steps=1787 t=9.21s
+Ep    3: R=   -20.0 len=1022 avg_R=   -20.3 loss=0.1778 temp=1.00 total_env_steps=2809 t=9.39s
+Ep    4: R=   -21.0 len=880 avg_R=   -20.5 loss=0.5036 temp=1.00 total_env_steps=3689 t=9.29s
+Ep    5: R=   -21.0 len=764 avg_R=   -20.6 loss=0.7248 temp=1.00 total_env_steps=4453 t=8.95s
+Ep    6: R=   -21.0 len=764 avg_R=   -20.7 loss=0.8650 temp=1.00 total_env_steps=5217 t=9.14s
+Ep    7: R=   -19.0 len=1008 avg_R=   -20.4 loss=0.9642 temp=1.00 total_env_steps=6225 t=9.46s
+Ep    8: R=   -19.0 len=934 avg_R=   -20.2 loss=0.9763 temp=1.00 total_env_steps=7159 t=9.42s
+Ep    9: R=   -21.0 len=810 avg_R=   -20.3 loss=1.0622 temp=1.00 total_env_steps=7969 t=9.21s
+Ep   10: R=   -19.0 len=1114 avg_R=   -20.2 loss=1.1196 temp=1.00 total_env_steps=9083 t=9.87s
+Ep   11: R=   -20.0 len=949 avg_R=   -20.2 loss=1.0427 temp=1.00 total_env_steps=10032 t=9.42s
+Ep   12: R=   -20.0 len=843 avg_R=   -20.2 loss=1.1004 temp=1.00 total_env_steps=10875 t=9.42s
+Ep   13: R=   -21.0 len=944 avg_R=   -20.2 loss=1.1408 temp=1.00 total_env_steps=11819 t=9.62s
+Ep   14: R=   -21.0 len=842 avg_R=   -20.3 loss=1.0792 temp=1.00 total_env_steps=12661 t=9.53s
+Ep   15: R=   -21.0 len=764 avg_R=   -20.3 loss=1.1119 temp=1.00 total_env_steps=13425 t=9.35s
+Ep   16: R=   -21.0 len=794 avg_R=   -20.4 loss=1.0693 temp=1.00 total_env_steps=14219 t=9.50s
+Ep   17: R=   -19.0 len=1061 avg_R=   -20.3 loss=1.0860 temp=1.00 total_env_steps=15280 t=9.95s
+Ep   18: R=   -19.0 len=1038 avg_R=   -20.2 loss=1.0469 temp=1.00 total_env_steps=16318 t=9.92s
+Ep   19: R=   -21.0 len=852 avg_R=   -20.3 loss=1.1042 temp=1.00 total_env_steps=17170 t=9.58s
+Ep   20: R=   -21.0 len=824 avg_R=   -20.3 loss=1.1601 temp=1.00 total_env_steps=17994 t=9.75s
+  greedy eval -21.0 / -18（近20局 self-play -20.3，total_env_steps=17994）
+[MyZero] best 模型 greedy=-21.0 ep=20 total_env_steps=17994 -> models/my_zero/Pong-v5\seed_43\best.otm
+Ep   21: R=   -21.0 len=852 avg_R=   -20.3 loss=1.0879 temp=1.00 total_env_steps=18846 t=9.58s
+Ep   22: R=   -20.0 len=900 avg_R=   -20.3 loss=1.0808 temp=1.00 total_env_steps=19746 t=9.69s
+Ep   23: R=   -20.0 len=842 avg_R=   -20.3 loss=1.0846 temp=1.00 total_env_steps=20588 t=9.60s
+Ep   24: R=   -20.0 len=838 avg_R=   -20.3 loss=1.1009 temp=1.00 total_env_steps=21426 t=9.70s
+Ep   25: R=   -20.0 len=865 avg_R=   -20.3 loss=1.2116 temp=1.00 total_env_steps=22291 t=9.78s
+Ep   26: R=   -20.0 len=959 avg_R=   -20.3 loss=1.1798 temp=1.00 total_env_steps=23250 t=9.97s
+Ep   27: R=   -20.0 len=903 avg_R=   -20.3 loss=1.1432 temp=1.00 total_env_steps=24153 t=9.93s
+Ep   28: R=   -21.0 len=792 avg_R=   -20.3 loss=1.1774 temp=1.00 total_env_steps=24945 t=9.77s
+Ep   29: R=   -20.0 len=976 avg_R=   -20.3 loss=1.1746 temp=1.00 total_env_steps=25921 t=10.06s
+Ep   30: R=   -20.0 len=870 avg_R=   -20.3 loss=1.0947 temp=1.00 total_env_steps=26791 t=9.90s
+  greedy eval -21.0 / -18（近20局 self-play -20.3，total_env_steps=26791）
+[MyZero] best 模型 greedy=-21.0 ep=30 total_env_steps=26791 -> models/my_zero/Pong-v5\seed_43\best.otm
+Ep   31: R=   -21.0 len=764 avg_R=   -20.3 loss=1.1521 temp=1.00 total_env_steps=27555 t=9.60s
+Ep   32: R=   -21.0 len=764 avg_R=   -20.3 loss=1.2613 temp=1.00 total_env_steps=28319 t=9.76s
+Ep   33: R=   -19.0 len=966 avg_R=   -20.3 loss=1.1786 temp=1.00 total_env_steps=29285 t=10.14s
+Ep   34: R=   -21.0 len=840 avg_R=   -20.3 loss=1.1882 temp=1.00 total_env_steps=30125 t=10.12s
+Ep   35: R=   -20.0 len=947 avg_R=   -20.3 loss=1.2538 temp=1.00 total_env_steps=31072 t=10.42s
+Ep   36: R=   -20.0 len=878 avg_R=   -20.3 loss=1.2751 temp=1.00 total_env_steps=31950 t=10.08s
+Ep   37: R=   -19.0 len=1037 avg_R=   -20.2 loss=1.2805 temp=1.00 total_env_steps=32987 t=10.53s
+Ep   38: R=   -19.0 len=956 avg_R=   -20.2 loss=1.2874 temp=1.00 total_env_steps=33943 t=10.26s
+Ep   39: R=   -20.0 len=1019 avg_R=   -20.2 loss=1.3925 temp=1.00 total_env_steps=34962 t=10.46s
+Ep   40: R=   -19.0 len=1129 avg_R=   -20.2 loss=1.3403 temp=1.00 total_env_steps=36091 t=10.54s
+  greedy eval -21.0 / -18（近20局 self-play -20.0，total_env_steps=36091）
+[MyZero] best 模型 greedy=-21.0 ep=40 total_env_steps=36091 -> models/my_zero/Pong-v5\seed_43\best.otm
+Ep   41: R=   -21.0 len=764 avg_R=   -20.2 loss=1.2755 temp=1.00 total_env_steps=36855 t=9.78s
+Ep   42: R=   -21.0 len=853 avg_R=   -20.2 loss=1.3341 temp=1.00 total_env_steps=37708 t=9.90s
+Ep   43: R=   -21.0 len=843 avg_R=   -20.2 loss=1.3377 temp=1.00 total_env_steps=38551 t=9.91s
+Ep   44: R=   -21.0 len=824 avg_R=   -20.2 loss=1.3670 temp=1.00 total_env_steps=39375 t=9.95s
+Ep   45: R=   -21.0 len=792 avg_R=   -20.3 loss=1.4554 temp=1.00 total_env_steps=40167 t=9.85s
+Ep   46: R=   -21.0 len=792 avg_R=   -20.3 loss=1.3608 temp=1.00 total_env_steps=40959 t=9.96s
+Ep   47: R=   -20.0 len=965 avg_R=   -20.3 loss=1.4617 temp=1.00 total_env_steps=41924 t=10.21s
+Ep   48: R=   -21.0 len=764 avg_R=   -20.3 loss=1.3743 temp=1.00 total_env_steps=42688 t=9.81s
+Ep   49: R=   -21.0 len=886 avg_R=   -20.3 loss=1.3570 temp=1.00 total_env_steps=43574 t=10.12s
+Ep   50: R=   -20.0 len=838 avg_R=   -20.3 loss=1.3542 temp=1.00 total_env_steps=44412 t=10.01s
+  greedy eval -21.0 / -18（近20局 self-play -20.4，total_env_steps=44412）
+[MyZero] best 模型 greedy=-21.0 ep=50 total_env_steps=44412 -> models/my_zero/Pong-v5\seed_43\best.otm
+Ep   51: R=   -20.0 len=988 avg_R=   -20.3 loss=1.3671 temp=1.00 total_env_steps=45400 t=10.26s
+Ep   52: R=   -20.0 len=1102 avg_R=   -20.3 loss=1.4036 temp=1.00 total_env_steps=46502 t=10.80s
+Ep   53: R=   -21.0 len=829 avg_R=   -20.3 loss=1.3978 temp=1.00 total_env_steps=47331 t=10.59s
+Ep   54: R=   -19.0 len=1055 avg_R=   -20.3 loss=1.3830 temp=1.00 total_env_steps=48386 t=11.14s
+Ep   55: R=   -20.0 len=939 avg_R=   -20.3 loss=1.4810 temp=1.00 total_env_steps=49325 t=10.57s
+Ep   56: R=   -20.0 len=936 avg_R=   -20.3 loss=1.4197 temp=1.00 total_env_steps=50261 t=10.50s
+Ep   57: R=   -21.0 len=824 avg_R=   -20.3 loss=1.4455 temp=1.00 total_env_steps=51085 t=10.13s
+Ep   58: R=   -19.0 len=1037 avg_R=   -20.3 loss=1.4454 temp=1.00 total_env_steps=52122 t=10.51s
+Ep   59: R=   -20.0 len=842 avg_R=   -20.3 loss=1.4522 temp=1.00 total_env_steps=52964 t=10.09s
+Ep   60: R=   -21.0 len=872 avg_R=   -20.3 loss=1.4139 temp=1.00 total_env_steps=53836 t=9.97s
+  greedy eval -21.0 / -18（近20局 self-play -20.5，total_env_steps=53836）
+[MyZero] best 模型 greedy=-21.0 ep=60 total_env_steps=53836 -> models/my_zero/Pong-v5\seed_43\best.otm
+Ep   61: R=   -21.0 len=963 avg_R=   -20.3 loss=1.4174 temp=1.00 total_env_steps=54799 t=10.19s
+Ep   62: R=   -20.0 len=1052 avg_R=   -20.3 loss=1.4539 temp=1.00 total_env_steps=55851 t=10.16s
+Ep   63: R=   -21.0 len=993 avg_R=   -20.3 loss=1.4626 temp=1.00 total_env_steps=56844 t=10.33s
+Ep   64: R=   -17.0 len=1145 avg_R=   -20.2 loss=1.4284 temp=1.00 total_env_steps=57989 t=10.60s
+Ep   65: R=   -20.0 len=1010 avg_R=   -20.2 loss=1.4180 temp=1.00 total_env_steps=58999 t=10.30s
+Ep   66: R=   -21.0 len=764 avg_R=   -20.2 loss=1.3425 temp=1.00 total_env_steps=59763 t=9.84s
+Ep   67: R=   -20.0 len=950 avg_R=   -20.2 loss=1.4112 temp=1.00 total_env_steps=60713 t=10.26s
+Ep   68: R=   -21.0 len=852 avg_R=   -20.2 loss=1.4999 temp=1.00 total_env_steps=61565 t=10.28s
+Ep   69: R=   -18.0 len=1236 avg_R=   -20.2 loss=1.4270 temp=1.00 total_env_steps=62801 t=11.53s
+Ep   70: R=   -21.0 len=947 avg_R=   -20.2 loss=1.5025 temp=1.00 total_env_steps=63748 t=10.82s
+  greedy eval -20.9 / -18（近20局 self-play -20.0，total_env_steps=63748）
+[MyZero] best 模型 greedy=-20.9 ep=70 total_env_steps=63748 -> models/my_zero/Pong-v5\seed_43\best.otm
+Ep   71: R=   -21.0 len=843 avg_R=   -20.2 loss=1.3785 temp=1.00 total_env_steps=64591 t=10.56s
+Ep   72: R=   -20.0 len=906 avg_R=   -20.2 loss=1.4829 temp=1.00 total_env_steps=65497 t=10.53s
+Ep   73: R=   -20.0 len=917 avg_R=   -20.2 loss=1.5099 temp=1.00 total_env_steps=66414 t=10.52s
+Ep   74: R=   -21.0 len=852 avg_R=   -20.2 loss=1.5038 temp=1.00 total_env_steps=67266 t=10.30s
+Ep   75: R=   -20.0 len=1037 avg_R=   -20.2 loss=1.5102 temp=1.00 total_env_steps=68303 t=10.50s
+Ep   76: R=   -20.0 len=902 avg_R=   -20.2 loss=1.4737 temp=1.00 total_env_steps=69205 t=10.31s
+Ep   77: R=   -18.0 len=1056 avg_R=   -20.2 loss=1.4421 temp=0.99 total_env_steps=70261 t=10.60s
+Ep   78: R=   -21.0 len=792 avg_R=   -20.2 loss=1.3478 temp=0.98 total_env_steps=71053 t=10.13s
+Ep   79: R=   -20.0 len=904 avg_R=   -20.2 loss=1.3706 temp=0.97 total_env_steps=71957 t=10.18s
+Ep   80: R=   -20.0 len=902 avg_R=   -20.2 loss=1.3608 temp=0.96 total_env_steps=72859 t=10.25s
+  greedy eval -20.8 / -18（近20局 self-play -20.0，total_env_steps=72859）
+[MyZero] best 模型 greedy=-20.8 ep=80 total_env_steps=72859 -> models/my_zero/Pong-v5\seed_43\best.otm
+Ep   81: R=   -20.0 len=842 avg_R=   -20.2 loss=1.4795 temp=0.95 total_env_steps=73701 t=10.05s
+Ep   82: R=   -20.0 len=842 avg_R=   -20.2 loss=1.4648 temp=0.94 total_env_steps=74543 t=10.06s
+Ep   83: R=   -20.0 len=945 avg_R=   -20.2 loss=1.4972 temp=0.93 total_env_steps=75488 t=10.22s
+Ep   84: R=   -19.0 len=1238 avg_R=   -20.2 loss=1.5183 temp=0.92 total_env_steps=76726 t=10.82s
+Ep   85: R=   -20.0 len=1018 avg_R=   -20.2 loss=1.6330 temp=0.91 total_env_steps=77744 t=10.35s
+Ep   86: R=   -21.0 len=764 avg_R=   -20.2 loss=1.5376 temp=0.90 total_env_steps=78508 t=9.90s
+Ep   87: R=   -19.0 len=977 avg_R=   -20.2 loss=1.4681 temp=0.89 total_env_steps=79485 t=10.18s
+Ep   88: R=   -21.0 len=764 avg_R=   -20.2 loss=1.5631 temp=0.88 total_env_steps=80249 t=9.90s
+Ep   89: R=   -21.0 len=764 avg_R=   -20.2 loss=1.6487 temp=0.87 total_env_steps=81013 t=10.41s
+Ep   90: R=   -20.0 len=921 avg_R=   -20.2 loss=1.5639 temp=0.86 total_env_steps=81934 t=10.80s
+  greedy eval -20.8 / -18（近20局 self-play -20.1，total_env_steps=81934）
+[MyZero] best 模型 greedy=-20.8 ep=90 total_env_steps=81934 -> models/my_zero/Pong-v5\seed_43\best.otm
+Ep   91: R=   -19.0 len=949 avg_R=   -20.2 loss=1.5006 temp=0.85 total_env_steps=82883 t=10.88s
+Ep   92: R=   -20.0 len=870 avg_R=   -20.2 loss=1.4813 temp=0.84 total_env_steps=83753 t=10.48s
+Ep   93: R=   -20.0 len=870 avg_R=   -20.2 loss=1.4954 temp=0.83 total_env_steps=84623 t=10.19s
+Ep   94: R=   -21.0 len=824 avg_R=   -20.2 loss=1.4574 temp=0.82 total_env_steps=85447 t=9.97s
+Ep   95: R=   -21.0 len=812 avg_R=   -20.2 loss=1.4964 temp=0.81 total_env_steps=86259 t=10.17s
+Ep   96: R=   -19.0 len=1032 avg_R=   -20.2 loss=1.5903 temp=0.80 total_env_steps=87291 t=10.68s
+Ep   97: R=   -20.0 len=855 avg_R=   -20.2 loss=1.5312 temp=0.79 total_env_steps=88146 t=10.24s
+Ep   98: R=   -21.0 len=764 avg_R=   -20.2 loss=1.4619 temp=0.78 total_env_steps=88910 t=10.09s
+Ep   99: R=   -21.0 len=820 avg_R=   -20.2 loss=1.4717 temp=0.77 total_env_steps=89730 t=10.11s
+Ep  100: R=   -21.0 len=792 avg_R=   -20.2 loss=1.4788 temp=0.76 total_env_steps=90522 t=10.60s
+  greedy eval -20.8 / -18（近20局 self-play -20.2，total_env_steps=90522）
+[MyZero] best 模型 greedy=-20.8 ep=100 total_env_steps=90522 -> models/my_zero/Pong-v5\seed_43\best.otm
+Ep  101: R=   -19.0 len=965 avg_R=   -20.2 loss=1.4860 temp=0.75 total_env_steps=91487 t=15.95s
+Ep  102: R=   -21.0 len=854 avg_R=   -20.2 loss=1.4833 temp=0.74 total_env_steps=92341 t=15.80s
+Ep  103: R=   -20.0 len=991 avg_R=   -20.2 loss=1.3746 temp=0.73 total_env_steps=93332 t=16.76s
+Ep  104: R=   -20.0 len=930 avg_R=   -20.2 loss=1.4760 temp=0.72 total_env_steps=94262 t=16.69s
+Ep  105: R=   -20.0 len=870 avg_R=   -20.2 loss=1.4473 temp=0.71 total_env_steps=95132 t=16.97s
+Ep  106: R=   -20.0 len=838 avg_R=   -20.2 loss=1.4221 temp=0.70 total_env_steps=95970 t=16.63s
+Ep  107: R=   -21.0 len=880 avg_R=   -20.2 loss=1.4082 temp=0.69 total_env_steps=96850 t=16.99s
+Ep  108: R=   -21.0 len=792 avg_R=   -20.2 loss=1.4951 temp=0.68 total_env_steps=97642 t=16.75s
+Ep  109: R=   -21.0 len=820 avg_R=   -20.2 loss=1.4216 temp=0.67 total_env_steps=98462 t=16.64s
+Ep  110: R=   -21.0 len=940 avg_R=   -20.2 loss=1.4366 temp=0.66 total_env_steps=99402 t=17.38s
+  greedy eval -20.4 / -18（近20局 self-play -20.4，total_env_steps=99402）
+[MyZero] best 模型 greedy=-20.4 ep=110 total_env_steps=99402 -> models/my_zero/Pong-v5\seed_43\best.otm
+Ep  111: R=   -21.0 len=824 avg_R=   -20.2 loss=1.4436 temp=0.65 total_env_steps=100226 t=16.49s
+Ep  112: R=   -20.0 len=991 avg_R=   -20.2 loss=1.4697 temp=0.64 total_env_steps=101217 t=17.30s
+Ep  113: R=   -20.0 len=1008 avg_R=   -20.2 loss=1.4767 temp=0.63 total_env_steps=102225 t=17.43s
+Ep  114: R=   -21.0 len=764 avg_R=   -20.2 loss=1.4561 temp=0.62 total_env_steps=102989 t=12.66s
+Ep  115: R=   -20.0 len=948 avg_R=   -20.2 loss=1.4440 temp=0.61 total_env_steps=103937 t=12.31s
+Ep  116: R=   -21.0 len=852 avg_R=   -20.2 loss=1.4131 temp=0.60 total_env_steps=104789 t=11.74s
+Ep  117: R=   -20.0 len=949 avg_R=   -20.2 loss=1.3094 temp=0.59 total_env_steps=105738 t=11.29s
+Ep  118: R=   -21.0 len=792 avg_R=   -20.2 loss=1.3736 temp=0.58 total_env_steps=106530 t=11.02s
+Ep  119: R=   -20.0 len=838 avg_R=   -20.2 loss=1.3077 temp=0.57 total_env_steps=107368 t=12.14s
+Ep  120: R=   -21.0 len=764 avg_R=   -20.2 loss=1.3038 temp=0.56 total_env_steps=108132 t=12.23s
+  greedy eval -20.6 / -18（近20局 self-play -20.5，total_env_steps=108132）
+Ep  121: R=   -21.0 len=821 avg_R=   -20.2 loss=1.3247 temp=0.55 total_env_steps=108953 t=12.76s
+Ep  122: R=   -19.0 len=972 avg_R=   -20.2 loss=1.3480 temp=0.54 total_env_steps=109925 t=12.81s
+Ep  123: R=   -21.0 len=858 avg_R=   -20.2 loss=1.3482 temp=0.53 total_env_steps=110783 t=12.56s
+Ep  124: R=   -21.0 len=811 avg_R=   -20.2 loss=1.2446 temp=0.52 total_env_steps=111594 t=12.76s
+Ep  125: R=   -20.0 len=842 avg_R=   -20.2 loss=1.2646 temp=0.51 total_env_steps=112436 t=12.95s
+Ep  126: R=   -20.0 len=986 avg_R=   -20.2 loss=1.2852 temp=0.50 total_env_steps=113422 t=12.90s
+Ep  127: R=   -20.0 len=860 avg_R=   -20.2 loss=1.1656 temp=0.49 total_env_steps=114282 t=12.90s
+Ep  128: R=   -19.0 len=949 avg_R=   -20.2 loss=1.2681 temp=0.48 total_env_steps=115231 t=13.35s
+Ep  129: R=   -21.0 len=792 avg_R=   -20.2 loss=1.1341 temp=0.47 total_env_steps=116023 t=11.70s
+Ep  130: R=   -21.0 len=764 avg_R=   -20.2 loss=1.0587 temp=0.46 total_env_steps=116787 t=11.31s
+  greedy eval -21.0 / -18（近20局 self-play -20.4，total_env_steps=116787）
+Ep  131: R=   -18.0 len=1027 avg_R=   -20.2 loss=0.8910 temp=0.45 total_env_steps=117814 t=11.61s
+Ep  132: R=   -20.0 len=888 avg_R=   -20.2 loss=0.9817 temp=0.44 total_env_steps=118702 t=11.39s
+Ep  133: R=   -21.0 len=820 avg_R=   -20.2 loss=1.0404 temp=0.43 total_env_steps=119522 t=11.08s
+Ep  134: R=   -21.0 len=848 avg_R=   -20.2 loss=0.9545 temp=0.42 total_env_steps=120370 t=11.01s
+Ep  135: R=   -21.0 len=824 avg_R=   -20.2 loss=0.8714 temp=0.41 total_env_steps=121194 t=11.89s
+Ep  136: R=   -20.0 len=922 avg_R=   -20.2 loss=0.9084 temp=0.40 total_env_steps=122116 t=12.93s
+Ep  137: R=   -21.0 len=792 avg_R=   -20.3 loss=0.8455 temp=0.39 total_env_steps=122908 t=10.65s
+Ep  138: R=   -21.0 len=764 avg_R=   -20.3 loss=0.8788 temp=0.38 total_env_steps=123672 t=10.51s
+Ep  139: R=   -19.0 len=982 avg_R=   -20.3 loss=0.7453 temp=0.37 total_env_steps=124654 t=11.07s
+Ep  140: R=   -20.0 len=843 avg_R=   -20.3 loss=0.6074 temp=0.36 total_env_steps=125497 t=11.09s
+  greedy eval -20.7 / -18（近20局 self-play -20.2，total_env_steps=125497）
+Ep  141: R=   -21.0 len=908 avg_R=   -20.3 loss=0.5426 temp=0.35 total_env_steps=126405 t=10.43s
+Ep  142: R=   -20.0 len=837 avg_R=   -20.3 loss=0.3970 temp=0.34 total_env_steps=127242 t=10.78s
+Ep  143: R=   -20.0 len=883 avg_R=   -20.3 loss=0.4814 temp=0.33 total_env_steps=128125 t=10.57s
+Ep  144: R=   -21.0 len=824 avg_R=   -20.3 loss=0.3959 temp=0.32 total_env_steps=128949 t=10.57s
+Ep  145: R=   -21.0 len=947 avg_R=   -20.3 loss=0.3234 temp=0.31 total_env_steps=129896 t=10.77s
+Ep  146: R=   -20.0 len=916 avg_R=   -20.2 loss=0.0802 temp=0.30 total_env_steps=130812 t=10.71s
+Ep  147: R=   -21.0 len=810 avg_R=   -20.3 loss=0.0900 temp=0.29 total_env_steps=131622 t=10.51s
+Ep  148: R=   -20.0 len=842 avg_R=   -20.2 loss=-0.0904 temp=0.28 total_env_steps=132464 t=10.45s
+Ep  149: R=   -20.0 len=843 avg_R=   -20.2 loss=-0.2311 temp=0.27 total_env_steps=133307 t=10.83s
+Ep  150: R=   -21.0 len=782 avg_R=   -20.2 loss=-0.2462 temp=0.26 total_env_steps=134089 t=10.71s
+  greedy eval -20.3 / -18（近20局 self-play -20.4，total_env_steps=134089）
+[MyZero] best 模型 greedy=-20.3 ep=150 total_env_steps=134089 -> models/my_zero/Pong-v5\seed_43\best.otm
+📈 ALE/Pong-v5 greedy=-20.3 | 门槛 -18: 未达标 | 1909.2s
+
+--- seed 44 (3/3) ---
+Ep    1: R=   -21.0 len=824 avg_R=   -21.0 loss=0.0000 temp=1.00 total_env_steps=824 t=1.58s
+Ep    2: R=   -20.0 len=987 avg_R=   -20.5 loss=4.6448 temp=1.00 total_env_steps=1811 t=9.59s
+Ep    3: R=   -21.0 len=824 avg_R=   -20.7 loss=1.8589 temp=1.00 total_env_steps=2635 t=9.52s
+Ep    4: R=   -21.0 len=1006 avg_R=   -20.8 loss=1.8854 temp=1.00 total_env_steps=3641 t=9.77s
+Ep    5: R=   -21.0 len=854 avg_R=   -20.8 loss=1.8048 temp=1.00 total_env_steps=4495 t=9.66s
+Ep    6: R=   -21.0 len=784 avg_R=   -20.8 loss=1.8076 temp=1.00 total_env_steps=5279 t=9.40s
+Ep    7: R=   -20.0 len=981 avg_R=   -20.7 loss=1.6755 temp=1.00 total_env_steps=6260 t=10.02s
+Ep    8: R=   -19.0 len=1068 avg_R=   -20.5 loss=1.5939 temp=1.00 total_env_steps=7328 t=10.08s
+Ep    9: R=   -20.0 len=902 avg_R=   -20.4 loss=1.6188 temp=1.00 total_env_steps=8230 t=9.89s
+Ep   10: R=   -21.0 len=826 avg_R=   -20.5 loss=1.6289 temp=1.00 total_env_steps=9056 t=9.61s
+Ep   11: R=   -21.0 len=783 avg_R=   -20.5 loss=1.5945 temp=1.00 total_env_steps=9839 t=9.70s
+Ep   12: R=   -21.0 len=852 avg_R=   -20.6 loss=1.5669 temp=1.00 total_env_steps=10691 t=9.75s
+Ep   13: R=   -21.0 len=764 avg_R=   -20.6 loss=1.5263 temp=1.00 total_env_steps=11455 t=9.74s
+Ep   14: R=   -21.0 len=824 avg_R=   -20.6 loss=1.5480 temp=1.00 total_env_steps=12279 t=9.81s
+Ep   15: R=   -20.0 len=962 avg_R=   -20.6 loss=1.4806 temp=1.00 total_env_steps=13241 t=10.39s
+Ep   16: R=   -21.0 len=764 avg_R=   -20.6 loss=1.5322 temp=1.00 total_env_steps=14005 t=9.76s
+Ep   17: R=   -21.0 len=764 avg_R=   -20.6 loss=1.4605 temp=1.00 total_env_steps=14769 t=9.59s
+Ep   18: R=   -21.0 len=792 avg_R=   -20.7 loss=1.4740 temp=1.00 total_env_steps=15561 t=9.77s
+Ep   19: R=   -19.0 len=937 avg_R=   -20.6 loss=1.4175 temp=1.00 total_env_steps=16498 t=10.33s
+Ep   20: R=   -20.0 len=842 avg_R=   -20.5 loss=1.3913 temp=1.00 total_env_steps=17340 t=10.02s
+  greedy eval -21.0 / -18（近20局 self-play -20.5，total_env_steps=17340）
+[MyZero] best 模型 greedy=-21.0 ep=20 total_env_steps=17340 -> models/my_zero/Pong-v5\seed_44\best.otm
+Ep   21: R=   -21.0 len=942 avg_R=   -20.6 loss=1.3319 temp=1.00 total_env_steps=18282 t=11.22s
+Ep   22: R=   -21.0 len=824 avg_R=   -20.6 loss=1.3249 temp=1.00 total_env_steps=19106 t=12.43s
+Ep   23: R=   -21.0 len=903 avg_R=   -20.6 loss=1.3919 temp=1.00 total_env_steps=20009 t=12.63s
+Ep   24: R=   -19.0 len=1010 avg_R=   -20.5 loss=1.4296 temp=1.00 total_env_steps=21019 t=18.23s
+Ep   25: R=   -21.0 len=824 avg_R=   -20.6 loss=1.2601 temp=1.00 total_env_steps=21843 t=13.50s
+Ep   26: R=   -21.0 len=862 avg_R=   -20.6 loss=1.3271 temp=1.00 total_env_steps=22705 t=11.43s
+Ep   27: R=   -21.0 len=824 avg_R=   -20.6 loss=1.3232 temp=1.00 total_env_steps=23529 t=11.95s
+Ep   28: R=   -21.0 len=852 avg_R=   -20.6 loss=1.2428 temp=1.00 total_env_steps=24381 t=17.01s
+Ep   29: R=   -21.0 len=914 avg_R=   -20.6 loss=1.2439 temp=1.00 total_env_steps=25295 t=13.24s
+Ep   30: R=   -21.0 len=824 avg_R=   -20.6 loss=1.1427 temp=1.00 total_env_steps=26119 t=12.18s
+  greedy eval -21.0 / -18（近20局 self-play -20.7，total_env_steps=26119）
+[MyZero] best 模型 greedy=-21.0 ep=30 total_env_steps=26119 -> models/my_zero/Pong-v5\seed_44\best.otm
+Ep   31: R=   -20.0 len=902 avg_R=   -20.6 loss=1.1705 temp=1.00 total_env_steps=27021 t=10.59s
+Ep   32: R=   -21.0 len=1035 avg_R=   -20.6 loss=1.3179 temp=1.00 total_env_steps=28056 t=10.91s
+Ep   33: R=   -21.0 len=764 avg_R=   -20.6 loss=1.2238 temp=1.00 total_env_steps=28820 t=10.66s
+Ep   34: R=   -21.0 len=824 avg_R=   -20.6 loss=1.1434 temp=1.00 total_env_steps=29644 t=12.00s
+Ep   35: R=   -20.0 len=903 avg_R=   -20.6 loss=1.1518 temp=1.00 total_env_steps=30547 t=18.94s
+Ep   36: R=   -21.0 len=825 avg_R=   -20.6 loss=1.1798 temp=1.00 total_env_steps=31372 t=14.36s
+Ep   37: R=   -21.0 len=824 avg_R=   -20.6 loss=1.0880 temp=1.00 total_env_steps=32196 t=11.97s
+Ep   38: R=   -21.0 len=852 avg_R=   -20.7 loss=0.9855 temp=1.00 total_env_steps=33048 t=11.31s
+Ep   39: R=   -20.0 len=837 avg_R=   -20.6 loss=1.0179 temp=1.00 total_env_steps=33885 t=10.92s
+Ep   40: R=   -20.0 len=905 avg_R=   -20.6 loss=0.9410 temp=1.00 total_env_steps=34790 t=10.92s
+  greedy eval -21.0 / -18（近20局 self-play -20.7，total_env_steps=34790）
+[MyZero] best 模型 greedy=-21.0 ep=40 total_env_steps=34790 -> models/my_zero/Pong-v5\seed_44\best.otm
+Ep   41: R=   -21.0 len=824 avg_R=   -20.6 loss=1.0367 temp=1.00 total_env_steps=35614 t=10.33s
+Ep   42: R=   -21.0 len=822 avg_R=   -20.6 loss=1.0192 temp=1.00 total_env_steps=36436 t=10.23s
+Ep   43: R=   -21.0 len=854 avg_R=   -20.7 loss=0.9420 temp=1.00 total_env_steps=37290 t=10.41s
+Ep   44: R=   -21.0 len=900 avg_R=   -20.7 loss=0.9680 temp=1.00 total_env_steps=38190 t=10.53s
+Ep   45: R=   -18.0 len=1191 avg_R=   -20.6 loss=0.9542 temp=1.00 total_env_steps=39381 t=11.49s
+Ep   46: R=   -21.0 len=824 avg_R=   -20.6 loss=1.0445 temp=1.00 total_env_steps=40205 t=11.42s
+Ep   47: R=   -20.0 len=897 avg_R=   -20.6 loss=1.0822 temp=1.00 total_env_steps=41102 t=10.80s
+Ep   48: R=   -21.0 len=945 avg_R=   -20.6 loss=0.9974 temp=1.00 total_env_steps=42047 t=10.83s
+Ep   49: R=   -21.0 len=880 avg_R=   -20.6 loss=1.0727 temp=1.00 total_env_steps=42927 t=10.54s
+Ep   50: R=   -21.0 len=869 avg_R=   -20.6 loss=1.1278 temp=1.00 total_env_steps=43796 t=10.60s
+  greedy eval -21.0 / -18（近20局 self-play -20.6，total_env_steps=43796）
+[MyZero] best 模型 greedy=-21.0 ep=50 total_env_steps=43796 -> models/my_zero/Pong-v5\seed_44\best.otm
+Ep   51: R=   -20.0 len=843 avg_R=   -20.6 loss=1.1164 temp=1.00 total_env_steps=44639 t=10.24s
+Ep   52: R=   -20.0 len=872 avg_R=   -20.6 loss=1.1989 temp=1.00 total_env_steps=45511 t=10.49s
+Ep   53: R=   -21.0 len=764 avg_R=   -20.6 loss=1.2940 temp=1.00 total_env_steps=46275 t=10.12s
+Ep   54: R=   -21.0 len=870 avg_R=   -20.6 loss=1.2850 temp=1.00 total_env_steps=47145 t=10.49s
+Ep   55: R=   -19.0 len=938 avg_R=   -20.6 loss=1.3291 temp=1.00 total_env_steps=48083 t=10.44s
+Ep   56: R=   -20.0 len=872 avg_R=   -20.6 loss=1.3346 temp=1.00 total_env_steps=48955 t=10.34s
+Ep   57: R=   -21.0 len=824 avg_R=   -20.6 loss=1.2704 temp=1.00 total_env_steps=49779 t=10.25s
+Ep   58: R=   -21.0 len=764 avg_R=   -20.6 loss=1.3626 temp=1.00 total_env_steps=50543 t=10.16s
+Ep   59: R=   -21.0 len=764 avg_R=   -20.6 loss=1.3173 temp=1.00 total_env_steps=51307 t=10.09s
+Ep   60: R=   -20.0 len=842 avg_R=   -20.6 loss=1.4259 temp=1.00 total_env_steps=52149 t=10.37s
+  greedy eval -20.6 / -18（近20局 self-play -20.5，total_env_steps=52149）
+[MyZero] best 模型 greedy=-20.6 ep=60 total_env_steps=52149 -> models/my_zero/Pong-v5\seed_44\best.otm
+Ep   61: R=   -21.0 len=841 avg_R=   -20.6 loss=1.4175 temp=1.00 total_env_steps=52990 t=10.67s
+Ep   62: R=   -21.0 len=764 avg_R=   -20.6 loss=1.4926 temp=1.00 total_env_steps=53754 t=10.42s
+Ep   63: R=   -21.0 len=764 avg_R=   -20.6 loss=1.4800 temp=1.00 total_env_steps=54518 t=10.52s
+Ep   64: R=   -21.0 len=764 avg_R=   -20.6 loss=1.3623 temp=1.00 total_env_steps=55282 t=11.01s
+Ep   65: R=   -21.0 len=764 avg_R=   -20.6 loss=1.4117 temp=1.00 total_env_steps=56046 t=10.50s
+Ep   66: R=   -21.0 len=764 avg_R=   -20.6 loss=1.4625 temp=1.00 total_env_steps=56810 t=10.62s
+Ep   67: R=   -21.0 len=764 avg_R=   -20.6 loss=1.3809 temp=1.00 total_env_steps=57574 t=10.45s
+Ep   68: R=   -21.0 len=764 avg_R=   -20.6 loss=1.3650 temp=1.00 total_env_steps=58338 t=10.69s
+Ep   69: R=   -21.0 len=764 avg_R=   -20.6 loss=1.3428 temp=1.00 total_env_steps=59102 t=10.55s
+Ep   70: R=   -21.0 len=764 avg_R=   -20.6 loss=1.4047 temp=1.00 total_env_steps=59866 t=10.54s
+  greedy eval -21.0 / -18（近20局 self-play -20.7，total_env_steps=59866）
+Ep   71: R=   -21.0 len=764 avg_R=   -20.6 loss=1.3575 temp=1.00 total_env_steps=60630 t=10.30s
+Ep   72: R=   -21.0 len=764 avg_R=   -20.7 loss=1.2097 temp=1.00 total_env_steps=61394 t=10.53s
+Ep   73: R=   -21.0 len=764 avg_R=   -20.7 loss=1.2813 temp=1.00 total_env_steps=62158 t=10.63s
+Ep   74: R=   -21.0 len=764 avg_R=   -20.7 loss=1.1427 temp=1.00 total_env_steps=62922 t=10.49s
+Ep   75: R=   -21.0 len=764 avg_R=   -20.7 loss=1.1892 temp=1.00 total_env_steps=63686 t=10.60s
+Ep   76: R=   -21.0 len=764 avg_R=   -20.7 loss=1.0691 temp=1.00 total_env_steps=64450 t=10.56s
+Ep   77: R=   -21.0 len=764 avg_R=   -20.7 loss=1.1106 temp=0.99 total_env_steps=65214 t=10.50s
+Ep   78: R=   -21.0 len=842 avg_R=   -20.7 loss=1.1545 temp=0.98 total_env_steps=66056 t=10.66s
+Ep   79: R=   -21.0 len=764 avg_R=   -20.7 loss=0.8921 temp=0.97 total_env_steps=66820 t=10.36s
+Ep   80: R=   -21.0 len=764 avg_R=   -20.7 loss=0.9542 temp=0.96 total_env_steps=67584 t=10.64s
+  greedy eval -21.0 / -18（近20局 self-play -21.0，total_env_steps=67584）
+Ep   81: R=   -21.0 len=764 avg_R=   -20.7 loss=0.9951 temp=0.95 total_env_steps=68348 t=10.36s
+Ep   82: R=   -21.0 len=764 avg_R=   -20.7 loss=0.8495 temp=0.94 total_env_steps=69112 t=10.41s
+Ep   83: R=   -21.0 len=764 avg_R=   -20.7 loss=0.7629 temp=0.93 total_env_steps=69876 t=10.62s
+Ep   84: R=   -21.0 len=764 avg_R=   -20.7 loss=0.6433 temp=0.92 total_env_steps=70640 t=10.49s
+Ep   85: R=   -21.0 len=764 avg_R=   -20.7 loss=0.5845 temp=0.91 total_env_steps=71404 t=10.41s
+Ep   86: R=   -21.0 len=764 avg_R=   -20.7 loss=0.5702 temp=0.90 total_env_steps=72168 t=10.49s
+Ep   87: R=   -21.0 len=764 avg_R=   -20.7 loss=0.5869 temp=0.89 total_env_steps=72932 t=10.51s
+Ep   88: R=   -21.0 len=764 avg_R=   -20.7 loss=0.5007 temp=0.88 total_env_steps=73696 t=10.50s
+Ep   89: R=   -21.0 len=764 avg_R=   -20.7 loss=0.5363 temp=0.87 total_env_steps=74460 t=10.82s
+Ep   90: R=   -21.0 len=764 avg_R=   -20.7 loss=0.5991 temp=0.86 total_env_steps=75224 t=10.42s
+  greedy eval -21.0 / -18（近20局 self-play -21.0，total_env_steps=75224）
+Ep   91: R=   -21.0 len=764 avg_R=   -20.7 loss=0.3770 temp=0.85 total_env_steps=75988 t=10.31s
+Ep   92: R=   -21.0 len=764 avg_R=   -20.7 loss=0.4326 temp=0.84 total_env_steps=76752 t=10.47s
+Ep   93: R=   -21.0 len=764 avg_R=   -20.7 loss=0.5070 temp=0.83 total_env_steps=77516 t=10.54s
+Ep   94: R=   -21.0 len=764 avg_R=   -20.7 loss=0.3622 temp=0.82 total_env_steps=78280 t=10.66s
+Ep   95: R=   -21.0 len=764 avg_R=   -20.7 loss=0.3162 temp=0.81 total_env_steps=79044 t=10.48s
+Ep   96: R=   -21.0 len=880 avg_R=   -20.7 loss=0.4213 temp=0.80 total_env_steps=79924 t=10.64s
+Ep   97: R=   -21.0 len=886 avg_R=   -20.7 loss=0.4090 temp=0.79 total_env_steps=80810 t=10.72s
+Ep   98: R=   -21.0 len=764 avg_R=   -20.7 loss=0.3196 temp=0.78 total_env_steps=81574 t=10.42s
+Ep   99: R=   -21.0 len=764 avg_R=   -20.7 loss=0.3516 temp=0.77 total_env_steps=82338 t=10.68s
+Ep  100: R=   -21.0 len=764 avg_R=   -20.8 loss=0.3443 temp=0.76 total_env_steps=83102 t=10.56s
+  greedy eval -21.0 / -18（近20局 self-play -21.0，total_env_steps=83102）
+Ep  101: R=   -21.0 len=764 avg_R=   -20.8 loss=0.4265 temp=0.75 total_env_steps=83866 t=10.43s
+Ep  102: R=   -21.0 len=764 avg_R=   -20.8 loss=0.3766 temp=0.74 total_env_steps=84630 t=10.45s
+Ep  103: R=   -20.0 len=1154 avg_R=   -20.8 loss=0.4069 temp=0.73 total_env_steps=85784 t=11.21s
+Ep  104: R=   -20.0 len=1039 avg_R=   -20.7 loss=0.4452 temp=0.72 total_env_steps=86823 t=10.97s
+Ep  105: R=   -21.0 len=944 avg_R=   -20.7 loss=0.4938 temp=0.71 total_env_steps=87767 t=10.84s
+Ep  106: R=   -21.0 len=764 avg_R=   -20.7 loss=0.4850 temp=0.70 total_env_steps=88531 t=10.48s
+Ep  107: R=   -20.0 len=923 avg_R=   -20.7 loss=0.5547 temp=0.69 total_env_steps=89454 t=10.66s
+Ep  108: R=   -21.0 len=824 avg_R=   -20.8 loss=0.5840 temp=0.68 total_env_steps=90278 t=10.66s
+Ep  109: R=   -21.0 len=944 avg_R=   -20.8 loss=0.6062 temp=0.67 total_env_steps=91222 t=10.85s
+Ep  110: R=   -21.0 len=764 avg_R=   -20.8 loss=0.6016 temp=0.66 total_env_steps=91986 t=10.53s
+  greedy eval -21.0 / -18（近20局 self-play -20.9，total_env_steps=91986）
+Ep  111: R=   -21.0 len=946 avg_R=   -20.8 loss=0.5419 temp=0.65 total_env_steps=92932 t=10.65s
+Ep  112: R=   -21.0 len=884 avg_R=   -20.8 loss=0.5606 temp=0.64 total_env_steps=93816 t=10.37s
+Ep  113: R=   -21.0 len=824 avg_R=   -20.8 loss=0.4555 temp=0.63 total_env_steps=94640 t=10.76s
+Ep  114: R=   -21.0 len=914 avg_R=   -20.8 loss=0.5142 temp=0.62 total_env_steps=95554 t=10.57s
+Ep  115: R=   -21.0 len=825 avg_R=   -20.8 loss=0.4137 temp=0.61 total_env_steps=96379 t=10.41s
+Ep  116: R=   -21.0 len=764 avg_R=   -20.8 loss=0.3398 temp=0.60 total_env_steps=97143 t=10.29s
+Ep  117: R=   -21.0 len=1008 avg_R=   -20.8 loss=0.3296 temp=0.59 total_env_steps=98151 t=10.79s
+Ep  118: R=   -21.0 len=975 avg_R=   -20.8 loss=0.3745 temp=0.58 total_env_steps=99126 t=10.88s
+Ep  119: R=   -21.0 len=824 avg_R=   -20.8 loss=0.2779 temp=0.57 total_env_steps=99950 t=10.56s
+Ep  120: R=   -21.0 len=884 avg_R=   -20.8 loss=0.3459 temp=0.56 total_env_steps=100834 t=10.81s
+  greedy eval -21.0 / -18（近20局 self-play -20.9，total_env_steps=100834）
+Ep  121: R=   -21.0 len=884 avg_R=   -20.8 loss=0.2958 temp=0.55 total_env_steps=101718 t=10.45s
+Ep  122: R=   -21.0 len=972 avg_R=   -20.8 loss=0.0193 temp=0.54 total_env_steps=102690 t=10.82s
+Ep  123: R=   -21.0 len=824 avg_R=   -20.8 loss=-0.1373 temp=0.53 total_env_steps=103514 t=10.51s
+Ep  124: R=   -21.0 len=824 avg_R=   -20.8 loss=-0.0607 temp=0.52 total_env_steps=104338 t=10.52s
+Ep  125: R=   -21.0 len=1006 avg_R=   -20.8 loss=-0.2611 temp=0.51 total_env_steps=105344 t=10.95s
+Ep  126: R=   -21.0 len=1067 avg_R=   -20.8 loss=-0.5037 temp=0.50 total_env_steps=106411 t=10.91s
+Ep  127: R=   -21.0 len=1004 avg_R=   -20.8 loss=-0.4132 temp=0.49 total_env_steps=107415 t=11.00s
+Ep  128: R=   -21.0 len=824 avg_R=   -20.8 loss=-0.7666 temp=0.48 total_env_steps=108239 t=10.40s
+Ep  129: R=   -21.0 len=946 avg_R=   -20.8 loss=-0.9282 temp=0.47 total_env_steps=109185 t=10.95s
+Ep  130: R=   -21.0 len=764 avg_R=   -20.8 loss=-1.2214 temp=0.46 total_env_steps=109949 t=10.39s
+  greedy eval -21.0 / -18（近20局 self-play -21.0，total_env_steps=109949）
+Ep  131: R=   -21.0 len=946 avg_R=   -20.8 loss=-1.2527 temp=0.45 total_env_steps=110895 t=10.53s
+Ep  132: R=   -21.0 len=884 avg_R=   -20.8 loss=-1.4197 temp=0.44 total_env_steps=111779 t=10.76s
+Ep  133: R=   -20.0 len=921 avg_R=   -20.8 loss=-1.4312 temp=0.43 total_env_steps=112700 t=10.78s
+Ep  134: R=   -21.0 len=1064 avg_R=   -20.8 loss=-1.7989 temp=0.42 total_env_steps=113764 t=11.49s
+Ep  135: R=   -21.0 len=946 avg_R=   -20.8 loss=-1.8689 temp=0.41 total_env_steps=114710 t=10.93s
+Ep  136: R=   -21.0 len=1005 avg_R=   -20.8 loss=-2.0739 temp=0.40 total_env_steps=115715 t=10.99s
+Ep  137: R=   -21.0 len=764 avg_R=   -20.8 loss=-2.3621 temp=0.39 total_env_steps=116479 t=10.87s
+Ep  138: R=   -21.0 len=944 avg_R=   -20.8 loss=-2.5796 temp=0.38 total_env_steps=117423 t=11.06s
+Ep  139: R=   -21.0 len=884 avg_R=   -20.9 loss=-2.7006 temp=0.37 total_env_steps=118307 t=10.87s
+Ep  140: R=   -21.0 len=1064 avg_R=   -20.9 loss=-3.0460 temp=0.36 total_env_steps=119371 t=11.23s
+  greedy eval -21.0 / -18（近20局 self-play -21.0，total_env_steps=119371）
+Ep  141: R=   -21.0 len=884 avg_R=   -20.9 loss=-3.6287 temp=0.35 total_env_steps=120255 t=10.76s
+Ep  142: R=   -21.0 len=824 avg_R=   -20.9 loss=-3.5973 temp=0.34 total_env_steps=121079 t=10.82s
+Ep  143: R=   -21.0 len=764 avg_R=   -20.9 loss=-3.8663 temp=0.33 total_env_steps=121843 t=10.61s
+Ep  144: R=   -21.0 len=824 avg_R=   -20.9 loss=-3.9714 temp=0.32 total_env_steps=122667 t=10.84s
+Ep  145: R=   -21.0 len=824 avg_R=   -20.9 loss=-4.3026 temp=0.31 total_env_steps=123491 t=10.65s
+Ep  146: R=   -21.0 len=824 avg_R=   -20.9 loss=-4.4643 temp=0.30 total_env_steps=124315 t=10.88s
+Ep  147: R=   -21.0 len=824 avg_R=   -20.9 loss=-4.7344 temp=0.29 total_env_steps=125139 t=10.62s
+Ep  148: R=   -21.0 len=1006 avg_R=   -20.9 loss=-4.9409 temp=0.28 total_env_steps=126145 t=11.05s
+Ep  149: R=   -21.0 len=946 avg_R=   -20.9 loss=-4.9076 temp=0.27 total_env_steps=127091 t=10.96s
+Ep  150: R=   -21.0 len=1064 avg_R=   -20.9 loss=-5.2281 temp=0.26 total_env_steps=128155 t=11.10s
+  greedy eval -21.0 / -18（近20局 self-play -21.0，total_env_steps=128155）
+📈 ALE/Pong-v5 greedy=-21.0 | 门槛 -18: 未达标 | 1849.0s
+
+--- 多 seed 汇总 (3 seeds, 门槛 -18) ---
+  seed=42  greedy=   -21.0 total_env_steps=     未达标 wall=1801.9s
+  seed=43  greedy=   -20.3 total_env_steps=     未达标 wall=1909.2s
+  seed=44  greedy=   -21.0 total_env_steps=     未达标 wall=1849.0s
+  中位数 greedy=-21.0 | total_env_steps=n/a (0/3 达标) | wall=1849.0s
+[MyZero] 已加载模型 models/my_zero/Pong-v5\seed_44\best.otm
+[MyZero] eval ALE/Pong-v5 ×10: mean=-20.7

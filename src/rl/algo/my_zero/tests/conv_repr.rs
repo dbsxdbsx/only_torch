@@ -139,9 +139,10 @@ fn my_zero_model_image_spec_trains() {
         target_rewards: vec![1.0, 0.0],
         target_continuations: vec![1.0, 1.0],
         next_obs: vec![fake_obs(dim, 12).into(), fake_obs(dim, 13).into()],
+        bc_weights: Vec::new(),
     };
     let loss = model
-        .train_unroll_batch(&[item], 2.0, 0.0, 1.0, false)
+        .train_unroll_batch(&[item], 2.0, 0.0, 1.0, false, 0.0)
         .unwrap();
     opt.zero_grad().unwrap();
     let lv = loss.backward().unwrap();

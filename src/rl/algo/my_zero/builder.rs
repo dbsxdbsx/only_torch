@@ -53,6 +53,13 @@ impl MyZeroBuilder {
                     .into(),
             ));
         }
+        if c.rosmo && c.reanalyze {
+            return Err(GraphError::InvalidOperation(
+                "MyZero: ROSMO（一步现算刷新）与 reanalyze（全树重搜写回）互斥；\
+                 二者是同一 target 刷新职责的两个消融臂，请只开一个"
+                    .into(),
+            ));
+        }
         Ok(())
     }
 
@@ -108,6 +115,15 @@ impl MyZeroBuilder {
     /// 开启 completedQ 策略训练目标（默认关；CartPole recipe 未 promote，供 A/B 用）。
     pub fn completed_q_target(mut self, enabled: bool) -> Self {
         self.cfg.components.completed_q_target = enabled;
+        self
+    }
+
+    /// 开启 ROSMO 式一步 target 刷新（reanalyze 复活阶梯一；默认关，供 A/B 消融）。
+    ///
+    /// 采样时现算 policy/value target + 优势过滤行为正则，不写回 buffer；
+    /// 与 [`reanalyze`](super::component::Components::reanalyze) 互斥。见 [`super::rosmo`]。
+    pub fn rosmo(mut self, enabled: bool) -> Self {
+        self.cfg.components.rosmo = enabled;
         self
     }
 

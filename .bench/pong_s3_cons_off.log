@@ -1,0 +1,294 @@
+    Finished `release` profile [optimized] target(s) in 0.54s
+     Running unittests src\lib.rs (target\release\deps\only_torch-45d502c1e61c3f90.exe)
+
+running 1 test
+test rl::algo::my_zero::tests::pong_image_ablation_bench::pong_ablation_cons_off ... [pong-ablation] arm=cons-off seeds=3
+
+--- seed 42 (1/3) ---
+A.L.E: Arcade Learning Environment (version 0.11.2+ecc1138)
+[Powered by Stella]
+[MyZero ALE/Pong-v5] obs=image→28224(灰度84²×4帧) 离散 6 档 γ=0.997 sims=20 r_scale=1
+Ep    1: R=   -20.0 len=876 avg_R=   -20.0 loss=0.0000 temp=1.00 total_env_steps=876 t=1.58s
+Ep    2: R=   -21.0 len=812 avg_R=   -20.5 loss=9.7613 temp=1.00 total_env_steps=1688 t=5.90s
+Ep    3: R=   -21.0 len=764 avg_R=   -20.7 loss=8.0814 temp=1.00 total_env_steps=2452 t=5.29s
+Ep    4: R=   -20.0 len=865 avg_R=   -20.5 loss=7.6400 temp=1.00 total_env_steps=3317 t=5.50s
+Ep    5: R=   -20.0 len=899 avg_R=   -20.4 loss=7.3536 temp=1.00 total_env_steps=4216 t=5.61s
+Ep    6: R=   -20.0 len=919 avg_R=   -20.3 loss=7.0529 temp=1.00 total_env_steps=5135 t=5.78s
+Ep    7: R=   -20.0 len=889 avg_R=   -20.3 loss=6.9310 temp=1.00 total_env_steps=6024 t=5.52s
+Ep    8: R=   -20.0 len=890 avg_R=   -20.2 loss=6.9035 temp=1.00 total_env_steps=6914 t=5.63s
+Ep    9: R=   -21.0 len=860 avg_R=   -20.3 loss=6.8103 temp=1.00 total_env_steps=7774 t=5.50s
+Ep   10: R=   -20.0 len=995 avg_R=   -20.3 loss=6.7465 temp=1.00 total_env_steps=8769 t=5.76s
+Ep   11: R=   -21.0 len=820 avg_R=   -20.4 loss=6.5198 temp=1.00 total_env_steps=9589 t=5.55s
+Ep   12: R=   -18.0 len=1150 avg_R=   -20.2 loss=6.4387 temp=1.00 total_env_steps=10739 t=6.05s
+Ep   13: R=   -19.0 len=977 avg_R=   -20.1 loss=6.4133 temp=1.00 total_env_steps=11716 t=6.02s
+Ep   14: R=   -21.0 len=820 avg_R=   -20.1 loss=6.4271 temp=1.00 total_env_steps=12536 t=5.66s
+Ep   15: R=   -19.0 len=1020 avg_R=   -20.1 loss=6.3631 temp=1.00 total_env_steps=13556 t=6.15s
+Ep   16: R=   -21.0 len=764 avg_R=   -20.1 loss=6.2481 temp=1.00 total_env_steps=14320 t=5.60s
+Ep   17: R=   -21.0 len=811 avg_R=   -20.2 loss=6.3062 temp=1.00 total_env_steps=15131 t=5.67s
+Ep   18: R=   -20.0 len=955 avg_R=   -20.2 loss=6.2248 temp=1.00 total_env_steps=16086 t=5.94s
+Ep   19: R=   -21.0 len=811 avg_R=   -20.2 loss=6.1973 temp=1.00 total_env_steps=16897 t=5.75s
+Ep   20: R=   -21.0 len=868 avg_R=   -20.2 loss=6.1754 temp=1.00 total_env_steps=17765 t=6.13s
+  greedy eval -21.0 / -18（近20局 self-play -20.2，total_env_steps=17765）
+Ep   21: R=   -20.0 len=904 avg_R=   -20.2 loss=6.0951 temp=1.00 total_env_steps=18669 t=5.84s
+Ep   22: R=   -20.0 len=876 avg_R=   -20.2 loss=6.0916 temp=1.00 total_env_steps=19545 t=6.06s
+Ep   23: R=   -20.0 len=856 avg_R=   -20.2 loss=6.2389 temp=1.00 total_env_steps=20401 t=5.89s
+Ep   24: R=   -20.0 len=871 avg_R=   -20.2 loss=6.0962 temp=1.00 total_env_steps=21272 t=5.78s
+Ep   25: R=   -20.0 len=866 avg_R=   -20.2 loss=6.2381 temp=1.00 total_env_steps=22138 t=5.74s
+Ep   26: R=   -19.0 len=988 avg_R=   -20.2 loss=6.1608 temp=1.00 total_env_steps=23126 t=6.12s
+Ep   27: R=   -20.0 len=898 avg_R=   -20.1 loss=6.0525 temp=1.00 total_env_steps=24024 t=5.84s
+Ep   28: R=   -21.0 len=925 avg_R=   -20.2 loss=5.9305 temp=1.00 total_env_steps=24949 t=5.96s
+Ep   29: R=   -20.0 len=889 avg_R=   -20.2 loss=6.0377 temp=1.00 total_env_steps=25838 t=5.88s
+Ep   30: R=   -19.0 len=1056 avg_R=   -20.1 loss=5.9285 temp=1.00 total_env_steps=26894 t=6.13s
+  greedy eval -21.0 / -18（近20局 self-play -20.0，total_env_steps=26894）
+Ep   31: R=   -19.0 len=972 avg_R=   -20.1 loss=5.8610 temp=1.00 total_env_steps=27866 t=5.85s
+Ep   32: R=   -20.0 len=842 avg_R=   -20.1 loss=5.9643 temp=1.00 total_env_steps=28708 t=5.71s
+Ep   33: R=   -20.0 len=926 avg_R=   -20.1 loss=5.8482 temp=1.00 total_env_steps=29634 t=5.96s
+Ep   34: R=   -18.0 len=1045 avg_R=   -20.0 loss=5.6084 temp=1.00 total_env_steps=30679 t=6.12s
+Ep   35: R=   -21.0 len=811 avg_R=   -20.1 loss=5.6560 temp=1.00 total_env_steps=31490 t=5.72s
+Ep   36: R=   -21.0 len=792 avg_R=   -20.1 loss=5.6093 temp=1.00 total_env_steps=32282 t=5.88s
+Ep   37: R=   -20.0 len=917 avg_R=   -20.1 loss=5.5535 temp=1.00 total_env_steps=33199 t=5.99s
+Ep   38: R=   -21.0 len=792 avg_R=   -20.1 loss=5.5260 temp=1.00 total_env_steps=33991 t=5.72s
+Ep   39: R=   -18.0 len=1091 avg_R=   -20.1 loss=5.5974 temp=1.00 total_env_steps=35082 t=6.28s
+Ep   40: R=   -20.0 len=941 avg_R=   -20.0 loss=5.5936 temp=1.00 total_env_steps=36023 t=6.03s
+  greedy eval -21.0 / -18（近20局 self-play -19.9，total_env_steps=36023）
+Ep   41: R=   -18.0 len=1046 avg_R=   -20.0 loss=5.5336 temp=1.00 total_env_steps=37069 t=6.07s
+Ep   42: R=   -20.0 len=954 avg_R=   -20.0 loss=5.5291 temp=1.00 total_env_steps=38023 t=5.99s
+Ep   43: R=   -21.0 len=896 avg_R=   -20.0 loss=5.5195 temp=1.00 total_env_steps=38919 t=6.09s
+Ep   44: R=   -19.0 len=1024 avg_R=   -20.0 loss=5.5360 temp=1.00 total_env_steps=39943 t=6.23s
+Ep   45: R=   -20.0 len=936 avg_R=   -20.0 loss=5.5445 temp=1.00 total_env_steps=40879 t=6.07s
+Ep   46: R=   -20.0 len=899 avg_R=   -20.0 loss=5.5083 temp=1.00 total_env_steps=41778 t=5.97s
+Ep   47: R=   -21.0 len=1020 avg_R=   -20.0 loss=5.5379 temp=1.00 total_env_steps=42798 t=6.23s
+Ep   48: R=   -21.0 len=812 avg_R=   -20.0 loss=5.5771 temp=1.00 total_env_steps=43610 t=5.75s
+Ep   49: R=   -19.0 len=1166 avg_R=   -20.0 loss=5.5542 temp=1.00 total_env_steps=44776 t=6.30s
+Ep   50: R=   -20.0 len=889 avg_R=   -20.0 loss=5.5290 temp=1.00 total_env_steps=45665 t=5.93s
+  greedy eval -21.0 / -18（近20局 self-play -19.9，total_env_steps=45665）
+Ep   51: R=   -21.0 len=867 avg_R=   -20.0 loss=5.5836 temp=1.00 total_env_steps=46532 t=6.85s
+Ep   52: R=   -20.0 len=913 avg_R=   -20.0 loss=5.5316 temp=1.00 total_env_steps=47445 t=6.28s
+Ep   53: R=   -21.0 len=792 avg_R=   -20.1 loss=5.4933 temp=1.00 total_env_steps=48237 t=6.15s
+Ep   54: R=   -21.0 len=839 avg_R=   -20.1 loss=5.4784 temp=1.00 total_env_steps=49076 t=6.07s
+Ep   55: R=   -20.0 len=889 avg_R=   -20.1 loss=5.5260 temp=1.00 total_env_steps=49965 t=6.07s
+Ep   56: R=   -20.0 len=927 avg_R=   -20.1 loss=5.5270 temp=1.00 total_env_steps=50892 t=6.15s
+Ep   57: R=   -20.0 len=871 avg_R=   -20.1 loss=5.5101 temp=1.00 total_env_steps=51763 t=5.97s
+Ep   58: R=   -21.0 len=826 avg_R=   -20.1 loss=5.4530 temp=1.00 total_env_steps=52589 t=5.84s
+Ep   59: R=   -17.0 len=1073 avg_R=   -20.0 loss=5.4515 temp=1.00 total_env_steps=53662 t=6.30s
+Ep   60: R=   -21.0 len=792 avg_R=   -20.0 loss=5.4349 temp=1.00 total_env_steps=54454 t=5.94s
+  greedy eval -20.5 / -18（近20局 self-play -20.0，total_env_steps=54454）
+Ep   61: R=   -21.0 len=830 avg_R=   -20.1 loss=5.4482 temp=1.00 total_env_steps=55284 t=5.78s
+Ep   62: R=   -21.0 len=764 avg_R=   -20.1 loss=5.4690 temp=1.00 total_env_steps=56048 t=5.75s
+Ep   63: R=   -20.0 len=870 avg_R=   -20.1 loss=5.4706 temp=1.00 total_env_steps=56918 t=6.01s
+Ep   64: R=   -20.0 len=842 avg_R=   -20.1 loss=5.4868 temp=1.00 total_env_steps=57760 t=5.87s
+Ep   65: R=   -19.0 len=972 avg_R=   -20.1 loss=5.5008 temp=1.00 total_env_steps=58732 t=6.06s
+Ep   66: R=   -21.0 len=901 avg_R=   -20.1 loss=5.3980 temp=1.00 total_env_steps=59633 t=6.13s
+Ep   67: R=   -20.0 len=861 avg_R=   -20.1 loss=5.4546 temp=1.00 total_env_steps=60494 t=5.91s
+Ep   68: R=   -19.0 len=929 avg_R=   -20.1 loss=5.3961 temp=1.00 total_env_steps=61423 t=6.04s
+Ep   69: R=   -19.0 len=976 avg_R=   -20.0 loss=5.3860 temp=1.00 total_env_steps=62399 t=6.04s
+Ep   70: R=   -20.0 len=870 avg_R=   -20.0 loss=5.3728 temp=1.00 total_env_steps=63269 t=5.99s
+  greedy eval -20.9 / -18（近20局 self-play -20.1，total_env_steps=63269）
+Ep   71: R=   -19.0 len=967 avg_R=   -20.0 loss=5.3863 temp=1.00 total_env_steps=64236 t=6.03s
+Ep   72: R=   -21.0 len=867 avg_R=   -20.0 loss=5.4037 temp=1.00 total_env_steps=65103 t=5.77s
+Ep   73: R=   -19.0 len=943 avg_R=   -20.0 loss=5.3211 temp=1.00 total_env_steps=66046 t=6.03s
+Ep   74: R=   -21.0 len=792 avg_R=   -20.0 loss=5.3720 temp=1.00 total_env_steps=66838 t=5.76s
+Ep   75: R=   -20.0 len=871 avg_R=   -20.0 loss=5.3912 temp=1.00 total_env_steps=67709 t=5.79s
+📈 ALE/Pong-v5 greedy=-21.0 | 门槛 -18: 未达标 | 529.7s
+
+--- seed 43 (2/3) ---
+Ep    1: R=   -20.0 len=903 avg_R=   -20.0 loss=0.0000 temp=1.00 total_env_steps=903 t=1.57s
+Ep    2: R=   -21.0 len=884 avg_R=   -20.5 loss=10.9826 temp=1.00 total_env_steps=1787 t=5.23s
+Ep    3: R=   -18.0 len=1099 avg_R=   -19.7 loss=10.0975 temp=1.00 total_env_steps=2886 t=6.08s
+Ep    4: R=   -20.0 len=861 avg_R=   -19.8 loss=9.8568 temp=1.00 total_env_steps=3747 t=6.04s
+Ep    5: R=   -21.0 len=886 avg_R=   -20.0 loss=10.2317 temp=1.00 total_env_steps=4633 t=5.67s
+Ep    6: R=   -21.0 len=811 avg_R=   -20.2 loss=10.5482 temp=1.00 total_env_steps=5444 t=5.61s
+Ep    7: R=   -20.0 len=1076 avg_R=   -20.1 loss=10.6644 temp=1.00 total_env_steps=6520 t=6.13s
+Ep    8: R=   -20.0 len=949 avg_R=   -20.1 loss=10.7699 temp=1.00 total_env_steps=7469 t=5.92s
+Ep    9: R=   -21.0 len=811 avg_R=   -20.2 loss=10.8422 temp=1.00 total_env_steps=8280 t=5.61s
+Ep   10: R=   -20.0 len=935 avg_R=   -20.2 loss=10.7855 temp=1.00 total_env_steps=9215 t=5.94s
+Ep   11: R=   -20.0 len=842 avg_R=   -20.2 loss=10.7823 temp=1.00 total_env_steps=10057 t=5.84s
+Ep   12: R=   -21.0 len=915 avg_R=   -20.2 loss=10.9636 temp=1.00 total_env_steps=10972 t=6.07s
+Ep   13: R=   -21.0 len=824 avg_R=   -20.3 loss=10.8937 temp=1.00 total_env_steps=11796 t=5.98s
+Ep   14: R=   -21.0 len=794 avg_R=   -20.4 loss=10.8793 temp=1.00 total_env_steps=12590 t=5.86s
+Ep   15: R=   -19.0 len=1127 avg_R=   -20.3 loss=10.8200 temp=1.00 total_env_steps=13717 t=6.53s
+Ep   16: R=   -20.0 len=843 avg_R=   -20.2 loss=10.8016 temp=1.00 total_env_steps=14560 t=5.92s
+Ep   17: R=   -21.0 len=853 avg_R=   -20.3 loss=10.8129 temp=1.00 total_env_steps=15413 t=5.83s
+Ep   18: R=   -20.0 len=958 avg_R=   -20.3 loss=10.7264 temp=1.00 total_env_steps=16371 t=6.28s
+Ep   19: R=   -20.0 len=933 avg_R=   -20.3 loss=10.7493 temp=1.00 total_env_steps=17304 t=6.05s
+Ep   20: R=   -21.0 len=884 avg_R=   -20.3 loss=10.7508 temp=1.00 total_env_steps=18188 t=6.09s
+  greedy eval -21.0 / -18（近20局 self-play -20.3，total_env_steps=18188）
+Ep   21: R=   -20.0 len=1011 avg_R=   -20.3 loss=10.7931 temp=1.00 total_env_steps=19199 t=6.31s
+Ep   22: R=   -21.0 len=764 avg_R=   -20.3 loss=10.7460 temp=1.00 total_env_steps=19963 t=5.91s
+Ep   23: R=   -20.0 len=949 avg_R=   -20.3 loss=10.7067 temp=1.00 total_env_steps=20912 t=6.40s
+Ep   24: R=   -21.0 len=764 avg_R=   -20.3 loss=10.7412 temp=1.00 total_env_steps=21676 t=6.05s
+Ep   25: R=   -20.0 len=903 avg_R=   -20.3 loss=10.7682 temp=1.00 total_env_steps=22579 t=6.36s
+Ep   26: R=   -20.0 len=893 avg_R=   -20.3 loss=10.7830 temp=1.00 total_env_steps=23472 t=6.47s
+Ep   27: R=   -21.0 len=890 avg_R=   -20.3 loss=10.7744 temp=1.00 total_env_steps=24362 t=6.34s
+Ep   28: R=   -21.0 len=1053 avg_R=   -20.4 loss=10.7384 temp=1.00 total_env_steps=25415 t=6.66s
+Ep   29: R=   -20.0 len=903 avg_R=   -20.3 loss=10.6913 temp=1.00 total_env_steps=26318 t=6.08s
+Ep   30: R=   -20.0 len=842 avg_R=   -20.3 loss=10.7032 temp=1.00 total_env_steps=27160 t=6.07s
+  greedy eval -21.0 / -18（近20局 self-play -20.4，total_env_steps=27160）
+Ep   31: R=   -20.0 len=842 avg_R=   -20.3 loss=10.6937 temp=1.00 total_env_steps=28002 t=6.04s
+Ep   32: R=   -21.0 len=880 avg_R=   -20.3 loss=10.7103 temp=1.00 total_env_steps=28882 t=6.17s
+Ep   33: R=   -21.0 len=826 avg_R=   -20.4 loss=10.6988 temp=1.00 total_env_steps=29708 t=5.95s
+Ep   34: R=   -21.0 len=1159 avg_R=   -20.4 loss=10.6543 temp=1.00 total_env_steps=30867 t=6.62s
+Ep   35: R=   -21.0 len=792 avg_R=   -20.4 loss=10.7657 temp=1.00 total_env_steps=31659 t=6.05s
+Ep   36: R=   -20.0 len=842 avg_R=   -20.4 loss=10.8052 temp=1.00 total_env_steps=32501 t=6.03s
+Ep   37: R=   -19.0 len=1092 avg_R=   -20.4 loss=10.8566 temp=1.00 total_env_steps=33593 t=6.46s
+Ep   38: R=   -21.0 len=937 avg_R=   -20.4 loss=10.8324 temp=1.00 total_env_steps=34530 t=7.47s
+Ep   39: R=   -18.0 len=1086 avg_R=   -20.3 loss=10.7763 temp=1.00 total_env_steps=35616 t=6.55s
+Ep   40: R=   -21.0 len=1031 avg_R=   -20.3 loss=10.8289 temp=1.00 total_env_steps=36647 t=6.33s
+  greedy eval -21.0 / -18（近20局 self-play -20.4，total_env_steps=36647）
+Ep   41: R=   -21.0 len=783 avg_R=   -20.3 loss=10.7862 temp=1.00 total_env_steps=37430 t=5.79s
+Ep   42: R=   -20.0 len=903 avg_R=   -20.3 loss=10.8087 temp=1.00 total_env_steps=38333 t=6.09s
+Ep   43: R=   -21.0 len=853 avg_R=   -20.3 loss=10.8071 temp=1.00 total_env_steps=39186 t=5.99s
+Ep   44: R=   -21.0 len=1002 avg_R=   -20.4 loss=10.7932 temp=1.00 total_env_steps=40188 t=6.22s
+Ep   45: R=   -20.0 len=902 avg_R=   -20.4 loss=10.7225 temp=1.00 total_env_steps=41090 t=6.07s
+Ep   46: R=   -21.0 len=930 avg_R=   -20.4 loss=10.7986 temp=1.00 total_env_steps=42020 t=6.15s
+Ep   47: R=   -21.0 len=820 avg_R=   -20.4 loss=10.7579 temp=1.00 total_env_steps=42840 t=5.88s
+Ep   48: R=   -20.0 len=842 avg_R=   -20.4 loss=10.7891 temp=1.00 total_env_steps=43682 t=5.86s
+Ep   49: R=   -21.0 len=824 avg_R=   -20.4 loss=10.7846 temp=1.00 total_env_steps=44506 t=5.84s
+Ep   50: R=   -21.0 len=867 avg_R=   -20.4 loss=10.8657 temp=1.00 total_env_steps=45373 t=6.00s
+  greedy eval -20.9 / -18（近20局 self-play -20.5，total_env_steps=45373）
+Ep   51: R=   -19.0 len=1044 avg_R=   -20.4 loss=10.9070 temp=1.00 total_env_steps=46417 t=6.25s
+Ep   52: R=   -21.0 len=783 avg_R=   -20.4 loss=10.8711 temp=1.00 total_env_steps=47200 t=5.75s
+Ep   53: R=   -21.0 len=906 avg_R=   -20.4 loss=10.8799 temp=1.00 total_env_steps=48106 t=5.96s
+Ep   54: R=   -20.0 len=838 avg_R=   -20.4 loss=10.9271 temp=1.00 total_env_steps=48944 t=6.07s
+Ep   55: R=   -18.0 len=1023 avg_R=   -20.3 loss=10.9515 temp=1.00 total_env_steps=49967 t=6.37s
+Ep   56: R=   -20.0 len=983 avg_R=   -20.3 loss=10.9535 temp=1.00 total_env_steps=50950 t=6.18s
+Ep   57: R=   -19.0 len=1041 avg_R=   -20.3 loss=10.9866 temp=1.00 total_env_steps=51991 t=6.23s
+Ep   58: R=   -21.0 len=961 avg_R=   -20.3 loss=11.0405 temp=1.00 total_env_steps=52952 t=6.28s
+Ep   59: R=   -21.0 len=812 avg_R=   -20.3 loss=11.0574 temp=1.00 total_env_steps=53764 t=5.94s
+Ep   60: R=   -21.0 len=826 avg_R=   -20.4 loss=11.0496 temp=1.00 total_env_steps=54590 t=5.83s
+  greedy eval -20.9 / -18（近20局 self-play -20.4，total_env_steps=54590）
+Ep   61: R=   -21.0 len=1081 avg_R=   -20.4 loss=11.0657 temp=1.00 total_env_steps=55671 t=6.32s
+Ep   62: R=   -20.0 len=949 avg_R=   -20.4 loss=11.0824 temp=1.00 total_env_steps=56620 t=6.10s
+Ep   63: R=   -19.0 len=938 avg_R=   -20.3 loss=11.1592 temp=1.00 total_env_steps=57558 t=6.07s
+Ep   64: R=   -20.0 len=946 avg_R=   -20.3 loss=11.1999 temp=1.00 total_env_steps=58504 t=6.04s
+Ep   65: R=   -19.0 len=997 avg_R=   -20.3 loss=11.1843 temp=1.00 total_env_steps=59501 t=6.22s
+Ep   66: R=   -21.0 len=764 avg_R=   -20.3 loss=11.2276 temp=1.00 total_env_steps=60265 t=5.88s
+Ep   67: R=   -21.0 len=824 avg_R=   -20.3 loss=11.2408 temp=1.00 total_env_steps=61089 t=5.88s
+Ep   68: R=   -17.0 len=1137 avg_R=   -20.3 loss=11.2523 temp=1.00 total_env_steps=62226 t=6.36s
+Ep   69: R=   -21.0 len=900 avg_R=   -20.3 loss=11.2619 temp=1.00 total_env_steps=63126 t=6.12s
+Ep   70: R=   -20.0 len=1030 avg_R=   -20.3 loss=11.2718 temp=1.00 total_env_steps=64156 t=6.31s
+  greedy eval -20.9 / -18（近20局 self-play -20.0，total_env_steps=64156）
+Ep   71: R=   -20.0 len=1008 avg_R=   -20.3 loss=11.2892 temp=1.00 total_env_steps=65164 t=6.20s
+Ep   72: R=   -21.0 len=783 avg_R=   -20.3 loss=11.3054 temp=1.00 total_env_steps=65947 t=5.74s
+Ep   73: R=   -21.0 len=792 avg_R=   -20.3 loss=11.3640 temp=1.00 total_env_steps=66739 t=5.86s
+Ep   74: R=   -21.0 len=824 avg_R=   -20.3 loss=11.3396 temp=1.00 total_env_steps=67563 t=5.91s
+Ep   75: R=   -20.0 len=929 avg_R=   -20.3 loss=11.3432 temp=1.00 total_env_steps=68492 t=6.02s
+📈 ALE/Pong-v5 greedy=-20.7 | 门槛 -18: 未达标 | 541.6s
+
+--- seed 44 (3/3) ---
+Ep    1: R=   -21.0 len=824 avg_R=   -21.0 loss=0.0000 temp=1.00 total_env_steps=824 t=1.46s
+Ep    2: R=   -20.0 len=987 avg_R=   -20.5 loss=13.5811 temp=1.00 total_env_steps=1811 t=5.39s
+Ep    3: R=   -21.0 len=886 avg_R=   -20.7 loss=11.7435 temp=1.00 total_env_steps=2697 t=5.38s
+Ep    4: R=   -20.0 len=1024 avg_R=   -20.5 loss=11.7108 temp=1.00 total_env_steps=3721 t=5.64s
+Ep    5: R=   -19.0 len=997 avg_R=   -20.2 loss=11.8214 temp=1.00 total_env_steps=4718 t=5.57s
+Ep    6: R=   -21.0 len=911 avg_R=   -20.3 loss=11.8740 temp=1.00 total_env_steps=5629 t=5.46s
+Ep    7: R=   -21.0 len=764 avg_R=   -20.4 loss=11.9396 temp=1.00 total_env_steps=6393 t=5.21s
+Ep    8: R=   -21.0 len=764 avg_R=   -20.5 loss=11.8973 temp=1.00 total_env_steps=7157 t=5.20s
+Ep    9: R=   -21.0 len=764 avg_R=   -20.6 loss=11.8714 temp=1.00 total_env_steps=7921 t=5.31s
+Ep   10: R=   -20.0 len=842 avg_R=   -20.5 loss=11.8728 temp=1.00 total_env_steps=8763 t=5.43s
+Ep   11: R=   -21.0 len=882 avg_R=   -20.5 loss=11.9949 temp=1.00 total_env_steps=9645 t=5.48s
+Ep   12: R=   -20.0 len=837 avg_R=   -20.5 loss=11.9386 temp=1.00 total_env_steps=10482 t=5.47s
+Ep   13: R=   -20.0 len=1024 avg_R=   -20.5 loss=11.8367 temp=1.00 total_env_steps=11506 t=5.91s
+Ep   14: R=   -21.0 len=899 avg_R=   -20.5 loss=11.8178 temp=1.00 total_env_steps=12405 t=6.21s
+Ep   15: R=   -20.0 len=922 avg_R=   -20.5 loss=11.7809 temp=1.00 total_env_steps=13327 t=5.80s
+Ep   16: R=   -20.0 len=842 avg_R=   -20.4 loss=11.6849 temp=1.00 total_env_steps=14169 t=5.68s
+Ep   17: R=   -21.0 len=824 avg_R=   -20.5 loss=11.6482 temp=1.00 total_env_steps=14993 t=5.57s
+Ep   18: R=   -20.0 len=957 avg_R=   -20.4 loss=11.6902 temp=1.00 total_env_steps=15950 t=5.93s
+Ep   19: R=   -20.0 len=870 avg_R=   -20.4 loss=11.5755 temp=1.00 total_env_steps=16820 t=5.79s
+Ep   20: R=   -20.0 len=926 avg_R=   -20.4 loss=11.5941 temp=1.00 total_env_steps=17746 t=6.03s
+  greedy eval -21.0 / -18（近20局 self-play -20.4，total_env_steps=17746）
+Ep   21: R=   -18.0 len=1077 avg_R=   -20.3 loss=11.5545 temp=1.00 total_env_steps=18823 t=5.99s
+Ep   22: R=   -20.0 len=861 avg_R=   -20.3 loss=11.5448 temp=1.00 total_env_steps=19684 t=5.79s
+Ep   23: R=   -20.0 len=837 avg_R=   -20.3 loss=11.4210 temp=1.00 total_env_steps=20521 t=5.71s
+Ep   24: R=   -19.0 len=933 avg_R=   -20.2 loss=11.4184 temp=1.00 total_env_steps=21454 t=5.78s
+Ep   25: R=   -20.0 len=871 avg_R=   -20.2 loss=11.3799 temp=1.00 total_env_steps=22325 t=5.82s
+Ep   26: R=   -20.0 len=963 avg_R=   -20.2 loss=11.3553 temp=1.00 total_env_steps=23288 t=6.03s
+Ep   27: R=   -21.0 len=783 avg_R=   -20.2 loss=11.3153 temp=1.00 total_env_steps=24071 t=5.65s
+Ep   28: R=   -21.0 len=783 avg_R=   -20.2 loss=11.2917 temp=1.00 total_env_steps=24854 t=5.79s
+Ep   29: R=   -21.0 len=884 avg_R=   -20.3 loss=11.2560 temp=1.00 total_env_steps=25738 t=6.10s
+Ep   30: R=   -21.0 len=826 avg_R=   -20.3 loss=11.1276 temp=1.00 total_env_steps=26564 t=5.91s
+  greedy eval -21.0 / -18（近20局 self-play -20.2，total_env_steps=26564）
+Ep   31: R=   -20.0 len=1097 avg_R=   -20.3 loss=11.1422 temp=1.00 total_env_steps=27661 t=6.21s
+Ep   32: R=   -21.0 len=824 avg_R=   -20.3 loss=11.2337 temp=1.00 total_env_steps=28485 t=5.93s
+Ep   33: R=   -20.0 len=1018 avg_R=   -20.3 loss=11.1527 temp=1.00 total_env_steps=29503 t=6.45s
+Ep   34: R=   -21.0 len=852 avg_R=   -20.3 loss=11.0780 temp=1.00 total_env_steps=30355 t=5.87s
+Ep   35: R=   -21.0 len=811 avg_R=   -20.3 loss=11.0818 temp=1.00 total_env_steps=31166 t=5.87s
+Ep   36: R=   -20.0 len=1019 avg_R=   -20.3 loss=11.0331 temp=1.00 total_env_steps=32185 t=6.30s
+Ep   37: R=   -21.0 len=908 avg_R=   -20.4 loss=10.9105 temp=1.00 total_env_steps=33093 t=5.99s
+Ep   38: R=   -21.0 len=783 avg_R=   -20.4 loss=10.8697 temp=1.00 total_env_steps=33876 t=5.75s
+Ep   39: R=   -20.0 len=932 avg_R=   -20.4 loss=10.8289 temp=1.00 total_env_steps=34808 t=6.19s
+Ep   40: R=   -21.0 len=888 avg_R=   -20.4 loss=10.7350 temp=1.00 total_env_steps=35696 t=6.17s
+  greedy eval -21.0 / -18（近20局 self-play -20.4，total_env_steps=35696）
+Ep   41: R=   -21.0 len=825 avg_R=   -20.4 loss=10.7257 temp=1.00 total_env_steps=36521 t=5.87s
+Ep   42: R=   -21.0 len=820 avg_R=   -20.4 loss=10.6364 temp=1.00 total_env_steps=37341 t=5.85s
+Ep   43: R=   -20.0 len=904 avg_R=   -20.4 loss=10.7048 temp=1.00 total_env_steps=38245 t=6.13s
+Ep   44: R=   -21.0 len=871 avg_R=   -20.4 loss=10.6155 temp=1.00 total_env_steps=39116 t=6.01s
+Ep   45: R=   -21.0 len=852 avg_R=   -20.4 loss=10.6611 temp=1.00 total_env_steps=39968 t=5.89s
+Ep   46: R=   -21.0 len=824 avg_R=   -20.4 loss=10.6780 temp=1.00 total_env_steps=40792 t=5.94s
+Ep   47: R=   -20.0 len=842 avg_R=   -20.4 loss=10.6264 temp=1.00 total_env_steps=41634 t=6.06s
+Ep   48: R=   -21.0 len=792 avg_R=   -20.4 loss=10.7101 temp=1.00 total_env_steps=42426 t=5.75s
+Ep   49: R=   -20.0 len=1018 avg_R=   -20.4 loss=10.6866 temp=1.00 total_env_steps=43444 t=6.25s
+Ep   50: R=   -21.0 len=824 avg_R=   -20.4 loss=10.8058 temp=1.00 total_env_steps=44268 t=5.97s
+  greedy eval -20.8 / -18（近20局 self-play -20.6，total_env_steps=44268）
+Ep   51: R=   -21.0 len=854 avg_R=   -20.5 loss=10.7545 temp=1.00 total_env_steps=45122 t=5.96s
+Ep   52: R=   -21.0 len=783 avg_R=   -20.5 loss=10.7569 temp=1.00 total_env_steps=45905 t=5.75s
+Ep   53: R=   -21.0 len=792 avg_R=   -20.5 loss=10.7379 temp=1.00 total_env_steps=46697 t=5.82s
+Ep   54: R=   -20.0 len=870 avg_R=   -20.5 loss=10.8723 temp=1.00 total_env_steps=47567 t=6.07s
+Ep   55: R=   -21.0 len=792 avg_R=   -20.5 loss=10.9096 temp=1.00 total_env_steps=48359 t=5.82s
+Ep   56: R=   -21.0 len=783 avg_R=   -20.5 loss=10.9600 temp=1.00 total_env_steps=49142 t=5.72s
+Ep   57: R=   -21.0 len=821 avg_R=   -20.5 loss=11.0052 temp=1.00 total_env_steps=49963 t=5.92s
+Ep   58: R=   -20.0 len=866 avg_R=   -20.5 loss=11.1016 temp=1.00 total_env_steps=50829 t=6.07s
+Ep   59: R=   -21.0 len=914 avg_R=   -20.5 loss=11.1273 temp=1.00 total_env_steps=51743 t=6.09s
+Ep   60: R=   -21.0 len=854 avg_R=   -20.5 loss=11.1272 temp=1.00 total_env_steps=52597 t=5.94s
+  greedy eval -21.0 / -18（近20局 self-play -20.8，total_env_steps=52597）
+Ep   61: R=   -21.0 len=764 avg_R=   -20.5 loss=11.2014 temp=1.00 total_env_steps=53361 t=5.81s
+Ep   62: R=   -21.0 len=764 avg_R=   -20.5 loss=11.1267 temp=1.00 total_env_steps=54125 t=5.76s
+Ep   63: R=   -21.0 len=764 avg_R=   -20.5 loss=11.1891 temp=1.00 total_env_steps=54889 t=5.75s
+Ep   64: R=   -21.0 len=764 avg_R=   -20.5 loss=11.0732 temp=1.00 total_env_steps=55653 t=5.84s
+Ep   65: R=   -21.0 len=764 avg_R=   -20.5 loss=11.0192 temp=1.00 total_env_steps=56417 t=5.78s
+Ep   66: R=   -21.0 len=792 avg_R=   -20.5 loss=11.0127 temp=1.00 total_env_steps=57209 t=5.72s
+Ep   67: R=   -21.0 len=825 avg_R=   -20.6 loss=10.8294 temp=1.00 total_env_steps=58034 t=5.91s
+Ep   68: R=   -21.0 len=764 avg_R=   -20.6 loss=10.8827 temp=1.00 total_env_steps=58798 t=5.81s
+Ep   69: R=   -21.0 len=764 avg_R=   -20.6 loss=10.8390 temp=1.00 total_env_steps=59562 t=5.76s
+Ep   70: R=   -21.0 len=764 avg_R=   -20.6 loss=10.7330 temp=1.00 total_env_steps=60326 t=5.76s
+  greedy eval -21.0 / -18（近20局 self-play -20.9，total_env_steps=60326）
+Ep   71: R=   -21.0 len=764 avg_R=   -20.6 loss=10.5690 temp=1.00 total_env_steps=61090 t=5.74s
+Ep   72: R=   -21.0 len=764 avg_R=   -20.6 loss=10.6184 temp=1.00 total_env_steps=61854 t=5.69s
+Ep   73: R=   -21.0 len=764 avg_R=   -20.6 loss=10.6175 temp=1.00 total_env_steps=62618 t=5.69s
+Ep   74: R=   -21.0 len=764 avg_R=   -20.6 loss=10.5634 temp=1.00 total_env_steps=63382 t=5.84s
+Ep   75: R=   -21.0 len=764 avg_R=   -20.6 loss=10.5511 temp=1.00 total_env_steps=64146 t=5.73s
+📈 ALE/Pong-v5 greedy=-21.0 | 门槛 -18: 未达标 | 520.5s
+
+--- 多 seed 汇总 (3 seeds, 门槛 -18) ---
+  seed=42  greedy=   -21.0 total_env_steps=     未达标 wall=529.7s
+  seed=43  greedy=   -20.7 total_env_steps=     未达标 wall=541.6s
+  seed=44  greedy=   -21.0 total_env_steps=     未达标 wall=520.5s
+  中位数 greedy=-21.0 | total_env_steps=n/a (0/3 达标) | wall=529.7s
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3400 filtered out; finished in 1635.24s
+
+     Running tests\cse_dedup.rs (target\release\deps\cse_dedup-7a657e998c2a0176.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests\mode_invariants.rs (target\release\deps\mode_invariants-12496c59841ba5c8.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+
+     Running tests\onnx_otm_load_bench.rs (target\release\deps\onnx_otm_load_bench-39da60dd6dcd2511.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests\yolov5_xiangqi_import.rs (target\release\deps\yolov5_xiangqi_import-5a55f6b67c0e8a85.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+

@@ -69,7 +69,21 @@ seed=42 · release · CartPole-v1 · recipe **consistency + reanalyze + 写回**
 > 弱网鲁棒），全树 MCTS reanalyze 降为阶梯二（一步版有增益后再单变量消融——在线 off-policy
 > 下深搜红利可能回归，ROSMO 纯离线结论不自动外推）。
 
-- [ ] 阶梯一：图像域（Phase 1）ROSMO 式一步刷新 vs 无 reanalyze 基线，3-seed 样本效率有增益
+- [x] 阶梯一**实现已进库**（2026-07-04）：`src/rl/algo/my_zero/rosmo.rs`（一步 look-ahead
+      改进分布 + 现算 n-step bootstrap + 优势过滤行为正则 α=0.2；**不写回**——写回嫌疑
+      （§三假设 2）随架构消灭；bootstrap 暂用 online 网络，target 网接线仍留条件项）。
+      builder `.rosmo(true)`、recipe 默认关；7 项单测 + CartPole 回归闸门载体
+      `rosmo_cartpole_bench.rs`（含预注册判读，兼作实现 bug 探测器——ROSMO 弱网鲁棒，
+      若 CartPole 上仍灾难性失败则强指向管线 bug，可裁 §三假设 4）
+- [x] **CartPole 回归闸门实测绿（2026-07-04）**：promoted recipe + `.rosmo(true)` × seeds
+      42/43/44 = **3/3 达标**（101,657 / 27,447 / 29,585，中位 **29,585**，greedy 500/486/500），
+      在预注册绿灯带内（≤ 哨兵基线 ~8.7k 的 5×；比基线慢 ~3.4× 属预期——样本免费环境
+      吃不到省样本红利，一步 target 弱于新鲜数据自带的 MCTS target）。
+      **§三假设 4 裁决**：同一管线底座换一步刷新即正常收敛 → 旧灾难（greedy 钉死 9.4）
+      主因是**机制病理**（弱网全树重搜 + 写回持久化投毒），非底座实现 bug。
+      日志 `.bench/rosmo_gate_20260704.log`；CartPole recipe 零变更（条款二）
+- [ ] 阶梯一价值裁决：图像域（Phase 1）ROSMO 式一步刷新 vs 无 reanalyze 基线，3-seed 样本效率有增益
+      （前置：S2 基线须先立起来——2026-07-04 复跑仍 0/3 平直，见 Pong 负结果 issue）
 - [ ] 阶梯二（条件项）：一步版增益确认后，全树 reanalyze+写回单变量复测（§三假设 2/3 随此臂验证）
 - [ ] CartPole 仅回归覆盖（条款二），不再作为价值裁决场
 - [ ] 若接 target net：训练循环接线 + 与刷新引擎联调（Phase 3 target_net 项可能前移）

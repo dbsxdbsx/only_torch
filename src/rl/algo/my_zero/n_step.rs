@@ -31,6 +31,22 @@ pub fn compute_n_step_target_with<F>(
 where
     F: Fn(&SelfPlayStep) -> f32,
 {
+    compute_n_step_target_indexed(steps, start, n, gamma, |idx| bootstrap_value(&steps[idx]))
+}
+
+/// 与 [`compute_n_step_target_with`] 同口径，但闭包收到 bootstrap 位置**下标**而非引用。
+///
+/// 用于图像 obs 等需要按位置组装模型输入（帧堆叠）的现算 bootstrap（ROSMO 一步刷新）。
+pub fn compute_n_step_target_indexed<F>(
+    steps: &[SelfPlayStep],
+    start: usize,
+    n: usize,
+    gamma: f32,
+    bootstrap_value: F,
+) -> f32
+where
+    F: Fn(usize) -> f32,
+{
     let len = steps.len();
     if len == 0 || start >= len {
         return 0.0;
@@ -52,7 +68,7 @@ where
     }
 
     if bootstrap < len {
-        target += discount_prod * bootstrap_value(&steps[bootstrap]);
+        target += discount_prod * bootstrap_value(bootstrap);
     }
 
     target
