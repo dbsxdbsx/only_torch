@@ -1,11 +1,11 @@
 /// 快速性能回归 smoke benchmark
 ///
-/// 覆盖 Tensor / Conv2d / MLP / CNN / Add backward 五条主链路。
+/// 覆盖 Tensor / Conv2d / MLP / CNN / Add backward / GroupNorm 六条主链路。
 /// 运行方式：`cargo bench --bench smoke`
 use criterion::{Criterion, criterion_group, criterion_main};
 use only_torch::nn::{
-    Conv2d, Graph, Init, Linear, MaxPool2d, Module, Optimizer, SGD, VarActivationOps, VarLossOps,
-    VarShapeOps,
+    Conv2d, Graph, GroupNorm, Init, Linear, MaxPool2d, Module, Optimizer, SGD, VarActivationOps,
+    VarLossOps, VarShapeOps,
 };
 use only_torch::tensor::Tensor;
 use std::time::Duration;
@@ -169,6 +169,21 @@ fn bench_cnn_train_step_b4(c: &mut Criterion) {
     });
 }
 
+/// GroupNorm 前向：normalization 系算子在 smoke 关卡的哨兵。
+/// 选 GroupNorm 是因为它位于 MyZero 表征网络（RL 主线）与 CNN 路径的交点，
+/// 且手写归约循环最容易在重构中引入隐性回归；维度对齐 normalization 组同名 case。
+fn bench_group_norm_fwd_b16_c32_14x14(c: &mut Criterion) {
+    let graph = Graph::new();
+    let norm = GroupNorm::new(&graph, 8, 32, 1e-5, "gn").unwrap();
+    let input = Tensor::random(0.0, 1.0, &[16, 32, 14, 14]);
+
+    c.bench_function("smoke_group_norm_fwd_b16_c32_14x14", |bench| {
+        bench.iter(|| {
+            let _ = norm.forward(&input);
+        });
+    });
+}
+
 criterion_group! {
     name = benches;
     config = Criterion::default()
@@ -181,6 +196,7 @@ criterion_group! {
         bench_conv2d_inference_1x1_b1,
         bench_mlp_train_step_xor,
         bench_add_chain_backward_8,
-        bench_cnn_train_step_b4
+        bench_cnn_train_step_b4,
+        bench_group_norm_fwd_b16_c32_14x14
 }
 criterion_main!(benches);
