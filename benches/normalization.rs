@@ -18,7 +18,9 @@ fn bench_normalization_forward(c: &mut Criterion) {
         let input = Tensor::random(0.0, 1.0, &[32, 16, 28, 28]);
 
         bench.iter(|| {
-            let _ = norm.forward(&input);
+            // 框架为惰性求值：必须显式 forward 触发计算，否则只测建图 + 入图拷贝
+            let out = norm.forward(&input);
+            out.forward().unwrap();
         });
     });
 
@@ -28,7 +30,9 @@ fn bench_normalization_forward(c: &mut Criterion) {
         let input = Tensor::random(0.0, 1.0, &[32, 128]);
 
         bench.iter(|| {
-            let _ = norm.forward(&input);
+            // 框架为惰性求值：必须显式 forward 触发计算，否则只测建图 + 入图拷贝
+            let out = norm.forward(&input);
+            out.forward().unwrap();
         });
     });
 
@@ -38,7 +42,9 @@ fn bench_normalization_forward(c: &mut Criterion) {
         let input = Tensor::random(0.0, 1.0, &[32, 128]);
 
         bench.iter(|| {
-            let _ = norm.forward(&input);
+            // 框架为惰性求值：必须显式 forward 触发计算，否则只测建图 + 入图拷贝
+            let out = norm.forward(&input);
+            out.forward().unwrap();
         });
     });
 
@@ -48,7 +54,9 @@ fn bench_normalization_forward(c: &mut Criterion) {
         let input = Tensor::random(0.0, 1.0, &[16, 32, 14, 14]);
 
         bench.iter(|| {
-            let _ = norm.forward(&input);
+            // 框架为惰性求值：必须显式 forward 触发计算，否则只测建图 + 入图拷贝
+            let out = norm.forward(&input);
+            out.forward().unwrap();
         });
     });
 

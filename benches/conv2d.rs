@@ -106,7 +106,9 @@ fn bench_conv_forward(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::from_parameter(name), &name, |b, _| {
             b.iter(|| {
-                let _out = net.conv.forward(&input);
+                // 框架为惰性求值：必须显式 forward 触发计算，否则只测建图 + 入图拷贝
+                let out = net.conv.forward(&input);
+                out.forward().unwrap();
             });
         });
     }
@@ -178,7 +180,9 @@ fn bench_two_layer_cnn(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::from_parameter(name), &name, |b, _| {
             b.iter(|| {
-                let _out = net.forward_pass(&input);
+                // 框架为惰性求值：必须显式 forward 触发计算，否则只测建图 + 入图拷贝
+                let out = net.forward_pass(&input);
+                out.forward().unwrap();
             });
         });
     }

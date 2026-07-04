@@ -27,7 +27,9 @@ fn bench_max_pool2d_forward(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::from_parameter(name), &name, |bench, _| {
             bench.iter(|| {
-                let _ = pool.forward(&input);
+                // 框架为惰性求值：必须显式 forward 触发计算，否则只测建图 + 入图拷贝
+                let out = pool.forward(&input);
+                out.forward().unwrap();
             });
         });
     }
@@ -51,7 +53,9 @@ fn bench_avg_pool2d_forward(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::from_parameter(name), &name, |bench, _| {
             bench.iter(|| {
-                let _ = pool.forward(&input);
+                // 框架为惰性求值：必须显式 forward 触发计算，否则只测建图 + 入图拷贝
+                let out = pool.forward(&input);
+                out.forward().unwrap();
             });
         });
     }

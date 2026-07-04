@@ -1,0 +1,9 @@
+baseline: post-c1-20260704
+label: full-baseline
+archived_at: 20260704-142938
+git_commit: 016841eccd5943b86d2e42cdd5c689e3be6cab48
+git_dirty: yes
+rustc: rustc 1.95.0 (59807616e 2026-04-14)
+blas: Intel MKL
+os: MINGW64_NT-10.0-19045 3.3.6-bec3d608-341.x86_64
+cases: 133

@@ -28,7 +28,9 @@ fn bench_conv2d_fwd_b32_3x28x28(c: &mut Criterion) {
 
     c.bench_function("smoke_conv2d_fwd_b32_3x28x28", |bench| {
         bench.iter(|| {
-            let _ = conv.forward(&input);
+            // 框架为惰性求值：必须显式 forward 触发计算，否则只测建图 + 入图拷贝
+            let out = conv.forward(&input);
+            out.forward().unwrap();
         });
     });
 }
@@ -41,7 +43,9 @@ fn bench_conv2d_inference_1x1_b1(c: &mut Criterion) {
 
     c.bench_function("smoke_conv2d_inference_1x1_b1", |bench| {
         bench.iter(|| {
-            let _ = conv.forward(&input);
+            // 框架为惰性求值：必须显式 forward 触发计算，否则只测建图 + 入图拷贝
+            let out = conv.forward(&input);
+            out.forward().unwrap();
         });
     });
 }
@@ -179,7 +183,9 @@ fn bench_group_norm_fwd_b16_c32_14x14(c: &mut Criterion) {
 
     c.bench_function("smoke_group_norm_fwd_b16_c32_14x14", |bench| {
         bench.iter(|| {
-            let _ = norm.forward(&input);
+            // 框架为惰性求值：必须显式 forward 触发计算，否则只测建图 + 入图拷贝
+            let out = norm.forward(&input);
+            out.forward().unwrap();
         });
     });
 }
