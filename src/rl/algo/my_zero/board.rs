@@ -144,6 +144,259 @@ impl MctsModel for BoardMctsModel<'_> {
 }
 
 // ============================================================================
+// 树内真规则（naive0 issue §四-② 诊断臂；可插拔，默认关）
+// ============================================================================
+
+/// 五连胜利长度（与 `python/gym_env/gomoku/board.py` 的 `win_length=5` 契约一致）。
+const WIN_LENGTH: usize = 5;
+
+/// 纯 Rust 棋盘规则（树内推演专用）：与 Python `Board` 同规则、零 pyo3 调用。
+///
+/// 只服务 [`TrueRulesBoardModel`] 的树内 clone/step——真环境（走子/根 mask/终局）
+/// 仍走 Python env，不改三处出场契约。规则等价性由 `tests/board.rs` 的
+/// 「随机对局 vs Python 板逐步对照」单测锁死。
+#[derive(Clone)]
+pub(crate) struct RulesBoard {
+    side: usize,
+    /// 黑（0）/ 白（1）子平面，1 = 有子
+    stones: [Vec<u8>; 2],
+    to_play: u8,
+    move_count: usize,
+    done: bool,
+}
+
+impl RulesBoard {
+    /// 从「当前方视角 obs（3 平面）+ 执子方」重建绝对局面（根节点入口）。
+    ///
+    /// obs 契约（同 Python `Board.observation`）：通道 0 = 己方、1 = 对方、2 = 空。
+    pub fn from_obs(obs: &[f32], player: u8, side: usize) -> Self {
+        let plane = side * side;
+        debug_assert_eq!(obs.len(), 3 * plane, "棋盘 obs 应为 3 平面");
+        let read = |ch: usize| -> Vec<u8> {
+            obs[ch * plane..(ch + 1) * plane]
+                .iter()
+                .map(|&v| u8::from(v > 0.5))
+                .collect()
+        };
+        let (own, opp) = (read(0), read(1));
+        let move_count = own
+            .iter()
+            .chain(opp.iter())
+            .map(|&v| v as usize)
+            .sum::<usize>();
+        let stones = if player == 0 { [own, opp] } else { [opp, own] };
+        Self {
+            side,
+            stones,
+            to_play: player,
+            move_count,
+            done: false,
+        }
+    }
+
+    pub fn to_play(&self) -> u8 {
+        self.to_play
+    }
+
+    /// 落子（同 Python `Board.step` 语义）：返回（落子方视角 reward, terminal）。
+    ///
+    /// 树内候选已按合法掩码过滤，非法着走防御分支（判负终局，与 Python 一致）。
+    pub fn step(&mut self, action: usize) -> (f32, bool) {
+        debug_assert!(!self.done, "终局后不应再落子");
+        let plane = self.side * self.side;
+        if action >= plane || self.stones[0][action] == 1 || self.stones[1][action] == 1 {
+            self.done = true;
+            return (-1.0, true);
+        }
+        let color = self.to_play as usize;
+        self.stones[color][action] = 1;
+        self.move_count += 1;
+
+        let reward = if self.wins_at(color, action) {
+            self.done = true;
+            1.0
+        } else if self.move_count >= plane {
+            self.done = true; // 平局
+            0.0
+        } else {
+            0.0
+        };
+        self.to_play = 1 - self.to_play;
+        (reward, self.done)
+    }
+
+    /// 合法掩码（空位即合法）。
+    pub fn legal_mask(&self) -> Vec<bool> {
+        (0..self.side * self.side)
+            .map(|i| self.stones[0][i] == 0 && self.stones[1][i] == 0)
+            .collect()
+    }
+
+    /// 当前方视角展平观察（3 平面，同 Python `Board.observation_flat`）。
+    pub fn observation_flat(&self) -> Vec<f32> {
+        let plane = self.side * self.side;
+        let (own, opp) = (
+            &self.stones[self.to_play as usize],
+            &self.stones[1 - self.to_play as usize],
+        );
+        let mut obs = vec![0.0f32; 3 * plane];
+        for i in 0..plane {
+            obs[i] = own[i] as f32;
+            obs[plane + i] = opp[i] as f32;
+            obs[2 * plane + i] = f32::from(own[i] == 0 && opp[i] == 0);
+        }
+        obs
+    }
+
+    /// 增量胜利检查（只查最后落子四方向，同 Python `_check_winner_incremental`）。
+    fn wins_at(&self, color: usize, action: usize) -> bool {
+        let d = self.side as isize;
+        let (row, col) = ((action / self.side) as isize, (action % self.side) as isize);
+        let b = &self.stones[color];
+        for (dr, dc) in [(0isize, 1isize), (1, 0), (1, 1), (1, -1)] {
+            let mut count = 1;
+            for sign in [1isize, -1] {
+                for i in 1..WIN_LENGTH as isize {
+                    let (r, c) = (row + dr * i * sign, col + dc * i * sign);
+                    if r >= 0 && r < d && c >= 0 && c < d && b[(r * d + c) as usize] == 1 {
+                        count += 1;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            if count >= WIN_LENGTH {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+/// 树内真规则的双人 `MctsModel` 适配器（AlphaZero 式；naive0 issue §四-② 诊断臂）。
+///
+/// 与 [`BoardMctsModel`]（learned dynamics）的唯一差异 = **树内转移函数**：
+/// - 转移/终局：[`RulesBoard`] 真规则推演（终局 reward 直接 backup，「一步胜/必挡」
+///   在树内结构性可见）；
+/// - 叶子先验/价值：仍由网络 `initial_state`（representation + prediction）在**真实
+///   obs** 上给出——不用 dynamics/reward 头；
+/// - 树内候选按真规则 legal mask 过滤（learned 路径树内不 mask，因 dynamics 不知规则）。
+///
+/// 训练侧完全不变（loss 仍含 dynamics unroll），单变量 = 树内转移，经
+/// `BoardTrainConfig::true_rules_tree` 开关插拔，默认关。
+pub(crate) struct TrueRulesBoardModel<'a> {
+    model: &'a MyZeroModel,
+    root_board: RulesBoard,
+    action_dim: usize,
+}
+
+impl<'a> TrueRulesBoardModel<'a> {
+    /// `obs`/`player` 为根局面（真环境读出），`side` 由 `action_dim` 开方而来。
+    pub fn new(model: &'a MyZeroModel, obs: &[f32], player: u8, side: usize) -> Self {
+        Self {
+            model,
+            root_board: RulesBoard::from_obs(obs, player, side),
+            action_dim: side * side,
+        }
+    }
+
+    /// 按棋盘合法掩码过滤候选并归一化 prior（根与树内同一路径）。
+    fn masked_candidates(&self, board: &RulesBoard, prior: &[f32]) -> CandidateSet {
+        let legal = board.legal_mask();
+        let mut candidates: Vec<ActionCandidate> = (0..self.action_dim)
+            .filter(|&a| legal[a])
+            .map(|a| {
+                ActionCandidate::new(
+                    ActionId(a),
+                    ActionPayload::Discrete(a),
+                    prior.get(a).copied().unwrap_or(0.0).max(0.0),
+                )
+            })
+            .collect();
+        let z: f32 = candidates.iter().map(|c| c.policy_prior).sum();
+        if z > 1e-12 && z.is_finite() {
+            for c in &mut candidates {
+                c.policy_prior /= z;
+            }
+        } else if !candidates.is_empty() {
+            let u = 1.0 / candidates.len() as f32;
+            for c in &mut candidates {
+                c.policy_prior = u;
+            }
+        }
+        CandidateSet { candidates }
+    }
+}
+
+impl MctsModel for TrueRulesBoardModel<'_> {
+    type State = RulesBoard;
+
+    fn root(&self, obs: &[f32]) -> RootOut<Self::State> {
+        let (_latent, prior, value) = Dynamics::initial_state(&self.model, obs);
+        RootOut {
+            state: self.root_board.clone(),
+            value,
+            candidates: self.masked_candidates(&self.root_board, &prior),
+            to_play: self.root_board.to_play(),
+        }
+    }
+
+    fn recurrent(&self, state: &Self::State, action: &ActionPayload) -> RecurrentOut<Self::State> {
+        let action_idx = match action {
+            ActionPayload::Discrete(idx) => *idx,
+            _ => 0,
+        };
+        let mut board = state.clone();
+        let (reward, terminal) = board.step(action_idx);
+        let next_player = board.to_play();
+        let (value, candidates) = if terminal {
+            // 终局：价值已由 reward 完全表达，无后续候选
+            (0.0, CandidateSet::empty())
+        } else {
+            let obs = board.observation_flat();
+            let (_latent, prior, value) = Dynamics::initial_state(&self.model, &obs);
+            (value, self.masked_candidates(&board, &prior))
+        };
+        RecurrentOut {
+            state: board,
+            reward,
+            value,
+            candidates,
+            terminal,
+            to_play: next_player,
+            discount: if terminal { 0.0 } else { 1.0 },
+        }
+    }
+}
+
+/// 棋盘搜索统一入口：按 `true_rules` 在两种树内转移间插拔（唯一分叉点）。
+///
+/// `false` = learned dynamics（[`BoardMctsModel`]，M1–M4 基线路径，逐 bit 不变）；
+/// `true` = 真规则树（[`TrueRulesBoardModel`]，②臂诊断）。
+#[allow(clippy::too_many_arguments)]
+fn board_search(
+    true_rules: bool,
+    model: &MyZeroModel,
+    components: &Components,
+    obs: &[f32],
+    legal: Vec<bool>,
+    player: u8,
+    action_dim: usize,
+    mcts_cfg: &MctsConfig,
+    rng: &mut StdRng,
+) -> crate::rl::mcts::SearchResult {
+    let policy = MyZeroSearchPolicy::from_components(components);
+    if true_rules {
+        let side = (action_dim as f32).sqrt() as usize;
+        let board_model = TrueRulesBoardModel::new(model, obs, player, side);
+        mcts_search(&board_model, &policy, obs, mcts_cfg, rng)
+    } else {
+        let board_model = BoardMctsModel::new(model, legal, player, action_dim);
+        mcts_search(&board_model, &policy, obs, mcts_cfg, rng)
+    }
+}
+
+// ============================================================================
 // 8 重对称增广（D4 二面体群：旋转 90°×4 × 镜像 ×2）
 // ============================================================================
 
@@ -249,14 +502,17 @@ fn negamax_root_value(children: &[ChildStat], root_player: u8) -> f32 {
 
 /// 一条样本 unroll 窗口的棋盘现算 target（借 [`RosmoTargets`] 槽位结构走 Refreshed 通道）。
 ///
-/// - policy：读存量 MCTS target（棋盘 M1 不刷新）；越界槽位 uniform（同 legacy padding）。
-/// - value：negamax MC 回报；越界 0。
-/// - `bc_weights` 全 0（BC 项零开销跳过，见 `train_unroll_batch`）。
+/// - policy：默认读存量 MCTS target；`rosmo_refresh = Some(model)` 时逐槽位现算
+///   [`board_rosmo_policy`]（一步 look-ahead 改进分布，不写回——③ 臂）。
+/// - value：negamax MC 回报（终局事实不过期，刷新臂**不动**）；越界 0。
+/// - `bc_weights` 全 0（BC 项零开销跳过，见 `train_unroll_batch`；③ 臂单变量纪律
+///   不叠优势过滤 BC）。
 fn board_targets(
     steps: &[SelfPlayStep],
     start: usize,
     actual_k: usize,
     action_dim: usize,
+    rosmo_refresh: Option<&MyZeroModel>,
 ) -> RosmoTargets {
     let len = steps.len();
     let uniform = vec![1.0 / action_dim as f32; action_dim];
@@ -265,7 +521,11 @@ fn board_targets(
     for j in 0..=actual_k {
         let pos = start + j;
         if pos < len {
-            policies.push(steps[pos].policy_target.clone());
+            let policy = match rosmo_refresh {
+                Some(model) => board_rosmo_policy(model, steps[pos].obs.as_f32(), action_dim),
+                None => steps[pos].policy_target.clone(),
+            };
+            policies.push(policy);
             values.push(negamax_mc_return(steps, pos));
         } else {
             policies.push(uniform.clone());
@@ -276,6 +536,84 @@ fn board_targets(
         policies,
         values,
         bc_weights: vec![0.0; actual_k],
+    }
+}
+
+// ============================================================================
+// 棋盘 ROSMO 式 policy 刷新（naive0 issue §四-③；可插拔，默认关）
+// ============================================================================
+
+/// 一步 look-ahead 的 prior top-m 剪枝宽度（成本裁决：81 动作全量 ≈ 25s/局不可行；
+/// top-16 覆盖弱网早期的绝大部分 prior 质量，96 次 recurrent/样本 ≈ 5s/局可行）。
+const ROSMO_TOP_M: usize = 16;
+
+/// 单局面棋盘 ROSMO 改进策略：`p(a|s) ∝ π_prior(a|s)·exp(adv)`（negamax 口径）。
+///
+/// 与 [`rosmo::one_step_improved_policy`](super::rosmo::one_step_improved_policy)
+/// 的三点域适配：
+/// - **negamax q**：`q(s,a) = r_g − v(s'_g)`（γ=1；子局面 value 是对方视角，翻转回落
+///   子方——单智能体版的 `+` 在双人零和下语义错误）；terminal 边 `q = r_g`；
+/// - **合法掩码**：从 obs 空位平面（通道 2）重建，改进分布支撑 ⊆ 合法位（learned
+///   prior 会漏质量到非法位，不 mask 会污染 target）；
+/// - **top-m 剪枝**：只对 prior 最高的 m 个合法位做 look-ahead，其余合法位保留
+///   缩放后的 prior 质量（不 look-ahead ≠ 置零，防把长尾合法位训成硬 0）。
+///
+/// 退化（归一化失败）回退 uniform-over-legal。
+pub(crate) fn board_rosmo_policy(model: &MyZeroModel, obs: &[f32], action_dim: usize) -> Vec<f32> {
+    let (latent, prior, root_v) = Dynamics::initial_state(&model, obs);
+    let plane = action_dim;
+    let legal: Vec<bool> = obs[2 * plane..3 * plane].iter().map(|&v| v > 0.5).collect();
+
+    let mut legal_idx: Vec<usize> = (0..action_dim).filter(|&a| legal[a]).collect();
+    if legal_idx.is_empty() {
+        return vec![1.0 / action_dim as f32; action_dim];
+    }
+    legal_idx.sort_by(|&a, &b| {
+        let (pa, pb) = (
+            prior.get(a).copied().unwrap_or(0.0),
+            prior.get(b).copied().unwrap_or(0.0),
+        );
+        pb.partial_cmp(&pa).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let look_ahead: &[usize] = &legal_idx[..legal_idx.len().min(ROSMO_TOP_M)];
+
+    // top-m 位：adv 加权；其余合法位：exp(0) = 保留 prior 原始比例
+    let mut weights = vec![0.0f32; action_dim];
+    let mut advs = vec![0.0f32; action_dim];
+    for &a in look_ahead {
+        let out = Dynamics::recurrent(&model, &latent, &ActionPayload::Discrete(a));
+        // negamax：对手视角 value 翻转；terminal 边不 bootstrap
+        let q = if out.terminal {
+            out.reward
+        } else {
+            out.reward - out.value
+        };
+        advs[a] = q - root_v;
+    }
+    let max_adv = look_ahead.iter().map(|&a| advs[a]).fold(0.0f32, f32::max); // 与未 look-ahead 位的 exp(0)=1 同基准
+    for &a in &legal_idx {
+        let p = prior.get(a).copied().unwrap_or(0.0).max(0.0);
+        let is_look_ahead = look_ahead.contains(&a);
+        let boost = if is_look_ahead {
+            advs[a] - max_adv
+        } else {
+            -max_adv
+        };
+        weights[a] = p * boost.exp();
+    }
+    let z: f32 = weights.iter().sum();
+    if z > 1e-12 && z.is_finite() {
+        for w in &mut weights {
+            *w /= z;
+        }
+        weights
+    } else {
+        let u = 1.0 / legal_idx.len() as f32;
+        let mut fallback = vec![0.0f32; action_dim];
+        for &a in &legal_idx {
+            fallback[a] = u;
+        }
+        fallback
     }
 }
 
@@ -300,6 +638,7 @@ fn board_mcts_config(
 }
 
 /// 自对弈一局（双方同一网络；真环境只在走子/根 mask/终局三处出场）。
+#[allow(clippy::too_many_arguments)]
 fn board_self_play_episode(
     env: &GymEnv,
     model: &MyZeroModel,
@@ -307,6 +646,7 @@ fn board_self_play_episode(
     mcts_cfg: &MctsConfig,
     action_dim: usize,
     reset_seed: u64,
+    true_rules: bool,
     rng: &mut StdRng,
 ) -> Vec<SelfPlayStep> {
     env.reset(Some(reset_seed));
@@ -317,9 +657,9 @@ fn board_self_play_episode(
         let player = env.current_player();
         let legal = env.legal_mask();
 
-        let board_model = BoardMctsModel::new(model, legal, player, action_dim);
-        let policy = MyZeroSearchPolicy::from_components(components);
-        let result = mcts_search(&board_model, &policy, &obs, mcts_cfg, rng);
+        let result = board_search(
+            true_rules, model, components, &obs, legal, player, action_dim, mcts_cfg, rng,
+        );
 
         let action_idx = match &result.recommended {
             ActionPayload::Discrete(idx) => *idx,
@@ -355,6 +695,7 @@ fn board_self_play_episode(
 /// 对内置对手 env（如 `Gomoku-random-v0`）greedy 评测 `n` 局，返回 (胜率, 局均 return)。
 ///
 /// 我方恒执黑先行（env 契约）；每步搜索带根 legal_mask，temperature=0、无 Dirichlet。
+#[allow(clippy::too_many_arguments)]
 fn board_eval_vs(
     env: &GymEnv,
     model: &MyZeroModel,
@@ -363,6 +704,7 @@ fn board_eval_vs(
     num_simulations: u32,
     n_episodes: usize,
     eval_seed: u64,
+    true_rules: bool,
 ) -> (f32, f32) {
     let eval_cfg = board_mcts_config(num_simulations, 0.0, 0.0);
     let mut wins = 0usize;
@@ -376,9 +718,9 @@ fn board_eval_vs(
             let obs = env.board_observation_flat();
             let player = env.current_player();
             let legal = env.legal_mask();
-            let board_model = BoardMctsModel::new(model, legal, player, action_dim);
-            let policy = MyZeroSearchPolicy::from_components(components);
-            let result = mcts_search(&board_model, &policy, &obs, &eval_cfg, &mut rng);
+            let result = board_search(
+                true_rules, model, components, &obs, legal, player, action_dim, &eval_cfg, &mut rng,
+            );
             let action_idx = match &result.recommended {
                 ActionPayload::Discrete(idx) => *idx,
                 _ => 0,
@@ -436,6 +778,7 @@ fn snapshot_model(
 /// `opening_plies` 步**随机合法开局**（由 `seed` 决定，双方各半）：纯贪心对弈整局
 /// 确定，无开局多样性时 n 局退化为同一盘棋重复（M2 首裁实测教训）；随机开局是
 /// AlphaZero 系评测对局的标准做法，同一 `seed` 的开局可跨色镜像复用保证公平。
+#[allow(clippy::too_many_arguments)]
 fn board_duel_episode(
     env: &GymEnv,
     black: &MyZeroModel,
@@ -445,6 +788,7 @@ fn board_duel_episode(
     num_simulations: u32,
     opening_plies: usize,
     seed: u64,
+    true_rules: bool,
 ) -> Option<u8> {
     let eval_cfg = board_mcts_config(num_simulations, 0.0, 0.0);
     let mut rng = StdRng::seed_from_u64(seed);
@@ -470,9 +814,9 @@ fn board_duel_episode(
         let player = env.current_player();
         let legal = env.legal_mask();
         let model = if player == 0 { black } else { white };
-        let board_model = BoardMctsModel::new(model, legal, player, action_dim);
-        let policy = MyZeroSearchPolicy::from_components(components);
-        let result = mcts_search(&board_model, &policy, &obs, &eval_cfg, &mut rng);
+        let result = board_search(
+            true_rules, model, components, &obs, legal, player, action_dim, &eval_cfg, &mut rng,
+        );
         let action_idx = match &result.recommended {
             ActionPayload::Discrete(idx) => *idx,
             _ => 0,
@@ -488,6 +832,7 @@ fn board_duel_episode(
 ///
 /// `n_games/2` 个随机开局（各 2 步），每个开局镜像打两盘（candidate 执黑/执白各一），
 /// 同开局同 seed——先手优势与开局运气跨色对消。
+#[allow(clippy::too_many_arguments)]
 fn board_duel_score(
     env: &GymEnv,
     candidate: &MyZeroModel,
@@ -497,6 +842,7 @@ fn board_duel_score(
     num_simulations: u32,
     n_games: usize,
     seed: u64,
+    true_rules: bool,
 ) -> f32 {
     const OPENING_PLIES: usize = 2;
     let n_pairs = (n_games / 2).max(1);
@@ -518,6 +864,7 @@ fn board_duel_score(
                 num_simulations,
                 OPENING_PLIES,
                 opening_seed,
+                true_rules,
             );
             let cand_color = u8::from(!cand_is_black);
             score += match winner {
@@ -573,6 +920,14 @@ pub(crate) struct BoardTrainConfig {
     pub cnn_repr: bool,
     /// 8 重对称增广（D4）：训练采样时每条样本随机套一个对称变换（整局同构）。
     pub augment: bool,
+    /// 树内真规则（AlphaZero 式诊断，naive0 issue §四-②）：树内转移/终局/候选 mask 走
+    /// [`RulesBoard`] 真规则，叶子先验/价值仍由网络在真实 obs 上给；训练侧不变。
+    /// false = learned dynamics 基线（M1–M4 路径，逐 bit 不变）。
+    pub true_rules_tree: bool,
+    /// ROSMO 式 policy target 刷新（naive0 issue §四-③）：训练采样时用当前网络对
+    /// 存量 policy target 现算一步 look-ahead 改进分布（[`board_rosmo_policy`]，
+    /// 不写回；value 维持 negamax MC 不动）。对症高 replay ratio 下的 target 过期。
+    pub rosmo_refresh: bool,
 }
 
 impl Default for BoardTrainConfig {
@@ -603,6 +958,8 @@ impl Default for BoardTrainConfig {
             components: super::recipe::components_for("Gomoku-selfplay-v0"),
             cnn_repr: false,
             augment: false,
+            true_rules_tree: false,
+            rosmo_refresh: false,
         }
     }
 }
@@ -660,6 +1017,14 @@ pub(crate) fn train_board(cfg: &BoardTrainConfig) -> Result<BoardTrainReport, Gr
         if cfg.augment {
             println!("[MyZero-board] 8 重对称增广开启（D4，采样时随机套变换）");
         }
+        if cfg.true_rules_tree {
+            println!("[MyZero-board] 树内真规则开启（AlphaZero 式诊断；训练侧不变）");
+        }
+        if cfg.rosmo_refresh {
+            println!(
+                "[MyZero-board] ROSMO policy 刷新开启（采样时现算一步 look-ahead，top-{ROSMO_TOP_M}；value 维持 negamax）"
+            );
+        }
         let perms: Vec<Vec<usize>> = (0..8).map(|s| symmetry_perm(side, s)).collect();
         let graph = Graph::new_with_seed(cfg.seed);
         let model = MyZeroModel::new_with_spec(&graph, obs_spec, action_dim, cfg.latent_dim)?;
@@ -690,6 +1055,7 @@ pub(crate) fn train_board(cfg: &BoardTrainConfig) -> Result<BoardTrainReport, Gr
                 &mcts_cfg,
                 action_dim,
                 cfg.seed.wrapping_add(1_000_000 + ep as u64),
+                cfg.true_rules_tree,
                 &mut rng,
             );
             let ep_len = steps.len();
@@ -744,7 +1110,13 @@ pub(crate) fn train_board(cfg: &BoardTrainConfig) -> Result<BoardTrainReport, Gr
                         .map(|(i, &(idx, start))| {
                             let game = game_at(i, idx);
                             let actual_k = unroll_len_at(&game.steps, start, cfg.k_unroll);
-                            board_targets(&game.steps, start, actual_k, action_dim)
+                            board_targets(
+                                &game.steps,
+                                start,
+                                actual_k,
+                                action_dim,
+                                cfg.rosmo_refresh.then_some(&model),
+                            )
                         })
                         .collect();
                     let train_view: Vec<(&SelfPlayGame, usize)> = picks
@@ -788,6 +1160,7 @@ pub(crate) fn train_board(cfg: &BoardTrainConfig) -> Result<BoardTrainReport, Gr
                     cfg.num_simulations,
                     cfg.eval_episodes,
                     cfg.seed.wrapping_add(9_000_000 + ep as u64),
+                    cfg.true_rules_tree,
                 );
                 final_win_rate = win_rate;
                 best_win_rate = best_win_rate.max(win_rate);
@@ -830,6 +1203,7 @@ pub(crate) fn train_board(cfg: &BoardTrainConfig) -> Result<BoardTrainReport, Gr
                 cfg.num_simulations,
                 cfg.gate_games,
                 cfg.seed.wrapping_add(77_000_000),
+                cfg.true_rules_tree,
             );
             gate_vs_random = Some(wr);
             println!(
@@ -847,6 +1221,7 @@ pub(crate) fn train_board(cfg: &BoardTrainConfig) -> Result<BoardTrainReport, Gr
                     cfg.num_simulations,
                     cfg.gate_games,
                     cfg.seed.wrapping_add(88_000_000),
+                    cfg.true_rules_tree,
                 );
                 gate_vs_checkpoint = Some(score);
                 println!(
@@ -873,6 +1248,7 @@ pub(crate) fn train_board(cfg: &BoardTrainConfig) -> Result<BoardTrainReport, Gr
                     cfg.num_simulations,
                     cfg.eval_episodes,
                     cfg.seed.wrapping_add(99_000_000),
+                    cfg.true_rules_tree,
                 );
                 ladder_env.close();
                 naive_win_rates.push((name, wr));

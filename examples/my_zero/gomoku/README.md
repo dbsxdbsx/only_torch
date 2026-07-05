@@ -62,6 +62,14 @@ cargo test --release --features blas-mkl gomoku_m3_<arm> -- --ignored --nocaptur
 | **D4 增广** | 0.975 | 0.975 | **0.00–0.25（中位 0.15）** | **弱阳性**（唯一正信号，未达 promote 线） |
 | 组合（增广+RR32+lr3e3） | 1.000 | 0.675 | 0.05–0.25 | 不超增广单臂，「配方合力」未兑现 |
 
+## naive0 战术墙裁决臂（M4 后 · [issue §四](../../../.issue/items/gomoku_naive0_tactical_wall.md) 前台主线）
+
+| 臂 | vs random | vs 快照 | naive0 | 裁决 |
+|---|---|---|---|---|
+| ① sims 100→400（2026-07-05） | 0.950 | 0.900 | **0.05/0.15/0.05（中位 0.05）** | **平——搜索预算嫌疑排除**（预注册线 ≥0.3 未达），根因收敛「规则学习税」假设 → 进 ② 树内真规则诊断臂。日志 `.bench/gomoku_naive0_sims400_20260705.log` |
+| ② 树内真规则（2026-07-05，**5-seed** 42–46；首跑后按哨兵复裁先例扩 seed，协议修订记 bench 注释） | 0.950 | 0.450 | **0.10/0.00/0.45/0.20/0.20（中位 0.20，max 0.45 + naive1 2/5 非零）** | **方向性正信号、未坐实**（未达 ≥0.3 部分坐实线，但非 ≈0.1 排除形态：中位翻倍、上限 3×）——判读 = 真规则只解锁 acting 侧，训练 value/policy 信号仍是瓶颈；战略分叉不触发，③ replay32×ROSMO 臂顺位。gating 走低为「双方同用真规则树抹平前后期差距」的测量形态。开关 `true_rules_tree`（默认关，learned 路径逐 bit 不变）。日志 `.bench/gomoku_naive0_true_rules{,_ext}_20260705.log` |
+| ③ replay×8 × ROSMO 刷新（2026-07-05） | **0.425/0.625/0.475** | 0.475 | **全 0** | **有害（护栏崩塌）**——vs random 从 replay32 臂的 0.875 崩到 ~0.5（≈随机水平）。判读 = 弱模型下一步 look-ahead 的 adv 是噪声，`prior×exp(adv)` 现算 target 形成自指反馈（网络向自己的噪声改进分布学习、失去 MCTS 搜索改进信号）；**「policy target 过期」嫌疑同时被反证**（存量 MCTS target 比现刷 target 好得多）。ROSMO 棋盘格 ❌。开关 `rosmo_refresh`（默认关）。日志 `.bench/gomoku_naive0_rr32_rosmo_20260705.log` |
+
 ### 结论（M3/M4 收口）
 
 1. **recipe = base 定型**：九臂无一显著抬升主指标，「变慢 ≠ 失败」但「不动 = 不 promote」。

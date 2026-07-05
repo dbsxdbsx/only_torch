@@ -1,12 +1,17 @@
-//! `board.rs` 单元测试：negamax MC 回报 + 双人 MctsModel 根 mask / to_play 轮转。
+//! `board.rs` 单元测试：negamax MC 回报 + 双人 MctsModel 根 mask / to_play 轮转
+//! + 树内真规则（RulesBoard 规则等价性 / TrueRulesBoardModel 适配器）。
 
 use crate::nn::Graph;
 use crate::rl::algo::my_zero::board::{
-    BoardMctsModel, augment_game, negamax_mc_return, symmetry_perm,
+    BoardMctsModel, RulesBoard, TrueRulesBoardModel, augment_game, board_rosmo_policy,
+    negamax_mc_return, symmetry_perm,
 };
 use crate::rl::algo::my_zero::network::{MyZeroModel, ObsSpec};
 use crate::rl::mcts::{ActionPayload, MctsModel};
-use crate::rl::{GameOutcome, SelfPlayGame, SelfPlayStep};
+use crate::rl::{GameOutcome, GymEnv, SelfPlayGame, SelfPlayStep};
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+use serial_test::serial;
 
 fn mk_step(player: u8, reward: f32, terminated: bool) -> SelfPlayStep {
     SelfPlayStep {
@@ -120,6 +125,185 @@ fn augment_game_transforms_consistently() {
     assert_eq!(s.reward, 1.0);
     assert_eq!(s.player, 0);
     assert_eq!(aug.outcome, GameOutcome::Win(0));
+}
+
+/// RulesBoard 手算金测试：横向五连获胜、reward 落子方视角、to_play 轮转。
+#[test]
+fn rules_board_horizontal_win_and_turn_taking() {
+    let side = 9;
+    let empty = {
+        let plane = side * side;
+        let mut obs = vec![0.0f32; 3 * plane];
+        obs[2 * plane..].fill(1.0);
+        obs
+    };
+    let mut b = RulesBoard::from_obs(&empty, 0, side);
+    assert_eq!(b.to_play(), 0);
+    // 黑走 0..4 横排，白走第二行陪跑；黑第 5 手（action=4）应五连胜
+    for i in 0..4 {
+        let (r, t) = b.step(i); // 黑
+        assert_eq!((r, t), (0.0, false));
+        assert_eq!(b.to_play(), 1);
+        let (r, t) = b.step(9 + i); // 白
+        assert_eq!((r, t), (0.0, false));
+        assert_eq!(b.to_play(), 0);
+    }
+    let (r, t) = b.step(4);
+    assert_eq!((r, t), (1.0, true), "黑五连应胜");
+    // 已占位在 legal_mask 中应为 false
+    let legal = b.legal_mask();
+    assert!(!legal[0] && !legal[4] && !legal[9]);
+    assert!(legal[80]);
+}
+
+/// RulesBoard::from_obs 视角重建：白方视角 obs（通道 0=己方白）应还原绝对局面。
+#[test]
+fn rules_board_from_obs_white_perspective() {
+    let side = 9;
+    let plane = side * side;
+    // 绝对局面：黑在 0，白在 1；当前轮白 → obs 通道 0=白(1)、通道 1=黑(0)
+    let mut obs = vec![0.0f32; 3 * plane];
+    obs[1] = 1.0; // 己方（白）在格点 1
+    obs[plane] = 1.0; // 对方（黑）在格点 0
+    for i in 0..plane {
+        obs[2 * plane + i] = f32::from(i > 1);
+    }
+    let mut b = RulesBoard::from_obs(&obs, 1, side);
+    assert_eq!(b.to_play(), 1);
+    // 白落 10 后轮黑；黑视角 obs 通道 0 应含格点 0（黑子）
+    b.step(10);
+    assert_eq!(b.to_play(), 0);
+    let next_obs = b.observation_flat();
+    assert_eq!(next_obs[0], 1.0, "黑视角己方平面应含格点 0");
+    assert_eq!(next_obs[plane + 1], 1.0, "黑视角对方平面应含格点 1");
+    assert_eq!(next_obs[plane + 10], 1.0, "黑视角对方平面应含新落的 10");
+}
+
+/// 规则等价性金测试：随机对局全程与 Python `Board` 逐步对照
+/// （reward / terminal / legal_mask / observation_flat / current_player 五项全等）。
+#[test]
+#[serial]
+fn rules_board_matches_python_board() {
+    pyo3::Python::attach(|py| {
+        let env = GymEnv::new(py, "Gomoku-selfplay-v0");
+        let mut rng = StdRng::seed_from_u64(2026_0705);
+        for game in 0..3u64 {
+            env.reset(Some(game));
+            let side = 9;
+            let obs0 = env.board_observation_flat();
+            let mut rust_board = RulesBoard::from_obs(&obs0, env.current_player(), side);
+            loop {
+                // 双板状态对照
+                let py_legal = env.legal_mask();
+                assert_eq!(rust_board.legal_mask(), py_legal, "legal_mask 应一致");
+                assert_eq!(rust_board.to_play(), env.current_player(), "执子方应一致");
+                assert_eq!(
+                    rust_board.observation_flat(),
+                    env.board_observation_flat(),
+                    "obs 应一致"
+                );
+                // 随机合法落子，双板同步走
+                let choices: Vec<usize> = py_legal
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(a, &ok)| ok.then_some(a))
+                    .collect();
+                let action = choices[rng.gen_range(0..choices.len())];
+                let (py_r, py_t) = env.board_step(action);
+                let (rs_r, rs_t) = rust_board.step(action);
+                assert_eq!(
+                    (rs_r, rs_t),
+                    (py_r, py_t),
+                    "step 返回应一致（action={action}）"
+                );
+                if py_t {
+                    break;
+                }
+            }
+        }
+        env.close();
+    });
+}
+
+/// TrueRulesBoardModel：根/树内候选均按真规则 mask、to_play 轮转、
+/// 连五终局边 terminal + reward=1 + discount=0（learned 路径对照见下一测试）。
+#[test]
+fn true_rules_model_masks_and_terminal() {
+    let side = 9;
+    let action_dim = side * side;
+    let plane = action_dim;
+    let graph = Graph::new_with_seed(7);
+    let model = MyZeroModel::new_with_spec(&graph, ObsSpec::Flat(3 * plane), action_dim, 16)
+        .expect("模型构造失败");
+
+    // 局面：黑已有 0..4 横排差一子（0..=3），白 9..12；轮黑，黑走 4 即连五
+    let mut obs = vec![0.0f32; 3 * plane];
+    for i in 0..4 {
+        obs[i] = 1.0; // 己方（黑）
+        obs[plane + 9 + i] = 1.0; // 对方（白）
+    }
+    for i in 0..plane {
+        let occupied = i < 4 || (9..13).contains(&i);
+        obs[2 * plane + i] = f32::from(!occupied);
+    }
+
+    let bm = TrueRulesBoardModel::new(&model, &obs, 0, side);
+    let root = bm.root(&obs);
+    assert_eq!(root.to_play, 0);
+    assert_eq!(
+        root.candidates.len(),
+        plane - 8,
+        "根候选应 = 空位数（真规则 mask）"
+    );
+    let prior_sum: f32 = root.candidates.policy_priors().iter().sum();
+    assert!((prior_sum - 1.0).abs() < 1e-5, "根 prior 应归一化");
+
+    // 树内走 4：黑连五 → 终局边
+    let rec = bm.recurrent(&root.state, &ActionPayload::Discrete(4));
+    assert!(rec.terminal, "连五应终局");
+    assert_eq!(rec.reward, 1.0, "落子方胜 reward=+1");
+    assert_eq!(rec.discount, 0.0, "终局边 discount=0");
+    assert!(rec.candidates.is_empty(), "终局无候选");
+
+    // 树内走 80（无关处）：轮白、候选按真规则 mask（又少一空位）
+    let rec2 = bm.recurrent(&root.state, &ActionPayload::Discrete(80));
+    assert!(!rec2.terminal);
+    assert_eq!(rec2.to_play, 1, "recurrent 应轮转执子方");
+    assert_eq!(
+        rec2.candidates.len(),
+        plane - 9,
+        "树内候选应按真规则 mask（非全量）"
+    );
+}
+
+/// 棋盘 ROSMO 刷新分布：合法支撑（非法位恒 0）、归一化、有限值。
+///
+/// 用 2×2 迷你棋盘（|A|=4 < top-m）覆盖「全合法位 look-ahead」路径；
+/// 语义正确性（negamax q 翻转）由 ③ 臂实测裁决，这里锁契约不锁数值。
+#[test]
+fn board_rosmo_policy_legal_support_and_normalized() {
+    let action_dim = 4usize;
+    let plane = action_dim;
+    let graph = Graph::new_with_seed(11);
+    let model = MyZeroModel::new_with_spec(&graph, ObsSpec::Flat(3 * plane), action_dim, 16)
+        .expect("模型构造失败");
+
+    // 位置 1 有己方子、2 有对方子 → 合法位 {0, 3}
+    let mut obs = vec![0.0f32; 3 * plane];
+    obs[1] = 1.0;
+    obs[plane + 2] = 1.0;
+    for i in 0..plane {
+        obs[2 * plane + i] = f32::from(i == 0 || i == 3);
+    }
+
+    let policy = board_rosmo_policy(&model, &obs, action_dim);
+    assert_eq!(policy.len(), action_dim);
+    assert_eq!(policy[1], 0.0, "已占位（己方）应为 0");
+    assert_eq!(policy[2], 0.0, "已占位（对方）应为 0");
+    let z: f32 = policy.iter().sum();
+    assert!((z - 1.0).abs() < 1e-5, "应归一化，got {z}");
+    assert!(policy.iter().all(|p| p.is_finite() && *p >= 0.0));
+    assert!(policy[0] > 0.0 && policy[3] > 0.0, "合法位应有非零质量");
 }
 
 /// 根节点候选应只含合法动作、ActionId = 棋盘位置、prior 归一化；

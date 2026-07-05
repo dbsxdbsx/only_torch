@@ -4,6 +4,14 @@
 
 ### Added
 
+- **feat(rl): Gomoku naive0 战术墙三臂纵深裁决（sims400 排除 · 树内真规则方向性正信号 · rr32×ROSMO 有害反证）+ GPT-5.5 全链路静态审查**（2026-07-05）
+  - **① sims 100→400 臂**：naive0 中位 0.05（3-seed，预注册线 ≥0.3 远未达）——**搜索预算嫌疑排除**，4× 模拟预算对战术视野零改善
+  - **② 树内真规则诊断臂**（新增可插拔 `true_rules_tree` 开关，默认关）：纯 Rust `RulesBoard` 规则层 + `TrueRulesBoardModel`（树内真推演替代 learned dynamics，Python 板逐步对照金测试锁死等价）；5-seed naive0 中位 **0.20**（vs base 0.10）、max **0.45** + naive1 2/5 非零（全批次历史最强单点）——**方向性正信号、未坐实**（未达 ≥0.3 部分坐实线）；判读 = 真规则解锁 acting 侧上限，瓶颈主体在**训练 value/policy 信号**；「棋类松开万金油铁律」战略分叉不触发；真规则树附带 ~2× 提速（40s vs 90s/seed）
+  - **③ replay32 × ROSMO 刷新臂**（新增 `rosmo_refresh` 开关，默认关；`board_rosmo_policy` 含 negamax 域 q = r − v(s') 翻转适配 + 合法掩码 + prior top-16 剪枝）：**有害（护栏崩塌）**——vs random 崩至 0.425/0.625/0.475（replay32 对照 0.875）、naive0 全 0；判读 = 弱模型 adv ≈ 噪声，`prior×exp(adv)` 现算 target 自指反馈污染 policy 学习；**同时反证「policy target 过期」嫌疑**（存量 MCTS target 显著优于现刷）；ROSMO 组件矩阵棋盘格 ❌
+  - **根因图景修订**（issue §三）：搜索预算 ~~排除~~、policy target 过期 ~~反证~~、树内转移 = 方向性支持非主因；剩余头号嫌疑收敛至 **negamax MC value 高方差**（每局仅终局 ±1 信号）与**探索覆盖不足**（战术局面在 self-play 分布中稀有）
+  - **GPT-5.5 全链路静态审查**：双人 negamax 主链路（backup/select/completedQ/n-step/D4 增广/真规则树/ROSMO 翻转）**无符号级 bug**——naive0 墙确认为算法/信号层现象；唯一新发现 = **value_prefix 训练/搜索断链**（训 LSTM prefix 头、搜索仍读未训练的普通 reward head），入收口规划 §5：Phase 4 复测前必修接线，且为 CartPole value_prefix ❌ 旧裁决候补解释
+  - 账目：三臂裁决进[棋盘账本](examples/my_zero/gomoku/README.md)与 [naive0 issue](.issue/items/gomoku_naive0_tactical_wall.md)（§三根因修订、§四三臂勾销），5 个新单测 + 3 个预注册 bench 臂，4 份 bench 日志入 `.bench/`
+
 - **feat(rl): Gomoku 棋盘支柱立柱——self-play 训练闭环 M0–M4 全程闭环（M2 双门槛 3/3 · M3 九臂消融 · recipe=base 定型 · smoke-rl 扩容）**（2026-07-04/05）
   - **训练闭环**（`src/rl/algo/my_zero/board.rs`）：双人零和棋盘 self-play 管线——`BoardMctsModel` 把 `to_play` 藏进 `MctsModel::State` 逐层轮转（内核 negamax backup / PUCT 视角翻转自动生效），树内全程 learned dynamics（万金油铁律：真环境仅 self-play/eval 走子、根节点 legal_mask、终局判定三处）；negamax MC value target（`G_t = r_t − G_{t+1}`，MuZero 棋类口径）经 `PreparedBatch::Refreshed` 通道喂给既有 `train_batch`，单智能体路径零改动；含半程快照 gating、随机开局镜像成对评测、naive 梯队观察性评测、D4 8 重对称增广（`symmetry_perm`/`augment_game`，obs 平面 + action + policy target 整局同构变换）
   - **Gumbel 复裁前置双修复**（`src/rl/mcts/gumbel.rs`，收口规划 §3 必做项）：① `temperature=0` 时 Gumbel 噪声置零（= mctx `gumbel_scale=0` 评测口径），greedy eval 不再被探索噪声污染（CartPole "未收敛"负结果疑似真因）；② `gumbel_halving_score` σ 归一化改用 tree-level `q_range`（`RootScheduler` trait 透传，`|A|=2` 局部 min-max 退化同源 bug 修复）；回归测试 3 项新增 `src/rl/tests/mcts_gumbel.rs`

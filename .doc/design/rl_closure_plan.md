@@ -32,6 +32,17 @@
 > **⚠️ 次序修订（2026-07-04）**：S0 ✅（spike GO，一级风险裁决已完成——本阶段排第二的首要理由已兑现）、S1 ✅；但 **S2 基准两跑皆 0/3 平直**（旧/新数值流各一次），**S3 三臂诊断全平**（recon pilot {1,4,16} / cons-off / HL-Gauss 均无差异）→ 组件层排除，嫌疑收敛到「训练预算差 2 个数量级 + 稀疏 reward」（[负结果 issue](../../.issue/items/my_zero_pong_image_flat_negative.md)）。
 > 裁决：**图像线降级为后台预算标定**（replay ratio ↑ × ROSMO 刷新 / lr 扫描 / DIAG，吃机器时间不吃注意力），**Phase 2 Gomoku 提前为当前主线**（§3；棋盘域是本派系最强场、直接服务象棋战略目标、对图像线仅依赖已闭环的 S1 CNN）。图像支柱的退出判据不变、账本债保留，标定臂出证据后回头收口。
 > reanalyze 阶梯一变更：**机制已进库**（`rosmo.rs`，2026-07-04；CartPole 回归闸门 3/3 绿、裁定旧灾难为机制病理而非实现 bug），图像域价值裁决随图像基线一并顺延。
+>
+> **⚠️ 预算再定价 + pilot-first 修订（2026-07-05，外证 [EfficientZero Remastered](https://www.gigglebit.net/blog/efficientzero)）**：
+> 第三方复现实测 = A100 + 20–32 核 **1–2 天/模型**（论文口径 7 小时，分数亦低于论文）且训练管线是
+> CPU 大户——据此重新定价：CPU-only 上把 Pong 类基线喂到参照量级（~12 万 updates @ batch256 vs
+> 我们 S2 的 9.6k @ batch16）是**以周计**的承诺，原「后台预算标定」低估了量级。修订三条：
+> ① **pilot-first**：预算标定臂改「轻量图像载体（MinAtar 类 / 更狠降采样）+ 单 seed + 判停协议
+> （中间检查点 greedy 曲线仍平即停）」，先证明「管线能学」再谈 Atari 类支柱验收；
+> ② 预算与门槛一律以**第三方复现数据**为锚（条款三，见 §7）；
+> ③ S0 spike 的教训入档：pilot 必须覆盖「学得动吗」（训练预算），不只「跑得动吗」（推理 wall-clock）。
+> 同文外证：EfficientZero 三组件中 **consistency 是核心**、value_prefix / off-policy correction
+> 疑为 Atari-100k 特调——与 value_prefix ❌ CartPole 实测互证，图像 recipe consistency ON 维持。
 
 - **风险 spike 先行**：最小 CNN 栈 + 假图像输入，实测「CNN 前向 × sims」单步 wall-clock，对照 [CPU 风险 issue](../../.issue/items/cpu_only_mcts_image_realtime_risk.md) 的触发线，产出去/留/改道决策
 - 图像 obs 管线（复用 `src/vision/preprocess`：降采样/灰度/帧堆叠）→ CNN representation 进 `network.rs`（按 recipe 注入）→ **预注册基准门槛**（Pong 类；验收 = 3-seed 可复现学习曲线 + 预注册分数，**非 SOTA**）
@@ -79,6 +90,30 @@
 **为什么第四**：target_net / SVE 同属 value target 质量域，一批清账最经济。
 **范围变更（2026-07-03）**：reanalyze 复活 + loss 优先回放已提前至 Phase 1（ROSMO-first 阶梯，见 §2）；本阶段收窄为 value target 质量清账 + acting/reanalyze 解耦的工程落地。
 
+> **⏸ 暂缓注记（2026-07-05，Phase 2 收口后裁决）**：Phase 2 主体已闭环，但**本阶段不顺位开启**——
+> 三项内容当前均无裁决场：① target_net / SVE 治理的是 **bootstrap target 新鲜度**，需要
+> 「value 靠 bootstrap 且基线在学习」的环境出裁决，而 CartPole 已冻结（条款二禁价值判断）、
+> 图像基线 0/3 平直（无信号，S3 已演示消融臂全平不可判读）、棋盘 value = negamax MC 终局事实
+> **不 bootstrap**（target_net/SVE 在棋盘域接近 ⏸）；② acting/reanalyze 解耦显式依赖
+> 「Phase 1 裁决出的阶梯档位」，该裁决已随图像基线顺延。
+> **重启触发条件** = 图像基线出信号（正负终审皆可）：若预算标定救活基线 → 按原范围开启；
+> 若终审负向触发条款一改道（载体收缩棋盘单支柱）→ 本阶段范围重审，target_net/SVE
+> 大概率直接裁决 ⏸/删除、解耦架构按「acting 期真规则」诊断结论重设计。
+> **当前实际次序**（注意力分轨，2026-07-05 与用户定稿）：
+> - **前台主线 = 五子棋纵深**（一次一臂，均廉价）：① sims 100→400（搜索预算嫌疑直接裁决）
+>   → ② 树内真规则诊断臂（规则学习税头号假设裁决；**若真规则版快速翻越 naive0，
+>   升级为战略分叉讨论——象棋等规则已知棋类是否为棋盘域松开万金油铁律走真规则树**，
+>   兼为 acting/reanalyze 解耦架构收集依据）→ ③ replay32 × ROSMO 刷新臂
+>   （对症 M3 replay×8 偏害的 policy target 过期嫌疑，兼 ROSMO 棋盘域价值裁决）。
+>   入口详情见 [naive0 issue §四](../../.issue/items/gomoku_naive0_tactical_wall.md)。
+> - **后台 = Phase 1 轻量图像 pilot**（§2 修订注记：单 seed + 判停协议；
+>   预注册见[图像负结果 issue](../../.issue/items/my_zero_pong_image_flat_negative.md)）。
+> - **ROSMO「哨兵基础组件」提案已否决（2026-07-05）**：CartPole 叠加实测中位 **29.6k vs
+>   官方哨兵 ~8.7k env-steps（慢 ~3.4×，无增益）**——其对症场景是陈旧数据 × 高 replay ratio，
+>   CartPole 新鲜数据低 replay 形态无此病；价值裁决改挂上述五子棋 ③ 臂（条款二亦禁哨兵价值裁决）。
+> - **Pendulum 不提前（2026-07-05 复议维持压轴）**：连续域不在战略轴（象棋/图像均离散）、
+>   属开放性诊断（注意力黑洞）、压轴可免费吃前序修复红利，两个出口都算收口（§5）。
+
 - target_net 接入训练循环 + 消融（staleness 治理；若 Phase 1 阶梯一实测需要 target 网 bootstrap 则相应前移）→ acting/reanalyze 解耦落地（[纲领 §2.3](./my_zero_algorithm_vision.md#23-战略目标与优先轴2026-07-01-定稿) 战略架构：实时轻 acting + 离线重刷新，刷新引擎 = Phase 1 裁决出的阶梯档位）→ SVE 接入消融或删除（不留 ⏳）
 - **退出判据**：target_net/SVE 零 ⏳、解耦架构跑通并入账本；[reanalyze issue](../../.issue/items/my_zero_reanalyze_cartpole_regression.md) 若 Phase 1 未终局则在此归档。
 
@@ -87,7 +122,8 @@
 **为什么压轴**：收口 = 汇总前四阶段证据；Pendulum 特意最后测——Phase 0 新 loss 栈 + Phase 3 target_net 都可能改变其诊断前提，压轴等于免费获得两轮修复红利。
 
 - **Pendulum 固定预算终审**（假设清单见[诊断 issue](../../.issue/items/pendulum_failure_diagnosis.md)）：修好 → 连续支柱成立（Sampled B=7 真实子采样一并裁决）；修不好 → 正式 known-limitation。**两个出口都是收口。**
-- **value_prefix 复测前置**（矩阵清零该行前必做，若 Phase 1 提前复测则随 Phase 1）：补 `use_value_prefix=true` 的逐样本 vs batch 等价测试 + `ValuePrefixLstm` 专项测试——现状 `batch_train_equivalence.rs` 显式 `vp=false`，LSTM 路径零测试覆盖（v0.24 遗留测试债，v0.25 batch 化后扩大）
+- **value_prefix 复测前置**（矩阵清零该行前必做，若 Phase 1 提前复测则随 Phase 1）：补 `use_value_prefix=true` 的逐样本 vs batch 等价测试 + `ValuePrefixLstm` 专项测试——现状 `batch_train_equivalence.rs` 显式 `vp=false`，LSTM 路径零测试覆盖（v0.24 遗留测试债，v0.25 batch 化后扩大）。
+  **⚠️ 断链发现（2026-07-05 GPT-5.5 静态审查）**：`value_prefix=true` 时训练走 LSTM prefix 头（`network.rs` unroll loss），但**搜索期 `Dynamics::recurrent` 仍从普通 reward head 解码**（该头此时不被训练）——树内 reward 静默变糊。复测前必须先修「搜索期 reward = prefix 增量」接线（`MctsModel::State` 携带 LSTM hidden 的忠实版接缝已留，见 `mcts/traits.rs` doc）；此断链亦为 CartPole value_prefix ❌ 负结果的候补解释，修复后该格裁决需重跑
 - **reward_scale 去旋钮化**（旧 completedq_norm_reshape 规划 B1 遗留：`config.rs` 用户旋钮、Pendulum override 0.1；自动 support 半宽或内部归一化；若 Phase 1 图像 reward 尺度先成障碍则提前）
 - **Sampled 小动作空间自动短路裁决**（认领账本 v0.25 结论 3「留 v0.26 评估」的悬空项）：纯离散 K_eff=N 全枚举时 Sampled 与 PUCT 已实证逐步等价、仅余 +~26% wall-clock 簿记开销——recipe 是否自动短路在此终审，做/不做皆可、裁决回注账本（等价性优化，非行为改动）
 - 矩阵清零（逐格补测或裁决 ⏸）→ smoke-rl 扩容 + `baseline_matrix_bench` 增量链重定档 → 文档终审（roadmap 重写为收口版，v0.26–v0.27 归档）
@@ -122,3 +158,4 @@ HL-Gauss 编码（A1）→ Phase 0 + Phase 1 复测 · 梯度流审计/sg 解耦
 
 - **条款一（风险改道）**：Phase 1 spike 是唯一可改写后续阶段的节点——若实测撞死，载体收缩为 Gomoku 单支柱、planning-free 退路评估插入 v0.27；其余阶段顺序不变。
 - **条款二（哨兵铁律）**：Phase 0 之后 CartPole 只回答"崩没崩"，不回答"好不好"——任何组件价值判断到 native 环境验证，防 t1/t2 悬案泥潭复发。
+- **条款三（复现差距纪律，2026-07-05 增补）**：预注册门槛与预算估计一律以**第三方复现数据**为锚，不直接采信论文原文数字——已两次吃亏：EfficientZero 论文 7 小时 vs 复现 1–2 天（[外证](https://www.gigglebit.net/blog/efficientzero)）、Gomoku M3 参照实现每局训练强度差 40–50× 才在消融后期发现。无第三方复现可查时，按论文数字 ×3–10 悲观折算并在预注册协议里写明折算依据。

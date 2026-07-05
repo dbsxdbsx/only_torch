@@ -33,8 +33,8 @@
 | HL-Gauss value/reward 编码 | ❌ 显著劣化（中位 9.8k→27.6k） | ⏸ | ⏳ **native 场景** | ⏸ | 窄 support 低噪声下 two-hot 尖标签是信息优势；开关留库，Phase 1 图像域复测（[账本](cartpole/README.md#v026-phase-0编码--量纲消融2026-07-02)）；图像域初裁中性 |
 | obs symlog 无量纲化 | ❌ 无增益且系数不回移 | ⏳ | ⏸ 图像走 [0,1] 归一 | ⏸ 0/1 平面 | CartPole obs 本就小量纲；开关留库，触发条件回归 [Simulus 计划 §3](../../.doc/design/my_zero_simulus_ablation_plan.md)（连续特征范围失控时） |
 | reanalyze    | ❌ 当前实现有害（[issue](../../.issue/items/my_zero_reanalyze_cartpole_regression.md)） | ⏳ | **v0.26 战略组件** | ⏸ | 「实时轻 acting + 离线重 reanalyze」解耦，图像线优先验证；棋盘 target = 终局事实不过期，非 native 场景 |
-| ROSMO 一步刷新 | ✅ 回归闸门 3/3（不 promote 进 recipe） | ⏳ | ⏳ 价值裁决待图像基线 | ⏸ | `.rosmo(true)` 消融开关，recipe 默认关 |
-| value_prefix |                ❌                 |                 ⏳                 |  ⏳   |  ⏸ 无中间 reward  | CartPole 有害（≠ 全局坏） |
+| ROSMO 一步刷新 | ❌ 无增益（叠加中位 29.6k vs 哨兵 ~8.7k，慢 ~3.4×；「哨兵基础组件」提案否决 2026-07-05） | ⏳ | ⏳ 价值裁决待图像基线 | ❌ 有害（rr32×刷新护栏崩塌，vs random ~0.5；弱模型 adv 噪声自指反馈，[账本](gomoku/README.md)） | `.rosmo(true)` / 棋盘 `rosmo_refresh` 消融开关，recipe 默认关 |
+| value_prefix |                ❌※2               |                 ⏳                 |  ⏳   |  ⏸ 无中间 reward  | ※2 CartPole 有害，但 2026-07-05 审查发现**训练/搜索断链**（训 LSTM prefix 头、搜索仍读普通 reward head）——修复接线后该裁决需重跑，见[收口规划 §5](../../.doc/design/rl_closure_plan.md) |
 | target_net   |                 ⏳                 |                 ⏳                 |  ⏳   |  ⏳   | 已入库，训练循环待接 |
 | SVE          |                 ⏳                 |                 ⏳                 |  ⏳   |  ⏳   | 已入库，训练循环待接；🔲 改进：固定权重 → 自适应 mixed target |
 | completedQ   | ❌ 系统性慢于 visit（[issue](../../.issue/_archive/my_zero_gumbel_completedq_cartpole_negative.md)） |                 ⏳                 |  ⏳   | ❌ 中性（s100+s16 复裁） | `\|A\|≫sims` 复裁已完成（棋盘 s16），无灾难亦无增益 |

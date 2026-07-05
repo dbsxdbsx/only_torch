@@ -35,21 +35,44 @@ M2 base（9×9 · Flat MLP · 组件全关 · sims=100 · 400 局）吊打 rando
 | **D4 增广** | 0.975 | 0.975 | **0.00–0.25（中位 0.15）** | **弱阳性**（唯一正信号，未达 promote 线） |
 | 组合（增广+RR32+lr3e3） | 1.000 | 0.675 | 0.05–0.25 | 不超增广单臂，"配方合力"未兑现 |
 
-## 三、根因假设（按当前置信排序）
+## 三、根因假设（2026-07-05 ①②③ 臂裁决后修订）
 
-1. **MuZero 规则学习税**（头号）：参照实现 junxiaosong/AlphaZero_Gomoku（8×8/5
-   连 2000–3000 局出好模型）是 **AlphaZero**——树内真规则，网络零规则学习负担。
-   我们树内全程 learned dynamics，"必挡"要求 dynamics 先学会"不挡即负"的想象，
-   1.8 万 env-steps 远不够。MuZero 论文棋类训练量亦远大于 AlphaZero 同级。
-2. **搜索预算差距**：参照 400 playouts vs 我们 100 sims（未消融，便宜可测）。
-3. 温度/探索调度细节差异（参照 KL 自适应 lr + 温度常 1.0）。
+1. **训练信号瓶颈**（②臂后上位；③臂后子嫌疑收窄）：真规则树解锁 acting 上限但复现
+   不稳（§四-②）→「必挡」的知识主要缺在 **value/policy 训练信号**里。子嫌疑修订：
+   ~~过期 policy target~~ **已反证**（③臂：现刷 target 反而崩盘）；剩余 =
+   **negamax MC 高方差 value**（每局仅终局 ±1 信号，无中间 credit assignment）与
+   **探索覆盖不足**（战术关键局面在 self-play 分布中稀有）。
+2. **MuZero 规则学习税**（方向性支持、未坐实）：真规则 vs learned dynamics 的差
+   = naive0 中位 0.10 → 0.20 + 上限 0.15 → 0.45——有贡献但非全部。
+3. ~~搜索预算差距~~ **已排除**（①臂：sims×4 全平）。
+4. ~~policy target 过期~~ **已反证**（③臂：ROSMO 现刷有害、存量 MCTS target 更好）。
+5. 温度/探索调度细节差异（参照 KL 自适应 lr + 温度常 1.0）。
 
-## 四、后续裁决入口（不阻塞 M4，择机执行）
+> **实现正确性外部背书（2026-07-05）**：GPT-5.5 静态审查确认双人 negamax 主链路
+> （backup/select/completedQ/n-step/D4 增广/真规则树/ROSMO 翻转）无符号级 bug——
+> 墙是算法/信号层现象，非实现错误。
 
-- [ ] **sims 100→400 臂**（一行改动；搜索质量嫌疑的直接裁决）
-- [ ] **树内真规则诊断臂**（AlphaZero 式：树内调 board snapshot/restore 真推演——
-      基建已有 `GymEnv::snapshot/restore`；若真规则版快速翻越 naive0，假设 1 坐实，
-      并为「acting 期真规则 / 训练期 dynamics」的混合架构提供依据）
+## 四、后续裁决入口（不阻塞 M4；2026-07-05 与用户定稿为**前台主线**，按序执行）
+
+- [x] **① sims 100→400 臂** ✅ 2026-07-05 已裁决：**平**——naive0 = 0.05/0.15/0.05
+      （中位 0.05，预注册线 ≥0.3 远未达；vs random 0.950 / vs 快照中位 0.900 护栏正常）。
+      **假设 2（搜索预算差距）排除**：4× 模拟预算对战术视野零改善，墙不在搜索侧。
+      日志 `.bench/gomoku_naive0_sims400_20260705.log`，数字入[账本](../../examples/my_zero/gomoku/README.md)
+- [x] **② 树内真规则诊断臂** ✅ 2026-07-05 已裁决：**方向性正信号、未坐实**——
+      5-seed（42–46，首跑 3-seed 后按哨兵复裁先例扩展）naive0 = 0.10/0.00/0.45/0.20/0.20
+      （中位 **0.20** vs base 0.10；max 0.45 = 全批次历史最强单点；naive1 2/5 非零），
+      未达预注册 ≥0.3 部分坐实线、亦非 ≈0.1 排除形态。判读：真规则树解锁 acting 侧
+      上限（「必挡」树内可见），但训练侧 value/policy 信号撑不住稳定复现 → 瓶颈主体
+      在**训练信号**而非树内转移；战略分叉（松开万金油铁律）**不触发**、留观察。
+      实现为可插拔 `true_rules_tree` 开关（默认关；纯 Rust `RulesBoard` 规则层 +
+      Python 板逐步对照金测试锁死等价性）。日志 `.bench/gomoku_naive0_true_rules{,_ext}_20260705.log`
+- [x] **③ replay32 × ROSMO 刷新臂** ✅ 2026-07-05 已裁决：**有害（护栏崩塌）**——
+      vs random 0.425/0.625/0.475（replay32 对照 0.875、base 1.000）、naive0 全 0。
+      判读：弱模型下一步 look-ahead 的 adv ≈ 噪声，`prior×exp(adv)` 现算 target 自指
+      反馈污染 policy 学习；同时**反证「policy target 过期」嫌疑**（存量 MCTS target
+      显著优于现刷 target）。ROSMO 棋盘格 ❌（开关 `rosmo_refresh` 留库默认关，
+      实现含 negamax q 翻转 + 合法掩码 + top-16 剪枝，GPT-5.5 审查确认语义正确——
+      负结果是机制不适配而非实现 bug）。日志 `.bench/gomoku_naive0_rr32_rosmo_20260705.log`
 - [ ] 增广弱阳性复核：更大预算（2000 局）× 增广，若显著则 promote 进棋盘 recipe
 - [ ] recon 棋盘 coef 重标（{1,4} pilot）——现 16 为 CartPole 域值，偏害嫌疑
 

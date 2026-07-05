@@ -55,6 +55,13 @@ MCTS 内 root CNN 前向 867µs/call、recurrent 16µs/call——**性能不是�
 4. **战略调整（2026-07-04 规划修订）**：图像支柱裁决降级为**后台慢诊断**（吃机器时间不吃
    注意力），Phase 2 Gomoku 提前为主线（详见收口规划 §2/§3 修订注记）。本 issue 保持 open，
    终局裁决等预算标定臂证据齐后再下。
+5. **协议修订：pilot-first + 判停（2026-07-05，外证 [EfficientZero Remastered](https://www.gigglebit.net/blog/efficientzero)）**：
+   第三方复现实测 A100 + 20–32 核需 **1–2 天/模型**（论文口径 7h；训练管线为 CPU 大户）——
+   CPU-only 上把上述 ①② 臂喂到参照量级是以周计的承诺，原「后台跑 3-seed」低估量级。
+   修订：标定臂改**轻量图像载体**（MinAtar 类 / 更狠降采样，先证明「管线能学」）+
+   **单 seed pilot** + **判停协议**（中间检查点如 25k/50k updates 处 greedy 曲线仍平即停）；
+   Pong 类 3-seed 支柱验收顺延到 pilot 出正信号后。预算锚定一律用第三方复现数据
+   （收口规划条款三）。
 
 ## 关联
 

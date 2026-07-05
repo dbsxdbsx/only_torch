@@ -40,6 +40,41 @@ fn run_arm(name: &str, components: Components, num_simulations: u32) -> Result<(
     run_arm_with(name, components, num_simulations, |c| c)
 }
 
+/// 同 `run_arm_with` 但自定 seeds（seed 加密复核用；协议修订须公开记录于臂注释）。
+fn run_arm_seeds(
+    name: &str,
+    components: Components,
+    num_simulations: u32,
+    seeds: &[u64],
+    tweak: impl Fn(BoardTrainConfig) -> BoardTrainConfig,
+) -> Result<(), GraphError> {
+    let mut reports: Vec<(u64, BoardTrainReport)> = Vec::new();
+    for &seed in seeds {
+        println!("\n--- arm={name} seed={seed} sims={num_simulations} ---");
+        reports.push((
+            seed,
+            train_board(&tweak(m3_cfg(seed, components.clone(), num_simulations)))?,
+        ));
+    }
+    println!("\n--- M3 arm={name} 汇总（base 对照见 bench 头注释）---");
+    for (seed, r) in &reports {
+        let ladder: Vec<String> = r
+            .naive_win_rates
+            .iter()
+            .map(|(n, w)| format!("{n}={w:.2}"))
+            .collect();
+        println!(
+            "  seed={seed} vs_random={:.3} vs_snapshot={:.3} | 梯队 {} | env_steps={} wall={:.0}s",
+            r.gate_vs_random.unwrap_or(0.0),
+            r.gate_vs_checkpoint.unwrap_or(0.0),
+            ladder.join(" "),
+            r.total_env_steps,
+            r.wall_secs,
+        );
+    }
+    Ok(())
+}
+
 fn run_arm_with(
     name: &str,
     components: Components,
@@ -199,6 +234,74 @@ fn gomoku_m3_combo() -> Result<(), GraphError> {
             cfg
         },
     )
+}
+
+/// 臂 11（M4 后 · naive0 战术墙 issue §四-①，2026-07-05 预注册）：sims 100→400。
+///
+/// 触发：M3 九臂收口后，naive0 墙根因假设 2 =「搜索预算差距」（参照实现 400 playouts
+/// vs 我们 100 sims）的直接裁决——唯一变量 = num_simulations，载体/判读与 M3 完全同口径。
+/// 预注册判读：主指标 naive0 显著抬升（中位 ≥0.3 视为搜索预算是主因）；仍 ≈0.1 →
+/// 嫌疑收敛到假设 1「MuZero 规则学习税」，进入 ② 树内真规则诊断臂。
+#[test]
+#[ignore = "manual: Gomoku naive0-① sims=400 臂（3 seeds，约 20–40 分钟）"]
+fn gomoku_naive0_sims400() -> Result<(), GraphError> {
+    run_arm("sims400", Components::base(), 400)
+}
+
+/// 臂 12（M4 后 · naive0 战术墙 issue §四-②，2026-07-05 预注册）：树内真规则诊断。
+///
+/// 触发：① sims400 臂平（搜索预算嫌疑排除）→ 头号假设「MuZero 规则学习税」直接裁决。
+/// 唯一变量 = `true_rules_tree`（树内转移/终局/候选 mask 走 `RulesBoard` 真规则，
+/// 叶子先验/价值仍由网络给、训练侧不变），sims=100 同 base 口径。
+/// 预注册判读：naive0 显著抬升（中位 ≥0.5 = 规则学习税坐实，升级战略分叉讨论——
+/// 规则已知棋类是否松开万金油铁律；0.3–0.5 = 部分坐实）；仍 ≈0.1 → 假设 1 亦排除，
+/// 嫌疑转向训练侧（value/policy 信号本身），③ replay32×ROSMO 臂顺位。
+#[test]
+#[ignore = "manual: Gomoku naive0-② 树内真规则诊断臂（3 seeds）"]
+fn gomoku_naive0_true_rules() -> Result<(), GraphError> {
+    run_arm_with("true_rules", Components::base(), 100, |mut cfg| {
+        cfg.true_rules_tree = true;
+        cfg
+    })
+}
+
+/// 臂 12-ext（2026-07-05 首跑后追加，协议修订公开记录）：真规则臂 seed 扩展（45/46）。
+///
+/// 触发：首跑 42/43/44 = naive0 0.10/0.00/0.45——中位 0.10 未达预注册线，但 seed 44
+/// 的 0.45 + naive1 0.15 是全批次消融的历史最强单 seed 信号，方差形态与「中位判读」
+/// 冲突 → 按 CartPole 哨兵复裁先例扩到 5-seed 再下终局裁决（不改判读线、不改载体）。
+#[test]
+#[ignore = "manual: Gomoku naive0-② 真规则臂 seed 扩展（45/46）"]
+fn gomoku_naive0_true_rules_seedext() -> Result<(), GraphError> {
+    run_arm_seeds(
+        "true_rules_ext",
+        Components::base(),
+        100,
+        &[45, 46],
+        |mut cfg| {
+            cfg.true_rules_tree = true;
+            cfg
+        },
+    )
+}
+
+/// 臂 13（M4 后 · naive0 战术墙 issue §四-③，2026-07-05 预注册）：replay×8 × ROSMO 刷新。
+///
+/// 触发：①②臂后根因修订「训练信号瓶颈」上位——本臂对症 M3 replay32 偏害的
+/// policy target 过期嫌疑：trains_per_episode 4→32 复刻 replay32 载体，唯一新增
+/// = `rosmo_refresh`（采样时现算一步 look-ahead 改进 policy target，top-16 剪枝、
+/// 不写回；value 维持 negamax MC）。兼 ROSMO 棋盘域价值裁决。
+/// 预注册判读（对照 = M3 replay32 臂 vs random 0.875 / gating 0.825 / naive0 0.00–0.05）：
+/// naive0 中位显著抬升（≥0.2）或 replay32 的护栏回落消失 = ROSMO 解毒生效；
+/// 与 replay32 同形态 = policy 过期非主因，训练信号嫌疑再收敛（value 方差 / 探索覆盖）。
+#[test]
+#[ignore = "manual: Gomoku naive0-③ replay32×ROSMO 刷新臂（3 seeds，约 20–30 分钟）"]
+fn gomoku_naive0_rr32_rosmo() -> Result<(), GraphError> {
+    run_arm_with("rr32_rosmo", Components::base(), 100, |mut cfg| {
+        cfg.trains_per_episode = 32;
+        cfg.rosmo_refresh = true;
+        cfg
+    })
 }
 
 /// 臂 2a：少 sim 对照的 PUCT 基线（sims=16 ≪ |A|=81；兼 P2 少 sim acting 复测）。
