@@ -127,6 +127,15 @@ impl MyZeroBuilder {
         self
     }
 
+    /// 开启 KL 自适应 lr（「用户不调 lr」去旋钮机制；默认关，供 A/B 消融）。
+    ///
+    /// 每局训练块前后测探针局面 policy KL 位移，自动调 lr 乘子（[0.1,10]）。
+    /// 棋盘域 ⑨ 臂已验证无害；单智能体 promote 须过 CartPole「等效不劣」闸门。
+    pub fn kl_adaptive_lr(mut self, enabled: bool) -> Self {
+        self.cfg.train.kl_adaptive_lr = enabled;
+        self
+    }
+
     /// 开启 Gumbel MuZero 标准根搜索（Sequential Halving + Gumbel-Top-k）。
     pub fn gumbel(mut self, enabled: bool) -> Self {
         self.cfg.components.gumbel = enabled;

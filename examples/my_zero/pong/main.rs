@@ -35,6 +35,7 @@ fn main() -> Result<(), GraphError> {
         // 与旧「按 150 局预算前 50% 恒温」行为等价的显式常数（退火解耦预算后需自带）
         temp_hold_episodes: 75,
         temp_decay_episodes: 75,
+        kl_adaptive_lr: false,
     };
 
     let max_ep: usize = std::env::var("MAX_EP")

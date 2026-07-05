@@ -3,13 +3,13 @@
 
 use crate::nn::Graph;
 use crate::rl::algo::my_zero::board::{
-    BoardMctsModel, augment_game, board_rosmo_policy, kl_lr_multiplier, negamax_mc_return,
-    symmetry_perm,
+    BoardMctsModel, augment_game, board_rosmo_policy, negamax_mc_return, symmetry_perm,
 };
 use crate::rl::algo::my_zero::gomoku::{
     RulesBoard, TacticalCourse, TrueRulesBoardModel, tactical_opening,
 };
 use crate::rl::algo::my_zero::network::{MyZeroModel, ObsSpec};
+use crate::rl::algo::my_zero::runner::kl_lr_multiplier;
 use crate::rl::mcts::{ActionPayload, MctsModel};
 use crate::rl::{GameOutcome, GymEnv, SelfPlayGame, SelfPlayStep};
 use rand::rngs::StdRng;

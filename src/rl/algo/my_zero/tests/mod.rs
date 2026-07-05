@@ -41,6 +41,7 @@ mod gomoku_m1_bench;
 mod gomoku_m2_bench;
 mod gomoku_m3_bench;
 mod hl_gauss_ablation_bench;
+mod kl_lr_cartpole_bench;
 mod loss_coef_ablation_bench;
 mod obs_symlog_ablation_bench;
 mod pong_image_ablation_bench;

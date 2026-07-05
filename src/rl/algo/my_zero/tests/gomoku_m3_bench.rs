@@ -591,6 +591,38 @@ fn gomoku_pure_selfplay_learned() -> Result<(), GraphError> {
     )
 }
 
+/// 臂 24（naive0 issue §四-⑭，2026-07-05 晚预注册）：PER 优先回放（Simulus B1 转正）。
+///
+/// 触发：「数据质量」根因的分布覆盖成分需要**零领域知识**的通用治法——课程改
+/// 数据生成分布（领域后门），PER 改数据消费分布（通用机制）。棋盘 value target
+/// 为终局 ±1，`p = |搜索根价值 ν − negamax MC 回报 z|`（MuZero 附录 G 口径，
+/// 入库时一次性计算）最大的样本恰是「网络预测与终局矛盾」的战术转折点。
+/// 实现：[`PerPriorities`](crate::rl::PerPriorities) 伴生采样器（α=0.6、无 IS
+/// 修正、无在线刷新——口径依据见其模块文档），唯一新变量 = `per=true`。
+///
+/// **底座 = ⑫/⑬ 赢家**（本函数默认 ⑫ 真规则底座；若 ⑬ learned dynamics 胜出
+/// 则改 `true_rules_tree=false` 并公开修订本注释）。判读（对照同底座无 PER）：
+/// naive0 中位抬升 ≥0.15 或 naive1 中位 ≥0.3 = 正信号（进终局配方复训 G3）；
+/// 带内持平 = 排除（分布覆盖瓶颈不在消费端，回「预算量级 × 方差治理」主线）；
+/// 护栏破（vs random <0.9）= 优先化过激记负，不下钻（α 网格不开）。
+#[test]
+#[ignore = "manual: Gomoku naive0-⑭ PER 优先回放臂（3 seeds × 5000 局 × CNN，约 1.5–2.5 小时）"]
+fn gomoku_pure_selfplay_per() -> Result<(), GraphError> {
+    run_arm_with("pure_selfplay_per", Components::base(), 100, |mut cfg| {
+        cfg.true_rules_tree = true;
+        cfg.cnn_repr = true;
+        cfg.augment = true;
+        cfg.max_episodes = 5000;
+        cfg.temp_hold_episodes = 5000;
+        cfg.buffer_capacity = 500;
+        cfg.snapshot_at_episode = Some(2500);
+        cfg.eval_every = 500;
+        cfg.tactical_opening_fraction = 0.0;
+        cfg.per = true;
+        cfg
+    })
+}
+
 /// 效率探针（非裁决臂，2026-07-05）：batch 512/1024 吞吐与内存观察。
 ///
 /// 定位：④ 臂已裁决「梯度噪声排除」，本探针只测**效率曲线**（墙钟随 batch 的

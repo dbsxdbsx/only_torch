@@ -88,6 +88,77 @@ pub(crate) fn self_play_temperature(ep: usize, hold: usize, decay: usize) -> f32
     1.0 - progress * 0.75
 }
 
+// ============================================================================
+// KL 自适应 lr（「用户不调 lr」去旋钮机制；可插拔，默认关）
+// ============================================================================
+
+/// KL 自适应 lr 的目标位移（参照 junxiaosong/AlphaZero_Gomoku `kl_targ=0.02`）。
+pub(crate) const KL_TARGET: f32 = 0.02;
+
+/// KL 自适应 lr 乘子更新（参照实现口径：KL 超 2× 目标降 1.5×、不足 1/2 升 1.5×，
+/// 乘子夹在 [0.1, 10]）——大 batch/高强度训练不再需要手工标 lr 的机制底座。
+/// 棋盘域 ⑨ 臂已验证无害（batch 512 自动配平）；单智能体域接线见 `train_one_seed`。
+pub(crate) fn kl_lr_multiplier(kl: f32, kl_target: f32, mult: f32) -> f32 {
+    if kl > kl_target * 2.0 {
+        (mult / 1.5).max(0.1)
+    } else if kl < kl_target / 2.0 {
+        (mult * 1.5).min(10.0)
+    } else {
+        mult
+    }
+}
+
+/// 探针局面上的平均 policy KL：`Σ p_old·ln(p_old/p_new)`（对合法支撑外的微小
+/// 概率加 eps 防 ln(0)；探针 = 当局若干 obs，只读不训）。
+pub(crate) fn probe_policy_kl(
+    model: &MyZeroModel,
+    probe_obs: &[Vec<f32>],
+    old: &[Vec<f32>],
+) -> f32 {
+    const EPS: f32 = 1e-10;
+    let mut kl_sum = 0.0f32;
+    for (obs, p_old) in probe_obs.iter().zip(old) {
+        let (_latent, p_new, _v) = Dynamics::initial_state(&model, obs);
+        let mut kl = 0.0f32;
+        for (po, pn) in p_old.iter().zip(&p_new) {
+            if *po > EPS {
+                kl += po * ((po + EPS).ln() - (pn + EPS).ln());
+            }
+        }
+        kl_sum += kl;
+    }
+    kl_sum / probe_obs.len().max(1) as f32
+}
+
+/// 提取探针 obs（当局最多 `n` 个局面，均匀间隔）。
+///
+/// `image_stack = Some(k)` 时按 acting 期同口径就地堆叠最近 k 帧
+/// （[`ObsSource::Stacked`] 语义，起点前向填充首帧），保证探针输入与模型
+/// 训练/推理输入同构；向量 obs 传 `None`。
+pub(crate) fn probe_obs_of(
+    steps: &[SelfPlayStep],
+    n: usize,
+    image_stack: Option<usize>,
+) -> Vec<Vec<f32>> {
+    let take = steps.len().min(n);
+    (0..take)
+        .map(|i| {
+            let pos = i * steps.len() / take;
+            let src = match image_stack {
+                None => ObsSource::Single(&steps[pos].obs),
+                Some(k) => ObsSource::Stacked {
+                    steps,
+                    t: pos,
+                    stack: k,
+                },
+            };
+            let mut v = Vec::with_capacity(src.dim());
+            src.append_into(&mut v);
+            v
+        })
+        .collect()
+}
+
 /// 由训练超参 + 组件开关 + joint 候选数 N 构造 MCTS 配置（Sampled 时 K 按公式解析）。
 fn my_zero_mcts_config(
     num_simulations: u32,
@@ -1005,6 +1076,8 @@ fn train_one_seed(
 
     let max_episodes = if smoke { 3 } else { cfg.eval.max_episodes };
     let mut last_ep = 0usize;
+    // KL 自适应 lr 乘子（跨局持久；默认关时恒 1.0、零额外前向/RNG，路径逐 bit 不变）
+    let mut lr_mult = 1.0f32;
 
     for ep in 0..max_episodes {
         last_ep = ep + 1;
@@ -1043,6 +1116,17 @@ fn train_one_seed(
         let ep_reward: f32 = steps.iter().map(|s| s.reward).sum::<f32>() / reward_scale;
         let ep_len = steps.len();
         total_steps += ep_len as u64;
+
+        // KL 自适应 lr 探针：训练块前记当局旧 policy（默认关 = 空探针，零开销）
+        let probe: Vec<Vec<f32>> = if t.kl_adaptive_lr {
+            probe_obs_of(&steps, 8, obs_adapter.image_stack())
+        } else {
+            Vec::new()
+        };
+        let probe_old: Vec<Vec<f32>> = probe
+            .iter()
+            .map(|obs| Dynamics::initial_state(&&model, obs).1)
+            .collect();
 
         buffer.push(SelfPlayGame {
             steps,
@@ -1108,6 +1192,13 @@ fn train_one_seed(
                 loss_sum += l;
             }
             avg_loss = loss_sum / n_trains as f32;
+
+            // KL 自适应 lr：训练块后测 policy 位移，调乘子并落回 optimizer
+            if t.kl_adaptive_lr && !probe.is_empty() {
+                let kl = probe_policy_kl(&model, &probe, &probe_old);
+                lr_mult = kl_lr_multiplier(kl, KL_TARGET, lr_mult);
+                optimizer.set_learning_rate(t.lr * lr_mult);
+            }
 
             if smoke {
                 assert!(avg_loss.is_finite(), "SMOKE: loss={avg_loss} 非有限");

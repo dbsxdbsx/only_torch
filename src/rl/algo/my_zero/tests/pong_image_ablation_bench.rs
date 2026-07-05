@@ -45,6 +45,7 @@ fn pong_ablation_cfg(seeds: u64) -> Result<MyZeroConfig, GraphError> {
             // 静默用不同探索调度（预算耦合 bug），现统一为常数调度
             temp_hold_episodes: 75,
             temp_decay_episodes: 75,
+            kl_adaptive_lr: false,
         })
         .eval_every(10)
         .seeds(seeds)

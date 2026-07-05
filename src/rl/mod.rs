@@ -67,6 +67,6 @@ pub use agent::{Agent, PlanningAgent};
 
 // 重新导出 buffer 层的核心类型
 pub use buffer::{
-    BufferItem, GameOutcome, ReplayBuffer, RolloutBuffer, RolloutStep, SelfPlayGame, SelfPlayStep,
-    SelfPlayStepExtras, StoredObs, Transition,
+    BufferItem, GameOutcome, PerPriorities, ReplayBuffer, RolloutBuffer, RolloutStep, SelfPlayGame,
+    SelfPlayStep, SelfPlayStepExtras, StoredObs, Transition,
 };
