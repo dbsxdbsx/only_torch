@@ -4,6 +4,12 @@
 
 ### Added
 
+- **feat(rl): 「纯 self-play 万金油」哲学修正落档 + PER 优先回放通用件进库 + KL 自适应 lr 公共化**（2026-07-05 晚）
+  - **哲学修正（路线级，与用户定稿）**：五子棋验收必须以纯粹无课程 self-play 达成，终态 recipe 目标 = **learned dynamics × 纯 self-play × 通用常驻组件**；战术开局课程与真规则树降级**诊断脚手架**（历史价值 = 归因，开关保留不进终态 recipe，万金油铁律不破）；「数据质量」根因拆两成分 = 分布覆盖不足（通用治法 PER）× target 质量损耗（预算/容量摊税）——收口规划 §4 次序刷新 + §6 版本映射注记（定版按实际交付节奏，与 push 解耦）+ naive0 issue §三注记
+  - **⑫⑬⑭ 预注册**：⑫ 纯 self-play 上限标定（真规则 × CNN × 5000 局 × 无课程，参照实现同构；判读用绝对线——conv2d 优化后 CNN 数值流漂移，「新实测即新基线」）→ ⑬ learned dynamics 同配置（⑫−⑬ 之差 = 规则学习税定量账，裁决万金油底座）→ ⑭ PER（底座 = ⑫/⑬ 赢家）
+  - **PER 位置级优先回放通用件**（`src/rl/buffer/per.rs`，Simulus B1「loss 优先回放」转正）：`PerPriorities` 伴生采样器（FIFO 镜像 `ReplayBuffer`，前缀和 + 二分按 `p^α` 采样，α=0.6）；优先级 `p = |搜索根价值 ν − negamax MC 回报 z|`（MuZero 附录 G 口径）入库时一次性计算（零额外前向；无在线刷新——③ROSMO 臂已证弱网自评刷新是噪声源；无 IS 修正——改写消费分布即干预目的，口径修订公开记录于 issue ⑭ 档）；`BoardTrainConfig.per` 开关默认关（均匀路径逐 bit 不变），5 项契约单测锁死（FIFO 镜像 / 比例采样 / α=0 退化均匀 / 零质量兜底）
+  - **KL 自适应 lr 公共化**（「去旋钮」组件验收标准修正：**等效不劣 + 少一个超参**，非正增益）：`kl_lr_multiplier`/`probe_policy_kl`/`probe_obs_of` 从 board.rs 抽入公共 runner（探针支持图像帧堆叠口径），`TrainSettings.kl_adaptive_lr` + builder `.kl_adaptive_lr(true)` 开关默认关，单智能体训练循环接线（默认关零开销路径不变）；CartPole「等效不劣」闸门载体 `kl_lr_cartpole_bench.rs` 预注册（3/3 达标且中位 ≤2× 哨兵基线 = promote 默认开 + 重标哨兵；劣化 = 留库默认关记 ❌）
+
 - **feat(rl): Gomoku naive0 战术墙击破 + G1–G3 攻坚战役收官（11 臂预注册消融 · 战术开局课程进库 · KL 自适应 lr 进库 · 领域插件重构）**（2026-07-05 下午）
   - **战术开局课程**（`tactical_opening_fraction` 开关，默认 0 逐 bit 不变）：`tactical_opening` 构造式生成器（随机五格窗口 × 威胁方占位 × 陪跑散点 × 黑白身份随机，契约单测锁死必挡不变量）——「战术局面 = self-play 抽签」病理的对症解，机制与 Leela 开局库 / KataGo forced openings 同族（通用可插拔），内容为五子棋领域插件
   - **⑥⑦ 臂翻墙链条**：⑥ 课程 × 真规则底座（400 局）naive0 中位 0.20→**0.40**（全批次首个推动中位的臂）→ ⑦ 终局配方（× 2000 局 × 增广 × 温度全程 1.0）中位 **0.70 翻墙坐实**（≥0.5 预注册线），naive1/2 史上首次非零；归因 = 规则学习税（②）× 战术抽签（⑥）双病理，单治其一不过墙
