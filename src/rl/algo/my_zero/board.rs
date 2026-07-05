@@ -24,14 +24,14 @@
 #![allow(dead_code)]
 
 use super::component::Components;
-use super::gomoku::{TrueRulesBoardModel, tactical_opening};
+use super::gomoku::{TacticalCourse, TrueRulesBoardModel, tactical_opening};
 use super::network::{MyZeroModel, ObsSpec};
 use super::rosmo::RosmoTargets;
 use super::runner::{self_play_temperature, train_batch, unroll_len_at};
 use super::search_policy::MyZeroSearchPolicy;
 use super::target::mcts_policy_target;
 use super::target_net::hard_update;
-use crate::nn::{Adam, Graph, GraphError};
+use crate::nn::{Adam, Graph, GraphError, Optimizer};
 use crate::rl::mcts::{
     ActionCandidate, ActionId, ActionPayload, CandidateSet, ChildStat, Dynamics, MctsConfig,
     MctsModel, RecurrentOut, RootOut, mcts_search,
@@ -399,6 +399,51 @@ pub(crate) fn board_rosmo_policy(model: &MyZeroModel, obs: &[f32], action_dim: u
 }
 
 // ============================================================================
+// KL 自适应 lr（issue §四-⑨，G2 训练强度包；可插拔，默认关）
+// ============================================================================
+
+/// KL 自适应 lr 的目标位移（参照 junxiaosong/AlphaZero_Gomoku `kl_targ=0.02`）。
+const KL_TARGET: f32 = 0.02;
+
+/// KL 自适应 lr 乘子更新（参照实现口径：KL 超 2× 目标降 1.5×、不足 1/2 升 1.5×，
+/// 乘子夹在 [0.1, 10]）——大 batch/高强度训练不再需要手工标 lr 的机制底座。
+pub(crate) fn kl_lr_multiplier(kl: f32, kl_target: f32, mult: f32) -> f32 {
+    if kl > kl_target * 2.0 {
+        (mult / 1.5).max(0.1)
+    } else if kl < kl_target / 2.0 {
+        (mult * 1.5).min(10.0)
+    } else {
+        mult
+    }
+}
+
+/// 探针局面上的平均 policy KL：`Σ p_old·ln(p_old/p_new)`（对合法支撑外的微小
+/// 概率加 eps 防 ln(0)；探针 = 当局若干 obs，只读不训）。
+fn probe_policy_kl(model: &MyZeroModel, probe_obs: &[Vec<f32>], old: &[Vec<f32>]) -> f32 {
+    const EPS: f32 = 1e-10;
+    let mut kl_sum = 0.0f32;
+    for (obs, p_old) in probe_obs.iter().zip(old) {
+        let (_latent, p_new, _v) = Dynamics::initial_state(&model, obs);
+        let mut kl = 0.0f32;
+        for (po, pn) in p_old.iter().zip(&p_new) {
+            if *po > EPS {
+                kl += po * ((po + EPS).ln() - (pn + EPS).ln());
+            }
+        }
+        kl_sum += kl;
+    }
+    kl_sum / probe_obs.len().max(1) as f32
+}
+
+/// 提取探针 obs（当局最多 `n` 个局面，均匀间隔）。
+fn probe_obs_of(steps: &[SelfPlayStep], n: usize) -> Vec<Vec<f32>> {
+    let take = steps.len().min(n);
+    (0..take)
+        .map(|i| steps[i * steps.len() / take].obs.to_f32_vec())
+        .collect()
+}
+
+// ============================================================================
 // self-play / eval
 // ============================================================================
 
@@ -718,9 +763,17 @@ pub(crate) struct BoardTrainConfig {
     /// 不写回；value 维持 negamax MC 不动）。对症高 replay ratio 下的 target 过期。
     pub rosmo_refresh: bool,
     /// 定向战术开局课程（naive0 issue §四-⑥）：self-play 每局以此概率从
-    /// [`tactical_opening`] 生成的必挡局面前缀开局（0.0 = 恒空盘，现有路径不变）。
+    /// [`tactical_opening`] 生成的战术局面前缀开局（0.0 = 恒空盘，现有路径不变）。
     /// 只影响训练分布；eval/gating/naive 梯队评测不受影响。
     pub tactical_opening_fraction: f32,
+    /// 课程内课题配比（issue §四-⑧）：课程局中抽到活三课题（[`TacticalCourse::OpenThree`]）
+    /// 的比例，其余为一步胜课题（[`TacticalCourse::WinIn1`]）。0.0 = 纯必挡课题（⑥⑦臂口径，
+    /// RNG 流逐 bit 不变）。
+    pub tactical_open_three_fraction: f32,
+    /// KL 自适应 lr（issue §四-⑨，G2 训练强度包）：每局训练块前后在当局探针局面上
+    /// 测 policy KL 位移，按 [`kl_lr_multiplier`] 调 lr 乘子（大 batch 的 lr 自动配平；
+    /// false = lr 恒定，现有路径不变）。
+    pub kl_adaptive_lr: bool,
 }
 
 impl Default for BoardTrainConfig {
@@ -754,6 +807,8 @@ impl Default for BoardTrainConfig {
             true_rules_tree: false,
             rosmo_refresh: false,
             tactical_opening_fraction: 0.0,
+            tactical_open_three_fraction: 0.0,
+            kl_adaptive_lr: false,
         }
     }
 }
@@ -837,6 +892,10 @@ pub(crate) fn train_board(cfg: &BoardTrainConfig) -> Result<BoardTrainReport, Gr
         let mut final_win_rate = 0.0f32;
         let mut hit_solved: Option<u64> = None;
         let mut snapshot: Option<MyZeroModel> = None;
+        let mut lr_mult = 1.0f32;
+        if cfg.kl_adaptive_lr {
+            println!("[MyZero-board] KL 自适应 lr 开启（target={KL_TARGET}，乘子 [0.1,10]）");
+        }
 
         for ep in 0..cfg.max_episodes {
             let t0 = std::time::Instant::now();
@@ -848,11 +907,19 @@ pub(crate) fn train_board(cfg: &BoardTrainConfig) -> Result<BoardTrainReport, Gr
                 MctsConfig::default().root_exploration_fraction,
             );
 
-            // 战术开局课程（p=0.0 时短路不触碰 RNG，默认路径逐 bit 不变）
+            // 战术开局课程（p=0.0 时短路不触碰 RNG，默认路径逐 bit 不变；
+            // 课题配比 0.0 时同样短路，⑥⑦臂 RNG 流逐 bit 不变）
             let opening: Vec<usize> = if cfg.tactical_opening_fraction > 0.0
                 && rng.gen_bool(f64::from(cfg.tactical_opening_fraction))
             {
-                tactical_opening(side, &mut rng).unwrap_or_default()
+                let course = if cfg.tactical_open_three_fraction > 0.0
+                    && rng.gen_bool(f64::from(cfg.tactical_open_three_fraction))
+                {
+                    TacticalCourse::OpenThree
+                } else {
+                    TacticalCourse::WinIn1
+                };
+                tactical_opening(side, course, &mut rng).unwrap_or_default()
             } else {
                 Vec::new()
             };
@@ -875,6 +942,16 @@ pub(crate) fn train_board(cfg: &BoardTrainConfig) -> Result<BoardTrainReport, Gr
             } else {
                 GameOutcome::Draw
             };
+            // KL 自适应 lr 探针：当局最多 8 个局面（训练块前记旧 policy）
+            let probe: Vec<Vec<f32>> = if cfg.kl_adaptive_lr {
+                probe_obs_of(&steps, 8)
+            } else {
+                Vec::new()
+            };
+            let probe_old: Vec<Vec<f32>> = probe
+                .iter()
+                .map(|obs| Dynamics::initial_state(&&model, obs).1)
+                .collect();
             buffer.push(SelfPlayGame { steps, outcome });
 
             // 训练：零克隆采样 + 现算 negamax target（走 Refreshed 通道，不写回）；
@@ -947,6 +1024,13 @@ pub(crate) fn train_board(cfg: &BoardTrainConfig) -> Result<BoardTrainReport, Gr
                     )?;
                 }
                 avg_loss = loss_sum / cfg.trains_per_episode as f32;
+
+                // KL 自适应 lr：训练块后测 policy 位移，调乘子并落回 optimizer
+                if cfg.kl_adaptive_lr && !probe.is_empty() {
+                    let kl = probe_policy_kl(&model, &probe, &probe_old);
+                    lr_mult = kl_lr_multiplier(kl, KL_TARGET, lr_mult);
+                    optimizer.set_learning_rate(cfg.lr * lr_mult);
+                }
             }
 
             let winner_tag = match outcome {

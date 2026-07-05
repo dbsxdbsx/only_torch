@@ -389,6 +389,117 @@ fn gomoku_naive0_final_recipe() -> Result<(), GraphError> {
     })
 }
 
+/// 臂 18（naive0 issue §四-⑧，2026-07-05 预注册）：课程扩展——活三课题混入。
+///
+/// 触发：⑦ 臂翻墙（naive0 中位 0.70）但 naive1–3 尚远（naive1 中位 0.10）——
+/// 现课程只教「挡一步胜」（恰 = naive0 全部技能）；naive1+ 会主动延三连制造威胁，
+/// 需「活三」攻防课题。唯一新变量 = `tactical_open_three_fraction=0.5`
+/// （课程局内 50/50 混活三/一步胜课题），底座 = ⑦ 终局配方。
+/// 预注册判读（对照 ⑦：naive0 0.70 / naive1 0.10 / naive2 0.00）：
+/// naive1 中位 ≥0.3 = 课程扩展有效（G3 验收开启）；naive0 中位 <0.5 = 进攻课题
+/// 挤占防守训练（护栏破，调配比重测）；naive1 持平且 naive0 保住 = 活三课题
+/// 无效（嫌疑转 G2 训练强度 / 预算 / 网络容量）。
+#[test]
+#[ignore = "manual: Gomoku naive0-⑧ 活三课程扩展臂（3 seeds × 2000 局，约 15–25 分钟）"]
+fn gomoku_naive0_open_three_course() -> Result<(), GraphError> {
+    run_arm_with("open_three_course", Components::base(), 100, |mut cfg| {
+        cfg.true_rules_tree = true;
+        cfg.augment = true;
+        cfg.max_episodes = 2000;
+        cfg.temp_hold_episodes = 2000;
+        cfg.buffer_capacity = 300;
+        cfg.snapshot_at_episode = Some(1000);
+        cfg.eval_every = 200;
+        cfg.tactical_opening_fraction = 0.25;
+        cfg.tactical_open_three_fraction = 0.5;
+        cfg
+    })
+}
+
+/// 臂 18b（issue §四-⑧b，2026-07-05 ⑧ 首跑后修订，公开记录）：活三课题改增量混配。
+///
+/// 触发：⑧ 首跑（50/50 混配）naive0 中位 0.70→0.30 命中预注册「攻挤防」条款——
+/// 50/50 把必挡课题剂量从 25% 稀释到 12.5%。修订 = **保持必挡剂量、活三做增量**：
+/// `tactical_opening_fraction=0.375 × open_three_fraction=1/3`（必挡 25% 不变 +
+/// 活三 12.5% 新增）。判读（对照 ⑦ naive0 0.70 / naive1 0.10）：naive0 ≥0.5 保住
+/// 且 naive1 中位 ≥0.2 = 增量混配有效；naive0 仍 <0.5 = 活三课题本身干扰防守
+/// 学习（弃活三，G3 用 ⑦ 配方）。
+#[test]
+#[ignore = "manual: Gomoku naive0-⑧b 活三增量混配臂（3 seeds × 2000 局）"]
+fn gomoku_naive0_open_three_additive() -> Result<(), GraphError> {
+    run_arm_with("open_three_additive", Components::base(), 100, |mut cfg| {
+        cfg.true_rules_tree = true;
+        cfg.augment = true;
+        cfg.max_episodes = 2000;
+        cfg.temp_hold_episodes = 2000;
+        cfg.buffer_capacity = 300;
+        cfg.snapshot_at_episode = Some(1000);
+        cfg.eval_every = 200;
+        cfg.tactical_opening_fraction = 0.375;
+        cfg.tactical_open_three_fraction = 1.0 / 3.0;
+        cfg
+    })
+}
+
+/// 臂 19（naive0 issue §四-⑨，2026-07-05 预注册）：G2 训练强度包（参照对齐）。
+///
+/// 触发：⑦ 臂翻墙后「每局梯度功差 40×」成为对照参照实现的最后一块未测 delta。
+/// 强度包三件一体（预注册为包，不拆单变量——④ 臂已证大 batch 无 lr 配平必劣化，
+/// KL 自适应 lr 即配平机制，拆开无意义）：`train_batch_size=512` ×
+/// `trains_per_episode=5`（每局 2560 样本 = 参照 batch 512 × 5 epoch 对齐）×
+/// `kl_adaptive_lr`（参照 kl_targ=0.02 机制，lr 乘子 [0.1,10] 自动配平）。
+/// 底座 = ⑦ 终局配方（true_rules × 2000 局 × 增广 × 温度 1.0 × 课程 p=0.25）。
+/// 预注册判读（对照 ⑦：naive0 0.70 / naive1 0.10 / naive2 0.00）：
+/// naive0 中位 ≥0.8 或 naive1 中位 ≥0.3 = 强度包有效（进 G3 验收配方）；
+/// 与 ⑦ 持平 = 训练强度非当前瓶颈（G3 直接用 ⑦/⑧ 最优配方）；
+/// 护栏破（vs random <0.9）= 强度过热，记负结果不下钻。
+#[test]
+#[ignore = "manual: Gomoku naive0-⑨ G2 训练强度包臂（3 seeds × 2000 局，约 40–70 分钟）"]
+fn gomoku_naive0_g2_intensity() -> Result<(), GraphError> {
+    run_arm_with("g2_intensity", Components::base(), 100, |mut cfg| {
+        cfg.true_rules_tree = true;
+        cfg.augment = true;
+        cfg.max_episodes = 2000;
+        cfg.temp_hold_episodes = 2000;
+        cfg.buffer_capacity = 300;
+        cfg.snapshot_at_episode = Some(1000);
+        cfg.eval_every = 200;
+        cfg.tactical_opening_fraction = 0.25;
+        cfg.train_batch_size = 512;
+        cfg.trains_per_episode = 5;
+        cfg.kl_adaptive_lr = true;
+        cfg
+    })
+}
+
+/// 臂 20（naive0 issue §四-⑩ G3 终局验收，2026-07-05 预注册）：四档 naive 梯队
+/// 统计验收（40 局/档 × 3 seed，镜像成对随机开局由 env reset seed 驱动）。
+///
+/// 配方 = ⑦ 终局配方（⑧b/⑨ 若胜出则以其为准，公开修订本注释）；唯一差异 =
+/// `eval_episodes=40`（梯队每档局数翻倍，40 局下胜率 ≥0.675 即 p<0.05 显著优于
+/// 随机对手水平 0.5，≥0.75 为带余量线）。
+/// 预注册验收判据（用户目标「四档统计显著」的分级读法）：
+/// - **完全达标** = naive0–3 四档 3-seed 中位全部 ≥0.75；
+/// - **部分达标** = naive0 ≥0.75 且 naive1 ≥0.5（战术墙破 + 上层松动，
+///   记录缺口进后续路线）；
+/// - 其余 = 记录现状，缺口归因（课程覆盖/训练强度/网络容量）进 issue。
+#[test]
+#[ignore = "manual: Gomoku naive0-⑩ G3 四档验收臂（3 seeds × 2000 局 × 40 局/档）"]
+fn gomoku_naive0_g3_acceptance() -> Result<(), GraphError> {
+    run_arm_with("g3_acceptance", Components::base(), 100, |mut cfg| {
+        cfg.true_rules_tree = true;
+        cfg.augment = true;
+        cfg.max_episodes = 2000;
+        cfg.temp_hold_episodes = 2000;
+        cfg.buffer_capacity = 300;
+        cfg.snapshot_at_episode = Some(1000);
+        cfg.eval_every = 200;
+        cfg.tactical_opening_fraction = 0.25;
+        cfg.eval_episodes = 40;
+        cfg
+    })
+}
+
 /// 效率探针（非裁决臂，2026-07-05）：batch 512/1024 吞吐与内存观察。
 ///
 /// 定位：④ 臂已裁决「梯度噪声排除」，本探针只测**效率曲线**（墙钟随 batch 的

@@ -271,17 +271,33 @@ impl MctsModel for TrueRulesBoardModel<'_> {
 // 定向战术开局课程（naive0 issue §四-⑥；可插拔，默认关）
 // ============================================================================
 
-/// 战术开局生成：构造「一步胜威胁」局面（replay 后待走方必挡否则对手下一手成五）。
+/// 战术开局课题（`tactical_opening` 的课程内容枚举）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TacticalCourse {
+    /// 一步胜威胁（四连留胜点）：防守方必挡否则对手下一手成五——防守课题（⑥臂进库）。
+    WinIn1,
+    /// 活三（三连两端开放）：放任则下一手成活四（双头必胜）——进攻/预防课题
+    /// （naive1+ 梯队的核心技能：制造与扼杀活三）。
+    OpenThree,
+}
+
+/// 战术开局生成：构造指定课题的中局局面，返回从空盘起的交替落子序列。
 ///
 /// 机制通用（Leela 开局库 / KataGo forced openings 同族：向 self-play 起始分布
 /// 注入决策关键局面，补小预算下自然覆盖的抽签方差）；内容领域特定（五子棋的
-/// 威胁 = 一步成五），故生成器住在领域插件层，与 [`RulesBoard`] 同级。
+/// 威胁线构造），故生成器住在领域插件层，与 [`RulesBoard`] 同级。
 ///
-/// 构造式而非随机推演（随机对局四连成线概率过低）：随机取一条盘内 5 格窗口，
-/// 威胁方按随机顺序占其中 4 格（留 1 格胜点），陪跑方在窗口外落随机散点；
-/// 威胁方黑/白随机（两种防守视角都进训练分布）。返回从空盘起的交替落子序列，
-/// 终检双保险：replay 无终局 + 威胁方有一步胜着 + 防守方无（纯防守课题）。
-pub(crate) fn tactical_opening(side: usize, rng: &mut StdRng) -> Option<Vec<usize>> {
+/// 构造式而非随机推演（随机对局连子成线概率过低）：随机取一条盘内 5 格窗口，
+/// 威胁方按课题占格（[`TacticalCourse::WinIn1`] = 占 4 留 1 胜点；
+/// [`TacticalCourse::OpenThree`] = 占中间 3、两端留空），陪跑方在窗口外落随机
+/// 散点；威胁方黑/白随机（攻防两种视角都进训练分布）。终检双保险：
+/// replay 无终局 + 课题不变量成立（WinIn1 = 威胁方有一步胜着且防守方无；
+/// OpenThree = 双方均无一步胜着且三连两端空）。
+pub(crate) fn tactical_opening(
+    side: usize,
+    course: TacticalCourse,
+    rng: &mut StdRng,
+) -> Option<Vec<usize>> {
     const MAX_TRIES: usize = 20;
     let plane = side * side;
     let empty_obs = vec![0.0f32; 3 * plane];
@@ -309,17 +325,27 @@ pub(crate) fn tactical_opening(side: usize, rng: &mut StdRng) -> Option<Vec<usiz
         let window: Vec<usize> = (0..5)
             .map(|i| ((r0 + dr * i) * side as isize + (c0 + dc * i)) as usize)
             .collect();
-        // 威胁方占 4 格、留 1 格胜点；落子顺序随机
-        let hole = rng.gen_range(0..5);
-        let mut threat_cells: Vec<usize> =
-            (0..5).filter(|&i| i != hole).map(|i| window[i]).collect();
+        // 威胁方按课题占格，落子顺序随机
+        let mut threat_cells: Vec<usize> = match course {
+            TacticalCourse::WinIn1 => {
+                let hole = rng.gen_range(0..5);
+                (0..5).filter(|&i| i != hole).map(|i| window[i]).collect()
+            }
+            // 中间三格（窗口两端即活三的两个开放端，构造上保证在盘内）
+            TacticalCourse::OpenThree => (1..4).map(|i| window[i]).collect(),
+        };
         for i in (1..threat_cells.len()).rev() {
             threat_cells.swap(i, rng.gen_range(0..=i));
         }
 
-        // 2) 陪跑方随机散点（窗口外），黑白身份随机
+        // 2) 陪跑方随机散点（窗口外），黑白身份随机；
+        //    黑先手守恒：黑方子数 = 白方子数 或 白方子数 + 1，且收尾后轮到防守方
         let a_is_black = rng.gen_bool(0.5);
-        let filler_n = if a_is_black { 3 } else { 4 }; // 黑先手多一子的守恒
+        let filler_n = if a_is_black {
+            threat_cells.len() - 1
+        } else {
+            threat_cells.len()
+        };
         let mut filler_cells: Vec<usize> = Vec::with_capacity(filler_n);
         while filler_cells.len() < filler_n {
             let cell = rng.gen_range(0..plane);
@@ -331,9 +357,9 @@ pub(crate) fn tactical_opening(side: usize, rng: &mut StdRng) -> Option<Vec<usiz
         // 3) 黑白交替组装落子序列并 replay 验证
         let mut moves: Vec<usize> = Vec::with_capacity(threat_cells.len() + filler_n);
         let (first, second): (&[usize], &[usize]) = if a_is_black {
-            (&threat_cells, &filler_cells) // 黑=威胁方：a0 b0 a1 b1 a2 b2 a3（7 手）
+            (&threat_cells, &filler_cells) // 黑=威胁方先行
         } else {
-            (&filler_cells, &threat_cells) // 白=威胁方：b0 a0 … b3 a3（8 手）
+            (&filler_cells, &threat_cells) // 白=威胁方后行
         };
         for i in 0..first.len().max(second.len()) {
             if let Some(&m) = first.get(i) {
@@ -352,10 +378,18 @@ pub(crate) fn tactical_opening(side: usize, rng: &mut StdRng) -> Option<Vec<usiz
         }
         let threat_color = u8::from(!a_is_black);
         let defender = 1 - threat_color;
-        if board.to_play() == defender
-            && board.has_win_in_1(threat_color)
-            && !board.has_win_in_1(defender)
-        {
+        if board.to_play() != defender {
+            continue 'retry;
+        }
+        let invariant_ok = match course {
+            TacticalCourse::WinIn1 => {
+                board.has_win_in_1(threat_color) && !board.has_win_in_1(defender)
+            }
+            TacticalCourse::OpenThree => {
+                !board.has_win_in_1(threat_color) && !board.has_win_in_1(defender)
+            }
+        };
+        if invariant_ok {
             return Some(moves);
         }
     }

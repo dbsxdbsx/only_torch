@@ -3,9 +3,12 @@
 
 use crate::nn::Graph;
 use crate::rl::algo::my_zero::board::{
-    BoardMctsModel, augment_game, board_rosmo_policy, negamax_mc_return, symmetry_perm,
+    BoardMctsModel, augment_game, board_rosmo_policy, kl_lr_multiplier, negamax_mc_return,
+    symmetry_perm,
 };
-use crate::rl::algo::my_zero::gomoku::{RulesBoard, TrueRulesBoardModel, tactical_opening};
+use crate::rl::algo::my_zero::gomoku::{
+    RulesBoard, TacticalCourse, TrueRulesBoardModel, tactical_opening,
+};
 use crate::rl::algo::my_zero::network::{MyZeroModel, ObsSpec};
 use crate::rl::mcts::{ActionPayload, MctsModel};
 use crate::rl::{GameOutcome, GymEnv, SelfPlayGame, SelfPlayStep};
@@ -202,8 +205,8 @@ fn rules_board_would_win_detection() {
     assert!(!b.has_win_in_1(1), "白不应有一步胜着");
 }
 
-/// tactical_opening 契约：生成的前缀 replay 后未终局、且「刚落子方」有一步胜着
-/// （= 当前待走方处于必挡局面）；多 seed 覆盖生成器稳定性。
+/// tactical_opening（WinIn1 课题）契约：前缀 replay 后未终局、威胁方有一步胜着
+/// 而防守方（当前待走）没有；多 seed 覆盖生成器稳定性。
 #[test]
 fn tactical_opening_yields_must_block_position() {
     let side = 9;
@@ -215,7 +218,7 @@ fn tactical_opening_yields_must_block_position() {
     };
     for seed in 0..10u64 {
         let mut rng = StdRng::seed_from_u64(seed);
-        let moves = tactical_opening(side, &mut rng)
+        let moves = tactical_opening(side, TacticalCourse::WinIn1, &mut rng)
             .unwrap_or_else(|| panic!("seed={seed} 生成器应在重试预算内出局面"));
         let mut b = RulesBoard::from_obs(&empty, 0, side);
         for (i, &a) in moves.iter().enumerate() {
@@ -226,9 +229,89 @@ fn tactical_opening_yields_must_block_position() {
         let threat_maker = 1 - b.to_play();
         assert!(
             b.has_win_in_1(threat_maker),
-            "seed={seed}: 刚落子方应有一步胜着（必挡局面）"
+            "seed={seed}: 威胁方应有一步胜着（必挡局面）"
+        );
+        assert!(
+            !b.has_win_in_1(b.to_play()),
+            "seed={seed}: 防守方不应有一步胜着（纯防守课题）"
         );
     }
+}
+
+/// tactical_opening（OpenThree 课题）契约：前缀 replay 后未终局、双方均无一步胜着、
+/// 且威胁方存在「三连两端空」的活三（从防守方视角 obs 的对方平面扫描验证）。
+#[test]
+fn tactical_opening_open_three_course() {
+    let side = 9;
+    let plane = side * side;
+    let empty = {
+        let mut obs = vec![0.0f32; 3 * plane];
+        obs[2 * plane..].fill(1.0);
+        obs
+    };
+    for seed in 0..10u64 {
+        let mut rng = StdRng::seed_from_u64(seed);
+        let moves = tactical_opening(side, TacticalCourse::OpenThree, &mut rng)
+            .unwrap_or_else(|| panic!("seed={seed} 生成器应在重试预算内出局面"));
+        let mut b = RulesBoard::from_obs(&empty, 0, side);
+        for &a in &moves {
+            let (_, done) = b.step(a);
+            assert!(!done, "前缀 replay 不应终局");
+        }
+        assert!(
+            !b.has_win_in_1(0) && !b.has_win_in_1(1),
+            "双方均不应有一步胜着"
+        );
+        // 防守方视角 obs：通道 1 = 威胁方子，通道 2 = 空
+        let obs = b.observation_flat();
+        let threat_at = |r: isize, c: isize| -> bool {
+            r >= 0
+                && r < side as isize
+                && c >= 0
+                && c < side as isize
+                && obs[plane + (r * side as isize + c) as usize] > 0.5
+        };
+        let empty_at = |r: isize, c: isize| -> bool {
+            r >= 0
+                && r < side as isize
+                && c >= 0
+                && c < side as isize
+                && obs[2 * plane + (r * side as isize + c) as usize] > 0.5
+        };
+        let mut found = false;
+        'scan: for r in 0..side as isize {
+            for c in 0..side as isize {
+                for (dr, dc) in [(0isize, 1isize), (1, 0), (1, 1), (1, -1)] {
+                    if threat_at(r, c)
+                        && threat_at(r + dr, c + dc)
+                        && threat_at(r + 2 * dr, c + 2 * dc)
+                        && empty_at(r - dr, c - dc)
+                        && empty_at(r + 3 * dr, c + 3 * dc)
+                    {
+                        found = true;
+                        break 'scan;
+                    }
+                }
+            }
+        }
+        assert!(found, "seed={seed}: 威胁方应存在三连两端空的活三");
+    }
+}
+
+/// KL 自适应 lr 乘子契约：超 2× 目标降 1.5×、不足 1/2 升 1.5×、带内不动、[0.1,10] 夹紧。
+#[test]
+fn kl_lr_multiplier_contract() {
+    let t = 0.02;
+    // 超标 → 降
+    assert!((kl_lr_multiplier(0.05, t, 1.0) - 1.0 / 1.5).abs() < 1e-6);
+    // 不足 → 升
+    assert!((kl_lr_multiplier(0.005, t, 1.0) - 1.5).abs() < 1e-6);
+    // 带内 [t/2, 2t] → 不动
+    assert_eq!(kl_lr_multiplier(0.02, t, 1.0), 1.0);
+    assert_eq!(kl_lr_multiplier(0.011, t, 0.5), 0.5);
+    // 夹紧
+    assert_eq!(kl_lr_multiplier(0.5, t, 0.1), 0.1);
+    assert_eq!(kl_lr_multiplier(0.0, t, 10.0), 10.0);
 }
 
 /// 规则等价性金测试：随机对局全程与 Python `Board` 逐步对照
