@@ -69,6 +69,7 @@ cargo test --release --features blas-mkl gomoku_m3_<arm> -- --ignored --nocaptur
 | ① sims 100→400（2026-07-05） | 0.950 | 0.900 | **0.05/0.15/0.05（中位 0.05）** | **平——搜索预算嫌疑排除**（预注册线 ≥0.3 未达），根因收敛「规则学习税」假设 → 进 ② 树内真规则诊断臂。日志 `.bench/gomoku_naive0_sims400_20260705.log` |
 | ② 树内真规则（2026-07-05，**5-seed** 42–46；首跑后按哨兵复裁先例扩 seed，协议修订记 bench 注释） | 0.950 | 0.450 | **0.10/0.00/0.45/0.20/0.20（中位 0.20，max 0.45 + naive1 2/5 非零）** | **方向性正信号、未坐实**（未达 ≥0.3 部分坐实线，但非 ≈0.1 排除形态：中位翻倍、上限 3×）——判读 = 真规则只解锁 acting 侧，训练 value/policy 信号仍是瓶颈；战略分叉不触发，③ replay32×ROSMO 臂顺位。gating 走低为「双方同用真规则树抹平前后期差距」的测量形态。开关 `true_rules_tree`（默认关，learned 路径逐 bit 不变）。日志 `.bench/gomoku_naive0_true_rules{,_ext}_20260705.log` |
 | ③ replay×8 × ROSMO 刷新（2026-07-05） | **0.425/0.625/0.475** | 0.475 | **全 0** | **有害（护栏崩塌）**——vs random 从 replay32 臂的 0.875 崩到 ~0.5（≈随机水平）。判读 = 弱模型下一步 look-ahead 的 adv 是噪声，`prior×exp(adv)` 现算 target 形成自指反馈（网络向自己的噪声改进分布学习、失去 MCTS 搜索改进信号）；**「policy target 过期」嫌疑同时被反证**（存量 MCTS target 比现刷 target 好得多）。ROSMO 棋盘格 ❌。开关 `rosmo_refresh`（默认关）。日志 `.bench/gomoku_naive0_rr32_rosmo_20260705.log` |
+| ④ batch 16→256（2026-07-05） | 0.925 | 0.700 | **0.00/0.00/0.15（中位 0.00）** | **平——梯度噪声嫌疑排除**（每步梯度噪声 ÷16 对战术视野零改善；护栏在改判线内，不触发 lr 失配条款）。判读 = 方差瓶颈不在梯度聚合层，在 target 信息分辨率（整局共享 ±1）；gating 走低 ~0.2 = 大 batch 同 lr 下 SGD 噪声正则减弱的已知形态。嫌疑收敛探索覆盖。日志 `.bench/gomoku_naive0_batch256_20260705.log` |
 
 ### 结论（M3/M4 收口）
 

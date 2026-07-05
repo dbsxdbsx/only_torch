@@ -304,6 +304,47 @@ fn gomoku_naive0_rr32_rosmo() -> Result<(), GraphError> {
     })
 }
 
+/// 臂 14（M4 后 · naive0 战术墙 issue §四-④，2026-07-05 预注册）：batch 16→256。
+///
+/// 触发：①②③臂后剩余头号嫌疑 =「negamax MC ±1 高方差 → 梯度噪声」。唯一变量 =
+/// `train_batch_size` 16→256（梯度噪声方差 ∝ 1/B 降 16 倍；每局样本消耗 64→1024，
+/// 与参照实现 batch 512 × 5 epoch 同量级）。与已测臂正交：预算×5 = 数据量、
+/// replay×8 = 更新次数、本臂 = 每步梯度噪声水平。
+/// 预注册判读：naive0 中位 ≥0.3 = 部分坐实（lr 联动/KL 自适应臂顺位）；
+/// 仍 ≈0.1 且护栏正常 = 排除、嫌疑收敛探索覆盖；vs random <0.9 = lr 失配改判重测。
+#[test]
+#[ignore = "manual: Gomoku naive0-④ batch256 臂（3 seeds，约 15–30 分钟）"]
+fn gomoku_naive0_batch256() -> Result<(), GraphError> {
+    run_arm_with("batch256", Components::base(), 100, |mut cfg| {
+        cfg.train_batch_size = 256;
+        cfg
+    })
+}
+
+/// 效率探针（非裁决臂，2026-07-05）：batch 512/1024 吞吐与内存观察。
+///
+/// 定位：④ 臂已裁决「梯度噪声排除」，本探针只测**效率曲线**（墙钟随 batch 的
+/// 摊薄红利还剩多少、内存是否可忽略），单 seed 观察性数据，喂给性能台账候选 #8
+/// 「自动 batch size」的微基准方案做第一份实测锚点。对照：base(b16) ~90s /
+/// batch256 seed42 = 67s。
+#[test]
+#[ignore = "manual: Gomoku batch 512/1024 效率探针（单 seed，约 3–5 分钟）"]
+fn gomoku_naive0_batch_scale_probe() -> Result<(), GraphError> {
+    for &bs in &[512usize, 1024] {
+        run_arm_seeds(
+            &format!("batch{bs}_probe"),
+            Components::base(),
+            100,
+            &[42],
+            |mut cfg| {
+                cfg.train_batch_size = bs;
+                cfg
+            },
+        )?;
+    }
+    Ok(())
+}
+
 /// 臂 2a：少 sim 对照的 PUCT 基线（sims=16 ≪ |A|=81；兼 P2 少 sim acting 复测）。
 #[test]
 #[ignore = "manual: Gomoku M3 少 sim PUCT 基线（3 seeds）"]
