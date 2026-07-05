@@ -175,15 +175,19 @@ M2 base（9×9 · Flat MLP · 组件全关 · sims=100 · 400 局）吊打 rando
       gating / 并行 self-play 扩数据，后者已在性能台账候选 #8）。
       载体 `gomoku_naive0_cnn_recipe`，日志 `.bench/gomoku_naive0_cnn_recipe_20260705.log`
 - [x] ~~增广弱阳性复核：更大预算（2000 局）× 增广~~（并入 ⑤ G1 组合臂）
-- [ ] **⑫ 纯 self-play 上限标定臂（真规则对照）**（2026-07-05 晚预注册，哲学修正
-      后首臂）：`true_rules × cnn_repr × augment × 温度全程 1.0 × 5000 局 ×
-      buffer 500 × 无课程`——与参照实现（AlphaZero_Gomoku：纯 self-play 零课程 +
-      CNN + 真规则树）同构，组合臂性质（上限标定，G1 先例，不假装单变量）。
-      判读（预注册绝对线，**不与 ⑪ 精细比差**——conv2d 优化 `0ceb1b6` 后 CNN
-      数值流已漂移，「新实测即新基线」）：naive0 中位 ≥0.75 = 纯 self-play 可行
-      坐实（⑬ 开跑）；0.5–0.75 = 方向对，先 5-seed 扩展压方差再议预算加档；
-      <0.5 = 此预算下纯 self-play 不过线，停下与用户复盘（不自动加码，条款三）。
-      载体 `gomoku_pure_selfplay_truerules`
+- [x] **⑫ 纯 self-play 上限标定臂（真规则对照）** ✅ 2026-07-05 已裁决：
+      **纯 self-play 可行坐实（naive0 中位 0.90 ≥0.75 线）——课程非必需**——
+      naive0 = 0.90/0.05/**1.00**（中位 **0.90**，seed 44 满分 = 史上首个）、
+      naive1 = 0.10/0.00/**0.40**（seed 44 史上最高，无课程首次非零）、
+      vs random 3/3 = 1.000、gating 0.925/0.925/0.850。配置 = `true_rules ×
+      cnn_repr × augment × 温度 1.0 × 5000 局 × buffer 500 × 无课程`（参照实现
+      同构；判读用绝对线，conv2d `0ceb1b6` 后 CNN 数值流漂移「新实测即新基线」）。
+      判读：**⑦ 课程配方被超越**（0.70 → 0.90，且无领域后门）——课程实为
+      「预算/容量不足下的拐杖」，预算 2.5× + CNN 后纯 self-play 分布自然覆盖
+      战术局面；「万金油哲学」的可行性前提成立。seed 43 崩 0.05 = 方差第七度
+      复现（0.05–1.00 散布史上最宽，中位裁决仍稳）。→ ⑬ learned dynamics
+      同配置开跑（规则学习税定量账）。墙钟 2289–3277s/seed。
+      载体 `gomoku_pure_selfplay_truerules`，日志 `.bench/gomoku_pure_selfplay_truerules_20260705.log`
 - [ ] **⑬ learned dynamics 同配置臂（万金油口径）**（2026-07-05 晚预注册，⑫ 出
       结果后启动）：与 ⑫ 唯一差 `true_rules_tree=false`。⑫−⑬ 之差 = **规则学习
       税定量账**：⑬ 落后 ⑫ ≤0.1 档 = 税被预算/容量摊平，万金油成立、后续底座
