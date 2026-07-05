@@ -4,7 +4,7 @@
 use crate::nn::Graph;
 use crate::rl::algo::my_zero::board::{
     BoardMctsModel, RulesBoard, TrueRulesBoardModel, augment_game, board_rosmo_policy,
-    negamax_mc_return, symmetry_perm,
+    negamax_mc_return, symmetry_perm, tactical_opening,
 };
 use crate::rl::algo::my_zero::network::{MyZeroModel, ObsSpec};
 use crate::rl::mcts::{ActionPayload, MctsModel};
@@ -177,6 +177,58 @@ fn rules_board_from_obs_white_perspective() {
     assert_eq!(next_obs[0], 1.0, "黑视角己方平面应含格点 0");
     assert_eq!(next_obs[plane + 1], 1.0, "黑视角对方平面应含格点 1");
     assert_eq!(next_obs[plane + 10], 1.0, "黑视角对方平面应含新落的 10");
+}
+
+/// would_win / has_win_in_1 手算金测试：黑四连的两个延长点均为一步胜，白无胜着。
+#[test]
+fn rules_board_would_win_detection() {
+    let side = 9;
+    let plane = side * side;
+    let empty = {
+        let mut obs = vec![0.0f32; 3 * plane];
+        obs[2 * plane..].fill(1.0);
+        obs
+    };
+    let mut b = RulesBoard::from_obs(&empty, 0, side);
+    // 黑走 1..4 横排（格点 1,2,3,4）→ 四连活两头；白散点陪跑（不成线）
+    for (i, w) in [(0usize, 20usize), (1, 40), (2, 60), (3, 78)] {
+        b.step(1 + i); // 黑
+        b.step(w); // 白
+    }
+    assert!(b.would_win(0, 0), "黑在 0 应成五");
+    assert!(b.would_win(0, 5), "黑在 5 应成五");
+    assert!(!b.would_win(0, 6), "黑在 6 不成五");
+    assert!(b.has_win_in_1(0), "黑应有一步胜着");
+    assert!(!b.has_win_in_1(1), "白不应有一步胜着");
+}
+
+/// tactical_opening 契约：生成的前缀 replay 后未终局、且「刚落子方」有一步胜着
+/// （= 当前待走方处于必挡局面）；多 seed 覆盖生成器稳定性。
+#[test]
+fn tactical_opening_yields_must_block_position() {
+    let side = 9;
+    let plane = side * side;
+    let empty = {
+        let mut obs = vec![0.0f32; 3 * plane];
+        obs[2 * plane..].fill(1.0);
+        obs
+    };
+    for seed in 0..10u64 {
+        let mut rng = StdRng::seed_from_u64(seed);
+        let moves = tactical_opening(side, &mut rng)
+            .unwrap_or_else(|| panic!("seed={seed} 生成器应在重试预算内出局面"));
+        let mut b = RulesBoard::from_obs(&empty, 0, side);
+        for (i, &a) in moves.iter().enumerate() {
+            assert_eq!(b.to_play() as usize, i % 2, "前缀应黑白交替");
+            let (_, done) = b.step(a);
+            assert!(!done, "前缀 replay 不应终局");
+        }
+        let threat_maker = 1 - b.to_play();
+        assert!(
+            b.has_win_in_1(threat_maker),
+            "seed={seed}: 刚落子方应有一步胜着（必挡局面）"
+        );
+    }
 }
 
 /// 规则等价性金测试：随机对局全程与 Python `Board` 逐步对照

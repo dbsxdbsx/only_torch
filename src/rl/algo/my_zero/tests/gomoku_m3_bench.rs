@@ -321,6 +321,74 @@ fn gomoku_naive0_batch256() -> Result<(), GraphError> {
     })
 }
 
+/// 臂 15（naive0 issue §四-⑤，2026-07-05 预注册）：G1 上限标定组合臂（诊断性破例）。
+///
+/// 触发：①–④ 单变量臂全平/弱阳后改判「参照配方免费部分的合力能否翻墙」——
+/// true_rules × 2000 局 × D4 增广 × 温度全程 1.0 × buffer 300（≈参照 1 万局面等比）。
+/// lr/batch/trains 不动（训练强度包 = G2 后续）。
+/// 预注册判读（对照 ②臂 0.20 / 预算臂 0.10–0.15 / 增广臂 0.15）：
+/// naive0 中位 ≥0.5 = 翻墙（战略分叉正式化 + G2 + G3 四档验收）；
+/// 0.3–0.5 = 方向确认进 G2；<0.3 = 免费配方不足，战术开局课程优先。
+#[test]
+#[ignore = "manual: Gomoku naive0-⑤ G1 组合臂（3 seeds × 2000 局，约 20–35 分钟）"]
+fn gomoku_naive0_combo_ceiling() -> Result<(), GraphError> {
+    run_arm_with("combo_ceiling", Components::base(), 100, |mut cfg| {
+        cfg.true_rules_tree = true;
+        cfg.augment = true;
+        cfg.max_episodes = 2000;
+        cfg.temp_hold_episodes = 2000; // 全程温度 1.0（参照实现口径）
+        cfg.buffer_capacity = 300;
+        cfg.snapshot_at_episode = Some(1000);
+        cfg.eval_every = 200;
+        cfg
+    })
+}
+
+/// 臂 16（naive0 issue §四-⑥，2026-07-05 预注册）：定向战术开局课程。
+///
+/// 触发：G1 组合臂未翻墙 + seed 方差三度复现（同配方 0.00 vs 0.45）坐实
+/// 「战术局面 = self-play 抽签」→ 把必挡局面确定性注入训练分布（机制通用：
+/// Leela 开局库 / KataGo forced openings 同族；内容领域特定：一步胜威胁生成器）。
+/// 唯一新变量 = `tactical_opening_fraction=0.25`，底座 = ②臂口径（true_rules，
+/// 400 局）——真规则树让注入局面的「必挡」在树内结构性可见，课程信号才可转化。
+/// 预注册判读（对照 ②臂 5-seed 中位 0.20 / 首跑 3-seed 0.10/0.00/0.45）：
+/// naive0 中位 ≥0.5 = 翻墙（课程 promote + 上 2000 局终局配方 + G3 四档验收）；
+/// 0.3–0.5 = 强正信号（扩 2000 局复核后定 promote）；与 ②臂持平 = 排除
+/// （嫌疑转 G2 训练强度包 / bootstrap value target）。
+#[test]
+#[ignore = "manual: Gomoku naive0-⑥ 战术开局课程臂（3 seeds，约 3–5 分钟）"]
+fn gomoku_naive0_tactical_openings() -> Result<(), GraphError> {
+    run_arm_with("tactical_openings", Components::base(), 100, |mut cfg| {
+        cfg.true_rules_tree = true;
+        cfg.tactical_opening_fraction = 0.25;
+        cfg
+    })
+}
+
+/// 臂 17（naive0 issue §四-⑦，2026-07-05 预注册）：终局配方复核（G1 组合 × 课程）。
+///
+/// 触发：⑥ 臂强正信号（400 局中位 0.40 = ②臂 2×）→ 按其预注册升级路径，
+/// 在 G1 组合底座（true_rules × 2000 局 × 增广 × 温度 1.0 × buffer 300）上
+/// 叠加 `tactical_opening_fraction=0.25`，唯一对照 = G1（同底座无课程，中位 0.20）。
+/// 预注册判读：naive0 中位 ≥0.5 = 翻墙坐实（课程 promote 进棋盘 recipe 讨论 +
+/// G3 四档验收开启）；0.3–0.5 = 课程有效但预算无增益（400 局版已够，取短版）；
+/// <0.3 = ⑥ 臂信号不稳（回 5-seed 复裁）。
+#[test]
+#[ignore = "manual: Gomoku naive0-⑦ 终局配方复核臂（3 seeds × 2000 局，约 15–25 分钟）"]
+fn gomoku_naive0_final_recipe() -> Result<(), GraphError> {
+    run_arm_with("final_recipe", Components::base(), 100, |mut cfg| {
+        cfg.true_rules_tree = true;
+        cfg.augment = true;
+        cfg.max_episodes = 2000;
+        cfg.temp_hold_episodes = 2000;
+        cfg.buffer_capacity = 300;
+        cfg.snapshot_at_episode = Some(1000);
+        cfg.eval_every = 200;
+        cfg.tactical_opening_fraction = 0.25;
+        cfg
+    })
+}
+
 /// 效率探针（非裁决臂，2026-07-05）：batch 512/1024 吞吐与内存观察。
 ///
 /// 定位：④ 臂已裁决「梯度噪声排除」，本探针只测**效率曲线**（墙钟随 batch 的

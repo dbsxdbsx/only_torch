@@ -248,6 +248,22 @@ impl RulesBoard {
         obs
     }
 
+    /// 假设 `color` 在空位 `action` 落子是否立即成五（`wins_at` 不读 `b[action]`
+    /// 本身，天然支持假设性探测——一步胜威胁检查入口）。
+    pub fn would_win(&self, color: u8, action: usize) -> bool {
+        debug_assert!(
+            self.stones[0][action] == 0 && self.stones[1][action] == 0,
+            "would_win 只应探测空位"
+        );
+        self.wins_at(color as usize, action)
+    }
+
+    /// `color` 是否存在一步胜着（对手视角 = 必挡局面）。
+    pub fn has_win_in_1(&self, color: u8) -> bool {
+        (0..self.side * self.side)
+            .any(|a| self.stones[0][a] == 0 && self.stones[1][a] == 0 && self.would_win(color, a))
+    }
+
     /// 增量胜利检查（只查最后落子四方向，同 Python `_check_winner_incremental`）。
     fn wins_at(&self, color: usize, action: usize) -> bool {
         let d = self.side as isize;
@@ -637,7 +653,105 @@ fn board_mcts_config(
     }
 }
 
+// ============================================================================
+// 定向战术开局课程（naive0 issue §四-⑥；可插拔，默认关）
+// ============================================================================
+
+/// 战术开局生成：构造「一步胜威胁」局面（replay 后待走方必挡否则对手下一手成五）。
+///
+/// 机制通用（Leela 开局库 / KataGo forced openings 同族：向 self-play 起始分布
+/// 注入决策关键局面，补小预算下自然覆盖的抽签方差）；内容领域特定（五子棋的
+/// 威胁 = 一步成五），故生成器住在棋盘领域层，与 [`RulesBoard`] 同级。
+///
+/// 构造式而非随机推演（随机对局四连成线概率过低）：随机取一条盘内 5 格窗口，
+/// 威胁方按随机顺序占其中 4 格（留 1 格胜点），陪跑方在窗口外落随机散点；
+/// 威胁方黑/白随机（两种防守视角都进训练分布）。返回从空盘起的交替落子序列，
+/// 终检双保险：replay 无终局 + 威胁方有一步胜着 + 防守方无（纯防守课题）。
+pub(crate) fn tactical_opening(side: usize, rng: &mut StdRng) -> Option<Vec<usize>> {
+    const MAX_TRIES: usize = 20;
+    let plane = side * side;
+    let empty_obs = vec![0.0f32; 3 * plane];
+
+    'retry: for _ in 0..MAX_TRIES {
+        // 1) 随机威胁线：方向 × 起点，5 格窗口全部在盘内
+        let (dr, dc) = [(0isize, 1isize), (1, 0), (1, 1), (1, -1)][rng.gen_range(0..4)];
+        let (r0, c0) = {
+            let d = side as isize;
+            let (rlo, rhi) = if dr >= 0 {
+                (0, d - 1 - dr * 4)
+            } else {
+                (4, d - 1)
+            };
+            let (clo, chi) = if dc >= 0 {
+                (0, d - 1 - dc * 4)
+            } else {
+                (4, d - 1)
+            };
+            if rhi < rlo || chi < clo {
+                continue 'retry;
+            }
+            (rng.gen_range(rlo..=rhi), rng.gen_range(clo..=chi))
+        };
+        let window: Vec<usize> = (0..5)
+            .map(|i| ((r0 + dr * i) * side as isize + (c0 + dc * i)) as usize)
+            .collect();
+        // 威胁方占 4 格、留 1 格胜点；落子顺序随机
+        let hole = rng.gen_range(0..5);
+        let mut threat_cells: Vec<usize> =
+            (0..5).filter(|&i| i != hole).map(|i| window[i]).collect();
+        for i in (1..threat_cells.len()).rev() {
+            threat_cells.swap(i, rng.gen_range(0..=i));
+        }
+
+        // 2) 陪跑方随机散点（窗口外），黑白身份随机
+        let a_is_black = rng.gen_bool(0.5);
+        let filler_n = if a_is_black { 3 } else { 4 }; // 黑先手多一子的守恒
+        let mut filler_cells: Vec<usize> = Vec::with_capacity(filler_n);
+        while filler_cells.len() < filler_n {
+            let cell = rng.gen_range(0..plane);
+            if !window.contains(&cell) && !filler_cells.contains(&cell) {
+                filler_cells.push(cell);
+            }
+        }
+
+        // 3) 黑白交替组装落子序列并 replay 验证
+        let mut moves: Vec<usize> = Vec::with_capacity(threat_cells.len() + filler_n);
+        let (first, second): (&[usize], &[usize]) = if a_is_black {
+            (&threat_cells, &filler_cells) // 黑=威胁方：a0 b0 a1 b1 a2 b2 a3（7 手）
+        } else {
+            (&filler_cells, &threat_cells) // 白=威胁方：b0 a0 … b3 a3（8 手）
+        };
+        for i in 0..first.len().max(second.len()) {
+            if let Some(&m) = first.get(i) {
+                moves.push(m);
+            }
+            if let Some(&m) = second.get(i) {
+                moves.push(m);
+            }
+        }
+        let mut board = RulesBoard::from_obs(&empty_obs, 0, side);
+        for &m in &moves {
+            let (_, done) = board.step(m);
+            if done {
+                continue 'retry; // 陪跑散点意外成五（极罕见）
+            }
+        }
+        let threat_color = u8::from(!a_is_black);
+        let defender = 1 - threat_color;
+        if board.to_play() == defender
+            && board.has_win_in_1(threat_color)
+            && !board.has_win_in_1(defender)
+        {
+            return Some(moves);
+        }
+    }
+    None
+}
+
 /// 自对弈一局（双方同一网络；真环境只在走子/根 mask/终局三处出场）。
+///
+/// `opening_moves` 非空时先按序 replay 进 env（战术开局课程前缀，双方交替落子），
+/// 训练样本只从 replay 之后记录——negamax MC target 的递推只覆盖记录段，语义自洽。
 #[allow(clippy::too_many_arguments)]
 fn board_self_play_episode(
     env: &GymEnv,
@@ -647,9 +761,14 @@ fn board_self_play_episode(
     action_dim: usize,
     reset_seed: u64,
     true_rules: bool,
+    opening_moves: &[usize],
     rng: &mut StdRng,
 ) -> Vec<SelfPlayStep> {
     env.reset(Some(reset_seed));
+    for &a in opening_moves {
+        let (_, terminal) = env.board_step(a);
+        debug_assert!(!terminal, "战术开局前缀不应终局（生成器已保证）");
+    }
     let mut steps: Vec<SelfPlayStep> = Vec::new();
 
     loop {
@@ -928,6 +1047,10 @@ pub(crate) struct BoardTrainConfig {
     /// 存量 policy target 现算一步 look-ahead 改进分布（[`board_rosmo_policy`]，
     /// 不写回；value 维持 negamax MC 不动）。对症高 replay ratio 下的 target 过期。
     pub rosmo_refresh: bool,
+    /// 定向战术开局课程（naive0 issue §四-⑥）：self-play 每局以此概率从
+    /// [`tactical_opening`] 生成的必挡局面前缀开局（0.0 = 恒空盘，现有路径不变）。
+    /// 只影响训练分布；eval/gating/naive 梯队评测不受影响。
+    pub tactical_opening_fraction: f32,
 }
 
 impl Default for BoardTrainConfig {
@@ -960,6 +1083,7 @@ impl Default for BoardTrainConfig {
             augment: false,
             true_rules_tree: false,
             rosmo_refresh: false,
+            tactical_opening_fraction: 0.0,
         }
     }
 }
@@ -1025,6 +1149,12 @@ pub(crate) fn train_board(cfg: &BoardTrainConfig) -> Result<BoardTrainReport, Gr
                 "[MyZero-board] ROSMO policy 刷新开启（采样时现算一步 look-ahead，top-{ROSMO_TOP_M}；value 维持 negamax）"
             );
         }
+        if cfg.tactical_opening_fraction > 0.0 {
+            println!(
+                "[MyZero-board] 战术开局课程开启（p={:.2}，必挡局面前缀；eval 不受影响）",
+                cfg.tactical_opening_fraction
+            );
+        }
         let perms: Vec<Vec<usize>> = (0..8).map(|s| symmetry_perm(side, s)).collect();
         let graph = Graph::new_with_seed(cfg.seed);
         let model = MyZeroModel::new_with_spec(&graph, obs_spec, action_dim, cfg.latent_dim)?;
@@ -1048,6 +1178,14 @@ pub(crate) fn train_board(cfg: &BoardTrainConfig) -> Result<BoardTrainReport, Gr
                 MctsConfig::default().root_exploration_fraction,
             );
 
+            // 战术开局课程（p=0.0 时短路不触碰 RNG，默认路径逐 bit 不变）
+            let opening: Vec<usize> = if cfg.tactical_opening_fraction > 0.0
+                && rng.gen_bool(f64::from(cfg.tactical_opening_fraction))
+            {
+                tactical_opening(side, &mut rng).unwrap_or_default()
+            } else {
+                Vec::new()
+            };
             let steps = board_self_play_episode(
                 &env,
                 &model,
@@ -1056,6 +1194,7 @@ pub(crate) fn train_board(cfg: &BoardTrainConfig) -> Result<BoardTrainReport, Gr
                 action_dim,
                 cfg.seed.wrapping_add(1_000_000 + ep as u64),
                 cfg.true_rules_tree,
+                &opening,
                 &mut rng,
             );
             let ep_len = steps.len();
