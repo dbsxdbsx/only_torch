@@ -154,12 +154,17 @@ M2 base（9×9 · Flat MLP · 组件全关 · sims=100 · 400 局）吊打 rando
       **用户目标「四档统计显著」当前进度：naive0 破墙未达线、naive1–3 未开**。
       载体 `gomoku_naive0_g3_acceptance`（40 局/档 = p<0.05 线 0.675、带余量线 0.75），
       日志 `.bench/gomoku_naive0_g3_acceptance_20260705.log`
-- [ ] **⑪ CNN × ⑦ 配方臂**（2026-07-05 预注册，G3 缺口归因首选）：M3 CNN 中性
-      裁决的底座是「400 局 × 无课程 × learned dynamics」——CNN × 真规则 × 课程
-      从未合体；战术连线是平移等变结构，Flat MLP 逐位置死记、CNN 天然共享。
-      唯一新变量 = `cnn_repr`，底座 = ⑦。判读（对照 G3 naive0 0.62 / naive1 0.05）：
-      naive0 ≥0.75 或 naive1 ≥0.3 = 容量坐实（进配方重跑 G3）；持平 = 容量排除
-      （缺口收敛预算量级 + seed 方差）。载体 `gomoku_naive0_cnn_recipe`
+- [x] **⑪ CNN × ⑦ 配方臂** ✅ 2026-07-05 已裁决：**未达 promote 线，容量假设
+      按线排除（弱阳纹理留档）**——naive0 = 0.55/0.75/0.20（中位 **0.55**，G3
+      对照 0.62 带内持平）、naive1 中位 **0.15**（对照 0.05 有抬升但 <0.3 线）、
+      naive2 单 seed **0.35**（史上最高单点，seed 42）；vs random 3/3 = 1.000，
+      墙钟 ~3.5×（CNN 推理贵）。判读：CNN 没有把中位推过任何 promote 线 →
+      按预注册排除；但 naive1/2 的弱阳纹理（中位 3×、naive2 首破 0.3）提示
+      容量方向不是死路，需配预算放大再裁。**seed 方差再度主导**（0.20–0.75，
+      本臂掉队的换成 seed 44）——六度复现坐实「seed 抽签 > 一切组件效应」。
+      → **缺口终局收敛：预算量级 ×（可选 CNN）+ seed 方差治理**（多 seed 择优
+      gating / 并行 self-play 扩数据，后者已在性能台账候选 #8）。
+      载体 `gomoku_naive0_cnn_recipe`，日志 `.bench/gomoku_naive0_cnn_recipe_20260705.log`
 - [x] ~~增广弱阳性复核：更大预算（2000 局）× 增广~~（并入 ⑤ G1 组合臂）
 - [ ] recon 棋盘 coef 重标（{1,4} pilot）——现 16 为 CartPole 域值，偏害嫌疑
 
