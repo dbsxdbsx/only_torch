@@ -28,6 +28,10 @@ fn main() -> Result<(), GraphError> {
     if let Ok(v) = std::env::var("SEEDS") {
         builder = builder.seeds(v.parse().expect("SEEDS 必须是正整数"));
     }
+    // KL_LR=1：KL 自适应 lr 消融开关（默认关；闸门与诊断用，勿入哨兵口径）。
+    if std::env::var("KL_LR").is_ok() {
+        builder = builder.kl_adaptive_lr(true);
+    }
     if smoke {
         builder = builder.smoke();
     }

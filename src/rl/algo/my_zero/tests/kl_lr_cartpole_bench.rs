@@ -17,6 +17,18 @@
 //! - **劣化（不 promote）**：达标 <3/3 或中位 >2× 基线 → 留库默认关，
 //!   组件矩阵 CartPole 格记 ❌，触发条件回归「某域正增益后再议」。
 //!
+//! # ✅ 已裁决（2026-07-05）：❌ 灾难级失败，不 promote
+//!
+//! 0/3 达标（greedy 3-seed 全程钉死 ~9.2 ≈ 随机水平，wall ~140s/seed）。
+//! 诊断（单 seed 轨迹 `.bench/cartpole_kl_lr_diag_20260705.log`）= **lr 死亡螺旋**：
+//! CartPole batch 8 × buffer 1000 下当局探针局面大概率不被训练触碰 → 测得 KL ≈
+//! 噪声（1e-5–0.47 乱跳）→ 连续偏小时乘子棘轮 1.5× 顶到 10× 上限（lr=0.2，
+//! ep≈34）→ 网络被打散（KL 暴跳 0.24）→ 训练永不起步。**默认路径对照完好**
+//! （同 HEAD 不开 KL-lr 单 seed 8,741 env-steps 达标 = 哨兵基线），非搬运 bug。
+//! 域适配前提修正：机制要求「每局训练样本量大 + 探针与训练分布相关」（棋盘
+//! batch 512×5/buffer 300 成立；参照实现原口径是在**刚训 minibatch 上**测 KL）。
+//! 重试条件 = 改 minibatch-KL 口径后重过本闸门。裁决入组件矩阵 CartPole 格。
+//!
 //! ```bash
 //! cargo test --release --features blas-mkl cartpole_kl_lr -- --ignored --nocapture --test-threads=1
 //! ```

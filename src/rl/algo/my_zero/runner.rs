@@ -1198,6 +1198,8 @@ fn train_one_seed(
                 let kl = probe_policy_kl(&model, &probe, &probe_old);
                 lr_mult = kl_lr_multiplier(kl, KL_TARGET, lr_mult);
                 optimizer.set_learning_rate(t.lr * lr_mult);
+                // 诊断轨迹（组件默认关，仅消融/闸门可见；spike 排查 lr 死亡螺旋用）
+                println!("  [kl-lr] ep={} kl={kl:.5} lr_mult={lr_mult:.3}", ep + 1);
             }
 
             if smoke {

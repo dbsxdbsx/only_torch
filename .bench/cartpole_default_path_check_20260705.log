@@ -1,0 +1,224 @@
+   Compiling only_torch v0.25.0 (D:\DATA\BaiduSyncdisk\project\personal\only_torch)
+    Finished `release` profile [optimized] target(s) in 11.54s
+     Running `target\release\examples\my_zero_cartpole.exe`
+[MyZero] consistency + reconstruction + Sampled
+[MyZero CartPole-v1] obs=4 离散 2 档 γ=0.997 sims=20 r_scale=1
+[Sampled] N=2 B=— K_cfg=5 K_eff=2 (sims=20)
+Ep    1: R=    16.0 len= 16 avg_R=    16.0 loss=0.0000 temp=1.00 total_env_steps=16 t=0.01s
+Ep    2: R=    15.0 len= 15 avg_R=    15.5 loss=0.0000 temp=1.00 total_env_steps=31 t=0.01s
+Ep    3: R=     9.0 len=  9 avg_R=    13.3 loss=0.0000 temp=1.00 total_env_steps=40 t=0.00s
+Ep    4: R=    16.0 len= 16 avg_R=    14.0 loss=0.0000 temp=1.00 total_env_steps=56 t=0.01s
+Ep    5: R=    17.0 len= 17 avg_R=    14.6 loss=0.0000 temp=1.00 total_env_steps=73 t=0.01s
+Ep    6: R=    13.0 len= 13 avg_R=    14.3 loss=0.0000 temp=1.00 total_env_steps=86 t=0.01s
+Ep    7: R=     9.0 len=  9 avg_R=    13.6 loss=0.0000 temp=1.00 total_env_steps=95 t=0.00s
+Ep    8: R=     9.0 len=  9 avg_R=    13.0 loss=0.0000 temp=1.00 total_env_steps=104 t=0.00s
+Ep    9: R=    16.0 len= 16 avg_R=    13.3 loss=0.0000 temp=1.00 total_env_steps=120 t=0.01s
+Ep   10: R=     9.0 len=  9 avg_R=    12.9 loss=87.6892 temp=1.00 total_env_steps=129 t=0.07s
+Ep   11: R=    10.0 len= 10 avg_R=    12.6 loss=23.3531 temp=1.00 total_env_steps=139 t=0.07s
+Ep   12: R=    10.0 len= 10 avg_R=    12.4 loss=17.8506 temp=1.00 total_env_steps=149 t=0.07s
+Ep   13: R=    29.0 len= 29 avg_R=    13.7 loss=17.0906 temp=1.00 total_env_steps=178 t=0.08s
+Ep   14: R=    11.0 len= 11 avg_R=    13.5 loss=17.9782 temp=1.00 total_env_steps=189 t=0.08s
+Ep   15: R=    14.0 len= 14 avg_R=    13.5 loss=15.4231 temp=1.00 total_env_steps=203 t=0.05s
+Ep   16: R=     9.0 len=  9 avg_R=    13.2 loss=13.7734 temp=1.00 total_env_steps=212 t=0.06s
+Ep   17: R=     9.0 len=  9 avg_R=    13.0 loss=8.9558 temp=1.00 total_env_steps=221 t=0.06s
+Ep   18: R=    11.0 len= 11 avg_R=    12.9 loss=6.6124 temp=1.00 total_env_steps=232 t=0.06s
+Ep   19: R=    15.0 len= 15 avg_R=    13.0 loss=4.1389 temp=1.00 total_env_steps=247 t=0.06s
+Ep   20: R=    20.0 len= 20 avg_R=    13.4 loss=4.8090 temp=1.00 total_env_steps=267 t=0.06s
+Ep   21: R=    17.0 len= 17 avg_R=    13.5 loss=4.4282 temp=1.00 total_env_steps=284 t=0.07s
+Ep   22: R=    19.0 len= 19 avg_R=    13.8 loss=4.2386 temp=1.00 total_env_steps=303 t=0.07s
+Ep   23: R=    25.0 len= 25 avg_R=    14.3 loss=2.1947 temp=1.00 total_env_steps=328 t=0.07s
+Ep   24: R=    20.0 len= 20 avg_R=    14.5 loss=3.2947 temp=1.00 total_env_steps=348 t=0.07s
+Ep   25: R=     9.0 len=  9 avg_R=    14.3 loss=5.5786 temp=1.00 total_env_steps=357 t=0.06s
+  greedy eval 9.4 / 475（近20局 self-play 14.2，total_env_steps=357）
+[MyZero] best 模型 greedy=9.4 ep=25 total_env_steps=357 -> models/my_zero/CartPole-v1/best.otm
+Ep   26: R=    11.0 len= 11 avg_R=    14.2 loss=11.1565 temp=1.00 total_env_steps=368 t=0.06s
+Ep   27: R=     9.0 len=  9 avg_R=    14.0 loss=6.3749 temp=1.00 total_env_steps=377 t=0.06s
+Ep   28: R=    24.0 len= 24 avg_R=    14.3 loss=6.5472 temp=1.00 total_env_steps=401 t=0.07s
+Ep   29: R=    16.0 len= 16 avg_R=    14.4 loss=3.8968 temp=1.00 total_env_steps=417 t=0.06s
+Ep   30: R=    13.0 len= 13 avg_R=    14.3 loss=5.6522 temp=1.00 total_env_steps=430 t=0.07s
+Ep   31: R=    14.0 len= 14 avg_R=    14.3 loss=6.2576 temp=1.00 total_env_steps=444 t=0.07s
+Ep   32: R=    34.0 len= 34 avg_R=    14.9 loss=3.5620 temp=1.00 total_env_steps=478 t=0.08s
+Ep   33: R=    10.0 len= 10 avg_R=    14.8 loss=5.1061 temp=1.00 total_env_steps=488 t=0.07s
+Ep   34: R=    37.0 len= 37 avg_R=    15.4 loss=3.0432 temp=1.00 total_env_steps=525 t=0.07s
+Ep   35: R=    35.0 len= 35 avg_R=    16.0 loss=3.8464 temp=1.00 total_env_steps=560 t=0.08s
+Ep   36: R=    23.0 len= 23 avg_R=    16.2 loss=2.1176 temp=1.00 total_env_steps=583 t=0.07s
+Ep   37: R=    21.0 len= 21 avg_R=    16.3 loss=3.0944 temp=1.00 total_env_steps=604 t=0.07s
+Ep   38: R=    16.0 len= 16 avg_R=    16.3 loss=2.3916 temp=1.00 total_env_steps=620 t=0.05s
+Ep   39: R=    10.0 len= 10 avg_R=    16.2 loss=2.6151 temp=1.00 total_env_steps=630 t=0.06s
+Ep   40: R=    17.0 len= 17 avg_R=    16.2 loss=3.9104 temp=1.00 total_env_steps=647 t=0.06s
+Ep   41: R=    11.0 len= 11 avg_R=    16.0 loss=4.6406 temp=1.00 total_env_steps=658 t=0.05s
+Ep   42: R=    27.0 len= 27 avg_R=    16.3 loss=3.9463 temp=1.00 total_env_steps=685 t=0.06s
+Ep   43: R=     9.0 len=  9 avg_R=    16.1 loss=2.9747 temp=1.00 total_env_steps=694 t=0.05s
+Ep   44: R=    28.0 len= 28 avg_R=    16.4 loss=2.4849 temp=1.00 total_env_steps=722 t=0.06s
+Ep   45: R=    15.0 len= 15 avg_R=    16.4 loss=2.5970 temp=1.00 total_env_steps=737 t=0.06s
+Ep   46: R=    30.0 len= 30 avg_R=    16.7 loss=1.6039 temp=1.00 total_env_steps=767 t=0.07s
+Ep   47: R=    17.0 len= 17 avg_R=    16.7 loss=3.2482 temp=1.00 total_env_steps=784 t=0.06s
+Ep   48: R=     9.0 len=  9 avg_R=    16.5 loss=1.6558 temp=1.00 total_env_steps=793 t=0.05s
+Ep   49: R=    26.0 len= 26 avg_R=    16.7 loss=2.1325 temp=1.00 total_env_steps=819 t=0.06s
+Ep   50: R=    21.0 len= 21 avg_R=    16.8 loss=1.8302 temp=1.00 total_env_steps=840 t=0.06s
+  greedy eval 37.2 / 475（近20局 self-play 20.5，total_env_steps=840）
+[MyZero] best 模型 greedy=37.2 ep=50 total_env_steps=840 -> models/my_zero/CartPole-v1/best.otm
+Ep   51: R=    33.0 len= 33 avg_R=    17.1 loss=1.5963 temp=1.00 total_env_steps=873 t=0.07s
+Ep   52: R=    30.0 len= 30 avg_R=    17.4 loss=1.6116 temp=1.00 total_env_steps=903 t=0.06s
+Ep   53: R=    43.0 len= 43 avg_R=    17.8 loss=1.4563 temp=1.00 total_env_steps=946 t=0.06s
+Ep   54: R=    89.0 len= 89 avg_R=    19.2 loss=3.3397 temp=1.00 total_env_steps=1035 t=0.08s
+Ep   55: R=    74.0 len= 74 avg_R=    20.2 loss=2.3728 temp=1.00 total_env_steps=1109 t=0.08s
+Ep   56: R=    85.0 len= 85 avg_R=    21.3 loss=1.9069 temp=1.00 total_env_steps=1194 t=0.08s
+Ep   57: R=   115.0 len=115 avg_R=    23.0 loss=3.0031 temp=1.00 total_env_steps=1309 t=0.09s
+Ep   58: R=    81.0 len= 81 avg_R=    24.0 loss=2.2114 temp=1.00 total_env_steps=1390 t=0.08s
+Ep   59: R=    53.0 len= 53 avg_R=    24.5 loss=3.5940 temp=1.00 total_env_steps=1443 t=0.07s
+Ep   60: R=    23.0 len= 23 avg_R=    24.4 loss=2.7995 temp=1.00 total_env_steps=1466 t=0.05s
+Ep   61: R=    32.0 len= 32 avg_R=    24.6 loss=5.0487 temp=1.00 total_env_steps=1498 t=0.06s
+Ep   62: R=    49.0 len= 49 avg_R=    25.0 loss=3.6286 temp=1.00 total_env_steps=1547 t=0.07s
+Ep   63: R=    15.0 len= 15 avg_R=    24.8 loss=3.3703 temp=1.00 total_env_steps=1562 t=0.06s
+Ep   64: R=    44.0 len= 44 avg_R=    25.1 loss=4.0483 temp=1.00 total_env_steps=1606 t=0.06s
+Ep   65: R=    72.0 len= 72 avg_R=    25.8 loss=5.4626 temp=1.00 total_env_steps=1678 t=0.08s
+Ep   66: R=    14.0 len= 14 avg_R=    25.6 loss=4.3526 temp=1.00 total_env_steps=1692 t=0.05s
+Ep   67: R=    54.0 len= 54 avg_R=    26.1 loss=4.3998 temp=1.00 total_env_steps=1746 t=0.08s
+Ep   68: R=    13.0 len= 13 avg_R=    25.9 loss=3.0009 temp=1.00 total_env_steps=1759 t=0.05s
+Ep   69: R=    72.0 len= 72 avg_R=    26.5 loss=3.3702 temp=1.00 total_env_steps=1831 t=0.07s
+Ep   70: R=    16.0 len= 16 avg_R=    26.4 loss=3.6339 temp=1.00 total_env_steps=1847 t=0.05s
+Ep   71: R=    22.0 len= 22 avg_R=    26.3 loss=2.2055 temp=1.00 total_env_steps=1869 t=0.05s
+Ep   72: R=    26.0 len= 26 avg_R=    26.3 loss=3.6884 temp=1.00 total_env_steps=1895 t=0.05s
+Ep   73: R=    14.0 len= 14 avg_R=    26.2 loss=3.3306 temp=1.00 total_env_steps=1909 t=0.04s
+Ep   74: R=    27.0 len= 27 avg_R=    26.2 loss=4.5473 temp=1.00 total_env_steps=1936 t=0.06s
+Ep   75: R=    44.0 len= 44 avg_R=    26.4 loss=3.5067 temp=1.00 total_env_steps=1980 t=0.06s
+  greedy eval 23.2 / 475（近20局 self-play 43.5，total_env_steps=1980）
+Ep   76: R=    16.0 len= 16 avg_R=    26.3 loss=2.1157 temp=1.00 total_env_steps=1996 t=0.04s
+Ep   77: R=    27.0 len= 27 avg_R=    26.3 loss=2.1269 temp=1.00 total_env_steps=2023 t=0.04s
+Ep   78: R=    14.0 len= 14 avg_R=    26.1 loss=3.0727 temp=1.00 total_env_steps=2037 t=0.05s
+Ep   79: R=    15.0 len= 15 avg_R=    26.0 loss=2.9672 temp=1.00 total_env_steps=2052 t=0.05s
+Ep   80: R=    50.0 len= 50 avg_R=    26.3 loss=2.8529 temp=1.00 total_env_steps=2102 t=0.06s
+Ep   81: R=    26.0 len= 26 avg_R=    26.3 loss=2.2413 temp=1.00 total_env_steps=2128 t=0.06s
+Ep   82: R=    48.0 len= 48 avg_R=    26.5 loss=2.5781 temp=1.00 total_env_steps=2176 t=0.07s
+Ep   83: R=    36.0 len= 36 avg_R=    26.7 loss=3.7712 temp=1.00 total_env_steps=2212 t=0.07s
+Ep   84: R=    38.0 len= 38 avg_R=    26.8 loss=3.6493 temp=1.00 total_env_steps=2250 t=0.06s
+Ep   85: R=    38.0 len= 38 avg_R=    26.9 loss=3.0500 temp=1.00 total_env_steps=2288 t=0.06s
+Ep   86: R=    41.0 len= 41 avg_R=    27.1 loss=1.9902 temp=1.00 total_env_steps=2329 t=0.06s
+Ep   87: R=    15.0 len= 15 avg_R=    26.9 loss=2.8040 temp=1.00 total_env_steps=2344 t=0.05s
+Ep   88: R=    36.0 len= 36 avg_R=    27.0 loss=1.9913 temp=1.00 total_env_steps=2380 t=0.06s
+Ep   89: R=    50.0 len= 50 avg_R=    27.3 loss=3.0287 temp=1.00 total_env_steps=2430 t=0.06s
+Ep   90: R=    25.0 len= 25 avg_R=    27.3 loss=3.2403 temp=1.00 total_env_steps=2455 t=0.06s
+Ep   91: R=   138.0 len=138 avg_R=    28.5 loss=3.0097 temp=1.00 total_env_steps=2593 t=0.10s
+Ep   92: R=    21.0 len= 21 avg_R=    28.4 loss=2.2194 temp=1.00 total_env_steps=2614 t=0.05s
+Ep   93: R=    22.0 len= 22 avg_R=    28.3 loss=3.0996 temp=1.00 total_env_steps=2636 t=0.06s
+Ep   94: R=    46.0 len= 46 avg_R=    28.5 loss=4.1557 temp=1.00 total_env_steps=2682 t=0.06s
+Ep   95: R=    17.0 len= 17 avg_R=    28.4 loss=3.9422 temp=1.00 total_env_steps=2699 t=0.05s
+Ep   96: R=    51.0 len= 51 avg_R=    28.6 loss=2.4272 temp=1.00 total_env_steps=2750 t=0.06s
+Ep   97: R=    38.0 len= 38 avg_R=    28.7 loss=2.9040 temp=1.00 total_env_steps=2788 t=0.06s
+Ep   98: R=   103.0 len=103 avg_R=    29.5 loss=2.5626 temp=1.00 total_env_steps=2891 t=0.09s
+Ep   99: R=    19.0 len= 19 avg_R=    29.4 loss=2.4991 temp=1.00 total_env_steps=2910 t=0.05s
+Ep  100: R=    33.0 len= 33 avg_R=    29.4 loss=4.4264 temp=1.00 total_env_steps=2943 t=0.06s
+  greedy eval 30.5 / 475（近20局 self-play 42.0，total_env_steps=2943）
+Ep  101: R=    63.0 len= 63 avg_R=    29.9 loss=2.4376 temp=1.00 total_env_steps=3006 t=0.08s
+Ep  102: R=    22.0 len= 22 avg_R=    30.0 loss=2.7527 temp=1.00 total_env_steps=3028 t=0.04s
+Ep  103: R=    25.0 len= 25 avg_R=    30.1 loss=3.0006 temp=1.00 total_env_steps=3053 t=0.06s
+Ep  104: R=    47.0 len= 47 avg_R=    30.4 loss=2.4625 temp=1.00 total_env_steps=3100 t=0.07s
+Ep  105: R=    46.0 len= 46 avg_R=    30.7 loss=2.9167 temp=1.00 total_env_steps=3146 t=0.09s
+Ep  106: R=    69.0 len= 69 avg_R=    31.3 loss=2.1330 temp=1.00 total_env_steps=3215 t=0.07s
+Ep  107: R=    26.0 len= 26 avg_R=    31.5 loss=2.4526 temp=1.00 total_env_steps=3241 t=0.07s
+Ep  108: R=    45.0 len= 45 avg_R=    31.8 loss=2.2779 temp=1.00 total_env_steps=3286 t=0.08s
+Ep  109: R=    32.0 len= 32 avg_R=    32.0 loss=2.1014 temp=1.00 total_env_steps=3318 t=0.07s
+Ep  110: R=    18.0 len= 18 avg_R=    32.1 loss=1.1105 temp=1.00 total_env_steps=3336 t=0.06s
+Ep  111: R=    31.0 len= 31 avg_R=    32.3 loss=3.0232 temp=1.00 total_env_steps=3367 t=0.07s
+Ep  112: R=    38.0 len= 38 avg_R=    32.6 loss=2.4329 temp=1.00 total_env_steps=3405 t=0.07s
+Ep  113: R=    12.0 len= 12 avg_R=    32.4 loss=1.3626 temp=1.00 total_env_steps=3417 t=0.05s
+Ep  114: R=    17.0 len= 17 avg_R=    32.5 loss=2.3795 temp=1.00 total_env_steps=3434 t=0.06s
+Ep  115: R=    19.0 len= 19 avg_R=    32.5 loss=3.0001 temp=1.00 total_env_steps=3453 t=0.07s
+Ep  116: R=    44.0 len= 44 avg_R=    32.8 loss=4.3614 temp=1.00 total_env_steps=3497 t=0.06s
+Ep  117: R=    94.0 len= 94 avg_R=    33.7 loss=2.6973 temp=1.00 total_env_steps=3591 t=0.09s
+Ep  118: R=    74.0 len= 74 avg_R=    34.3 loss=3.4136 temp=1.00 total_env_steps=3665 t=0.08s
+Ep  119: R=    15.0 len= 15 avg_R=    34.3 loss=2.9346 temp=1.00 total_env_steps=3680 t=0.06s
+Ep  120: R=    27.0 len= 27 avg_R=    34.4 loss=3.9680 temp=1.00 total_env_steps=3707 t=0.07s
+Ep  121: R=   148.0 len=148 avg_R=    35.7 loss=2.4089 temp=1.00 total_env_steps=3855 t=0.11s
+Ep  122: R=    23.0 len= 23 avg_R=    35.8 loss=3.9078 temp=1.00 total_env_steps=3878 t=0.07s
+Ep  123: R=    53.0 len= 53 avg_R=    36.0 loss=3.9980 temp=1.00 total_env_steps=3931 t=0.07s
+Ep  124: R=    28.0 len= 28 avg_R=    36.1 loss=2.5351 temp=1.00 total_env_steps=3959 t=0.05s
+Ep  125: R=    25.0 len= 25 avg_R=    36.3 loss=2.8266 temp=1.00 total_env_steps=3984 t=0.06s
+  greedy eval 119.4 / 475（近20局 self-play 41.9，total_env_steps=3984）
+[MyZero] best 模型 greedy=119.4 ep=125 total_env_steps=3984 -> models/my_zero/CartPole-v1/best.otm
+Ep  126: R=    30.0 len= 30 avg_R=    36.5 loss=3.3338 temp=1.00 total_env_steps=4014 t=0.08s
+Ep  127: R=    79.0 len= 79 avg_R=    37.2 loss=3.0707 temp=1.00 total_env_steps=4093 t=0.07s
+Ep  128: R=    31.0 len= 31 avg_R=    37.2 loss=1.9457 temp=1.00 total_env_steps=4124 t=0.06s
+Ep  129: R=    12.0 len= 12 avg_R=    37.2 loss=2.0755 temp=1.00 total_env_steps=4136 t=0.05s
+Ep  130: R=    49.0 len= 49 avg_R=    37.5 loss=2.2215 temp=1.00 total_env_steps=4185 t=0.07s
+Ep  131: R=    23.0 len= 23 avg_R=    37.6 loss=3.6577 temp=1.00 total_env_steps=4208 t=0.06s
+Ep  132: R=    17.0 len= 17 avg_R=    37.5 loss=2.2402 temp=1.00 total_env_steps=4225 t=0.05s
+Ep  133: R=    22.0 len= 22 avg_R=    37.6 loss=2.3766 temp=1.00 total_env_steps=4247 t=0.05s
+Ep  134: R=    28.0 len= 28 avg_R=    37.5 loss=3.5559 temp=1.00 total_env_steps=4275 t=0.06s
+Ep  135: R=    12.0 len= 12 avg_R=    37.3 loss=2.2129 temp=1.00 total_env_steps=4287 t=0.05s
+Ep  136: R=    32.0 len= 32 avg_R=    37.4 loss=2.3678 temp=1.00 total_env_steps=4319 t=0.05s
+Ep  137: R=    32.0 len= 32 avg_R=    37.5 loss=3.9850 temp=1.00 total_env_steps=4351 t=0.07s
+Ep  138: R=    41.0 len= 41 avg_R=    37.7 loss=2.9428 temp=1.00 total_env_steps=4392 t=0.07s
+Ep  139: R=    37.0 len= 37 avg_R=    38.0 loss=2.2642 temp=1.00 total_env_steps=4429 t=0.06s
+Ep  140: R=    26.0 len= 26 avg_R=    38.1 loss=2.1659 temp=1.00 total_env_steps=4455 t=0.06s
+Ep  141: R=    79.0 len= 79 avg_R=    38.8 loss=2.3231 temp=1.00 total_env_steps=4534 t=0.08s
+Ep  142: R=    42.0 len= 42 avg_R=    38.9 loss=2.1273 temp=1.00 total_env_steps=4576 t=0.07s
+Ep  143: R=    50.0 len= 50 avg_R=    39.3 loss=2.3744 temp=1.00 total_env_steps=4626 t=0.07s
+Ep  144: R=    41.0 len= 41 avg_R=    39.5 loss=2.5335 temp=1.00 total_env_steps=4667 t=0.06s
+Ep  145: R=    40.0 len= 40 avg_R=    39.7 loss=2.0730 temp=1.00 total_env_steps=4707 t=0.06s
+Ep  146: R=    89.0 len= 89 avg_R=    40.3 loss=2.4390 temp=1.00 total_env_steps=4796 t=0.07s
+Ep  147: R=    70.0 len= 70 avg_R=    40.8 loss=2.9131 temp=1.00 total_env_steps=4866 t=0.07s
+Ep  148: R=    40.0 len= 40 avg_R=    41.1 loss=4.2472 temp=1.00 total_env_steps=4906 t=0.06s
+Ep  149: R=   155.0 len=155 avg_R=    42.4 loss=3.3685 temp=1.00 total_env_steps=5061 t=0.11s
+Ep  150: R=    84.0 len= 84 avg_R=    43.0 loss=3.7983 temp=1.00 total_env_steps=5145 t=0.08s
+  greedy eval 153.5 / 475（近20局 self-play 48.0，total_env_steps=5145）
+[MyZero] best 模型 greedy=153.5 ep=150 total_env_steps=5145 -> models/my_zero/CartPole-v1/best.otm
+Ep  151: R=    32.0 len= 32 avg_R=    43.0 loss=2.4294 temp=1.00 total_env_steps=5177 t=0.05s
+Ep  152: R=    25.0 len= 25 avg_R=    43.0 loss=1.7650 temp=1.00 total_env_steps=5202 t=0.06s
+Ep  153: R=    55.0 len= 55 avg_R=    43.1 loss=1.6476 temp=1.00 total_env_steps=5257 t=0.07s
+Ep  154: R=    83.0 len= 83 avg_R=    43.0 loss=1.6789 temp=1.00 total_env_steps=5340 t=0.07s
+Ep  155: R=    32.0 len= 32 avg_R=    42.6 loss=2.4436 temp=1.00 total_env_steps=5372 t=0.07s
+Ep  156: R=    58.0 len= 58 avg_R=    42.4 loss=2.8866 temp=1.00 total_env_steps=5430 t=0.07s
+Ep  157: R=   103.0 len=103 avg_R=    42.2 loss=2.7189 temp=1.00 total_env_steps=5533 t=0.09s
+Ep  158: R=    65.0 len= 65 avg_R=    42.1 loss=2.5702 temp=1.00 total_env_steps=5598 t=0.08s
+Ep  159: R=    86.0 len= 86 avg_R=    42.4 loss=3.7395 temp=1.00 total_env_steps=5684 t=0.08s
+Ep  160: R=    13.0 len= 13 avg_R=    42.3 loss=1.9929 temp=1.00 total_env_steps=5697 t=0.05s
+Ep  161: R=    86.0 len= 86 avg_R=    42.8 loss=2.4275 temp=1.00 total_env_steps=5783 t=0.07s
+Ep  162: R=    25.0 len= 25 avg_R=    42.6 loss=2.0213 temp=1.00 total_env_steps=5808 t=0.06s
+Ep  163: R=    28.0 len= 28 avg_R=    42.7 loss=2.2758 temp=1.00 total_env_steps=5836 t=0.06s
+Ep  164: R=    56.0 len= 56 avg_R=    42.9 loss=2.6554 temp=1.00 total_env_steps=5892 t=0.06s
+Ep  165: R=    28.0 len= 28 avg_R=    42.4 loss=2.9943 temp=1.00 total_env_steps=5920 t=0.05s
+Ep  166: R=    29.0 len= 29 avg_R=    42.6 loss=1.3914 temp=1.00 total_env_steps=5949 t=0.06s
+Ep  167: R=    57.0 len= 57 avg_R=    42.6 loss=1.6008 temp=1.00 total_env_steps=6006 t=0.07s
+Ep  168: R=    14.0 len= 14 avg_R=    42.6 loss=3.1475 temp=1.00 total_env_steps=6020 t=0.05s
+Ep  169: R=    83.0 len= 83 avg_R=    42.7 loss=4.6072 temp=1.00 total_env_steps=6103 t=0.09s
+Ep  170: R=    46.0 len= 46 avg_R=    43.0 loss=3.9203 temp=1.00 total_env_steps=6149 t=0.08s
+Ep  171: R=    29.0 len= 29 avg_R=    43.1 loss=2.8838 temp=1.00 total_env_steps=6178 t=0.08s
+Ep  172: R=    28.0 len= 28 avg_R=    43.1 loss=2.1582 temp=1.00 total_env_steps=6206 t=0.07s
+Ep  173: R=    36.0 len= 36 avg_R=    43.3 loss=2.7626 temp=1.00 total_env_steps=6242 t=0.07s
+Ep  174: R=    27.0 len= 27 avg_R=    43.3 loss=3.8009 temp=1.00 total_env_steps=6269 t=0.08s
+Ep  175: R=    38.0 len= 38 avg_R=    43.3 loss=3.3796 temp=1.00 total_env_steps=6307 t=0.07s
+  greedy eval 16.1 / 475（近20局 self-play 46.8，total_env_steps=6307）
+Ep  176: R=    97.0 len= 97 avg_R=    44.1 loss=3.6516 temp=1.00 total_env_steps=6404 t=0.09s
+Ep  177: R=    36.0 len= 36 avg_R=    44.2 loss=1.7321 temp=1.00 total_env_steps=6440 t=0.06s
+Ep  178: R=    13.0 len= 13 avg_R=    44.2 loss=1.6371 temp=1.00 total_env_steps=6453 t=0.05s
+Ep  179: R=   148.0 len=148 avg_R=    45.5 loss=3.2916 temp=1.00 total_env_steps=6601 t=0.11s
+Ep  180: R=   104.0 len=104 avg_R=    46.0 loss=1.6953 temp=1.00 total_env_steps=6705 t=0.08s
+Ep  181: R=    19.0 len= 19 avg_R=    46.0 loss=4.2084 temp=1.00 total_env_steps=6724 t=0.05s
+Ep  182: R=    41.0 len= 41 avg_R=    45.9 loss=2.6363 temp=1.00 total_env_steps=6765 t=0.07s
+Ep  183: R=    84.0 len= 84 avg_R=    46.4 loss=2.6114 temp=1.00 total_env_steps=6849 t=0.07s
+Ep  184: R=   143.0 len=143 avg_R=    47.4 loss=3.6730 temp=1.00 total_env_steps=6992 t=0.10s
+Ep  185: R=    32.0 len= 32 avg_R=    47.4 loss=2.8478 temp=1.00 total_env_steps=7024 t=0.06s
+Ep  186: R=    56.0 len= 56 avg_R=    47.5 loss=2.2253 temp=1.00 total_env_steps=7080 t=0.07s
+Ep  187: R=   143.0 len=143 avg_R=    48.8 loss=1.4695 temp=1.00 total_env_steps=7223 t=0.09s
+Ep  188: R=   218.0 len=218 avg_R=    50.6 loss=2.6902 temp=1.00 total_env_steps=7441 t=0.12s
+Ep  189: R=    31.0 len= 31 avg_R=    50.4 loss=1.5548 temp=1.00 total_env_steps=7472 t=0.06s
+Ep  190: R=   201.0 len=201 avg_R=    52.2 loss=2.2325 temp=1.00 total_env_steps=7673 t=0.12s
+Ep  191: R=   126.0 len=126 avg_R=    52.1 loss=6.1177 temp=1.00 total_env_steps=7799 t=0.09s
+Ep  192: R=    18.0 len= 18 avg_R=    52.0 loss=2.8892 temp=1.00 total_env_steps=7817 t=0.05s
+Ep  193: R=   207.0 len=207 avg_R=    53.9 loss=5.0117 temp=1.00 total_env_steps=8024 t=0.12s
+Ep  194: R=    36.0 len= 36 avg_R=    53.8 loss=3.2721 temp=1.00 total_env_steps=8060 t=0.06s
+Ep  195: R=    32.0 len= 32 avg_R=    53.9 loss=3.9995 temp=1.00 total_env_steps=8092 t=0.06s
+Ep  196: R=   312.0 len=312 avg_R=    56.5 loss=2.3923 temp=1.00 total_env_steps=8404 t=0.17s
+Ep  197: R=    66.0 len= 66 avg_R=    56.8 loss=2.1616 temp=1.00 total_env_steps=8470 t=0.07s
+Ep  198: R=    74.0 len= 74 avg_R=    56.5 loss=2.6541 temp=1.00 total_env_steps=8544 t=0.08s
+Ep  199: R=   100.0 len=100 avg_R=    57.3 loss=2.7895 temp=1.00 total_env_steps=8644 t=0.08s
+Ep  200: R=    97.0 len= 97 avg_R=    58.0 loss=3.7758 temp=1.00 total_env_steps=8741 t=0.08s
+  greedy eval 500.0 / 475（近20局 self-play 101.8，total_env_steps=8741）
+[MyZero] best 模型 greedy=500.0 ep=200 total_env_steps=8741 -> models/my_zero/CartPole-v1/best.otm
+  ✅ 达标 ep=200 total_env_steps=8741
+📈 CartPole-v1 greedy=500.0 | 门槛 475: ep200 total_env_steps=8741 | 16.4s
+[MyZero] 已加载模型 models/my_zero/CartPole-v1/best.otm
+[MyZero] eval CartPole-v1 ×10: mean=500.0
+[MyZero] run CartPole-v1 ×1: mean=500.0 returns=[500.0]
