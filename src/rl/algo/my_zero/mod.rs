@@ -70,6 +70,7 @@ pub mod checkpoint;
 pub mod component;
 pub mod config;
 pub mod consistency;
+pub(crate) mod gomoku;
 pub mod loss;
 pub mod model_io;
 // 模块与算法同名属刻意设计（my_zero::my_zero::MyZero 仅内部路径，公开面已 re-export）

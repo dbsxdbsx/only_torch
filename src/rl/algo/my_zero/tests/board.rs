@@ -3,9 +3,9 @@
 
 use crate::nn::Graph;
 use crate::rl::algo::my_zero::board::{
-    BoardMctsModel, RulesBoard, TrueRulesBoardModel, augment_game, board_rosmo_policy,
-    negamax_mc_return, symmetry_perm, tactical_opening,
+    BoardMctsModel, augment_game, board_rosmo_policy, negamax_mc_return, symmetry_perm,
 };
+use crate::rl::algo::my_zero::gomoku::{RulesBoard, TrueRulesBoardModel, tactical_opening};
 use crate::rl::algo::my_zero::network::{MyZeroModel, ObsSpec};
 use crate::rl::mcts::{ActionPayload, MctsModel};
 use crate::rl::{GameOutcome, GymEnv, SelfPlayGame, SelfPlayStep};
