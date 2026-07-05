@@ -37,6 +37,13 @@
   - **Pong S2 复跑负结果确认**（新数值流）：0/3 仍平直（best greedy −21.0/−20.3/−20.6），排除「旧数值流 / seed 共享 reset 序列」嫌疑；**S3 三臂诊断全平**：recon pilot {1,4,16}（−21.0/−20.4/−21.0）、cons-off 3-seed 中位 −21.0、HL-Gauss 3-seed 中位 −21.0 → 组件层排除，嫌疑收敛「训练预算差 2 个数量级（9.6k updates/batch16 vs EfficientZero 参考 ~120k/batch256）+ 稀疏 reward」
   - **规划次序修订**：图像线降级后台预算标定（replay ratio ↑ × ROSMO 刷新 / lr 扫描 / DIAG，预注册于负结果 issue），**Phase 2 Gomoku 提前为当前主线**（棋盘域 = 本派系最强场、直接服务象棋战略目标；万金油铁律与一次一臂纪律写入收口规划 §3 注记）；账本、负结果 issue、reanalyze issue、AGENTS 当前态同步
 
+### Changed
+
+- **perf(nn): Conv2d 隐式 lowering（流式分 tile）+ col 驻留预算化（优化 S）**（2026-07-05）
+  - 整批 im2col 超预算（>16 MiB）时前向切**流式分 tile**（per-worker L2 级缓冲现场 im2row，col 永不整块物化）、dK 反向按样本重算——大形状前向 -22~-40%（board15/atari84 b128 探针）、超预算 col 驻留内存归零（外推 Atari 84×84 栈 batch 256 约 274 MiB → 0）；预算内路径与旧实现**逐 bit 一致**（数值冻结面，现役负载全部在内）
+  - 等价性契约实测定稿：流式 vs 物化 = **ulp 级等价**（MKL sgemm 对不同 N 选内核致 K 维累加序漂移，~1e-6、<1% 元素，金测试 ≤1e-5 报警线）+ 流式样本间逐 bit 自洽 + dK 重算/驻留整数构造交叉验证精确相等
+  - `benches/conv2d.rs` 真形状裁决器组入库（board15/19 stride-1、atari84/42 stride-2、b128 流式 regime）+ 节点级计时探针 `conv2d_timing_probe`；内核级优化否决案「保留的唯一方向」就此清账（[战报 S](.doc/performance/optimization_log.md)）
+
 ### Fixed
 
 - **fix(rl): CartPole 哨兵红灯复裁收口——recon=16 维持 promote、recipe 零变更，官方 3-seed 哨兵回绿**（2026-07-04）

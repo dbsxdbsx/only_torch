@@ -1447,3 +1447,241 @@ fn test_conv2d_noncontiguous_input() {
     assert_abs_diff_eq!(loss_t, loss_ref, epsilon = 1e-5);
     assert_conv_grad_logically_eq(&gk_t, &gk_ref);
 }
+
+// ==================== 8. 隐式 lowering（流式分 tile）等价性测试 ====================
+
+/// **等价性金测试**：流式分 tile 前向（隐式 lowering，超驻留预算路径）与整块物化
+/// 前向 **ulp 级等价**，且流式路径样本间**逐 bit 自洽**。
+///
+/// 构造：单样本内容全 batch 相同（1×64×64，k=3 pad=1 → col/样本 36,864 f32）。
+/// batch=1 整批 col 在预算内 → 物化路径（历史实现逐 bit 冻结面）；batch=120 整批
+/// col = 4,423,680 f32 超预算 → 流式路径（tile_rows = 32K/9 → 每样本多 tile）。
+///
+/// 断言分两层：
+/// 1. **样本间逐 bit 相同**（流式路径确定性 + per-sample 索引正确性）；
+/// 2. **与物化路径 ulp 级等价**（≤1e-5）。不是逐 bit：tile 只切 GEMM 的 N 维，
+///    每个输出元素的 K 维点积虽在单次 GEMM 内完整，但 MKL sgemm 对不同 N 选取
+///    不同内核/向量化分组，K 维累加顺序随之漂移（2026-07-05 实测 ~1e-6、<1% 元素）。
+///    数值冻结不受影响：预算门保证现役冻结负载恒走物化路径；流式只在历史上从未
+///    运行过的大尺度启用（新实测即新基线）。若本测试超差（>1e-5），说明 tile
+///    逻辑真的算错了（索引/边界 bug），而非 GEMM ulp 噪声。
+#[test]
+fn test_conv2d_streaming_tile_forward_ulp_matches_materialized() -> Result<(), GraphError> {
+    let (c, h, w, out_c) = (1, 64, 64, 2);
+    // 确定性伪随机单样本（不依赖全局种子），batch 维平铺 120 份
+    let sample: Vec<f32> = (0..c * h * w)
+        .map(|i| ((i * 37 + 11) % 199) as f32 * 0.013 - 1.2)
+        .collect();
+    let kernel_data: Vec<f32> = (0..out_c * c * 9)
+        .map(|i| ((i * 53 + 7) % 97) as f32 * 0.021 - 1.0)
+        .collect();
+
+    let run = |batch: usize| -> Result<Tensor, GraphError> {
+        let graph = Graph::new();
+        let inner = graph.inner_rc();
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[batch, c, h, w], Some("input"))?;
+        let kernel = inner
+            .borrow_mut()
+            .create_basic_input_node(&[out_c, c, 3, 3], Some("kernel"))?;
+        let conv = inner.borrow_mut().create_conv2d_node(
+            vec![input.clone(), kernel.clone()],
+            (1, 1),
+            (1, 1),
+            (1, 1),
+            Some("conv"),
+        )?;
+        let tiled: Vec<f32> = sample
+            .iter()
+            .cycle()
+            .take(batch * sample.len())
+            .copied()
+            .collect();
+        input.set_value(Some(&Tensor::new(&tiled, &[batch, c, h, w])))?;
+        kernel.set_value(Some(&Tensor::new(&kernel_data, &[out_c, c, 3, 3])))?;
+        conv.forward_recursive(1, Mode::Train)?;
+        Ok(conv.value().unwrap().clone())
+    };
+
+    let materialized = run(1)?; // 预算内 → 物化路径
+    let streaming = run(120)?; // 超预算 → 流式分 tile 路径
+
+    assert_eq!(streaming.shape(), &[120, out_c, h, w]);
+    let sample_out_len = out_c * h * w;
+    let s_flat = streaming.flatten_view();
+    let s_slice = s_flat.as_slice().unwrap();
+    let m_flat = materialized.flatten_view();
+    let m_slice = m_flat.as_slice().unwrap();
+
+    // 1. 流式路径样本间逐 bit 相同（同内容同 tile 边界 → 必须确定性一致）
+    for b in 1..120 {
+        assert_eq!(
+            &s_slice[b * sample_out_len..(b + 1) * sample_out_len],
+            &s_slice[..sample_out_len],
+            "流式路径样本 {b} 与样本 0 应逐 bit 相同"
+        );
+    }
+
+    // 2. 与物化路径 ulp 级等价
+    let mut max_diff = 0.0f32;
+    for (a, b2) in s_slice[..sample_out_len].iter().zip(m_slice.iter()) {
+        max_diff = max_diff.max((a - b2).abs());
+    }
+    assert!(
+        max_diff <= 1e-5,
+        "流式分 tile 前向与整块物化前向应 ulp 级等价，实测 max_diff={max_diff:e}"
+    );
+
+    Ok(())
+}
+
+/// **节点级计时探针**（非断言测试，手动跑）：隔离测量 conv2d 节点的
+/// forward / dX / dK 耗时，图只建一次、循环内仅重执行——规避 layer 级 bench
+/// （`benches/conv2d.rs`）每迭代新建节点导致的图膨胀测量偏差。
+///
+/// 用法：`cargo test --release --features blas-mkl conv2d_timing_probe -- --ignored --nocapture`
+#[test]
+#[ignore = "manual: conv2d 节点级计时探针（--release 运行，约 1 分钟）"]
+fn conv2d_timing_probe() -> Result<(), GraphError> {
+    use std::time::Instant;
+
+    // (名称, batch, in_c, h, w, out_c, k, stride, pad, iters)
+    let configs: &[(
+        &str,
+        usize,
+        usize,
+        usize,
+        usize,
+        usize,
+        usize,
+        usize,
+        usize,
+        usize,
+    )] = &[
+        ("28x28_small_b32", 32, 3, 28, 28, 8, 3, 1, 1, 200),
+        ("board15_b1", 1, 32, 15, 15, 64, 3, 1, 1, 500),
+        ("board15_b16", 16, 32, 15, 15, 64, 3, 1, 1, 200),
+        ("board15_b128", 128, 32, 15, 15, 64, 3, 1, 1, 50),
+        ("atari84_b16_s2", 16, 4, 84, 84, 32, 3, 2, 1, 100),
+        ("atari84_b128_s2", 128, 4, 84, 84, 32, 3, 2, 1, 20),
+    ];
+
+    for &(name, batch, in_c, h, w, out_c, k, stride, pad, iters) in configs {
+        let graph = Graph::new();
+        let inner = graph.inner_rc();
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[batch, in_c, h, w], Some("input"))?;
+        let kernel = inner
+            .borrow_mut()
+            .create_parameter_node(&[out_c, in_c, k, k], Some("kernel"))?;
+        let conv = inner.borrow_mut().create_conv2d_node(
+            vec![input.clone(), kernel.clone()],
+            (stride, stride),
+            (pad, pad),
+            (1, 1),
+            Some("conv"),
+        )?;
+        input.set_value(Some(&Tensor::random(0.0, 1.0, &[batch, in_c, h, w])))?;
+
+        let out_h = (h + 2 * pad - k) / stride + 1;
+        let out_w = (w + 2 * pad - k) / stride + 1;
+        let upstream = Tensor::random(0.0, 1.0, &[batch, out_c, out_h, out_w]);
+
+        // 预热
+        for pass in 1..=3u64 {
+            conv.forward_recursive(pass, Mode::Train)?;
+            let _ = conv
+                .calc_grad_to_parent_index(0, &upstream)?
+                .resolve(&upstream);
+            let _ = conv
+                .calc_grad_to_parent_index(1, &upstream)?
+                .resolve(&upstream);
+        }
+
+        let t = Instant::now();
+        for pass in 4..(4 + iters as u64) {
+            conv.forward_recursive(pass, Mode::Train)?;
+        }
+        let fwd_us = t.elapsed().as_secs_f64() * 1e6 / iters as f64;
+
+        let t = Instant::now();
+        for _ in 0..iters {
+            let _ = conv
+                .calc_grad_to_parent_index(0, &upstream)?
+                .resolve(&upstream);
+        }
+        let dx_us = t.elapsed().as_secs_f64() * 1e6 / iters as f64;
+
+        let t = Instant::now();
+        for _ in 0..iters {
+            let _ = conv
+                .calc_grad_to_parent_index(1, &upstream)?
+                .resolve(&upstream);
+        }
+        let dk_us = t.elapsed().as_secs_f64() * 1e6 / iters as f64;
+
+        println!(
+            "{name:>18}  fwd {fwd_us:>9.1} µs   dX {dx_us:>9.1} µs   dK {dk_us:>9.1} µs   (iters={iters})"
+        );
+    }
+    Ok(())
+}
+
+/// **等价性金测试**：dK 反向的「col 重算」路径（超驻留预算）与「col 驻留复用」
+/// 路径（预算内）交叉验证。
+///
+/// 全 1 输入 + 全 1 核 + 全 1 upstream 下，dK 每元素 = 有效贡献位置计数（整数，
+/// 远小于 2^24，f32 精确表示，逐样本部分和与 batch 序串行累加全程无舍入）。
+/// batch=1（36,864 f32 col，预算内 → 驻留路径）与 batch=120（4,423,680 f32 col，
+/// 超预算 → 流式前向 + dK 重算路径）应满足 dK_120 == 120 × dK_1 **精确相等**，
+/// 同时锚定绝对值（角 3969 / 边 4032 / 心 4096）。
+#[test]
+fn test_conv2d_dk_recompute_bitwise_matches_cached() -> Result<(), GraphError> {
+    let run = |batch: usize| -> Result<Tensor, GraphError> {
+        let graph = Graph::new();
+        let inner = graph.inner_rc();
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[batch, 1, 64, 64], Some("input"))?;
+        let kernel = inner
+            .borrow_mut()
+            .create_parameter_node(&[1, 1, 3, 3], Some("kernel"))?;
+        let conv = inner.borrow_mut().create_conv2d_node(
+            vec![input.clone(), kernel.clone()],
+            (1, 1),
+            (1, 1),
+            (1, 1),
+            Some("conv"),
+        )?;
+        input.set_value(Some(&Tensor::ones(&[batch, 1, 64, 64])))?;
+        kernel.set_value(Some(&Tensor::ones(&[1, 1, 3, 3])))?;
+        conv.forward_recursive(1, Mode::Train)?;
+
+        let upstream = Tensor::ones(&[batch, 1, 64, 64]);
+        Ok(conv
+            .calc_grad_to_parent_index(1, &upstream)?
+            .resolve(&upstream))
+    };
+
+    let dk_cached = run(1)?; // 预算内：dK 复用前向驻留 col
+    let dk_recomputed = run(120)?; // 超预算：dK 现场重算 col
+
+    // 锚定绝对值：padding=1 下每个核位置的有效贡献计数
+    assert_eq!(dk_cached[[0, 0, 1, 1]], 4096.0); // 64×64
+    assert_eq!(dk_cached[[0, 0, 0, 1]], 4032.0); // 63×64
+    assert_eq!(dk_cached[[0, 0, 0, 0]], 3969.0); // 63×63
+
+    for kh in 0..3 {
+        for kw in 0..3 {
+            assert_eq!(
+                dk_recomputed[[0, 0, kh, kw]],
+                120.0 * dk_cached[[0, 0, kh, kw]],
+                "dK 重算路径应与驻留路径精确一致（kh={kh}, kw={kw}）"
+            );
+        }
+    }
+
+    Ok(())
+}

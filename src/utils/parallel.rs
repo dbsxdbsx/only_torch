@@ -98,6 +98,64 @@ where
     }
 }
 
+/// 带 per-worker 可复用 scratch 的 chunk 级并行 `for_each`（带阈值分流）
+///
+/// 与 [`for_each_chunk_mut`] 相同的写入语义，额外为每个执行单元提供一份
+/// `init()` 构造的 scratch（串行 = 单份复用；并行 = rayon `for_each_init`
+/// 按任务分片构造，份数 ≈ 线程数而非 chunk 数）。适用于"每 chunk 需要一个
+/// 大临时缓冲"的场景（如 conv 前向 per-sample col/tile 缓冲）——避免每
+/// chunk 反复大分配。
+///
+/// ⚠️ 正确性前提：`f` 对 scratch 必须**先全量写后读**（scratch 携带上一个
+/// chunk 的残留数据），否则产物将依赖执行顺序。
+#[inline]
+pub(crate) fn for_each_chunk_mut_with<S, I, F>(
+    data: &mut [f32],
+    chunk_size: usize,
+    total_work: usize,
+    init: I,
+    f: F,
+) where
+    S: Send,
+    I: Fn() -> S + Sync + Send,
+    F: Fn(&mut S, usize, &mut [f32]) + Sync + Send,
+{
+    let n_chunks = data.len().div_ceil(chunk_size.max(1));
+    if should_par(n_chunks, total_work) {
+        data.par_chunks_mut(chunk_size)
+            .enumerate()
+            .for_each_init(&init, |s, (i, c)| f(s, i, c));
+    } else {
+        let mut s = init();
+        data.chunks_mut(chunk_size)
+            .enumerate()
+            .for_each(|(i, c)| f(&mut s, i, c));
+    }
+}
+
+/// 带 per-worker 可复用 scratch 的索引映射并行 collect（带阈值分流）
+///
+/// 与 [`map_indexed`] 相同的产物顺序契约（恒为 `0..n`），scratch 语义同
+/// [`for_each_chunk_mut_with`]。适用于 conv dK 的 per-sample col 重算缓冲。
+#[inline]
+pub(crate) fn map_indexed_with<S, T, I, F>(n: usize, total_work: usize, init: I, f: F) -> Vec<T>
+where
+    S: Send,
+    T: Send,
+    I: Fn() -> S + Sync + Send,
+    F: Fn(&mut S, usize) -> T + Sync + Send,
+{
+    if should_par(n, total_work) {
+        (0..n)
+            .into_par_iter()
+            .map_init(&init, |s, i| f(s, i))
+            .collect()
+    } else {
+        let mut s = init();
+        (0..n).map(|i| f(&mut s, i)).collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

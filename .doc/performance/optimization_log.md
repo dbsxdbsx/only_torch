@@ -7,6 +7,80 @@
 
 ---
 
+## S. Conv2d 隐式 lowering（流式分 tile）+ col 驻留预算化（2026-07-05）
+
+**来源**：内核级优化否决案中「保留的唯一方向」（2509.26217 实践赢家）提前清账。
+触发背景非 profiler 证据，而是**长远规划裁决**（与用户 2026-07-05 讨论定稿）：真实
+目标尺度是五子棋 15×15 / 围棋 19×19 / 84×84 图像线 / 商业图像游戏，旧实现的整批
+col 驻留（`im2col_cache`，膨胀率 k²/stride²）在大 batch × 大空间下是数百 MB 级
+内存 + 带宽税（Atari 84×84 4-conv 栈 batch 256 约 274 MiB/前向）。
+
+**改动**（`src/nn/nodes/raw_node/ops/conv2d.rs` + `src/utils/parallel.rs` 两个新
+scratch 复用入口）：
+
+- **驻留预算门 `COL_RETAIN_BUDGET_F32 = 4M f32（16 MiB）`**：整批 col 在预算内
+  一律走**物化路径**（整块 col + 单次 GEMM，与旧实现逐 bit 一致，Train/Inference
+  皆然）；训练时 col 驻留供 dK 复用（旧行为）。**路径决策只看预算不看模式**，
+  这是数值冻结面：现役全部负载（CartPole 无 conv；Gomoku 9×9/15×15、MNIST、
+  two_layer 系整批 col 均 ≤ 预算）行为与数值零变化。
+- **超预算 → 流式路径（隐式 lowering）**：`im2col` 重构为行区间直写版
+  `im2col_rows_into`（全量/分 tile 同一套索引算术）；per-worker 复用一个
+  `TILE_BUF_F32 = 32K f32（128 KiB，L2 级）` tile 缓冲，沿 spatial 分块现场
+  im2row + 分块 GEMM 直写输出列区间（`general_mat_mul` 写 `[.., start..end]`
+  切片视图，BLAS ldc=spatial 直派发），整块 col **永不物化**；
+- **超预算训练的 dK 反向重算**：per-worker scratch 整样本重算 col（同函数同输入
+  同 GEMM 形状，与驻留路径**精确一致**，有整数构造交叉验证测试），换整批驻留归零；
+- 新增 `for_each_chunk_mut_with` / `map_indexed_with`（rayon `for_each_init`/
+  `map_init` 包装，串行单份复用、并行按线程构造，scratch 先全量写后读契约）；
+- bench 扩容：`benches/conv2d.rs` 支持 stride 参数，新增真形状裁决器组
+  board15_b1/b16、board19_b16（stride-1 棋盘塔）、atari84/42_b16（stride-2 图像栈）、
+  board15/atari84_b128（超预算流式 regime）；
+- 新增节点级计时探针 `conv2d_timing_probe`（`#[ignore]` 手动档，建图一次循环重执行，
+  规避 layer 级 bench 每迭代新建节点的图膨胀偏差）。
+
+**首版被数据打回的中间过程（重要）**：初版「无条件删驻留 + dK 全量重算」在小形状
+上实测 `conv2d_full_step` **+41~54% 回归**（32x3x28x28 / 64x8x14x14 / board15_b16）
+——小形状下 col 驻留读回远快于重算，「消驻留」不是免费午餐。据此改为**预算化**
+（内存换时间是连续谱，不是二选一）：预算内保留旧行为，超预算才切流式+重算。
+
+**等价性契约实测修正（本战役最重要教训）**：会话前手推结论认为「tile 只切 GEMM
+N 维、K 维点积完整 ⇒ 逐 bit 等价」，**被实测推翻**——MKL sgemm 对不同 N 选取
+不同内核/向量化分组，K 维累加顺序随之漂移：流式 vs 物化实测 45/4608 元素差
+~1.4e-6（ulp 级、<1% 元素）。最终契约：**流式 vs 物化 = ulp 级等价（≤1e-5 金测试
+报警线）+ 流式样本间逐 bit 自洽**；数值冻结由预算门保证（超预算尺度历史上从未
+运行过，「新实测即新基线」）。教训：**手推的浮点保序结论必须实测验证，BLAS 内核
+选择是形状的函数**。
+
+**实测**（MKL，Windows 桌面）：
+
+*Criterion `--baseline pre_lowering`*（方向参考；白天窗口存在漂移，同窗 A/B 复核
+时 32x3 未变路径 case 亦漂 ±40~80%，故百分比看方向不看精度）：
+
+| 组 | 结果 |
+|---|---|
+| conv2d_forward 全 9 case | 全绿或持平（-7% ~ -51%，atari84_b16 p=0.06 持平） |
+| conv2d_full_step 全 7 case | 全绿或持平（-3.6%(n.s.) ~ -27%；b128 两 case -7.5%/-5.6%） |
+| two_layer_cnn | 持平~-34% |
+| end_to_end cnn_train_step | 持平~-8.8%（b1 n.s. / b8 -4.2% / b32 -8.8%） |
+
+*节点级探针*（release、建图一次、新旧各 2 轮交错，最稳测量仪）：
+
+| case | fwd | dX | dK |
+|---|---|---|---|
+| board15_b128（流式） | **9.4/10.0 → 6.5/4.7 ms（-40%±）** | 持平 | 2.6/2.9 → 4.9/3.9 ms（重算代价） |
+| atari84_b128（流式） | **14.8/12.5 → 12.1/9.0 ms（-22%±）** | 持平 | 1.6/2.0 → 3.1/1.9 ms（重算代价） |
+| b1/b16/28x28（预算内） | 持平（路径未变） | 持平 | 持平 |
+
+流式 regime 的 fwd+dX+dK 合计持平偏赢（重算代价被前向流式收益覆盖），full_step
+（含 loss/优化器）净 -5~-8%；**内存收益是主奖品**：超预算整批 col 驻留归零
+（atari84_b128 单层 31 MiB → 0，外推 Atari 栈 batch 256 约 274 MiB → 0）。
+
+**验证**：conv2d 82 测试全绿（新增流式等价性 ulp 金测试 + dK 重算/驻留整数交叉
+验证）；全量 lib 测试 3380 全绿；clippy `-D warnings` 零告警；end_to_end CNN
+训练步无回归。
+
+---
+
 ## R. RNN 输入投影批量化（2026-07-04）+ LSTM/GRU 同款负结果回滚
 
 **来源**：batched_mat_mul 全局适用性排查（C1 后续）——层内逐 batch/逐 head 循环

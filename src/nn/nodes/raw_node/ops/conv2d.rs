@@ -54,10 +54,25 @@ pub(crate) struct Conv2d {
     dilation: (usize, usize),    // (dH, dW) 空洞卷积间隔
 
     // 缓存（用于反向传播）
-    padded_input: Option<Tensor>,           // 填充后的输入
-    im2col_cache: Option<Vec<Array2<f32>>>, // 每个 batch 样本的 im2col 矩阵
-    input_shape: Vec<usize>,                // 原始输入形状（用于梯度计算）
+    //
+    // im2col 驻留是**预算化**的（col 是输入的 k²/stride² 倍膨胀）：
+    // - 整批 col ≤ [`COL_RETAIN_BUDGET_F32`]：物化并驻留，dK 直接复用（实测小形状
+    //   训练步 dK 重算要 +40~50%，预算内驻留是纯赢）；
+    // - 超预算（大图像/大 batch）：前向走流式分 tile（隐式 lowering，col 永不整块
+    //   物化），dK 反向按样本**重算**（同索引算术同 GEMM，逐 bit 等价；大形状实测
+    //   重算成本中性，换整批驻留内存归零——Atari 84×84 batch 256 约省 274 MiB）。
+    padded_input: Option<Tensor>, // 填充后的输入（dX 裁剪与 dK 的 col 来源都依赖）
+    im2col_cache: Option<Vec<Array2<f32>>>, // 预算内驻留的每样本 col；超预算恒 None
+    input_shape: Vec<usize>,      // 原始输入形状（用于梯度计算）
 }
+
+/// im2col 驻留预算（f32 元素数，4M f32 = 16 MiB）：整批 col 超过该值时切换为
+/// 流式分 tile 前向 + dK 反向重算。定标依据见字段注释与战报（2026-07-05）。
+const COL_RETAIN_BUDGET_F32: usize = 4 << 20;
+
+/// 流式路径单个 tile 缓冲的目标大小（f32 元素数，32K f32 = 128 KiB）：
+/// 取 per-core L2 的一小部分，使 tile 在 GEMM 消费时保持缓存驻留。
+const TILE_BUF_F32: usize = 32 << 10;
 
 impl Conv2d {
     /// 获取步长
@@ -244,56 +259,59 @@ impl Conv2d {
         Tensor::new(all_data, &new_shape)
     }
 
-    /// im2col：将单样本输入 [C_in, H, W] 展开为列矩阵 [out_h*out_w, C_in*k_h*k_w]
+    /// im2col（行区间直写版）：将单样本输入 [C_in, H, W] 的输出位置区间
+    /// `[row_start, row_end)` 展开进调用方提供的缓冲（行主序，每行 col_w 元素）。
     ///
     /// 每个输出位置对应的感受野窗口被展开为一行，使卷积变为矩阵乘法：
-    /// output = kernel_mat [out_c, C_in*k_h*k_w] × col^T [C_in*k_h*k_w, out_h*out_w]
+    /// output = kernel_mat [out_c, C_in*k_h*k_w] × col^T [C_in*k_h*k_w, rows]
     ///
-    /// 支持空洞卷积：采样间隔由 dilation 控制
-    fn im2col(
+    /// 全量展开（row_start=0, row_end=spatial）与分 tile 展开产出的每行内容
+    /// **逐 bit 相同**（同一套索引算术）。缓冲会被全量覆写，允许携带残留数据。
+    /// 支持空洞卷积：采样间隔由 dilation 控制。
+    #[allow(clippy::too_many_arguments)]
+    fn im2col_rows_into(
         input: &Tensor,
         b: usize,
         in_c: usize,
         k_h: usize,
         k_w: usize,
-        out_h: usize,
         out_w: usize,
+        row_start: usize,
+        row_end: usize,
         stride_h: usize,
         stride_w: usize,
         dil_h: usize,
         dil_w: usize,
-    ) -> Array2<f32> {
-        let col_h = out_h * out_w;
+        out: &mut [f32],
+    ) {
         let col_w = in_c * k_h * k_w;
-        let mut col = Array2::<f32>::zeros((col_h, col_w));
+        debug_assert_eq!(out.len(), (row_end - row_start) * col_w);
         let input_shape = input.shape();
         let in_h = input_shape[2];
         let in_w = input_shape[3];
         let input_flat = input.flatten_view();
         let input_slice = input_flat.as_slice().unwrap();
         let batch_base = b * in_c * in_h * in_w;
-        let col_slice = col.as_slice_mut().unwrap();
 
-        for oh in 0..out_h {
-            for ow in 0..out_w {
-                let row = oh * out_w + ow;
-                let h_start = oh * stride_h;
-                let w_start = ow * stride_w;
-                let mut col_idx = 0;
-                for ic in 0..in_c {
-                    let input_channel_base = batch_base + ic * in_h * in_w;
-                    for kh in 0..k_h {
-                        let input_row_base = input_channel_base + (h_start + kh * dil_h) * in_w;
-                        for kw in 0..k_w {
-                            col_slice[row * col_w + col_idx] =
-                                input_slice[input_row_base + w_start + kw * dil_w];
-                            col_idx += 1;
-                        }
+        for row in row_start..row_end {
+            let oh = row / out_w;
+            let ow = row % out_w;
+            let h_start = oh * stride_h;
+            let w_start = ow * stride_w;
+            let out_row_base = (row - row_start) * col_w;
+            let mut col_idx = 0;
+            for ic in 0..in_c {
+                let input_channel_base = batch_base + ic * in_h * in_w;
+                for kh in 0..k_h {
+                    let input_row_base = input_channel_base + (h_start + kh * dil_h) * in_w;
+                    for kw in 0..k_w {
+                        out[out_row_base + col_idx] =
+                            input_slice[input_row_base + w_start + kw * dil_w];
+                        col_idx += 1;
                     }
                 }
             }
         }
-        col
     }
 
     /// col2im：im2col 的逆操作，将列矩阵累加回 [C_in, H, W] 形状
@@ -372,11 +390,29 @@ impl Conv2d {
         }
     }
 
-    /// im2col + GEMM 卷积（Rayon 批并行）
+    /// im2col + GEMM 卷积（Rayon 批并行），路径策略见 [`COL_RETAIN_BUDGET_F32`]。
     ///
     /// 核心优化：将嵌套循环卷积转化为矩阵乘法
     /// kernel_mat [out_c, in_c*k_h*k_w] × col^T [in_c*k_h*k_w, out_h*out_w] → [out_c, out_h*out_w]
-    fn convolve(&self, input: &Tensor, kernel: &Tensor) -> (Tensor, Vec<Array2<f32>>) {
+    ///
+    /// 返回 `(输出, 驻留的 col 缓存)`：
+    /// - `materialize=true`（预算内）：物化路径——每样本整块 col + 单次 GEMM，与历史
+    ///   实现**逐 bit 一致**（数值冻结面）；`retain=true` 时 col 交调用方驻留供 dK 复用；
+    /// - `materialize=false`（超预算）：**流式路径（隐式 lowering）**——per-worker 复用
+    ///   一个 L2 级 tile 缓冲，沿 spatial 分块现场 im2row + 分块 GEMM 直写输出列区间，
+    ///   col 永不整块物化。
+    ///
+    /// ⚠️ 两条路径 **ulp 级等价而非逐 bit**（2026-07-05 实测）：tile 只切 GEMM 的 N 维，
+    /// 但 MKL sgemm 对不同 N 选取不同内核/向量化分组，K 维累加顺序随之漂移（实测
+    /// ~1e-6 量级、<1% 元素）。数值冻结由预算门保证：现役冻结负载整批 col 均在预算内，
+    /// 恒走物化路径；流式只在历史上从未运行过的大尺度上启用（新实测即新基线）。
+    fn convolve(
+        &self,
+        input: &Tensor,
+        kernel: &Tensor,
+        materialize: bool,
+        retain: bool,
+    ) -> (Tensor, Option<Vec<Array2<f32>>>) {
         let input_shape = input.shape();
         let (batch_size, in_c, in_h, in_w) = (
             input_shape[0],
@@ -412,32 +448,85 @@ impl Conv2d {
         let sample_out_size = out_c * out_h * out_w;
         let spatial = out_h * out_w;
         let mut all_data = vec![0.0f32; batch_size * sample_out_size];
-        let build_sample = |b: usize, chunk: &mut [f32]| -> Array2<f32> {
-            let col = Self::im2col(
-                input, b, in_c, k_h, k_w, out_h, out_w, stride_h, stride_w, dil_h, dil_w,
-            );
-            let mut out_view = ndarray::ArrayViewMut2::from_shape((out_c, spatial), chunk).unwrap();
-            ndarray::linalg::general_mat_mul(1.0, &kernel_mat, &col.t(), 0.0, &mut out_view);
-            col
-        };
         // GEMM 工作量近似 2·out_c·spatial·col_w/样本；batch=1（如 MCTS 推理）走串行免调度开销
         let work = batch_size * sample_out_size * col_w * 2;
-        let im2col_cache: Vec<Array2<f32>> = if crate::utils::parallel::should_par(batch_size, work)
-        {
-            all_data
-                .par_chunks_mut(sample_out_size)
-                .enumerate()
-                .map(|(b, chunk)| build_sample(b, chunk))
-                .collect()
-        } else {
-            all_data
-                .chunks_mut(sample_out_size)
-                .enumerate()
-                .map(|(b, chunk)| build_sample(b, chunk))
-                .collect()
-        };
 
-        (Tensor::new(all_data, &output_shape), im2col_cache)
+        if materialize {
+            // ===== 物化路径：整块 col + 单次 GEMM（历史实现同款，逐 bit 冻结面） =====
+            let build_sample = |b: usize, chunk: &mut [f32]| -> Array2<f32> {
+                let mut col = Array2::<f32>::zeros((spatial, col_w));
+                Self::im2col_rows_into(
+                    input,
+                    b,
+                    in_c,
+                    k_h,
+                    k_w,
+                    out_w,
+                    0,
+                    spatial,
+                    stride_h,
+                    stride_w,
+                    dil_h,
+                    dil_w,
+                    col.as_slice_mut().unwrap(),
+                );
+                let mut out_view =
+                    ndarray::ArrayViewMut2::from_shape((out_c, spatial), chunk).unwrap();
+                ndarray::linalg::general_mat_mul(1.0, &kernel_mat, &col.t(), 0.0, &mut out_view);
+                col
+            };
+            let cache: Vec<Array2<f32>> = if crate::utils::parallel::should_par(batch_size, work) {
+                all_data
+                    .par_chunks_mut(sample_out_size)
+                    .enumerate()
+                    .map(|(b, chunk)| build_sample(b, chunk))
+                    .collect()
+            } else {
+                all_data
+                    .chunks_mut(sample_out_size)
+                    .enumerate()
+                    .map(|(b, chunk)| build_sample(b, chunk))
+                    .collect()
+            };
+            let cache = if retain { Some(cache) } else { None };
+            (Tensor::new(all_data, &output_shape), cache)
+        } else {
+            // ===== 流式路径（隐式 lowering）：tile 现场 im2row + 分块 GEMM =====
+            // tile 行数按缓冲预算取整：单 tile ≈ TILE_BUF_F32 × 4B（≤128 KiB，L2 常驻）；
+            // 小形状（spatial 整体不超预算）自然退化为单 tile = 物化路径同一 GEMM 形状。
+            let tile_rows = (TILE_BUF_F32 / col_w).clamp(1, spatial);
+            crate::utils::parallel::for_each_chunk_mut_with(
+                &mut all_data,
+                sample_out_size,
+                work,
+                || vec![0.0f32; tile_rows * col_w],
+                |scratch, b, chunk| {
+                    let mut out_view =
+                        ndarray::ArrayViewMut2::from_shape((out_c, spatial), chunk).unwrap();
+                    let mut start = 0;
+                    while start < spatial {
+                        let end = (start + tile_rows).min(spatial);
+                        let rows = end - start;
+                        let buf = &mut scratch[..rows * col_w];
+                        Self::im2col_rows_into(
+                            input, b, in_c, k_h, k_w, out_w, start, end, stride_h, stride_w, dil_h,
+                            dil_w, buf,
+                        );
+                        let tile = ndarray::ArrayView2::from_shape((rows, col_w), &*buf).unwrap();
+                        let mut c_view = out_view.slice_mut(ndarray::s![.., start..end]);
+                        ndarray::linalg::general_mat_mul(
+                            1.0,
+                            &kernel_mat,
+                            &tile.t(),
+                            0.0,
+                            &mut c_view,
+                        );
+                        start = end;
+                    }
+                },
+            );
+            (Tensor::new(all_data, &output_shape), None)
+        }
     }
 
     /// eval 模式下的 1x1 stride=1 卷积快路径。
@@ -554,21 +643,34 @@ impl TraitNode for Conv2d {
             return Ok(());
         }
 
-        let (result, im2col_cache) = if self.padding == (0, 0) {
+        // 路径决策**只看预算、不看模式**（数值冻结面）：整批 col 在预算内一律走
+        // 物化路径（与历史实现逐 bit 一致，Train/Inference 皆然）；超预算走流式
+        // 隐式 lowering（历史上从未运行过的尺度，ulp 漂移按「新实测即新基线」处理）。
+        // col 驻留仅在「物化 + 训练」时发生（供 dK 复用）；超预算训练的 dK 反向重算。
+        let (k_h, k_w) = self.kernel_size;
+        let out_shape = self.value_expected_shape();
+        let spatial = out_shape[2] * out_shape[3];
+        let batch_size = input.shape()[0];
+        let col_w = input.shape()[1] * k_h * k_w;
+        let materialize = batch_size * spatial * col_w <= COL_RETAIN_BUDGET_F32;
+        let retain = materialize && self.should_cache_for_backward;
+
+        let (result, col_cache) = if self.padding == (0, 0) {
             // 无 padding 的 1x1 / valid conv 不需要复制整块输入；反向时可直接使用父输入。
             self.padded_input = None;
-            self.convolve(input, kernel)
+            self.convolve(input, kernel, materialize, retain)
         } else {
-            // 有 padding 时缓存填充后的输入，供 dX 裁剪和 dK 路径复用几何信息。
-            self.padded_input = Some(self.pad_input(input));
-            self.convolve(self.padded_input.as_ref().unwrap(), kernel)
+            // 有 padding 时缓存填充后的输入，供 dX 裁剪和 dK 的 col 来源复用。
+            let padded = self.pad_input(input);
+            let result = self.convolve(&padded, kernel, materialize, retain);
+            self.padded_input = if self.should_cache_for_backward {
+                Some(padded)
+            } else {
+                None
+            };
+            result
         };
-        if self.should_cache_for_backward {
-            self.im2col_cache = Some(im2col_cache);
-        } else {
-            self.padded_input = None;
-            self.im2col_cache = None;
-        }
+        self.im2col_cache = col_cache;
         self.value = Some(result);
         Ok(())
     }
@@ -600,13 +702,17 @@ impl TraitNode for Conv2d {
         let input = *parent_values
             .first()
             .ok_or_else(|| GraphError::ComputationError("Conv2D 梯度计算需要输入".to_string()))?;
-        let padded_input = if self.padding == (0, 0) {
-            input
+        // dK 路径按行主序读 padded_input 重算 im2col（`flatten_view().as_slice()`）。
+        // 无 padding 时直接用父输入——可能是非连续视图，需 Cow 守卫（连续时零拷贝借用）；
+        // 有 padding 时用前向缓存的 padded_input（构造即连续，守卫零成本直通）。
+        let padded_input_c = if self.padding == (0, 0) {
+            input.contiguous()
         } else {
-            self.padded_input.as_ref().ok_or_else(|| {
+            std::borrow::Cow::Borrowed(self.padded_input.as_ref().ok_or_else(|| {
                 GraphError::backward_cache_missing(self.display_node(), "padded_input")
-            })?
+            })?)
         };
+        let padded_input: &Tensor = &padded_input_c;
 
         // 反向 dX/dK 按行主序读 kernel 与 upstream_grad（`flatten_view().as_slice()`）。
         // upstream_grad 可能来自 permute/transpose 的反向（非连续），kernel 也可能是非连续视图；
@@ -709,16 +815,16 @@ impl TraitNode for Conv2d {
                 let grad_flat_slice = grad_flat.as_slice().unwrap();
                 let sample_grad_size = out_c * spatial;
 
-                let im2col_cache = self.im2col_cache.as_ref().ok_or_else(|| {
-                    GraphError::backward_cache_missing(self.display_node(), "im2col")
-                })?;
                 // 逐样本部分梯度并行计算后按 batch 序串行累加。
                 // 不用 rayon `reduce`：其合并分组取决于运行时工作窃取，f32 累加
                 // 顺序会随运行漂移，破坏 dK 的逐 bit 可复现性（金测试方法论前提）。
-                let partials: Vec<Array2<f32>> = crate::utils::parallel::map_indexed(
-                    batch_size,
-                    batch_size * out_c * col_w * spatial * 2,
-                    |b| {
+                //
+                // col 来源二选一（见 COL_RETAIN_BUDGET_F32）：预算内直接复用前向驻留；
+                // 超预算按样本**现场重算**（per-worker 复用 scratch）——同索引算术、
+                // 同 GEMM 形状（K=spatial 完整），两条来源逐 bit 一致。
+                let dk_work = batch_size * out_c * col_w * spatial * 2;
+                let partials: Vec<Array2<f32>> = if let Some(cache) = self.im2col_cache.as_ref() {
+                    crate::utils::parallel::map_indexed(batch_size, dk_work, |b| {
                         let gs = b * sample_grad_size;
                         let grad_b = ArrayView2::from_shape(
                             (out_c, spatial),
@@ -726,9 +832,42 @@ impl TraitNode for Conv2d {
                         )
                         .unwrap();
                         // 小 GEMM: [out_c, spatial] × [spatial, col_w] → [out_c, col_w]
-                        grad_b.dot(&im2col_cache[b])
-                    },
-                );
+                        grad_b.dot(&cache[b])
+                    })
+                } else {
+                    crate::utils::parallel::map_indexed_with(
+                        batch_size,
+                        dk_work,
+                        || vec![0.0f32; spatial * col_w],
+                        |scratch, b| {
+                            Self::im2col_rows_into(
+                                padded_input,
+                                b,
+                                in_c,
+                                k_h,
+                                k_w,
+                                out_w,
+                                0,
+                                spatial,
+                                stride_h,
+                                stride_w,
+                                dil_h,
+                                dil_w,
+                                scratch,
+                            );
+                            let col =
+                                ArrayView2::from_shape((spatial, col_w), &scratch[..]).unwrap();
+                            let gs = b * sample_grad_size;
+                            let grad_b = ArrayView2::from_shape(
+                                (out_c, spatial),
+                                &grad_flat_slice[gs..gs + sample_grad_size],
+                            )
+                            .unwrap();
+                            // 小 GEMM: [out_c, spatial] × [spatial, col_w] → [out_c, col_w]
+                            grad_b.dot(&col)
+                        },
+                    )
+                };
                 let mut iter = partials.into_iter();
                 let mut acc = iter
                     .next()

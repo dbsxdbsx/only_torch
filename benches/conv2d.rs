@@ -16,14 +16,21 @@ struct SingleConvNet {
 }
 
 impl SingleConvNet {
-    fn new(graph: &Graph, in_c: usize, out_c: usize, kernel: usize, pad: usize) -> Self {
+    fn new(
+        graph: &Graph,
+        in_c: usize,
+        out_c: usize,
+        kernel: usize,
+        stride: usize,
+        pad: usize,
+    ) -> Self {
         Self {
             conv: Conv2d::new(
                 graph,
                 in_c,
                 out_c,
                 (kernel, kernel),
-                (1, 1),
+                (stride, stride),
                 (pad, pad),
                 (1, 1),
                 false,
@@ -91,17 +98,27 @@ fn bench_conv_forward(c: &mut Criterion) {
     let mut group = c.benchmark_group("conv2d_forward");
     group.sample_size(10);
 
-    // (名称, batch, in_c, h, w, out_c, kernel, pad)
-    let configs: &[(&str, usize, usize, usize, usize, usize, usize, usize)] = &[
-        ("1x1x28x28_to_4", 1, 1, 28, 28, 4, 3, 1),
-        ("32x3x28x28_to_8", 32, 3, 28, 28, 8, 3, 1),
-        ("64x8x14x14_to_16", 64, 8, 14, 14, 16, 3, 1),
-        ("128x16x14x14_to_32", 128, 16, 14, 14, 32, 3, 1),
+    // (名称, batch, in_c, h, w, out_c, kernel, stride, pad)
+    //
+    // 前 4 组为历史通用形状；后 5 组为 RL 真实负载形状（2026-07-05 隐式 lowering 战役
+    // 加入，作为该方向的永久裁决器）：
+    // - board15/board19: 棋盘塔 stride-1 层（五子棋 15×15 / 围棋 19×19，BoardConvRepresentationNet c1/c2）
+    // - atari84/atari42: 图像线 stride-2 层（84×84×4 帧堆叠，ConvRepresentationNet conv1/conv2）
+    let configs: &[(&str, usize, usize, usize, usize, usize, usize, usize, usize)] = &[
+        ("1x1x28x28_to_4", 1, 1, 28, 28, 4, 3, 1, 1),
+        ("32x3x28x28_to_8", 32, 3, 28, 28, 8, 3, 1, 1),
+        ("64x8x14x14_to_16", 64, 8, 14, 14, 16, 3, 1, 1),
+        ("128x16x14x14_to_32", 128, 16, 14, 14, 32, 3, 1, 1),
+        ("board15_b1_32x15x15_to_64", 1, 32, 15, 15, 64, 3, 1, 1),
+        ("board15_b16_32x15x15_to_64", 16, 32, 15, 15, 64, 3, 1, 1),
+        ("board19_b16_32x19x19_to_64", 16, 32, 19, 19, 64, 3, 1, 1),
+        ("atari84_b16_4x84x84_to_32_s2", 16, 4, 84, 84, 32, 3, 2, 1),
+        ("atari42_b16_32x42x42_to_64_s2", 16, 32, 42, 42, 64, 3, 2, 1),
     ];
 
-    for &(name, batch, in_c, h, w, out_c, k, pad) in configs {
+    for &(name, batch, in_c, h, w, out_c, k, stride, pad) in configs {
         let graph = Graph::new();
-        let net = SingleConvNet::new(&graph, in_c, out_c, k, pad);
+        let net = SingleConvNet::new(&graph, in_c, out_c, k, stride, pad);
         let input = Tensor::random(0.0, 1.0, &[batch, in_c, h, w]);
 
         group.bench_with_input(BenchmarkId::from_parameter(name), &name, |b, _| {
@@ -120,20 +137,28 @@ fn bench_conv_full_step(c: &mut Criterion) {
     let mut group = c.benchmark_group("conv2d_full_step");
     group.sample_size(10);
 
-    let configs: &[(&str, usize, usize, usize, usize, usize, usize, usize)] = &[
-        ("1x1x28x28_to_4", 1, 1, 28, 28, 4, 3, 1),
-        ("32x3x28x28_to_8", 32, 3, 28, 28, 8, 3, 1),
-        ("64x8x14x14_to_16", 64, 8, 14, 14, 16, 3, 1),
+    // (名称, batch, in_c, h, w, out_c, kernel, stride, pad)
+    // 真形状组（board15/atari84）覆盖训练路径：dK 反向依赖 im2col 的驻留/重算策略在此可测
+    let configs: &[(&str, usize, usize, usize, usize, usize, usize, usize, usize)] = &[
+        ("1x1x28x28_to_4", 1, 1, 28, 28, 4, 3, 1, 1),
+        ("32x3x28x28_to_8", 32, 3, 28, 28, 8, 3, 1, 1),
+        ("64x8x14x14_to_16", 64, 8, 14, 14, 16, 3, 1, 1),
+        ("board15_b16_32x15x15_to_64", 16, 32, 15, 15, 64, 3, 1, 1),
+        ("atari84_b16_4x84x84_to_32_s2", 16, 4, 84, 84, 32, 3, 2, 1),
+        // b128 组：整批 col 超出驻留预算（board15 ~33 MiB / atari84 ~32 MiB），
+        // 覆盖「流式前向 + dK 反向重算」的大 batch regime
+        ("board15_b128_32x15x15_to_64", 128, 32, 15, 15, 64, 3, 1, 1),
+        ("atari84_b128_4x84x84_to_32_s2", 128, 4, 84, 84, 32, 3, 2, 1),
     ];
 
-    for &(name, batch, in_c, h, w, out_c, k, pad) in configs {
+    for &(name, batch, in_c, h, w, out_c, k, stride, pad) in configs {
         let graph = Graph::new();
         let conv = Conv2d::new(
             &graph,
             in_c,
             out_c,
             (k, k),
-            (1, 1),
+            (stride, stride),
             (pad, pad),
             (1, 1),
             false,
@@ -142,8 +167,8 @@ fn bench_conv_full_step(c: &mut Criterion) {
         .unwrap();
         let input = Tensor::random(0.0, 1.0, &[batch, in_c, h, w]);
         // 构造 target 用于 mse_loss
-        let out_h = (h + 2 * pad - k) + 1;
-        let out_w = (w + 2 * pad - k) + 1;
+        let out_h = (h + 2 * pad - k) / stride + 1;
+        let out_w = (w + 2 * pad - k) / stride + 1;
         let target = Tensor::random(0.0, 1.0, &[batch, out_c, out_h, out_w]);
 
         let mut opt = SGD::new(&graph, &conv.parameters(), 0.01);

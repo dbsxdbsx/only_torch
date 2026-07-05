@@ -184,7 +184,11 @@ batch 的效率红利主要来自**框架 per-node 固定开销摊薄**（调用
 | **手写/魔改 GEMM 内核**（LP-GEMM 布局传播、三值掩码内核等） | GEMM 已外包 `matrixmultiply` / MKL（`.dot()` 一行）；上游若实用化可免费继承；自持内核违背跨平台与维护成本约束 |
 | **Strassen 系快速矩阵乘** | 实测交叉点方阵 n≈2000–4000；DL 卷积 GEMM 高长方形、维度几百~两千；MKL/oneDNN 从未为 DL 负载启用 |
 
-**保留的唯一方向**：若图像线 profiling 证明 conv 是热点，做**隐式 lowering**（分 tile 现场 im2row 降低搬运，2509.26217 的实践赢家），而非任何上述路线。
+**保留的唯一方向已清账**：隐式 lowering（分 tile 现场 im2row，2509.26217 的实践赢家）
+✅ 已实施（2026-07-05，[战报 S](./optimization_log.md)）——col 驻留预算化（≤16 MiB 整批
+物化驻留、逐 bit 冻结；超预算流式分 tile + dK 反向重算），大形状前向 -22~-40%、超预算
+col 驻留内存归零；`benches/conv2d.rs` 真形状裁决器组（board15/19、atari84/42、b128）随批
+入库。内核层「不自写 GEMM/Winograd」纪律不变。
 
 ### `&[&NodeHandle]` vs `&[NodeHandle]`
 
