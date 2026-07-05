@@ -500,6 +500,33 @@ fn gomoku_naive0_g3_acceptance() -> Result<(), GraphError> {
     })
 }
 
+/// 臂 21（naive0 issue §四-⑪，2026-07-05 预注册）：CNN 表征 × ⑦ 配方。
+///
+/// 触发：G3 未达标（naive0 中位 0.62 / naive1 0.05），⑧⑨ 已排除课程配比与训练
+/// 强度 → 头号剩余嫌疑 = 网络容量/归纳偏置。M3 CNN 臂的中性裁决底座是
+/// 「400 局 × 无课程 × learned dynamics」——**CNN × 真规则树 × 课程**从未合体：
+/// 战术模式（连线）是平移等变的空间结构，Flat MLP 须逐位置死记，CNN 天然共享。
+/// 唯一新变量 = `cnn_repr=true`，底座 = ⑦ 终局配方。
+/// 预注册判读（对照 ⑩ G3：naive0 0.62 / naive1 0.05）：naive0 中位 ≥0.75 或
+/// naive1 中位 ≥0.3 = 容量假设坐实（CNN 进棋盘终局配方，重跑 G3）；
+/// 持平 = 容量排除，缺口收敛「预算量级 + seed 方差」双嫌疑；护栏破 = 记负。
+#[test]
+#[ignore = "manual: Gomoku naive0-⑪ CNN×⑦配方臂（3 seeds × 2000 局，约 30–60 分钟）"]
+fn gomoku_naive0_cnn_recipe() -> Result<(), GraphError> {
+    run_arm_with("cnn_recipe", Components::base(), 100, |mut cfg| {
+        cfg.true_rules_tree = true;
+        cfg.augment = true;
+        cfg.max_episodes = 2000;
+        cfg.temp_hold_episodes = 2000;
+        cfg.buffer_capacity = 300;
+        cfg.snapshot_at_episode = Some(1000);
+        cfg.eval_every = 200;
+        cfg.tactical_opening_fraction = 0.25;
+        cfg.cnn_repr = true;
+        cfg
+    })
+}
+
 /// 效率探针（非裁决臂，2026-07-05）：batch 512/1024 吞吐与内存观察。
 ///
 /// 定位：④ 臂已裁决「梯度噪声排除」，本探针只测**效率曲线**（墙钟随 batch 的
