@@ -527,6 +527,70 @@ fn gomoku_naive0_cnn_recipe() -> Result<(), GraphError> {
     })
 }
 
+/// 臂 22（naive0 issue §四-⑫，2026-07-05 晚预注册）：纯 self-play 上限标定
+/// （真规则对照尺）。
+///
+/// 触发：「纯 self-play 万金油」哲学修正（课程/真规则树降级诊断脚手架，验收
+/// 必须无课程无领域后门）→ 首问「纯对垒到底能不能翻墙」。配置与参照实现
+/// （AlphaZero_Gomoku：纯 self-play 零课程 + CNN + 真规则树）同构：
+/// `true_rules × cnn_repr × augment × 温度全程 1.0 × 5000 局 × buffer 500 ×
+/// 课程 p=0.0`。组合臂性质（上限标定，G1 先例，不假装单变量）。
+/// 预注册判读（**绝对线裁决，不与 ⑪ 精细比差**——conv2d 优化 `0ceb1b6` 后 CNN
+/// 数值流已漂移，「新实测即新基线」）：naive0 中位 ≥0.75 = 纯 self-play 可行
+/// 坐实（⑬ learned dynamics 同配置开跑，量化规则学习税）；0.5–0.75 = 方向对，
+/// 5-seed 扩展压方差再议预算加档；<0.5 = 此预算下纯 self-play 不过线，停下
+/// 复盘（不自动加码预算，条款三）。
+#[test]
+#[ignore = "manual: Gomoku naive0-⑫ 纯 self-play 真规则臂（3 seeds × 5000 局 × CNN，约 1.5–2.5 小时）"]
+fn gomoku_pure_selfplay_truerules() -> Result<(), GraphError> {
+    run_arm_with(
+        "pure_selfplay_truerules",
+        Components::base(),
+        100,
+        |mut cfg| {
+            cfg.true_rules_tree = true;
+            cfg.cnn_repr = true;
+            cfg.augment = true;
+            cfg.max_episodes = 5000;
+            cfg.temp_hold_episodes = 5000;
+            cfg.buffer_capacity = 500;
+            cfg.snapshot_at_episode = Some(2500);
+            cfg.eval_every = 500;
+            cfg.tactical_opening_fraction = 0.0; // 纯 self-play：无课程（哲学修正口径）
+            cfg
+        },
+    )
+}
+
+/// 臂 23（naive0 issue §四-⑬，2026-07-05 晚预注册）：learned dynamics 同配置
+/// （万金油口径）。⑫ 出结果后启动。
+///
+/// 与 ⑫ 唯一差 = `true_rules_tree=false`（树内 learned dynamics，canonical
+/// MuZero 铁律口径）。⑫−⑬ 之差 = **规则学习税定量账**：⑬ 落后 ⑫ ≤0.1 档 =
+/// 税被预算/容量摊平（万金油成立，后续底座定 ⑬）；档位级落后（⑫ ≥0.75 而
+/// ⑬ <0.5）= 税仍主导（⑭ PER 优先在 ⑬ 底座测通用组件能否收窄差距，
+/// 并与用户复盘预算加档量级）。若 ⑫ 自身 <0.5 则本臂顺延。
+#[test]
+#[ignore = "manual: Gomoku naive0-⑬ 纯 self-play learned dynamics 臂（3 seeds × 5000 局 × CNN，约 3–6 小时）"]
+fn gomoku_pure_selfplay_learned() -> Result<(), GraphError> {
+    run_arm_with(
+        "pure_selfplay_learned",
+        Components::base(),
+        100,
+        |mut cfg| {
+            cfg.cnn_repr = true;
+            cfg.augment = true;
+            cfg.max_episodes = 5000;
+            cfg.temp_hold_episodes = 5000;
+            cfg.buffer_capacity = 500;
+            cfg.snapshot_at_episode = Some(2500);
+            cfg.eval_every = 500;
+            cfg.tactical_opening_fraction = 0.0;
+            cfg
+        },
+    )
+}
+
 /// 效率探针（非裁决臂，2026-07-05）：batch 512/1024 吞吐与内存观察。
 ///
 /// 定位：④ 臂已裁决「梯度噪声排除」，本探针只测**效率曲线**（墙钟随 batch 的

@@ -55,6 +55,15 @@ M2 base（9×9 · Flat MLP · 组件全关 · sims=100 · 400 局）吊打 rando
 > （backup/select/completedQ/n-step/D4 增广/真规则树/ROSMO 翻转）无符号级 bug——
 > 墙是算法/信号层现象，非实现错误。
 
+> **⚠️ 哲学修正（2026-07-05 晚与用户定稿，覆盖后续所有臂的口径）**：五子棋验收
+> 必须以**纯粹、无课程、无领域后门的 self-play** 达成；终态 recipe 目标 =
+> **learned dynamics × 纯 self-play × 通用常驻组件**。据此：⑥⑦ 臂的课程翻墙结论
+> **保留为归因证据**（证明病理在训练数据分布），但 `tactical_opening` 与
+> `true_rules_tree` 均降级为**诊断脚手架**，不再是 promote 候选；真规则树仅作
+> ⑫/⑬ 对照尺子（量化规则学习税）。「数据质量」两成分的通用治法：分布覆盖不足
+> → PER 优先回放（⑭）；target 质量损耗 → 预算/容量摊税（⑫⑬ 裁决）。
+> 战役规划全文见[收口规划 §4 当前实际次序](../../.doc/design/rl_closure_plan.md#4-phase-3--样本效率纵深v027-下半)。
+
 ## 四、后续裁决入口（不阻塞 M4；2026-07-05 与用户定稿为**前台主线**，按序执行）
 
 - [x] **① sims 100→400 臂** ✅ 2026-07-05 已裁决：**平**——naive0 = 0.05/0.15/0.05
@@ -166,6 +175,26 @@ M2 base（9×9 · Flat MLP · 组件全关 · sims=100 · 400 局）吊打 rando
       gating / 并行 self-play 扩数据，后者已在性能台账候选 #8）。
       载体 `gomoku_naive0_cnn_recipe`，日志 `.bench/gomoku_naive0_cnn_recipe_20260705.log`
 - [x] ~~增广弱阳性复核：更大预算（2000 局）× 增广~~（并入 ⑤ G1 组合臂）
+- [ ] **⑫ 纯 self-play 上限标定臂（真规则对照）**（2026-07-05 晚预注册，哲学修正
+      后首臂）：`true_rules × cnn_repr × augment × 温度全程 1.0 × 5000 局 ×
+      buffer 500 × 无课程`——与参照实现（AlphaZero_Gomoku：纯 self-play 零课程 +
+      CNN + 真规则树）同构，组合臂性质（上限标定，G1 先例，不假装单变量）。
+      判读（预注册绝对线，**不与 ⑪ 精细比差**——conv2d 优化 `0ceb1b6` 后 CNN
+      数值流已漂移，「新实测即新基线」）：naive0 中位 ≥0.75 = 纯 self-play 可行
+      坐实（⑬ 开跑）；0.5–0.75 = 方向对，先 5-seed 扩展压方差再议预算加档；
+      <0.5 = 此预算下纯 self-play 不过线，停下与用户复盘（不自动加码，条款三）。
+      载体 `gomoku_pure_selfplay_truerules`
+- [ ] **⑬ learned dynamics 同配置臂（万金油口径）**（2026-07-05 晚预注册，⑫ 出
+      结果后启动）：与 ⑫ 唯一差 `true_rules_tree=false`。⑫−⑬ 之差 = **规则学习
+      税定量账**：⑬ 落后 ⑫ ≤0.1 档 = 税被预算/容量摊平，万金油成立、后续底座
+      定 ⑬；档位级落后（如 ⑫ ≥0.75 而 ⑬ <0.5）= 税仍主导，入账后 ⑭ PER 优先在
+      ⑬ 底座测（看通用组件能否收窄差距），并与用户复盘预算加档量级。
+      若 ⑫ 自身 <0.5 则 ⑬ 顺延。载体 `gomoku_pure_selfplay_learned`
+- [ ] **⑭ PER 优先回放臂**（Simulus B1「loss 优先回放」转正，实现后预注册）：
+      位置级 proportional priority（α=0.6、IS β=0.4 固定），接缝已留
+      （`replay.rs::sample_indexed/update_at`）；需先补 per-sample loss 管道。
+      对症：分布覆盖不足的通用机制治法（课程的零领域知识版——课程改生成分布，
+      PER 改消费分布）。底座 = ⑫/⑬ 赢家，单变量 ±PER，判读线待底座定型后填。
 - [ ] recon 棋盘 coef 重标（{1,4} pilot）——现 16 为 CartPole 域值，偏害嫌疑
 
 ## 五、复现
