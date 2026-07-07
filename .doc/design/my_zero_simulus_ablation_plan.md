@@ -60,6 +60,14 @@ repr(next_obs) → projector ──[detach ✂]── -cos ·cons_coef        [�
 
 ### B1 · loss 优先回放（随 reanalyze 复活，挂 Phase 1 图像线尾段）
 
+> **✅ 已转正并于棋盘域裁决（2026-07-07，naive0 issue §四-⑭）**：实现改走
+> MuZero 附录 G 口径（`p=|ν−z|` 入库时一次算 + α=0.6，`PerPriorities` 伴生采样器，
+> `src/rl/buffer/per.rs`）而非本节原草稿的 per-sample loss 管道（口径修订公开记录于
+> issue ⑭ 档：ν/z 现成零成本、loss 回写需刷新管道且量纲混合）。棋盘裁决 =
+> **带内持平 ❌**（⑬ learned 底座 naive0 0.10→0.15；护栏 vs random 满分 = 无害），
+> 通用件留库默认关；处方（适应症/禁忌症）见[组件处方表](../../examples/my_zero/README.md#处方表跨域路由规则2026-07-07-立)。
+> 图像域若样本贵病灶在消费端，可按处方表复测。以下为原始草稿留档。
+
 - **改动**：buffer 每样本存最近一次训练 loss（新样本初始 ν₀=10 保证必被光顾）；采样时 α=0.3 按 softmax(loss) 抽、其余均匀；训练后回写。单参数 α，无 PER 的 IS 权重复杂度（Simulus 实测此简化方案稳健）。
 - **挂靠理由**：reanalyze 的价值 = 榨旧样本；优先回放决定"榨哪些"——两者天然一批验收，也共享"CartPole 负结果不构成否定"的复测前提（[reanalyze issue](../../.issue/items/my_zero_reanalyze_cartpole_regression.md)）。
 - **消融**：α ∈ {0（对照）, 0.3}，3-seed。

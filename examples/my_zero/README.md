@@ -34,7 +34,7 @@
 | obs symlog 无量纲化 | ❌ 无增益且系数不回移 | ⏳ | ⏸ 图像走 [0,1] 归一 | ⏸ 0/1 平面 | CartPole obs 本就小量纲；开关留库，触发条件回归 [Simulus 计划 §3](../../.doc/design/my_zero_simulus_ablation_plan.md)（连续特征范围失控时） |
 | reanalyze    | ❌ 当前实现有害（[issue](../../.issue/items/my_zero_reanalyze_cartpole_regression.md)） | ⏳ | **v0.26 战略组件** | ⏸ | 「实时轻 acting + 离线重 reanalyze」解耦，图像线优先验证；棋盘 target = 终局事实不过期，非 native 场景 |
 | ROSMO 一步刷新 | ❌ 无增益（叠加中位 29.6k vs 哨兵 ~8.7k，慢 ~3.4×；「哨兵基础组件」提案否决 2026-07-05） | ⏳ | ⏳ 价值裁决待图像基线 | ❌ 有害（rr32×刷新护栏崩塌，vs random ~0.5；弱模型 adv 噪声自指反馈，[账本](gomoku/README.md)） | `.rosmo(true)` / 棋盘 `rosmo_refresh` 消融开关，recipe 默认关 |
-| PER 位置级优先回放 | — | — | — | ⏳ **⑭ 裁决中**（⑬ learned 底座 × `per=true`，2026-07-07 启动） | `PerPriorities` 伴生采样器（buffer 层通用件）已进库，当前仅棋盘 `BoardTrainConfig.per` 接线；单智能体路径待 ⑭ 正信号再接 |
+| PER 位置级优先回放 | — | — | — | ❌ 带内持平（⑭：⑬ learned 底座 naive0 中位 0.10→0.15 <正信号线；护栏 vs random 满分恢复 = 无害，[账本](gomoku/README.md)） | `PerPriorities` 伴生采样器（buffer 层通用件）留库默认关；裁决 = 棋盘瓶颈不在消费分布（PER 重排已有数据 ≠ 课程注入新数据）；单智能体路径未接线 |
 | value_prefix |                ❌※2               |                 ⏳                 |  ⏳   |  ⏸ 无中间 reward  | ※2 CartPole 有害，但 2026-07-05 审查发现**训练/搜索断链**（训 LSTM prefix 头、搜索仍读普通 reward head）——修复接线后该裁决需重跑，见[收口规划 §5](../../.doc/design/rl_closure_plan.md) |
 | target_net   |                 ⏳                 |                 ⏳                 |  ⏳   |  ⏳   | 已入库，训练循环待接 |
 | SVE          |                 ⏳                 |                 ⏳                 |  ⏳   |  ⏳   | 已入库，训练循环待接；🔲 改进：固定权重 → 自适应 mixed target |
@@ -52,7 +52,7 @@
 |------|------------------|----------------------|--------------------|---------|
 | consistency | 潜状态对齐真实下一帧编码（SimSiam stop-grad）——给 dynamics 加**直接监督**，治 value-equivalent 训练「dynamics 只吃间接梯度」的结构性饥饿（EfficientZero 主药方） | 任务信号稀疏且 dynamics 为瓶颈；图像域 native（EfficientZero 100k 帧实证） | 暂无害例；Gomoku MLP 底座中性（收益未兑现 ≠ 有害） | coef=2.0（EfficientZero 对齐），暂无跨域重标证据 |
 | reconstruction | latent 经 decoder 对齐真实 obs——**稠密地面真值副监督**（每步整张 obs vs 每局个位数 bit 任务信号）；unroll 槽位梯度穿 dynamics（与 consistency 同族，绕道 obs 空间） | 任务信号稀疏 × obs 比特基本全任务相关（低维状态向量 / 棋盘平面）——CartPole 实测 promote | 高维自然图像含任务无关比特（干扰物挤占表征，文献坐实，图像 recipe 默认关）；**系数跨域不迁移**（Gomoku 沿用 CartPole 16 未重标 → 中性偏害，{1,4} pilot 挂账） | CartPole 标定 16（剂量曲线：1 有害 / 4 偏弱 / **16 平台** / 64 过冲——宽平台签名）；跨域必重标 |
-| PER 优先回放 | 改数据**消费**分布（课程的零领域知识版）：`p=\|ν−z\|^α` 把「整机判断离现实最远」的局面顶到队列前——ν 是搜索总产出，任何头生病都汇集于它（复合症状排序，分诊交给梯度） | 分布覆盖不足（关键局面在 buffer 稀有）× value target 为冻结事实（棋盘终局 ±1 → 优先级天生不过期，零刷新管道） | 高结果噪声域（温度采样的翻盘局被误优先——已知短板，护栏 vs random 兜底）；勿加在线自评刷新（③臂已证弱网自评是噪声源） | α=0.6（MuZero 附录 G）；无 IS 修正（改写消费分布即干预目的）；⑭ 裁决中 |
+| PER 优先回放 | 改数据**消费**分布（课程的零领域知识版）：`p=\|ν−z\|^α` 把「整机判断离现实最远」的局面顶到队列前——ν 是搜索总产出，任何头生病都汇集于它（复合症状排序，分诊交给梯度） | 分布覆盖不足（关键局面在 buffer 稀有）× value target 为冻结事实（棋盘终局 ±1 → 优先级天生不过期，零刷新管道）× **病灶可被重复消费治愈**（模型有能力学、只是没被喂够） | 高结果噪声域（温度采样的翻盘局被误优先——已知短板，护栏 vs random 兜底）；勿加在线自评刷新（③臂已证弱网自评是噪声源）；**病灶不在消费端时带内持平**（⑭ 实测：dynamics 学不会终局规则，集中喂也无效——PER 重排已有数据，治不了「需要新数据/新监督」的病） | α=0.6（MuZero 附录 G）；无 IS 修正（改写消费分布即干预目的）；棋盘 ❌ 带内持平（无害，留库默认关） |
 | HL-Gauss | value/reward 分类标签高斯软化，高噪声宽 support 下抗过拟合 | 图像域 native（大 value 噪声） | 窄 support 低噪声域（CartPole 9.8k→27.6k 显著劣化：two-hot 尖标签是信息优势） | σ 见 `value_encoding` 常量 |
 | obs symlog | 连续特征无量纲化（DreamerV3 口径），治特征范围失控 | 连续特征范围跨数量级 / 失控时 | obs 本就小量纲（CartPole 无增益且系数不回移）；图像走 [0,1] 归一、棋盘 0/1 平面均不适用 | 无参数 |
 | reanalyze | 存量轨迹全树重搜刷新 target，治 target 陈旧 | 数据陈旧 × 高 replay ratio × 离线算力富余 | 新鲜数据低 replay（CartPole 当前实现有害，issue 在案）；棋盘 value = 终局事实不过期（非 native） | 待图像域裁决 |

@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-07-05
-updated: 2026-07-05
+updated: 2026-07-07
 owners: []
 reviewers: []
 ---
@@ -204,7 +204,7 @@ M2 base（9×9 · Flat MLP · 组件全关 · sims=100 · 400 局）吊打 rando
       obs 前向）。→ 后续按 ⑬ 裁决条款：⑭ PER 改在 **⑬ 底座**测（能否收窄
       差距）；「棋类真规则 vs 万金油」战略取舍已有定量账可谈。
       载体 `gomoku_pure_selfplay_learned`，日志 `.bench/gomoku_pure_selfplay_learned_20260705.log`
-- [ ] **⑭ PER 优先回放臂**（Simulus B1「loss 优先回放」转正；2026-07-05 晚实现
+- [x] **⑭ PER 优先回放臂**（Simulus B1「loss 优先回放」转正；2026-07-05 晚实现
       进库并定稿预注册，载体 `gomoku_pure_selfplay_per`）：位置级 proportional
       （`PerPriorities` 伴生采样器，`p = |搜索根价值 ν − negamax MC 回报 z|`
       MuZero 附录 G 口径、入库时一次性计算，α=0.6）。**两处口径修订（公开记录）**：
@@ -226,6 +226,23 @@ M2 base（9×9 · Flat MLP · 组件全关 · sims=100 · 400 局）吊打 rando
       **▶ 启动（2026-07-07）**：⏸ 解除——挂起原因「先考虑 seed 级并行提速」
       已消化（候选 #8 便宜档落地，本臂为首个正式用户）；跑法 =
       `just bench-m3-seedpar gomoku_pure_selfplay_per`。
+      **✅ 2026-07-07 已裁决：带内持平——按预注册排除，分布覆盖瓶颈不在消费端**：
+      naive0 = 0.15/0.15/0.05（中位 **0.15** vs ⑬ 对照 0.10，抬升 0.05 <0.15
+      正信号线）、naive1 = 0.05/0.00/0.05（对照持平）、naive2 seed 43 单点 0.10
+      （噪声量级）；护栏 vs random **1.000/1.000/1.000**（⑬ 底座 0.900–0.925 →
+      满分恢复，无「优先化过激」形态）、gating 0.400/0.338/0.350（与 ⑬ 的
+      0.300–0.475 带内）。判读：PER 把「模型没看见终局要来」的局面顶到队列前，
+      但 dynamics 在此预算/容量下**连被集中喂也学不会终局规则**——瓶颈在监督
+      信号形态/模型容量，不在样本消费分布；「课程的零领域知识版」在棋盘域
+      不成立（课程 ⑥⑦ 有效是因为改了**生成**分布 = 注入新数据，PER 只重排
+      **已有**数据）。附带正读数：vs random 满分恢复 + 训练零发散 = PER 无害
+      结论成立，`PerPriorities` 通用件留库默认关（处方表禁忌症补「病灶不在
+      消费分布时带内持平」）。→ 消费端排除后，剩余杠杆收敛 = **监督端**
+      （recon 棋盘重标 pilot / consistency 家族给 dynamics 直接监督）×
+      **预算量级**（⑬ 已证当前量级钝感，需与用户复盘加档）。seed 并行跑法
+      首战实录：3 进程墙钟 1490–1521s/seed（vs ⑬ 串行 822–1404s，竞争膨胀
+      ~10–80%），臂总墙钟 ~25 min（vs 串行预估 ~65 min）。
+      载体 `gomoku_pure_selfplay_per`，日志 `.bench/gomoku_pure_selfplay_per_20260707.log`
 - [ ] recon 棋盘 coef 重标（{1,4} pilot）——现 16 为 CartPole 域值，偏害嫌疑
 
 ## 五、复现
