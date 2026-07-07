@@ -644,16 +644,22 @@ fn gomoku_pure_selfplay_learned() -> Result<(), GraphError> {
 /// 实现：[`PerPriorities`](crate::rl::PerPriorities) 伴生采样器（α=0.6、无 IS
 /// 修正、无在线刷新——口径依据见其模块文档），唯一新变量 = `per=true`。
 ///
-/// **底座 = ⑫/⑬ 赢家**（本函数默认 ⑫ 真规则底座；若 ⑬ learned dynamics 胜出
-/// 则改 `true_rules_tree=false` 并公开修订本注释）。判读（对照同底座无 PER）：
-/// naive0 中位抬升 ≥0.15 或 naive1 中位 ≥0.3 = 正信号（进终局配方复训 G3）；
-/// 带内持平 = 排除（分布覆盖瓶颈不在消费端，回「预算量级 × 方差治理」主线）；
-/// 护栏破（vs random <0.9）= 优先化过激记负，不下钻（α 网格不开）。
+/// **底座公开修订（2026-07-07，⑬ 裁决触发预注册底座条款）**：原案「底座 = ⑫/⑬
+/// 赢家（默认 ⑫ 真规则）」；⑬ 裁决为档位级落后（naive0 中位 0.10 vs ⑫ 0.90，
+/// 税主导）→ 按 ⑬ 臂预注册分支，本臂改在 **⑬ learned dynamics 底座**测「通用
+/// 组件能否收窄税差」（`true_rules_tree=false`，与 ⑬ 唯一差 = `per=true`；机制
+/// 对症面：|ν−z| 最大的样本恰是「模型没看见终局要来」的局面，其 unroll 窗口
+/// 正好给 dynamics/reward 头补终局转移的监督）。
+/// 判读（对照 ⑬ 同底座无 PER：naive0 中位 0.10 / naive1 0.05）：naive0 中位
+/// 抬升 ≥0.15（即 ≥0.25）或 naive1 中位 ≥0.3 = 正信号；带内持平 = 排除（分布
+/// 覆盖瓶颈不在消费端，回「预算量级 × 方差治理」主线）；护栏破（vs random
+/// <0.9）= 优先化过激记负，不下钻（α 网格不开；⑬ 底座 vs random 本身
+/// 0.900–0.925 压线，判读用中位）。
 #[test]
-#[ignore = "manual: Gomoku naive0-⑭ PER 优先回放臂（3 seeds × 5000 局 × CNN，约 1.5–2.5 小时）"]
+#[ignore = "manual: Gomoku naive0-⑭ PER 优先回放臂（3 seeds × 5000 局 × CNN × ⑬ learned 底座，串行约 1 小时 / seed 并行约 25 分钟）"]
 fn gomoku_pure_selfplay_per() -> Result<(), GraphError> {
     run_arm_with("pure_selfplay_per", Components::base(), 100, |mut cfg| {
-        cfg.true_rules_tree = true;
+        cfg.true_rules_tree = false; // ⑬ learned dynamics 底座（2026-07-07 底座条款公开修订）
         cfg.cnn_repr = true;
         cfg.augment = true;
         cfg.max_episodes = 5000;
