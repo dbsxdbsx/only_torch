@@ -34,6 +34,7 @@
 | obs symlog 无量纲化 | ❌ 无增益且系数不回移 | ⏳ | ⏸ 图像走 [0,1] 归一 | ⏸ 0/1 平面 | CartPole obs 本就小量纲；开关留库，触发条件回归 [Simulus 计划 §3](../../.doc/design/my_zero_simulus_ablation_plan.md)（连续特征范围失控时） |
 | reanalyze    | ❌ 当前实现有害（[issue](../../.issue/items/my_zero_reanalyze_cartpole_regression.md)） | ⏳ | **v0.26 战略组件** | ⏸ | 「实时轻 acting + 离线重 reanalyze」解耦，图像线优先验证；棋盘 target = 终局事实不过期，非 native 场景 |
 | ROSMO 一步刷新 | ❌ 无增益（叠加中位 29.6k vs 哨兵 ~8.7k，慢 ~3.4×；「哨兵基础组件」提案否决 2026-07-05） | ⏳ | ⏳ 价值裁决待图像基线 | ❌ 有害（rr32×刷新护栏崩塌，vs random ~0.5；弱模型 adv 噪声自指反馈，[账本](gomoku/README.md)） | `.rosmo(true)` / 棋盘 `rosmo_refresh` 消融开关，recipe 默认关 |
+| PER 位置级优先回放 | — | — | — | ⏳ **⑭ 裁决中**（⑬ learned 底座 × `per=true`，2026-07-07 启动） | `PerPriorities` 伴生采样器（buffer 层通用件）已进库，当前仅棋盘 `BoardTrainConfig.per` 接线；单智能体路径待 ⑭ 正信号再接 |
 | value_prefix |                ❌※2               |                 ⏳                 |  ⏳   |  ⏸ 无中间 reward  | ※2 CartPole 有害，但 2026-07-05 审查发现**训练/搜索断链**（训 LSTM prefix 头、搜索仍读普通 reward head）——修复接线后该裁决需重跑，见[收口规划 §5](../../.doc/design/rl_closure_plan.md) |
 | target_net   |                 ⏳                 |                 ⏳                 |  ⏳   |  ⏳   | 已入库，训练循环待接 |
 | SVE          |                 ⏳                 |                 ⏳                 |  ⏳   |  ⏳   | 已入库，训练循环待接；🔲 改进：固定权重 → 自适应 mixed target |
@@ -42,6 +43,25 @@
 | KL 自适应 lr | ❌ **灾难级**（0/3，greedy 钉死 ~9.2；lr 死亡螺旋：小 batch 下探针 KL ≈ 噪声 → 乘子棘轮顶 10× 上限 → lr 0.2 发散，诊断轨迹 `.bench/cartpole_kl_lr_diag_20260705.log`） | ⏸ | ⏸ | ✅ 无害（⑨臂 batch 512 自动配平，护栏全绿） | 「去旋钮」组件，`kl_adaptive_lr` 开关默认关；域适配前提 = 每局训练样本量大且探针与训练分布相关（棋盘成立、CartPole batch 8×buffer 1000 脱钩）；重试条件 = 改「刚训 minibatch 上测 KL」（参照实现原口径）再过闸门 |
 
 > 论文全称与 arXiv：[算法纲领 §4.1 — 组件文献对照](../../.doc/design/my_zero_algorithm_vision.md#41-组件文献对照单一事实源)
+
+### 处方表（跨域路由规则，2026-07-07 立）
+
+> 上方矩阵记**结果**（哪格测过、结论如何），本表记**规则**（为什么起效、什么环境该开/禁用、剂量怎么定）——「万金油 = 带适应症表的医生，不是包治百病的药」的落地件（反元过拟合纪律，2026-07-07 与用户定稿）。用法：新环境**先查表路由，再一次预注册 A/B 确认**，不允许网格搜索；组件若在新域必须重搜参数才起效，即为「非万金油」证伪，按纪律出库/降级。剂量判据：**宽平台 = 真机制签名，刀锋最优点 = 过拟合签名**；魔法数字的升级方向 = 自归一比例（如辅助 loss 梯度模长钉在任务 loss 固定百分比）。
+
+| 组件 | 机制（为什么起效） | 适应症（可观测环境特征） | 禁忌症（已知失败边界） | 剂量规则 |
+|------|------------------|----------------------|--------------------|---------|
+| consistency | 潜状态对齐真实下一帧编码（SimSiam stop-grad）——给 dynamics 加**直接监督**，治 value-equivalent 训练「dynamics 只吃间接梯度」的结构性饥饿（EfficientZero 主药方） | 任务信号稀疏且 dynamics 为瓶颈；图像域 native（EfficientZero 100k 帧实证） | 暂无害例；Gomoku MLP 底座中性（收益未兑现 ≠ 有害） | coef=2.0（EfficientZero 对齐），暂无跨域重标证据 |
+| reconstruction | latent 经 decoder 对齐真实 obs——**稠密地面真值副监督**（每步整张 obs vs 每局个位数 bit 任务信号）；unroll 槽位梯度穿 dynamics（与 consistency 同族，绕道 obs 空间） | 任务信号稀疏 × obs 比特基本全任务相关（低维状态向量 / 棋盘平面）——CartPole 实测 promote | 高维自然图像含任务无关比特（干扰物挤占表征，文献坐实，图像 recipe 默认关）；**系数跨域不迁移**（Gomoku 沿用 CartPole 16 未重标 → 中性偏害，{1,4} pilot 挂账） | CartPole 标定 16（剂量曲线：1 有害 / 4 偏弱 / **16 平台** / 64 过冲——宽平台签名）；跨域必重标 |
+| PER 优先回放 | 改数据**消费**分布（课程的零领域知识版）：`p=\|ν−z\|^α` 把「整机判断离现实最远」的局面顶到队列前——ν 是搜索总产出，任何头生病都汇集于它（复合症状排序，分诊交给梯度） | 分布覆盖不足（关键局面在 buffer 稀有）× value target 为冻结事实（棋盘终局 ±1 → 优先级天生不过期，零刷新管道） | 高结果噪声域（温度采样的翻盘局被误优先——已知短板，护栏 vs random 兜底）；勿加在线自评刷新（③臂已证弱网自评是噪声源） | α=0.6（MuZero 附录 G）；无 IS 修正（改写消费分布即干预目的）；⑭ 裁决中 |
+| HL-Gauss | value/reward 分类标签高斯软化，高噪声宽 support 下抗过拟合 | 图像域 native（大 value 噪声） | 窄 support 低噪声域（CartPole 9.8k→27.6k 显著劣化：two-hot 尖标签是信息优势） | σ 见 `value_encoding` 常量 |
+| obs symlog | 连续特征无量纲化（DreamerV3 口径），治特征范围失控 | 连续特征范围跨数量级 / 失控时 | obs 本就小量纲（CartPole 无增益且系数不回移）；图像走 [0,1] 归一、棋盘 0/1 平面均不适用 | 无参数 |
+| reanalyze | 存量轨迹全树重搜刷新 target，治 target 陈旧 | 数据陈旧 × 高 replay ratio × 离线算力富余 | 新鲜数据低 replay（CartPole 当前实现有害，issue 在案）；棋盘 value = 终局事实不过期（非 native） | 待图像域裁决 |
+| ROSMO 一步刷新 | 现算一步 look-ahead 替代存量 MCTS target（reanalyze 轻量阶梯） | 陈旧数据 × 高 replay ratio × **模型自评质量足够** | 弱模型自评（棋盘 rr32 护栏崩塌：adv ≈ 噪声自指反馈）；新鲜数据低 replay（CartPole 无益且慢 3.4×） | α=0.2（论文 Atari 口径）+ prior top-16 剪枝 |
+| completedQ / Gumbel-root | 少 sim 下 completedQ 目标 / 根置信序贯减半提升根决策质量 | 理论适应症 = sims ≪ \|A\|；**实测未证实**（棋盘 s16 正是该 regime，复裁中性）——仅余「少 sim acting 降档」候选资格，全域 recipe 关 | sims ≫ \|A\|（CartPole 该 regime 系统性劣化） | c_visit=50 / c_scale=1.0（tree-level 归一化后棋类口径通用） |
+| KL 自适应 lr | 每次更新测 policy KL 位移自动调 lr（「用户不调 lr」去旋钮件） | 每局训练样本量大 × 探针分布与训练分布同源（棋盘 batch 512 配平实测无害） | 小 batch × 大 buffer 脱钩形态（CartPole 灾难级：探针 KL ≈ 噪声 → 乘子棘轮 10× → lr 发散） | kl_targ=0.02（参照口径）；重试条件 = 改「刚训 minibatch 上测 KL」再过闸门 |
+| Sampled | 大 / 连续动作空间采 K 候选 + π̂_β 先验校正 | 连续 / 超大离散动作空间（K_eff < N 真实子采样） | 小离散空间 K=N 退化全枚举（仅 +~26% 簿记开销；自动短路裁决挂 Phase 4） | K 按 N、sims 公式自动解析（`sampled_params`） |
+
+> 未列组件（value_prefix / target_net / SVE）：接线未完成或断链在修（[收口规划 §5](../../.doc/design/rl_closure_plan.md)），证据不足以开处方，不写推测行。课程 / 真规则树为**诊断脚手架**非常驻组件（哲学修正 2026-07-05），不进本表。
 
 **CartPole-v1 当前内置**：base + **consistency + reconstruction + Sampled**（PUCT · sims=20 · td=5 · continuation 二值门）。
 
