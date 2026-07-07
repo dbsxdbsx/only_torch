@@ -136,6 +136,12 @@ bench-archive baseline label="":
 bench-filter pattern:
     cargo bench {{_blas_flag}} -- {{pattern}}
 
+# seed 级进程并行跑 Gomoku M3 消融臂（便宜档：每 seed 一进程同时跑，臂墙钟 ÷3，
+# 数值轨迹与串行逐 bit 一致；分 seed 日志自动拼接进 .bench/）。
+# 用法: just bench-m3-seedpar gomoku_pure_selfplay_per ["42 43 44"] [.bench/xxx.log]
+bench-m3-seedpar filter seeds="42 43 44" out="":
+    BLAS_FLAG="{{_blas_flag}}" bash scripts/bench_m3_seedpar.sh {{filter}} "{{seeds}}" {{out}}
+
 # 单独 benchmark 组
 bench-conv2d:
     cargo bench --bench conv2d {{_blas_flag}}

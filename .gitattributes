@@ -6,3 +6,6 @@ MatrixSlow/data/**/*.ts linguist-language=Text
 # 确保 Rust 文件被正确识别
 *.rs linguist-language=Rust
 
+# bash 脚本强制 LF（Windows 上 CRLF 会让 bash 报 '\r' 错）
+*.sh text eol=lf
+

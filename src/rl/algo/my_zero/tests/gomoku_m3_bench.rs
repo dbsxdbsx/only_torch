@@ -15,11 +15,54 @@
 //!
 //! ```bash
 //! cargo test --release --features blas-mkl gomoku_m3_gumbel -- --ignored --nocapture --test-threads=1
+//! # seed 级进程并行跑法（便宜档，臂墙钟 ÷3；M3_SEEDS 过滤 + 分 seed 日志 + 自动拼接）：
+//! just bench-m3-seedpar gomoku_pure_selfplay_per
 //! ```
 
 use crate::nn::GraphError;
 use crate::rl::algo::my_zero::board::{BoardTrainConfig, BoardTrainReport, train_board};
 use crate::rl::algo::my_zero::component::Components;
+
+/// seed 级进程并行（性能台账候选 #8 便宜档）：`M3_SEEDS=42` / `M3_SEEDS=42,43`
+/// 过滤本进程实际要跑的 seed 子集；不设置 = 全量串行（向后兼容，既有跑法零变化）。
+///
+/// 用途：同一臂的 N 个 seed 是互不通信的独立实验（各自模型/buffer/RNG 流），
+/// 多进程各跑一个 seed 再拼日志，臂墙钟 ÷N，**每个 seed 的数值轨迹与串行跑逐 bit
+/// 一致**（纯实验排程优化，不触碰算法语义）。配套跑法见 `scripts/bench_m3_seedpar.sh`。
+fn filter_seeds_by_env(all: &[u64]) -> Vec<u64> {
+    match std::env::var("M3_SEEDS") {
+        Ok(raw) => {
+            let wanted = parse_seed_list(&raw);
+            assert!(
+                !wanted.is_empty(),
+                "M3_SEEDS='{raw}' 解析不出任何 seed（期望逗号分隔整数，如 M3_SEEDS=42,43）"
+            );
+            let filtered: Vec<u64> = all.iter().copied().filter(|s| wanted.contains(s)).collect();
+            assert!(
+                !filtered.is_empty(),
+                "M3_SEEDS='{raw}' 与本臂 seed 集 {all:?} 无交集——检查臂的 seed 定义"
+            );
+            println!("[seed-par] M3_SEEDS={raw} → 本进程只跑 {filtered:?}（臂全集 {all:?}）");
+            filtered
+        }
+        Err(_) => all.to_vec(),
+    }
+}
+
+/// `M3_SEEDS` 的纯解析（逗号分隔、容忍空白与空段）。
+fn parse_seed_list(raw: &str) -> Vec<u64> {
+    raw.split(',')
+        .filter_map(|t| t.trim().parse::<u64>().ok())
+        .collect()
+}
+
+#[test]
+fn m3_seed_list_parse_contract() {
+    assert_eq!(parse_seed_list("42"), vec![42]);
+    assert_eq!(parse_seed_list("42,43,44"), vec![42, 43, 44]);
+    assert_eq!(parse_seed_list(" 42 , 44 "), vec![42, 44]);
+    assert_eq!(parse_seed_list("abc,"), Vec::<u64>::new());
+}
 
 fn m3_cfg(seed: u64, components: Components, num_simulations: u32) -> BoardTrainConfig {
     BoardTrainConfig {
@@ -48,8 +91,9 @@ fn run_arm_seeds(
     seeds: &[u64],
     tweak: impl Fn(BoardTrainConfig) -> BoardTrainConfig,
 ) -> Result<(), GraphError> {
+    let seeds = filter_seeds_by_env(seeds);
     let mut reports: Vec<(u64, BoardTrainReport)> = Vec::new();
-    for &seed in seeds {
+    for &seed in &seeds {
         println!("\n--- arm={name} seed={seed} sims={num_simulations} ---");
         reports.push((
             seed,
@@ -81,7 +125,7 @@ fn run_arm_with(
     num_simulations: u32,
     tweak: impl Fn(BoardTrainConfig) -> BoardTrainConfig,
 ) -> Result<(), GraphError> {
-    let seeds = [42u64, 43, 44];
+    let seeds = filter_seeds_by_env(&[42, 43, 44]);
     let mut reports: Vec<(u64, BoardTrainReport)> = Vec::new();
     for &seed in &seeds {
         println!("\n--- arm={name} seed={seed} sims={num_simulations} ---");
@@ -645,6 +689,29 @@ fn gomoku_naive0_batch_scale_probe() -> Result<(), GraphError> {
         )?;
     }
     Ok(())
+}
+
+/// 机制冒烟（非裁决臂）：seed 级进程并行跑法的端到端验证载体。
+///
+/// 极小预算（3 局 × sims=4，秒级/seed），走 `run_arm_with` 全路径（M3_SEEDS 过滤、
+/// 快照/闸门、汇总行），供 `scripts/bench_m3_seedpar.sh` 冒烟与跑法自检用；
+/// 产出数字无任何裁决意义。
+#[test]
+#[ignore = "manual: seed 并行跑法机制冒烟（3 seeds × 3 局，约 1 分钟）"]
+fn gomoku_m3_seedpar_smoke() -> Result<(), GraphError> {
+    run_arm_with("seedpar_smoke", Components::base(), 4, |mut cfg| {
+        cfg.max_episodes = 3;
+        cfg.start_training_after = 2;
+        cfg.trains_per_episode = 1;
+        cfg.temp_hold_episodes = 3;
+        cfg.temp_decay_episodes = 0;
+        cfg.eval_every = 3;
+        cfg.eval_episodes = 2;
+        cfg.snapshot_at_episode = Some(2);
+        cfg.gate_games = 2;
+        cfg.naive_ladder = false;
+        cfg
+    })
 }
 
 /// 臂 2a：少 sim 对照的 PUCT 基线（sims=16 ≪ |A|=81；兼 P2 少 sim acting 复测）。

@@ -4,6 +4,12 @@
 
 ### Added
 
+- **feat(rl): seed 级进程并行跑法进库（性能台账候选 #8 便宜档）——M3 消融臂墙钟 ÷3、逐 seed 与串行逐 bit 一致**（2026-07-07）
+  - **载体 `M3_SEEDS` 过滤**（`gomoku_m3_bench.rs`）：环境变量指定本进程跑的 seed 子集（`run_arm_with` / `run_arm_seeds` 两入口统一生效），不设置 = 全量串行零变化；无交集防呆报错 + 解析契约单测 + 机制冒烟臂 `gomoku_m3_seedpar_smoke`（3 局 × sims=4，秒级）
+  - **并行跑法** `scripts/bench_m3_seedpar.sh` + `just bench-m3-seedpar <臂名>`：预编译一次 → JSON 精确定位测试二进制 → 每 seed 一进程并行 → 全绿后按 seed 序拼接单一臂级日志（含合并汇总块）并清理分 seed 文件；任一 seed 失败保留现场不拼接、目标日志已存在拒绝覆盖
+  - **验证**：三进程并行冒烟真跑 + 串行复跑汇总行逐项一致（env_steps/胜率相同，坐实「并行 = 纯排程变化」）；口径注记 = 并行跑 `t=`/`wall=` 计时含资源竞争略胖，env_steps 与学习指标不变（wall-clock 本非评价指标）
+  - 附带：`.gitattributes` 加 `*.sh` 强制 LF（防 Windows checkout CRLF 破坏 bash）；台账候选 #8 拆「治本档（seed 内并行，含 pyo3/GIL 工程形态注记）/ 便宜档 ✅ 已落地」两行；naive0 issue §五复现段补并行跑法
+
 - **feat(rl): 「纯 self-play 万金油」哲学修正落档 + PER 优先回放通用件进库 + KL 自适应 lr 公共化**（2026-07-05 晚）
   - **哲学修正（路线级，与用户定稿）**：五子棋验收必须以纯粹无课程 self-play 达成，终态 recipe 目标 = **learned dynamics × 纯 self-play × 通用常驻组件**；战术开局课程与真规则树降级**诊断脚手架**（历史价值 = 归因，开关保留不进终态 recipe，万金油铁律不破）；「数据质量」根因拆两成分 = 分布覆盖不足（通用治法 PER）× target 质量损耗（预算/容量摊税）——收口规划 §4 次序刷新 + §6 版本映射注记（定版按实际交付节奏，与 push 解耦）+ naive0 issue §三注记
   - **⑫⑬⑭ 预注册**：⑫ 纯 self-play 上限标定（真规则 × CNN × 5000 局 × 无课程，参照实现同构；判读用绝对线——conv2d 优化后 CNN 数值流漂移，「新实测即新基线」）→ ⑬ learned dynamics 同配置（⑫−⑬ 之差 = 规则学习税定量账，裁决万金油底座）→ ⑭ PER（底座 = ⑫/⑬ 赢家）

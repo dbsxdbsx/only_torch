@@ -230,4 +230,8 @@ M2 base（9×9 · Flat MLP · 组件全关 · sims=100 · 400 局）吊打 rando
 ```bash
 cargo test --release --features blas-mkl gomoku_m3_<arm> -- --ignored --nocapture --test-threads=1
 # arm ∈ {gumbel, base_s16, gumbel_s16, cons, recon, cnn, budget, replay32, lr3e3, augment, combo}
+
+# seed 级进程并行跑法（2026-07-07 起可用，臂墙钟 ÷3、逐 seed 结果与串行逐 bit 一致；
+# 分 seed 日志自动拼接进 .bench/，机制冒烟臂 = gomoku_m3_seedpar_smoke）：
+just bench-m3-seedpar gomoku_pure_selfplay_per
 ```
