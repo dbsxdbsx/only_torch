@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-07-05
-updated: 2026-07-07
+updated: 2026-07-10
 owners: []
 reviewers: []
 ---
@@ -243,7 +243,163 @@ M2 base（9×9 · Flat MLP · 组件全关 · sims=100 · 400 局）吊打 rando
       首战实录：3 进程墙钟 1490–1521s/seed（vs ⑬ 串行 822–1404s，竞争膨胀
       ~10–80%），臂总墙钟 ~25 min（vs 串行预估 ~65 min）。
       载体 `gomoku_pure_selfplay_per`，日志 `.bench/gomoku_pure_selfplay_per_20260707.log`
-- [ ] recon 棋盘 coef 重标（{1,4} pilot）——现 16 为 CartPole 域值，偏害嫌疑
+- [x] **⑮ recon 棋盘重标臂（监督端首臂，2026-07-07 预注册）**：{1,4} 双剂量 ×
+      **⑬ learned dynamics 底座**（CNN × 增广 × 温度 1.0 × 5000 局 × buffer 500
+      × 无课程），唯一新变量 = `reconstruction=true` + `coef ∈ {1,4}`（16 为
+      CartPole 域标定值，M3 初裁 gating 0.550 呈偏害形态，重标不复测 16）。
+      对症：⑬⑭ 合裁病灶 =「dynamics 缺直接监督」——每局 1 bit 终局信号经
+      unroll 链间接滴灌学不会「五连终局」（⑬ 且对 12.5× 预算钝感），PER 集中
+      喂（消费端重排）也无效（⑭）→ 监督端家族开测。recon 读 dynamics 输出、
+      梯度穿透 g 反传，逐步对齐**冻结真值棋盘**——家族里目标最硬的一支；处方
+      表适应症预测（obs 比特全任务相关 × 任务信号稀疏 = recon 对症）的实测检验。
+      **协议修订（公开记录，用户 2026-07-07 授权多 seed 跑法）**：① 原预注册
+      「{1,4} 单 seed pilot → 赢家 3-seed」升级为**双剂量各 5-seed（42–46）
+      直接正裁**——seed 并行跑法使 5-seed 墙钟与旧 pilot 方案同量级，而 seed
+      方差是七度复现的头号混淆（⑫ 散布 0.05–1.00），5-seed 中位裁决显著更稳；
+      ② **⑬ 对照同步扩 45/46**（载体 `gomoku_pure_selfplay_ctrlext`），对照与
+      臂同为 42–46 配对集合；若 ⑬ 5-seed 中位偏离 3-seed 的 0.10，判读线以新
+      中位公开重锚。
+      判读（对照 ⑬ 5-seed naive0 中位，预设 0.10）：任一剂量 naive0 中位
+      ≥0.25 = 正信号（监督端假设坐实，赢家剂量进剂量确认/组合下一步）；两剂量
+      均带内 = recon 监督形态在棋盘排除（⑯ 补家族第二证据）；vs random <0.9
+      或 gating 塌方 = 干扰记负不下钻（M3 偏害形态复现条款）。
+      **▶ 对照重锚（2026-07-07 20:59，ctrlext 先于 ⑮ 臂完成，按预注册条款
+      公开执行）**：45/46 = naive0 **0.35/0.35**（naive1 0.30/0.05、vs random
+      双满分、gating 0.600/0.800）——⑬ 5-seed 对照集（42–46）naive0 中位
+      **0.10 → 0.15**（散布 0.10–0.35，seed 方差第八度复现；3-seed 对照原值
+      偏低）。⑮⑯ 正信号线随锚上调：**naive0 中位 ≥0.30**（= 0.15 + 0.15）。
+      连带读数：⑬「gating 全 <0.5」在扩展 seed 上不成立（0.600/0.800 过
+      0.55 线），「预算钝感」读数修正为「中位钝感、上限有方差」；⑭ PER 的
+      0.15 对照新锚 = 零抬升，带内持平裁决**加固**。ctrlext 墙钟 2205/2286s
+      （12 进程竞争膨胀 ~1.6–2.8×），日志 `.bench/gomoku_pure_selfplay_ctrlext_20260707.log`。
+      **✅ 2026-07-07 已裁决：coef=1 正信号——监督端假设坐实（首个越线臂），
+      coef=4 带内、剂量曲线单调向低**：
+      - **coef=1**：naive0 = 0.40/0.35/0.30/0.20/0.40（中位 **0.35** ≥0.30
+        重锚线；配对 4/5 seed 抬升 +0.05~+0.30，唯一回落 seed 45 恰为对照
+        高分 seed）· naive1 = 0.10/0.10/0.05/0.00/0.15（中位 0.10）· vs
+        random 4×1.000 + 0.975 全绿 · gating 0.725/0.475/0.300/0.200/0.775
+        （中位 0.475，与对照持平）。墙钟 2454–2509s/seed（12 进程档）。
+      - **coef=4**：naive0 = 0.05/0.25/0.30/0.00/0.20（中位 **0.20** <0.30，
+        带内）· vs random 最低 0.900（seed 45，压线未破）· gating 0.075–0.800
+        散布极宽。方向与 CartPole 剂量曲线相反：棋盘 obs 为 0/1 平面 + MSE
+        逐比特稠密，coef=1 已够强，4 开始挤压主任务（M3 的 16 偏害 = 同曲线
+        更远端）——「系数跨域不迁移」处方规则二度背书（CartPole 平台在 16，
+        棋盘平台在 1 侧）。
+      - 判读：**病灶治法命中**——⑬⑭「dynamics 缺直接监督」诊断链闭环：
+        间接滴灌学不会（⑬）→ 集中喂旧数据无效（⑭）→ 每步冻结真值直接监督
+        **有效**（⑮ coef=1）。recon 首次在棋盘域进入可 promote 讨论区
+        （待 ⑯ 家族证据 + 与用户复盘 promote/剂量确认）。
+        日志 `.bench/gomoku_pure_selfplay_recon{1,4}_20260707.log`。
+      载体 `gomoku_pure_selfplay_recon1` / `gomoku_pure_selfplay_recon4`，
+      跑法 `just bench-m3-seedpar <载体> "42 43 44 45 46"`。
+- [x] **⑯ consistency 臂（监督端次臂，2026-07-07 预注册）**：⑬ 底座 ×
+      `consistency=true`（coef 2.0 = EfficientZero 权重，M3 初裁同值）×
+      5-seed（42–46）。触发：M3「中性」初裁的底座是 400 局 × Flat MLP × 无增广
+      ——SimSiam 的对齐目标是自指的（`repr(next_obs)` = 网络自己正在学的输出），
+      弱表征下目标本身无信息量，非公平审判；⑬ 底座（CNN + 增广）下 `h(o)` 首次
+      带真实空间结构，且 ⑬⑭ 病灶钉死后其适应症（潜空间逐步直接监督、零 decoder
+      成本）首次精确命中。判读线同 ⑮（对照 ⑬ 5-seed 中位：≥0.25 正信号 / 带内
+      排除 / 护栏破记负；ctrlext 重锚后 = ≥0.30）。**⑮⑯ 合并读法**：任一正 =
+      监督端可爬坡（进剂量确认/组合臂）；**双平 = 监督端家族在此预算量级排除，
+      触发战略复盘**（预算加档（⑬ 钝感证据在手，弱赌注）/ 棋类真规则取舍
+      （⑫−⑬ = 0.8 档税账）/ 转图像线；不再买新组件）。载体 `gomoku_pure_selfplay_cons`。
+      **✅ 2026-07-07 已裁决：带内未越线（弱阳纹理留档）——按预注册不 promote**：
+      naive0 = 0.20/0.25/0.40/0.45/0.25（中位 **0.25** <0.30 重锚线；配对
+      4/5 seed 抬升 +0.10~+0.30、seed 46 回落 −0.10）· naive1 中位 0.00 ·
+      vs random 0.975–1.000 全绿 · gating 0.325–0.700（中位 0.550，对照 0.475）。
+      判读：**同底座同 seed 集直接对照 recon coef=1（0.35 越线）——「冻结真值
+      > 自指目标」的信息量排序实测坐实**；cons 方向与家族一致（4/5 弱阳）但
+      信号强度不过线，符合「target 自指 → 上限被 h 质量卡住」的机制预测。
+      M3 旧「中性」初裁修正为「CNN 底座带内弱阳」；EfficientZero 主证据
+      （图像域）不受此棋盘结果否定，图像线复测入口保留。
+      墙钟 1549–1604s/seed（5 进程档，比 12 进程档快 ~55%）。
+      日志 `.bench/gomoku_pure_selfplay_cons_20260707.log`。
+- [x] **⑰ recon1 × PER 组合臂（2026-07-07 预注册，⑮ 正信号触发的预注册
+      「组合下一步」条款）**：⑬ 底座 × `reconstruction coef=1`（⑮ 赢家剂量）
+      × `per=true`（⑭ 无害组件），唯一新变量 = 复叠本身。机制假设：⑭ 的
+      带内持平判读是「dynamics 学不会，集中喂也无效」——⑮ 修复了「学不会」
+      （每步冻结真值监督），PER 的适应症前提「病灶可被重复消费治愈」首次
+      成立，|ν−z| 加权把终局矛盾局面顶到队列前应放大 recon 的监督效率。
+      判读（对照 ⑮ coef=1：naive0 中位 0.35）：中位 ≥0.50 = 复叠正信号
+      （PER 禁忌症改写「供给修复后消费加权兑现」，赢家配方 = 三件套）；
+      带内（0.20–0.45）= 无复叠增益（PER 消费端排除维持，赢家配方 =
+      recon1 单药）；<0.20 或 vs random <0.9 = 负交互记负（优先级分布被
+      recon 改变后的过激形态，不下钻）。5-seed（42–46）同协议。
+      载体 `gomoku_pure_selfplay_reconper`（命名避开 `recon1`/`_per` 子串
+      防 cargo 过滤误连跑）。
+      **✅ 2026-07-07 已裁决：无复叠增益，PER 消费端排除维持；赢家 =
+      recon1 单药**：naive0 = 0.15/0.15/0.20/0.15/0.15（中位 **0.15**，
+      远低于 0.50 复叠正信号线，也低于 recon1 单药 0.35；配对 5/5 回落
+      −0.05~−0.25）· naive1 = 0.10/0.00/0.10/0.00/0.20（中位 0.10）·
+      vs random **5/5 = 1.000** · gating 0.575/0.375/0.387/0.900/0.500
+      （中位 0.500，护栏正常）。判读：recon 修复监督供给后，按旧模型
+      `|ν−z|` 定义的 PER 优先级仍未兑现；更可能是优先级与新 loss 的病灶
+      不同构，且加权消费破坏了 recon1 原本均匀覆盖全棋盘转移的收益。
+      **不继续调 α / IS / 在线刷新**（一次一臂与反元过拟合纪律）；PER 保持
+      留库默认关；⑰ 结束时棋盘赢家暂定 `reconstruction=true, coef=1`，
+      最终 promote 资格交给未见 seed 的 ⑱ 终审。
+      本次墙钟约 10.7ks/seed 含会话中断/机器休眠，不作为性能数据。
+      日志 `.bench/gomoku_pure_selfplay_reconper_20260707.log`。
+- [x] **⑱ 赢家配方 G3 四档新-seed 终审 + 择优交付（2026-07-10 预注册）**：
+      ⑮–⑰ 已锁定赢家 = `reconstruction=true, coef=1` 单药；按收口规划 §4
+      「赢家配方 G3 四档验收复训 + 多 seed 择优模型独立新评测局验收」执行。
+      **数据隔离**：42–46 已用于组件/剂量选择，禁止拿来终审自证；科学确认改用
+      **未见 seed 47–51**，并同步跑同 seed 的 ⑬ 无 recon 对照（两臂各
+      5-seed、同为 5000 局 × CNN × 增广 × 纯 self-play、40 局/naive 档）。
+      - **组件复现判据**（配对新 seed）：recon1 naive0 中位较 control 抬升
+        ≥0.15，且至少 3/5 seed 不劣 = 正信号跨 seed 复现、可 promote；
+        抬升 <0.15 = ⑮ 信号未外推，不 promote。vs random <0.9 = 护栏破。
+      - **G3 任务判据**（沿用⑩，不因已见结果改线）：完全达标 = naive0–3
+        四档中位均 ≥0.75；部分达标 = naive0 ≥0.75 且 naive1 ≥0.50；
+        其余 = 如实记录缺口，不把组件正信号偷换成任务达标。
+      - **交付择优规则**（只看 recon1 primary 40 局，禁止看 holdout）：按
+        `(连续显著档数, 显著档数, 四档最小值, naive3, naive2, naive1,
+        naive0, 四档均值, vs_random, gating, -seed)` 字典序取最大；
+        显著档 = 40 局胜率 ≥0.675（对 0.5 单侧二项 p<0.05），连续档从
+        naive0 起计，硬档优先、同分取小 seed 保证确定性。
+      - **独立 holdout**：只重跑择优 seed；训练 seed/配置不变（确定性重现同一
+        权重轨迹），仅终局评测 RNG 加固定 offset `1_000_000_000`，naive0–3
+        各 **100** 局独立评测（新 RNG/reset seed 流；不强制注入开局，
+        40 局只够最低显著性，交付档加密降 CI 宽度）。
+        科学口径报告 47–51 primary 中位；交付口径只报告预注册赢家的 holdout，
+        二者并记，避免 best-of-5 赢家诅咒。holdout 重训结束必须保存 selected
+        final 模型为 board 专用 `.otm`，metadata 内嵌环境/维度/表征/recipe/seed
+        契约并有 roundtrip 测试；交付物 = 模型 + 契约 + holdout 数字。
+      载体 `gomoku_g3_recon1` / `gomoku_g3_control` /
+      `gomoku_g3_holdout`；前两臂可共 10 进程并行，holdout 须等 primary
+      择优后单 seed 串接。
+      **▶ Primary 裁决（2026-07-10）——recon1 新-seed 未复现，不 promote；
+      G3 低于部分达标线**：
+      - control 47–51 naive0 = 0.08/0.32/0.15/0.28/0.28（中位 **0.28**）；
+        recon1 = 0.60/0.08/0.03/0.20/0.22（中位 **0.20**，较 control
+        **−0.08**，未达 +0.15 复现线），配对仅 seed47 抬升（1/5，不满足
+        至少 3/5 不劣）。vs random 中位 1.000、gating 中位 0.650，护栏正常，
+        不是发散，而是组件效应高度依赖 seed。
+      - recon1 四档中位 = **0.20/0.03/0.00/0.00**，完全/部分达标均未触发。
+        结论须分层：⑮ 在发现集 42–46 的正信号是有效的探索证据，但不能外推；
+        新-seed 配对终审推翻 promote 资格，棋盘 recipe 暂不改。
+      - 按预注册择优元组，五个候选均无显著档、四档最小值均 0；下一层困难档
+        `naive2` 由 **seed48=0.05**（2/40）最高，故机械选 **seed 48**。
+        这虽与 naive0 最强 seed47=0.60 不同，仍禁止见结果改规则；独立
+        100 局/档 holdout 正用于检验这点困难档纹理是否真实。
+      日志 `.bench/gomoku_g3_{control,recon1}_20260710.log`。
+      **✅ Holdout 与战役终局裁决（2026-07-10）——交付未通过，监督端当前
+      量级无稳健赢家**：seed48 在全新 RNG 流上 100 局/档 =
+      naive0/1/2/3 **0.19/0.09/0.07/0.00**，无一达到 0.675 统计通过线，
+      更未达 0.75 强通过线；vs random 1.000、vs snapshot 0.875，基础护栏
+      正常。primary 的 naive2=0.05 在 holdout 为 0.07，方向虽延续但远低于
+      可交付能力，不能把 7/100 解释为困难档已学会。
+      - 科学口径：recon1 未见 seed 配对负增量（0.28→0.20）→ **不 promote**；
+        consistency 仅带内弱阳、PER 双裁无效 → 监督端组件家族在当前预算/容量
+        下没有稳健赢家，棋盘 recipe 维持 base。
+      - 交付口径：best-of-5 selected 也未过任一档，**无合格模型可交付**。
+        `.otm` 仅作为失败候选的可复现 artifact 保留（不进 Git、不标 release）：
+        `models/my_zero/Gomoku-selfplay-v0/seed_48/g3_recon1_selected.otm`
+        （1.9 MiB，完整 board recipe 契约；真实加载冒烟通过）。
+      - 本战役授权范围内的技术臂全部执行完毕；下一步是战略复盘，而不是继续
+        silent 调组件：预算量级重新投资 / 棋类采用真规则树 / 转图像线三选一，
+        另行预注册后再开新战役。
+      日志 `.bench/gomoku_g3_holdout_20260710.log`。
 
 ## 五、复现
 
@@ -254,4 +410,15 @@ cargo test --release --features blas-mkl gomoku_m3_<arm> -- --ignored --nocaptur
 # seed 级进程并行跑法（2026-07-07 起可用，臂墙钟 ÷3、逐 seed 结果与串行逐 bit 一致；
 # 分 seed 日志自动拼接进 .bench/，机制冒烟臂 = gomoku_m3_seedpar_smoke）：
 just bench-m3-seedpar gomoku_pure_selfplay_per
+
+# ⑮⑯ 监督端臂（5-seed 协议；监督端组件棋盘路径冒烟臂 = gomoku_supervised_smoke）：
+just bench-m3-seedpar gomoku_pure_selfplay_recon1 "42 43 44 45 46"
+just bench-m3-seedpar gomoku_pure_selfplay_recon4 "42 43 44 45 46"
+just bench-m3-seedpar gomoku_pure_selfplay_cons "42 43 44 45 46"
+just bench-m3-seedpar gomoku_pure_selfplay_ctrlext "45 46"   # ⑬ 对照扩展
+
+# ⑱ G3 新-seed 终审（前两臂并行跑；holdout 的 WINNER 必须由 recon1 primary 选出）：
+just bench-m3-seedpar gomoku_g3_recon1 "47 48 49 50 51"
+just bench-m3-seedpar gomoku_g3_control "47 48 49 50 51"
+just bench-m3-seedpar gomoku_g3_holdout "<WINNER>"
 ```

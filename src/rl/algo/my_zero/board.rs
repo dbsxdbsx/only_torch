@@ -23,6 +23,7 @@
 //! 公开 builder 接入随象棋支柱需求再定（`allow(dead_code)` 因入口均在 cfg(test) 保留）。
 #![allow(dead_code)]
 
+use super::board_model_io::save_board_model;
 use super::component::Components;
 use super::gomoku::{TacticalCourse, TrueRulesBoardModel, tactical_opening};
 use super::network::{MyZeroModel, ObsSpec};
@@ -43,6 +44,7 @@ use crate::rl::{GameOutcome, GymEnv, PerPriorities, ReplayBuffer, SelfPlayGame, 
 use pyo3::Python;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use std::path::PathBuf;
 
 /// PER 优先化强度 α（Schaul et al. 2016 默认 0.6；⑭ 臂预注册口径）。
 const PER_ALPHA: f32 = 0.6;
@@ -708,6 +710,13 @@ pub(crate) struct BoardTrainConfig {
     pub gate_games: usize,
     /// 训后 naive 梯队观察性评测（每档 `eval_episodes` 局，不设门槛）
     pub naive_ladder: bool,
+    /// 仅平移**训后终局评测** RNG 的 offset（vs random / 半程快照 / naive 梯队）。
+    ///
+    /// 默认 0 保持既有口径；赢家择优后的独立 holdout 用非零值生成新 RNG 评测流。
+    /// 训练、自博弈、周期 eval 与权重轨迹均不受影响。
+    pub terminal_eval_seed_offset: u64,
+    /// 训练完成后保存 final 棋盘模型的 `.otm` 基名（不含扩展名）；默认不落盘。
+    pub save_final_model_base: Option<PathBuf>,
     /// 组件开关（M3 消融臂注入口；默认 base 全关）
     pub components: Components,
     /// representation 编码器用 CNN（`ObsSpec::Image{channels:3, side}`，复用 Phase 1
@@ -768,6 +777,8 @@ impl Default for BoardTrainConfig {
             snapshot_at_episode: None,
             gate_games: 0,
             naive_ladder: false,
+            terminal_eval_seed_offset: 0,
+            save_final_model_base: None,
             components: super::recipe::components_for("Gomoku-selfplay-v0"),
             cnn_repr: false,
             augment: false,
@@ -779,6 +790,14 @@ impl Default for BoardTrainConfig {
             per: false,
         }
     }
+}
+
+/// 训后终局评测的确定性 seed：lane 区分 random / snapshot / naive，
+/// `terminal_eval_seed_offset` 只负责 primary 与 holdout 的开局隔离。
+pub(crate) fn terminal_eval_seed(cfg: &BoardTrainConfig, lane: u64) -> u64 {
+    cfg.seed
+        .wrapping_add(cfg.terminal_eval_seed_offset)
+        .wrapping_add(lane)
 }
 
 /// 棋盘训练结果（M1 口径：胜率闸门）。
@@ -1096,7 +1115,7 @@ pub(crate) fn train_board(cfg: &BoardTrainConfig) -> Result<BoardTrainReport, Gr
                 action_dim,
                 cfg.num_simulations,
                 cfg.gate_games,
-                cfg.seed.wrapping_add(77_000_000),
+                terminal_eval_seed(cfg, 77_000_000),
                 cfg.true_rules_tree,
             );
             gate_vs_random = Some(wr);
@@ -1114,7 +1133,7 @@ pub(crate) fn train_board(cfg: &BoardTrainConfig) -> Result<BoardTrainReport, Gr
                     action_dim,
                     cfg.num_simulations,
                     cfg.gate_games,
-                    cfg.seed.wrapping_add(88_000_000),
+                    terminal_eval_seed(cfg, 88_000_000),
                     cfg.true_rules_tree,
                 );
                 gate_vs_checkpoint = Some(score);
@@ -1141,7 +1160,7 @@ pub(crate) fn train_board(cfg: &BoardTrainConfig) -> Result<BoardTrainReport, Gr
                     action_dim,
                     cfg.num_simulations,
                     cfg.eval_episodes,
-                    cfg.seed.wrapping_add(99_000_000),
+                    terminal_eval_seed(cfg, 99_000_000),
                     cfg.true_rules_tree,
                 );
                 ladder_env.close();
@@ -1151,6 +1170,14 @@ pub(crate) fn train_board(cfg: &BoardTrainConfig) -> Result<BoardTrainReport, Gr
                     cfg.eval_episodes
                 );
             }
+        }
+
+        if let Some(path) = &cfg.save_final_model_base {
+            save_board_model(&model, cfg, obs_len, action_dim, path)?;
+            println!(
+                "💾 final 棋盘模型已保存：{}",
+                path.with_extension("otm").display()
+            );
         }
 
         env.close();

@@ -4,6 +4,13 @@
 
 ### Added
 
+- **feat(rl): Gomoku 监督端 ⑮–⑱ 终审收口——recon 发现集正信号未外推，G3 科学/交付双失败，棋盘 recipe 维持 base**（2026-07-10）
+  - **监督端剂量与家族裁决**：⑮ 在 seeds 42–46 上 recon coef=1 naive0 中位 0.15→0.35（coef=4 仅 0.20）；⑯ consistency 0.25 带内弱阳；⑰ recon1×PER 回落 0.15，PER 单药/复叠双排除
+  - **未见 seed 配对终审**：为避免发现集复用，⑱ 改用 seeds 47–51 同步跑 learned control 与 recon1（40 局/naive 档）——control naive0 中位 **0.28**、recon1 **0.20**（−0.08，配对仅 1/5 不劣，未达 +0.15 复现线）→ recon 不 promote；四档中位 0.20/0.03/0/0，G3 未达部分线
+  - **selected 独立 holdout**：按预注册困难档优先规则机械选 seed48，只对该模型换独立 RNG offset 跑 100 局/档 = **0.19/0.09/0.07/0.00**，无一档过 0.675；best-of-5 交付亦失败。1.9 MiB `.otm` 仅作失败候选复现（忽略目录、不标 release）
+  - **MyZero 持久化分层公共化**：`model_io.rs` 抽出通用 contract-aware OTM 保存/加载内核，既有单智能体 API 零变化；新增 `board_model_io.rs` 作为棋盘 recipe 契约适配器，`board.rs` 只保留可选 final 保存策略。单智能体 roundtrip、board roundtrip/错误契约拒绝、selected artifact 真实加载均通过
+  - **实验基础设施**：`BoardTrainConfig.terminal_eval_seed_offset` 隔离 primary/holdout RNG 流（不改训练轨迹）；监督端/G3 六份新日志入 `.bench/`，棋盘账本补 Phase/M/G/实验臂命名词典。战役出口 = 预算量级 / 真规则树 / 转图像线战略复盘，不再 silent 追加组件
+
 - **feat(rl): ⑭ PER 优先回放臂裁决——带内持平 ❌，消费端按预注册排除（纯 self-play 万金油战役 ⑫⑬⑭ 三臂收官）**（2026-07-07）
   - **底座条款公开修订**：⑬ 裁决档位级落后（税主导）触发预注册分支 → ⑭ 改在 **⑬ learned dynamics 底座**测「通用组件能否收窄税差」（载体 `true_rules_tree=false`，与 ⑬ 唯一差 = `per=true`）
   - **裁决**：naive0 = 0.15/0.15/0.05（中位 **0.15** vs ⑬ 的 0.10，抬升 <0.15 正信号线）——PER 把 |ν−z| 最大的终局矛盾局面顶到队列前，但 dynamics 此预算/容量下连被集中喂也学不会终局规则；**「课程的零领域知识版」棋盘域不成立**（课程改生成分布 = 注入新数据，PER 只重排已有数据）。附带正读数：护栏 vs random **3/3 满分**（⑬ 底座 0.900–0.925 → 恢复）+ 零发散 = PER 无害，`PerPriorities` 通用件留库默认关

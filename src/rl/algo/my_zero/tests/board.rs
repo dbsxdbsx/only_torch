@@ -1,10 +1,13 @@
 //! `board.rs` 单元测试：negamax MC 回报 + 双人 MctsModel 根 mask / to_play 轮转
 //! + 树内真规则（RulesBoard 规则等价性 / TrueRulesBoardModel 适配器）。
 
-use crate::nn::Graph;
+use crate::nn::{Graph, GraphError};
 use crate::rl::algo::my_zero::board::{
-    BoardMctsModel, augment_game, board_rosmo_policy, negamax_mc_return, symmetry_perm,
+    BoardMctsModel, BoardTrainConfig, augment_game, board_rosmo_policy, negamax_mc_return,
+    symmetry_perm, terminal_eval_seed,
 };
+use crate::rl::algo::my_zero::board_model_io::{load_board_weights_into, save_board_model};
+use crate::rl::algo::my_zero::component::Components;
 use crate::rl::algo::my_zero::gomoku::{
     RulesBoard, TacticalCourse, TrueRulesBoardModel, tactical_opening,
 };
@@ -29,6 +32,77 @@ fn mk_step(player: u8, reward: f32, terminated: bool) -> SelfPlayStep {
         continuation: if terminated { 0.0 } else { 1.0 },
         extras: Default::default(),
     }
+}
+
+#[test]
+fn terminal_eval_seed_offset_isolated_from_primary() {
+    let mut cfg = BoardTrainConfig {
+        seed: 47,
+        ..Default::default()
+    };
+    assert_eq!(cfg.terminal_eval_seed_offset, 0);
+    assert_eq!(terminal_eval_seed(&cfg, 99_000_000), 99_000_047);
+
+    cfg.terminal_eval_seed_offset = 1_000_000_000;
+    assert_eq!(terminal_eval_seed(&cfg, 99_000_000), 1_099_000_047);
+}
+
+#[test]
+fn board_model_otm_roundtrip_and_contract_guard() {
+    const SIDE: usize = 3;
+    const OBS_DIM: usize = 3 * SIDE * SIDE;
+    const ACTION_DIM: usize = SIDE * SIDE;
+
+    let base = std::env::temp_dir().join("only_torch_board_otm_roundtrip");
+    let _ = std::fs::remove_file(base.with_extension("otm"));
+
+    let cfg = BoardTrainConfig {
+        seed: 47,
+        cnn_repr: true,
+        augment: true,
+        max_episodes: 5000,
+        components: Components {
+            reconstruction: true,
+            reconstruction_coef: 1.0,
+            ..Components::base()
+        },
+        ..Default::default()
+    };
+
+    let graph = Graph::new_with_seed(cfg.seed);
+    let model = MyZeroModel::new_with_spec(
+        &graph,
+        ObsSpec::Board {
+            channels: 3,
+            side: SIDE,
+        },
+        ACTION_DIM,
+        cfg.latent_dim,
+    )
+    .unwrap();
+    save_board_model(&model, &cfg, OBS_DIM, ACTION_DIM, &base).unwrap();
+
+    let graph2 = Graph::new_with_seed(999);
+    let model2 = MyZeroModel::new_with_spec(
+        &graph2,
+        ObsSpec::Board {
+            channels: 3,
+            side: SIDE,
+        },
+        ACTION_DIM,
+        cfg.latent_dim,
+    )
+    .unwrap();
+    load_board_weights_into(&model2, &cfg, OBS_DIM, ACTION_DIM, &base).unwrap();
+
+    let mut wrong = cfg.clone();
+    wrong.seed = 48;
+    let err = load_board_weights_into(&model2, &wrong, OBS_DIM, ACTION_DIM, &base).unwrap_err();
+    assert!(
+        matches!(err, GraphError::InvalidOperation(_)),
+        "训练 seed 不匹配必须被契约拒绝，实际：{err:?}"
+    );
+    let _ = std::fs::remove_file(base.with_extension("otm"));
 }
 
 /// 黑（步 0,2）胜局：negamax 回报应沿轨迹交替 ±1。

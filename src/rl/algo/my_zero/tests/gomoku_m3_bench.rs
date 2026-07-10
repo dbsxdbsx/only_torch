@@ -19,9 +19,11 @@
 //! just bench-m3-seedpar gomoku_pure_selfplay_per
 //! ```
 
-use crate::nn::GraphError;
+use crate::nn::{Graph, GraphError};
 use crate::rl::algo::my_zero::board::{BoardTrainConfig, BoardTrainReport, train_board};
+use crate::rl::algo::my_zero::board_model_io::load_board_weights_into;
 use crate::rl::algo::my_zero::component::Components;
+use crate::rl::algo::my_zero::network::{MyZeroModel, ObsSpec};
 
 /// seed 级进程并行（性能台账候选 #8 便宜档）：`M3_SEEDS=42` / `M3_SEEDS=42,43`
 /// 过滤本进程实际要跑的 seed 子集；不设置 = 全量串行（向后兼容，既有跑法零变化）。
@@ -669,6 +671,275 @@ fn gomoku_pure_selfplay_per() -> Result<(), GraphError> {
         cfg.eval_every = 500;
         cfg.tactical_opening_fraction = 0.0;
         cfg.per = true;
+        cfg
+    })
+}
+
+/// ⑬ learned dynamics 底座公共配置（⑬⑭⑮⑯ 同口径：CNN × 增广 × 温度 1.0 ×
+/// 5000 局 × buffer 500 × 无课程 × 树内 learned dynamics）。新监督端臂在此
+/// 之上只动自己的唯一变量；⑫⑬⑭ 历史载体保持原样不回填（已裁决臂不改动）。
+fn pure_selfplay_learned_cfg(mut cfg: BoardTrainConfig) -> BoardTrainConfig {
+    cfg.true_rules_tree = false;
+    cfg.cnn_repr = true;
+    cfg.augment = true;
+    cfg.max_episodes = 5000;
+    cfg.temp_hold_episodes = 5000;
+    cfg.buffer_capacity = 500;
+    cfg.snapshot_at_episode = Some(2500);
+    cfg.eval_every = 500;
+    cfg.tactical_opening_fraction = 0.0;
+    cfg
+}
+
+/// 臂 25a（naive0 issue §四-⑮，2026-07-07 预注册）：recon 棋盘重标 coef=1
+/// （监督端首臂）。
+///
+/// 触发：⑬⑭ 合裁病灶 =「dynamics 缺直接监督」——每局 1 bit 终局信号经 unroll
+/// 链间接滴灌学不会「五连终局」（⑬，且对 12.5× 预算钝感），PER 集中喂（消费端
+/// 重排）也无效（⑭）→ 监督端家族开测。recon 读 dynamics 输出、梯度穿透 g 反传，
+/// 逐步对齐**冻结真值棋盘**（家族里目标最硬的一支）。coef {1,4} 重标（16 为
+/// CartPole 域标定值，M3 初裁 gating 0.550 偏害形态，不复测）。
+/// 协议修订（公开记录）：5-seed 42–46 直接正裁替代「pilot → 3-seed」（seed
+/// 并行跑法就绪 + seed 方差七度复现头号混淆；用户 2026-07-07 授权多 seed）；
+/// ⑬ 对照同步扩 45/46（`gomoku_pure_selfplay_ctrlext`）。
+/// 判读（对照 ⑬ 5-seed naive0 中位，预设 0.10）：任一剂量中位 ≥0.25 = 正信号；
+/// 双剂量带内 = recon 排除（⑯ 顺位）；vs random <0.9 = 干扰记负不下钻。
+#[test]
+#[ignore = "manual: Gomoku naive0-⑮ recon 重标臂 coef=1（5 seeds × 5000 局 × CNN × ⑬ 底座，seed 并行约 30–50 分钟）"]
+fn gomoku_pure_selfplay_recon1() -> Result<(), GraphError> {
+    run_arm_seeds(
+        "pure_selfplay_recon1",
+        Components::base(),
+        100,
+        &[42, 43, 44, 45, 46],
+        |cfg| {
+            let mut cfg = pure_selfplay_learned_cfg(cfg);
+            cfg.components.reconstruction = true;
+            cfg.components.reconstruction_coef = 1.0;
+            cfg
+        },
+    )
+}
+
+/// 臂 25b（naive0 issue §四-⑮）：recon 棋盘重标 coef=4。口径同 25a，唯一差 = 剂量。
+#[test]
+#[ignore = "manual: Gomoku naive0-⑮ recon 重标臂 coef=4（5 seeds × 5000 局 × CNN × ⑬ 底座，seed 并行约 30–50 分钟）"]
+fn gomoku_pure_selfplay_recon4() -> Result<(), GraphError> {
+    run_arm_seeds(
+        "pure_selfplay_recon4",
+        Components::base(),
+        100,
+        &[42, 43, 44, 45, 46],
+        |cfg| {
+            let mut cfg = pure_selfplay_learned_cfg(cfg);
+            cfg.components.reconstruction = true;
+            cfg.components.reconstruction_coef = 4.0;
+            cfg
+        },
+    )
+}
+
+/// 臂 26（naive0 issue §四-⑯，2026-07-07 预注册）：consistency × ⑬ 底座
+/// （监督端次臂）。
+///
+/// 触发：M3「中性」初裁的底座是 400 局 × Flat MLP × 无增广——SimSiam 对齐目标
+/// 是自指的（`repr(next_obs)` = 网络自己正在学的输出），弱表征下目标无信息量，
+/// 非公平审判；⑬ 底座（CNN + 增广）下 h(o) 首次带真实空间结构，且 ⑬⑭ 病灶
+/// 钉死后其适应症（潜空间逐步直接监督、零 decoder 成本）首次精确命中。
+/// coef 2.0（EfficientZero 权重，M3 初裁同值）。判读线同 ⑮；⑮⑯ 双平 =
+/// 监督端家族在此预算量级排除，触发战略复盘（不再买新组件）。
+#[test]
+#[ignore = "manual: Gomoku naive0-⑯ consistency 臂（5 seeds × 5000 局 × CNN × ⑬ 底座，seed 并行约 30–50 分钟）"]
+fn gomoku_pure_selfplay_cons() -> Result<(), GraphError> {
+    run_arm_seeds(
+        "pure_selfplay_cons",
+        Components::base(),
+        100,
+        &[42, 43, 44, 45, 46],
+        |cfg| {
+            let mut cfg = pure_selfplay_learned_cfg(cfg);
+            cfg.components.consistency = true;
+            cfg
+        },
+    )
+}
+
+/// ⑬ 对照 seed 扩展（45/46；⑮ 协议修订②，2026-07-07 公开记录）：⑬ 载体同
+/// 配置补跑 45/46，与既有 42/43/44 合并成 5-seed 对照集（与 ⑮⑯ 臂配对）。
+/// 命名刻意不含 `_learned`（cargo test 子串过滤防误连跑 ⑬ 本体）。
+#[test]
+#[ignore = "manual: Gomoku naive0-⑬ learned 对照 seed 扩展（45/46，seed 并行约 25–40 分钟）"]
+fn gomoku_pure_selfplay_ctrlext() -> Result<(), GraphError> {
+    run_arm_seeds(
+        "pure_selfplay_ctrlext",
+        Components::base(),
+        100,
+        &[45, 46],
+        pure_selfplay_learned_cfg,
+    )
+}
+
+/// 臂 27（naive0 issue §四-⑰，2026-07-07 预注册）：recon1 × PER 组合臂
+/// （⑮ 正信号触发的预注册「组合下一步」条款）。
+///
+/// 机制假设：⑭ 带内持平的判读是「dynamics 学不会，集中喂也无效」——⑮ 用每步
+/// 冻结真值监督修复了「学不会」，PER 的适应症前提「病灶可被重复消费治愈」
+/// 首次成立：|ν−z| 加权把终局矛盾局面顶到队列前，应放大 recon 的监督效率。
+/// 底座 = ⑬ × recon coef=1（⑮ 赢家剂量），唯一新变量 = `per=true` 复叠。
+/// 判读（对照 ⑮ coef=1 中位 0.35）：≥0.50 = 复叠正信号（PER 禁忌症改写）；
+/// 带内 0.20–0.45 = 无复叠增益（赢家配方 = recon1 单药）；<0.20 或
+/// vs random <0.9 = 负交互记负不下钻。命名避开 `recon1`/`_per` 子串防
+/// cargo 过滤误连跑。
+#[test]
+#[ignore = "manual: Gomoku naive0-⑰ recon1×PER 组合臂（5 seeds × 5000 局 × CNN × ⑬ 底座，seed 并行约 30–45 分钟）"]
+fn gomoku_pure_selfplay_reconper() -> Result<(), GraphError> {
+    run_arm_seeds(
+        "pure_selfplay_reconper",
+        Components::base(),
+        100,
+        &[42, 43, 44, 45, 46],
+        |cfg| {
+            let mut cfg = pure_selfplay_learned_cfg(cfg);
+            cfg.components.reconstruction = true;
+            cfg.components.reconstruction_coef = 1.0;
+            cfg.per = true;
+            cfg
+        },
+    )
+}
+
+const G3_FRESH_SEEDS: &[u64] = &[47, 48, 49, 50, 51];
+
+fn g3_control_cfg(cfg: BoardTrainConfig) -> BoardTrainConfig {
+    let mut cfg = pure_selfplay_learned_cfg(cfg);
+    cfg.eval_episodes = 40;
+    cfg
+}
+
+fn g3_recon1_cfg(cfg: BoardTrainConfig) -> BoardTrainConfig {
+    let mut cfg = g3_control_cfg(cfg);
+    cfg.components.reconstruction = true;
+    cfg.components.reconstruction_coef = 1.0;
+    cfg
+}
+
+/// 臂 28a（naive0 issue §四-⑱，2026-07-10 预注册）：赢家 recon1 的 G3 四档
+/// 新-seed 终审。
+///
+/// 42–46 已用于组件/剂量选择，终审改用未见 seed 47–51，避免开发集自证；
+/// naive0–3 各 40 局。与 28b 同 seed 配对判断 recon 增量，绝对值沿用⑩ G3：
+/// 四档中位均 ≥0.75 = 完全达标；naive0 ≥0.75 且 naive1 ≥0.50 = 部分达标。
+/// 交付择优只读本臂 primary 数字；独立新 RNG 评测流由 28c 在择优后单 seed 执行。
+#[test]
+#[ignore = "manual: Gomoku ⑱a recon1 G3 新-seed 终审（5 seeds 47–51 × 5000 局 × 40 局/档）"]
+fn gomoku_g3_recon1() -> Result<(), GraphError> {
+    run_arm_seeds(
+        "g3_recon1",
+        Components::base(),
+        100,
+        G3_FRESH_SEEDS,
+        g3_recon1_cfg,
+    )
+}
+
+/// 臂 28b（naive0 issue §四-⑱）：G3 新-seed 配对对照。
+///
+/// 与 28a 唯一差 = reconstruction 关闭。组件跨 seed 复现线：
+/// recon1 naive0 中位较本臂抬升 ≥0.15，且至少 3/5 seed 不劣。
+#[test]
+#[ignore = "manual: Gomoku ⑱b G3 新-seed learned 对照（5 seeds 47–51 × 5000 局 × 40 局/档）"]
+fn gomoku_g3_control() -> Result<(), GraphError> {
+    run_arm_seeds(
+        "g3_control",
+        Components::base(),
+        100,
+        G3_FRESH_SEEDS,
+        g3_control_cfg,
+    )
+}
+
+/// 臂 28c（naive0 issue §四-⑱）：预注册择优 seed 的独立 RNG 评测 holdout。
+///
+/// 必须等 28a primary 完成后，按 issue 的确定性字典序选出一个 seed，再用
+/// `M3_SEEDS=<winner>` 单 seed 运行。训练配置/seed 不变，故权重轨迹确定性重现；
+/// 唯一差 = 训后终局评测 RNG offset +1_000_000_000，四档各 100 局独立评测；
+/// final 权重保存为带 board recipe 契约的 `.otm` 交付物。
+#[test]
+#[ignore = "manual: Gomoku ⑱c 择优 seed 独立 holdout（只允许 primary 选出的单 seed）"]
+fn gomoku_g3_holdout() -> Result<(), GraphError> {
+    run_arm_seeds(
+        "g3_holdout",
+        Components::base(),
+        100,
+        G3_FRESH_SEEDS,
+        |cfg| {
+            let mut cfg = g3_recon1_cfg(cfg);
+            cfg.terminal_eval_seed_offset = 1_000_000_000;
+            cfg.eval_episodes = 100;
+            cfg.save_final_model_base = Some(
+                format!(
+                    "models/my_zero/Gomoku-selfplay-v0/seed_{}/g3_recon1_selected",
+                    cfg.seed
+                )
+                .into(),
+            );
+            cfg
+        },
+    )
+}
+
+/// ⑱ 交付物加载冒烟：不训练、不评测，只验证 selected `.otm` 可按完整 board
+/// recipe 契约加载进同构模型；路径是 ⑱ primary 预注册择优得到的 seed48。
+#[test]
+#[ignore = "manual: 加载 ⑱ selected Gomoku .otm 交付物"]
+fn gomoku_g3_selected_load_smoke() -> Result<(), GraphError> {
+    const SIDE: usize = 9;
+    const ACTION_DIM: usize = SIDE * SIDE;
+    const OBS_DIM: usize = 3 * ACTION_DIM;
+
+    let cfg = g3_recon1_cfg(m3_cfg(48, Components::base(), 100));
+    let graph = Graph::new_with_seed(999);
+    let model = MyZeroModel::new_with_spec(
+        &graph,
+        ObsSpec::Board {
+            channels: 3,
+            side: SIDE,
+        },
+        ACTION_DIM,
+        cfg.latent_dim,
+    )?;
+    load_board_weights_into(
+        &model,
+        &cfg,
+        OBS_DIM,
+        ACTION_DIM,
+        std::path::Path::new("models/my_zero/Gomoku-selfplay-v0/seed_48/g3_recon1_selected"),
+    )
+}
+
+/// 机制冒烟（非裁决臂，2026-07-07）：监督端组件（recon + consistency 双开）×
+/// CNN × 增广的棋盘端到端首验——M3 旧监督臂是 Flat MLP × 无增广底座，
+/// recon/cons × BoardConv × D4 增广组合此前从未同跑；⑮⑯ 开跑前的路径冒烟。
+/// 极小预算（3 局 × sims=4，约 1 分钟），产出数字无裁决意义。
+#[test]
+#[ignore = "manual: 监督端组件棋盘冒烟（3 seeds × 3 局，约 1 分钟）"]
+fn gomoku_supervised_smoke() -> Result<(), GraphError> {
+    run_arm_with("supervised_smoke", Components::base(), 4, |mut cfg| {
+        cfg.cnn_repr = true;
+        cfg.augment = true;
+        cfg.max_episodes = 3;
+        cfg.start_training_after = 2;
+        cfg.trains_per_episode = 1;
+        cfg.temp_hold_episodes = 3;
+        cfg.temp_decay_episodes = 0;
+        cfg.eval_every = 3;
+        cfg.eval_episodes = 2;
+        cfg.snapshot_at_episode = Some(2);
+        cfg.gate_games = 2;
+        cfg.naive_ladder = false;
+        cfg.components.reconstruction = true;
+        cfg.components.reconstruction_coef = 1.0;
+        cfg.components.consistency = true;
         cfg
     })
 }

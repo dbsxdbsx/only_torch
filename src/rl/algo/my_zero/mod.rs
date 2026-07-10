@@ -39,7 +39,8 @@
 //! - [`config`]：配置（env / model / train / components / eval）
 //! - [`builder`]：链式 builder（`MyZero::new(env_id)` 为唯一入口）
 //! - [`my_zero`]：运行体（`train` 返回 **latest**；`load_model_if_exists` 加载磁盘 best；`eval` / `run` 用当前实例权重）
-//! - [`model_io`]：`.otm` 持久化（内部契约校验）
+//! - [`model_io`]：contract-aware `.otm` 通用持久化内核 + 单智能体契约适配
+//! - `board_model_io`：棋盘训练 recipe 的 `.otm` 契约适配（内部）
 //! - [`checkpoint`]：eval 创新高时落盘（须显式 `.save_model_when_eval(path)`）
 //! - [`report`]：train / eval / run 分数报告
 //! - [`component`]：内部组件开关（[`recipe`] 按 env 注入）
@@ -65,6 +66,7 @@
 
 pub mod action;
 pub(crate) mod board;
+pub(crate) mod board_model_io;
 pub mod builder;
 pub mod checkpoint;
 pub mod component;

@@ -23,6 +23,18 @@ cargo test --release --features blas-mkl gomoku_m3_<arm> -- --ignored --nocaptur
 # arm ∈ {gumbel, base_s16, gumbel_s16, cons, recon, cnn, budget, replay32, lr3e3, augment, combo}
 ```
 
+## 命名词典
+
+- **Phase**：RL 路线图的大阶段；Gomoku 属于 Phase 2。
+- **M0–M4**：棋盘支柱建设里程碑——M0 性能风险 spike、M1 最小训练闭环、
+  M2 预注册基线立柱、M3 组件消融、M4 recipe/smoke/账本工程收口。
+- **G1–G3**：M4 后战术墙攻坚关卡——G1 上限组合、G2 训练强度包、G3 赢家
+  配方四档终局验收；G3 不是第三代网络架构。
+- **①②③…**：单个实验臂的时间顺序；**seed** 是同一实验的独立重复。
+
+历史原因：`gomoku_m3_bench.rs` 后来继续承载了 M4 后的裁决臂；文件名只表示
+它由 M3 手动 benchmark 载体演化而来，不代表其中所有实验仍属于 M3。
+
 ## 当前 recipe（M4 定型，2026-07-05）
 
 **base 组件全关** + Flat MLP + negamax MC target + sims=100 + D4 增广**关**
@@ -79,10 +91,16 @@ cargo test --release --features blas-mkl gomoku_m3_<arm> -- --ignored --nocaptur
 | ⑪ CNN × ⑦ 配方（2026-07-05） | 1.000（3/3） | 0.350 | naive0 中位 **0.55** · naive1 中位 **0.15**（3×）· naive2 单点 **0.35**（史上最高） | **未达 promote 线，容量假设按线排除**（弱阳纹理留档：naive1/2 有抬升方向、需配预算放大再裁）；seed 方差六度复现（0.20–0.75，掉队者换 seed 44）坐实「seed 抽签 > 组件效应」。墙钟 ~3.5×。缺口终局收敛 = **预算量级 ×（可选 CNN）+ seed 方差治理**。日志 `.bench/gomoku_naive0_cnn_recipe_20260705.log` |
 | **⑫ 纯 self-play 上限标定：真规则 × CNN × 5000 局 × 无课程（2026-07-05 晚，「纯 self-play 万金油」哲学修正首臂）** | **1.000（3/3）** | 0.900 | **naive0 = 0.90/0.05/1.00（中位 0.90，seed 44 满分史上首个）· naive1 = 0.10/0.00/0.40（无课程首次非零，0.40 史上最高）· naive2/3 = 0** | **✅ 纯 self-play 可行坐实（≥0.75 预注册线）——课程非必需**：⑦ 课程配方（0.70）被无课程配置超越，课程实为「预算/容量不足下的拐杖」——预算 2.5× + CNN 后自然 self-play 分布自行覆盖战术局面。seed 43 崩 0.05 = 方差第七度复现（0.05–1.00 史上最宽散布，中位裁决稳）。判读用绝对线（conv2d 优化后 CNN 数值流漂移，不与 ⑪ 精细比差）。→ ⑬ learned dynamics 同配置（规则学习税定量账）。墙钟 38–55 min/seed。日志 `.bench/gomoku_pure_selfplay_truerules_20260705.log` |
 | **⑬ learned dynamics 同配置：⑫ 唯一差树内转移（2026-07-07）** | 0.925（0.900/0.925/0.925） | 0.387 | **naive0 = 0.10/0.15/0.10（中位 0.10 vs ⑫ 的 0.90）· naive1 ≈ 0 · naive2/3 = 0** | **❌ 档位级落后——规则学习税坐实 0.8 档**（命中预注册「⑫ ≥0.75 而 ⑬ <0.5」条款）。gating 全 <0.5（终局赢不了半程快照）+ vs random 掉出满分。**关键读数：learned dynamics 对预算/容量钝感**——M3 base 400 局 0.10 → 预算×5 0.10–0.15 → 本臂 12.5× 预算 + CNN + 增广仍 0.10；墙不在数据量在 dynamics 学不会「五连终局」，树在幻觉模型里搜索。附带：墙钟 822–1404s/seed 反比 ⑫ 快 2–3×（learned 树仅根过 CNN）。→ ⑭ PER 改在 ⑬ 底座测；真规则 vs 万金油战略取舍进入有定量账阶段。日志 `.bench/gomoku_pure_selfplay_learned_20260705.log` |
-| ⑭ PER 优先回放：⑬ 底座 × `per=true` 唯一新变量（2026-07-07，seed 并行跑法首战） | **1.000（3/3，⑬ 的 0.900–0.925 → 满分恢复）** | 0.350 | **naive0 = 0.15/0.15/0.05（中位 0.15 vs ⑬ 的 0.10）· naive1 中位 0.05 · naive2 单点 0.10** | **带内持平——按预注册排除：分布覆盖瓶颈不在消费端**（抬升 0.05 <0.15 正信号线）。判读 = PER 把 \|ν−z\| 最大的终局矛盾局面顶到队列前，但 dynamics 此预算/容量下连被集中喂也学不会终局规则；课程 ⑥⑦ 有效因改**生成**分布（注入新数据），PER 只重排**已有**数据——「课程的零领域知识版」棋盘域不成立。附带：护栏满分 + 零发散 = PER 无害，`PerPriorities` 留库默认关；剩余杠杆收敛 = 监督端（recon 重标 / consistency 家族）× 预算量级。墙钟 1490–1521s/seed（3 进程并行，臂总 ~25 min）。日志 `.bench/gomoku_pure_selfplay_per_20260707.log` |
+| ⑭ PER 优先回放：⑬ 底座 × `per=true` 唯一新变量（2026-07-07，seed 并行跑法首战） | **1.000（3/3，⑬ 的 0.900–0.925 → 满分恢复）** | 0.350 | **naive0 = 0.15/0.15/0.05（中位 0.15 vs ⑬ 的 0.10）· naive1 中位 0.05 · naive2 单点 0.10** | **带内持平——按预注册排除：分布覆盖瓶颈不在消费端**（抬升 0.05 <0.15 正信号线；⑬ 对照 5-seed 重锚 0.15 后 = 零抬升，裁决加固）。判读 = PER 把 \|ν−z\| 最大的终局矛盾局面顶到队列前，但 dynamics 此预算/容量下连被集中喂也学不会终局规则；课程 ⑥⑦ 有效因改**生成**分布（注入新数据），PER 只重排**已有**数据——「课程的零领域知识版」棋盘域不成立。附带：护栏满分 + 零发散 = PER 无害，`PerPriorities` 留库默认关；剩余杠杆收敛 = 监督端（recon 重标 / consistency 家族）× 预算量级。墙钟 1490–1521s/seed（3 进程并行，臂总 ~25 min）。日志 `.bench/gomoku_pure_selfplay_per_20260707.log` |
+| ⑬-ext 对照 seed 扩展 45/46（2026-07-07，⑮ 协议修订②配对对照件） | 1.000（2/2） | 0.600/0.800（**双过 0.55 线**） | **naive0 = 0.35/0.35 · naive1 = 0.30/0.05** | **⑬ 对照 5-seed 重锚：naive0 中位 0.10 → 0.15（散布 0.10–0.35，seed 方差第八度复现）**——⑮⑯ 正信号线随锚上调 ≥0.30。连带修正：⑬「gating 全 <0.5」在扩展 seed 不成立、「预算钝感」修正为「中位钝感、上限有方差」；⑭ 对新锚零抬升加固排除。墙钟 2205/2286s（12 进程竞争膨胀 ~1.6–2.8×）。载体 `gomoku_pure_selfplay_ctrlext`，日志 `.bench/gomoku_pure_selfplay_ctrlext_20260707.log` |
+| **⑮ recon 棋盘重标：⑬ 底座 × `reconstruction` coef {1,4}（2026-07-07，监督端首臂，5-seed 发现集）** | coef=1：**0.975–1.000 全绿**；coef=4：最低 0.900 压线 | coef=1：0.475（中位）；coef=4：0.075–0.800 散布极宽 | **coef=1：naive0 = 0.40/0.35/0.30/0.20/0.40（中位 0.35，配对 4/5 抬升）· naive1 中位 0.10**；coef=4：naive0 中位 0.20 | **coef=1 发现集正信号（0.35 ≥0.30），但 promote 资格后来被⑱未见 seed 终审否决**；coef=4 带内排除。历史价值 = 证明直接监督存在可爬坡纹理并给出候选剂量，不等于可外推结论。墙钟 2364–2509s/seed（12 进程档）。载体 `gomoku_pure_selfplay_recon{1,4}`，日志 `.bench/gomoku_pure_selfplay_recon{1,4}_20260707.log` |
+| ⑯ consistency：⑬ 底座 × `consistency`（coef 2.0，2026-07-07，监督端次臂，5-seed） | 0.975–1.000 全绿 | 0.325–0.700（中位 0.550） | **naive0 = 0.20/0.25/0.40/0.45/0.25（中位 0.25，配对 4/5 抬升）· naive1 中位 0.00** | **带内未越线（弱阳纹理留档）——按预注册不 promote**（0.25 <0.30 重锚线）。判读 = 同底座同 seed 集直接对照 recon coef=1（0.35 越线）：**「冻结真值 > 自指目标」信息量排序实测坐实**——SimSiam target 是网络自己正在学的 `repr(next_obs)`，上限被 h 质量卡住；方向与家族一致（4/5 弱阳）但强度不过线。M3 旧「中性」初裁修正为「CNN 底座带内弱阳」；EfficientZero 图像域主证据不受否定，图像线复测入口保留。墙钟 1549–1604s/seed（5 进程档）。载体 `gomoku_pure_selfplay_cons`，日志 `.bench/gomoku_pure_selfplay_cons_20260707.log` |
+| ⑰ recon1 × PER：⑮ 赢家剂量复叠 ⑭ 无害件（2026-07-07，5-seed） | **1.000（5/5）** | 0.375–0.900（中位 0.500） | **naive0 = 0.15/0.15/0.20/0.15/0.15（中位 0.15；对 recon1 单药 5/5 回落）· naive1 中位 0.10** | **无复叠增益——PER 消费端排除维持，赢家锁定 recon1 单药**（0.15 远低于 ≥0.50 线，也低于单药 0.35）。recon 修复监督供给后，旧模型 `|ν−z|` 优先级仍未兑现；消费加权反而破坏 recon 对全棋盘转移的均匀稠密监督。不调 α/IS/刷新，避免元过拟合。墙钟含机器休眠，不作性能数据。载体 `gomoku_pure_selfplay_reconper`，日志 `.bench/gomoku_pure_selfplay_reconper_20260707.log` |
+| **⑱ G3 新-seed 配对终审 + selected holdout（2026-07-10）** | primary：recon1 0.950–1.000 / control 0.975–1.000；holdout：1.000 | primary 中位：recon1 **0.650** / control 0.475；holdout：0.875 | primary control naive0 中位 **0.28**；recon1 四档中位 **0.20/0.03/0.00/0.00**。预注册选 seed48 后，独立 100 局/档 holdout = **0.19/0.09/0.07/0.00** | **❌ 科学与交付双失败**：recon1 未见 seed naive0 中位差 −0.08（要求 ≥+0.15），配对仅 1/5 不劣 → 不 promote；G3 未达部分线。selected holdout 无一档达到 0.675，7/100 的 naive2 纹理不代表已学会。棋盘 recipe 维持 base；1.9 MiB `.otm` 仅作失败候选复现（完整契约、真实加载冒烟通过，不进 Git/release）。日志 `.bench/gomoku_g3_{control,recon1,holdout}_20260710.log` |
 
 ### 结论（M3/M4 收口）
 
 1. **recipe = base 定型**：九臂无一显著抬升主指标，「变慢 ≠ 失败」但「不动 = 不 promote」。
 2. **naive0 战术墙为结构性遗留**：头号假设 = MuZero 规则学习税（参照 AlphaZero 实现树内真规则、零规则学习负担）；后续裁决入口（sims 400 臂 / 树内真规则诊断臂 / 增广大预算复核）见 [issue](../../../.issue/items/gomoku_naive0_tactical_wall.md)，不阻塞支柱。
 3. **Gumbel / completedQ 负结果 issue 终局归档**：|A|≫sims（s16）复裁中性、无灾难，CartPole 灾难确系 n≫|A| regime + 前置双 bug（greedy 去噪 + q_range）所致；棋盘域两组件按中性处置（不 promote、代码保留）。
+4. **监督端战役 ⑮–⑱ 收口**：recon1 发现集正信号未在未见 seed 复现，consistency 仅带内弱阳、PER 单药/复叠均无增益；G3 selected holdout 亦未通过。当前预算/容量下无通用组件赢家，下一步进入预算 / 真规则 / 转图像线的战略复盘点。
