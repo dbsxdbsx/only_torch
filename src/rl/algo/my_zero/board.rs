@@ -131,9 +131,14 @@ impl MctsModel for BoardMctsModel<'_> {
         }
     }
 
-    fn recurrent(&self, state: &Self::State, action: &ActionPayload) -> RecurrentOut<Self::State> {
+    fn recurrent(
+        &self,
+        state: &Self::State,
+        action_id: ActionId,
+        action: &ActionPayload,
+    ) -> RecurrentOut<Self::State> {
         let (latent, player) = state;
-        let out = Dynamics::recurrent(&self.model, latent, action);
+        let out = Dynamics::recurrent_with_id(&self.model, latent, action_id, action);
         let next_player = 1 - player;
         RecurrentOut {
             state: (out.next_state, next_player),
@@ -370,7 +375,8 @@ pub(crate) fn board_rosmo_policy(model: &MyZeroModel, obs: &[f32], action_dim: u
     let mut weights = vec![0.0f32; action_dim];
     let mut advs = vec![0.0f32; action_dim];
     for &a in look_ahead {
-        let out = Dynamics::recurrent(&model, &latent, &ActionPayload::Discrete(a));
+        let out =
+            Dynamics::recurrent_with_id(&model, &latent, ActionId(a), &ActionPayload::Discrete(a));
         // negamax：对手视角 value 翻转；terminal 边不 bootstrap
         let q = if out.terminal {
             out.reward

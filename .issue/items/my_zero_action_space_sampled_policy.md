@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-06-21
-updated: 2026-07-02
+updated: 2026-07-10
 ---
 
 # MyZero · 动作空间 / Sampled MuZero 决策备忘（B、K、连续、复合）
@@ -9,7 +9,9 @@ updated: 2026-07-02
 > **用途**：接 Pendulum / Platform MyZero 前必读；避免把「论文 explicit」与「工程推断」混谈，避免 B/K 概念绑错。
 > **状态**：`active` —— 2026-06-24 审计发现并修复 `π̂_β` 实现公式错误；CartPole 因 K=N 退化全枚举未暴露，Pendulum B=7/K=5 会真实受影响。修复后须重跑 Pendulum P0/P1。
 > **⚠️ 口径提示（2026-07-02）**：文中 CartPole 实测数字为 pre-autograd-fix 旧口径；新口径（3-seed 中位 · release + MKL）下 **Sampled 在 K=N 退化时与无 Sampled 逐步等价**（v0.25 收口重测，3 seeds env-steps 完全一致），机制结论以 [CartPole 基准账本](../../examples/my_zero/cartpole/README.md) 为准。
-> **优先级提示（2026-07-01，纲领 §2.3）**：Pendulum / Platform 已降级为非关键路径；本 issue 的 B=7 / hybrid 决策**保留待用**，具体需求出现再推进。
+> **优先级修订（2026-07-10）**：真实商业画像确认固定 `MultiDiscrete([4,4,16])`，
+> 通用 schema 地基已接通 MultiDiscrete / 2D continuous / Platform Hybrid；本 issue
+> 继续保持 active，只剩 native 环境统计价值与高维无枚举 proposal，接口完成不等于 promote。
 > **论文本地副本**：`AI论文/Muzero复合action.pdf`（= Hubert et al. ICML 2021 · Sampled MuZero · arXiv:2104.06303）
 > **关联**：[MyZero 纲领 §5](../../.doc/design/my_zero_algorithm_vision.md) · [RL 路线图](../../.doc/design/rl_roadmap.md) · [Pendulum 诊断](./pendulum_failure_diagnosis.md) · [post_ez_v2 backlog §Sampled（已归档）](../_archive/post_ez_v2_research_backlog.md)
 
@@ -168,10 +170,10 @@ MCTS / target 只看 `ActionId(37)`，环境执行只看 `ActionPayload`。这�
 | CartPole recipe `sampled` | ✅ 开；N=2 → K_eff=2（退化全枚举） |
 | `sampled_params.rs` | ✅ B/N/K 解析 + 单测 |
 | `scatter_policy_target`（K→full action_dim） | ✅ 2026-06-21 | Pendulum B=7 K=5 训练必需 |
-| factorized categorical **policy head** | ⏸ 1D 可跳过 | D=1 flat softmax ≡ factorized；多维/Platform 待做 |
+| factorized categorical **policy head** | ✅ | joint visit target → factor marginals；推理 factor prior 乘积 → joint prior |
 | Pendulum cons+recon+Sampled | ❌ greedy **−942** @ 120k steps | 门禁 −200；见 [诊断 §十](./pendulum_failure_diagnosis.md#十consreconsampled-压测2026-06-21) |
-| 按 state 动态采 K（连续/hybrid） | 🔲 | `DynamicsModel` 仍构造期固定离散表 |
-| Platform MyZero 示例 | 🔲 仅 SAC 有 hybrid 参考 |
+| 按 state prior 动态采 K（连续/hybrid） | ✅ 固定 catalog | 每节点 `CandidateProvider` 按当前 prior 采 K；高维无枚举 payload proposal 仍待做 |
+| Platform MyZero 示例 | ✅ smoke | `just smoke-my-zero-platform`；只验管线，不验收敛 |
 
 ### 4.0 公式修复（2026-06-24）
 

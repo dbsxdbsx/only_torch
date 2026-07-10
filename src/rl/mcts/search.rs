@@ -36,6 +36,7 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
         return SearchResult {
             children: Vec::new(),
             recommended: super::types::ActionPayload::Discrete(0),
+            recommended_id: super::types::ActionId(0),
             learn_policy: Vec::new(),
             network_value: root_out.value,
             q_range: None,
@@ -115,14 +116,16 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
         // expansion: 获取父状态 + 动作 → recurrent → 展开
         let parent_id = tree.nodes[leaf_id].parent.unwrap_or(tree.root);
         let edge_idx = tree.nodes[leaf_id].action_from_parent.unwrap_or(0);
-        let action = tree.nodes[parent_id].children[edge_idx].action.clone();
+        let edge = &tree.nodes[parent_id].children[edge_idx];
+        let action_id = edge.action_id;
+        let action = edge.action.clone();
 
         let parent_state = tree.states[parent_id]
             .as_ref()
             .expect("parent state should exist");
         let rec_out = {
             crate::prof_scope!("mcts.recurrent_fwd");
-            model.recurrent(parent_state, &action)
+            model.recurrent(parent_state, action_id, &action)
         };
 
         // 更新叶子节点信息
@@ -165,17 +168,30 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
     let rec_idx = scheduler
         .final_recommendation(&final_children, min_max.range())
         .unwrap_or_else(|| policy.recommend(&final_children, cfg, rng));
-    let recommended = if rec_idx < final_children.len() {
-        final_children[rec_idx].action.clone()
+    let (recommended_id, recommended) = if rec_idx < final_children.len() {
+        (
+            final_children[rec_idx].action_id,
+            final_children[rec_idx].action.clone(),
+        )
     } else if !final_children.is_empty() {
-        final_children[0].action.clone()
+        (
+            final_children[0].action_id,
+            final_children[0].action.clone(),
+        )
     } else {
-        root_out
+        let candidate = root_out
             .candidates
             .candidates
             .first()
-            .map(|c| c.payload.clone())
-            .unwrap_or(super::types::ActionPayload::Discrete(0))
+            .cloned()
+            .unwrap_or_else(|| {
+                ActionCandidate::new(
+                    super::types::ActionId(0),
+                    super::types::ActionPayload::Discrete(0),
+                    1.0,
+                )
+            });
+        (candidate.id, candidate.payload)
     };
 
     let learn_policy = policy.make_targets(&final_children, cfg);
@@ -183,6 +199,7 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
     SearchResult {
         children: final_children,
         recommended,
+        recommended_id,
         learn_policy,
         network_value: root_out.value,
         q_range: min_max.range(),

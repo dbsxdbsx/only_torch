@@ -160,6 +160,43 @@ fn test_continuous_multi_dim_env() {
     });
 }
 
+#[test]
+#[serial]
+fn test_multidiscrete_toy_env() {
+    Python::attach(|py| {
+        let env = GymEnv::new(py, "MyZero-MultiDiscrete-v0");
+        assert_eq!(env.get_action_type(), ActionType::MultiDiscrete);
+        let ranges = env.get_all_action_valid_range();
+        assert_eq!(ranges.len(), 3);
+        assert_eq!(
+            ranges
+                .iter()
+                .map(|r| r.get_discrete_action_selectable_num())
+                .collect::<Vec<_>>(),
+            vec![4, 4, 16]
+        );
+        let _ = env.reset(Some(42));
+        let (obs, _, _, _) = env.step(&[1.0, 2.0, 3.0]);
+        assert_eq!(obs[0].len(), 6);
+        env.close();
+    });
+}
+
+#[test]
+#[serial]
+fn test_dict_observation_preserves_keys_and_components() {
+    Python::attach(|py| {
+        let env = GymEnv::new(py, "MyZero-ImageDense-v0");
+        assert_eq!(env.get_obs_prop().len(), 2);
+        assert!(env.get_obs_keys().iter().all(Option::is_some));
+        let obs = env.reset(Some(42));
+        assert_eq!(obs.len(), 2);
+        assert_eq!(env.get_flatten_observation_len(), 16 * 24 * 3 + 5);
+        assert_eq!(env.flatten_obs(&obs).len(), 16 * 24 * 3 + 5);
+        env.close();
+    });
+}
+
 /// 测试高维连续动作环境（代表：Ant-v5，MuJoCo）
 ///
 /// 验证点：

@@ -1,6 +1,6 @@
 //! MyZero `.otm` 持久化（契约写入 metadata；用户见 `save_model_when_eval` / `load_model_if_exists`）。
 
-use super::config::{ActionPlan, MyZeroConfig};
+use super::config::{ActionPlan, MyZeroConfig, ObservationPlan};
 use super::network::MyZeroModel;
 use crate::nn::{
     Graph, GraphError, OTM_FORMAT_VERSION, OtmMetadata, Var, apply_params_to_graph, read_otm_file,
@@ -15,6 +15,8 @@ pub(crate) struct MyZeroOtmContract {
     pub schema_version: u32,
     pub env_id: String,
     pub action: String,
+    #[serde(default)]
+    pub observation: Option<String>,
     pub reward_scale: f32,
     pub latent_dim: usize,
 }
@@ -28,11 +30,29 @@ fn action_to_str(action: ActionPlan) -> String {
     }
 }
 
+fn observation_to_str(observation: ObservationPlan) -> String {
+    match observation {
+        ObservationPlan::Auto => "auto".to_string(),
+        ObservationPlan::Image {
+            height,
+            width,
+            history,
+        } => format!("image:{height}x{width}x{history}"),
+        ObservationPlan::Tokens {
+            length,
+            vocab_size,
+            embed_dim,
+            pad_id,
+        } => format!("tokens:{length}:{vocab_size}:{embed_dim}:pad={pad_id}"),
+    }
+}
+
 pub(crate) fn contract_from_cfg(cfg: &MyZeroConfig) -> MyZeroOtmContract {
     MyZeroOtmContract {
         schema_version: SCHEMA_VERSION,
         env_id: cfg.env.env_id.to_string(),
         action: action_to_str(cfg.env.action),
+        observation: Some(observation_to_str(cfg.env.observation)),
         reward_scale: cfg.env.reward_scale,
         latent_dim: cfg.model.latent_dim,
     }
@@ -60,6 +80,14 @@ pub(crate) fn verify_contract(
             "模型动作方案 {} 与声明 {expected_action} 不一致",
             file.action
         )));
+    }
+    if let Some(file_observation) = &file.observation {
+        let expected_observation = observation_to_str(cfg.env.observation);
+        if file_observation != &expected_observation {
+            return Err(GraphError::InvalidOperation(format!(
+                "模型 observation 方案 {file_observation} 与声明 {expected_observation} 不一致"
+            )));
+        }
     }
     if (file.reward_scale - cfg.env.reward_scale).abs() > 1e-5 {
         return Err(GraphError::InvalidOperation(format!(

@@ -1,6 +1,6 @@
 //! `builder.rs` 链式配置测试：recipe 注入、必填校验、组件冲突守卫
 
-use super::super::config::ActionPlan;
+use super::super::config::{ActionPlan, ObservationPlan};
 use super::super::my_zero::MyZero;
 use crate::nn::GraphError;
 
@@ -110,4 +110,38 @@ fn gumbel_and_sampled_conflict_is_error() {
         .max_episodes(2000)
         .build();
     assert!(matches!(r, Err(GraphError::InvalidOperation(msg)) if msg.contains("Gumbel root")));
+}
+
+#[test]
+fn observation_builders_record_schema_choices() {
+    let image = MyZero::new("CartPole-v1")
+        .image_observation(144, 256, 3)
+        .solved(1.0)
+        .max_episodes(1)
+        .build()
+        .unwrap();
+    assert_eq!(
+        image.env.observation,
+        ObservationPlan::Image {
+            height: 144,
+            width: 256,
+            history: 3,
+        }
+    );
+
+    let tokens = MyZero::new("CartPole-v1")
+        .token_observation_with_padding(16, 1024, 32, 7)
+        .solved(1.0)
+        .max_episodes(1)
+        .build()
+        .unwrap();
+    assert_eq!(
+        tokens.env.observation,
+        ObservationPlan::Tokens {
+            length: 16,
+            vocab_size: 1024,
+            embed_dim: 32,
+            pad_id: 7,
+        }
+    );
 }

@@ -12,14 +12,16 @@
 use super::consistency::negative_cosine_similarity;
 use super::loss;
 use super::obs_transform::{maybe_symlog, maybe_symlog_in_place};
+pub use super::schema::ObsSpec;
+use super::schema::{ActionSchema, ObservationSchema, PolicyLayout};
 use super::value_encoding::{
     SupportConfig, scalar_to_hl_gauss, scalar_to_two_hot, two_hot_to_scalar,
 };
 use crate::nn::{
-    Conv2d, Graph, GraphError, IntoVar, Linear, Module, Var, VarActivationOps, VarLossOps,
-    VarReduceOps, VarShapeOps,
+    Conv2d, Embedding, Graph, GraphError, IntoVar, Linear, Module, Var, VarActivationOps,
+    VarLossOps, VarReduceOps, VarShapeOps,
 };
-use crate::rl::mcts::{ActionPayload, Dynamics, DynamicsOutput};
+use crate::rl::mcts::{ActionId, ActionPayload, Dynamics, DynamicsOutput};
 use crate::tensor::Tensor;
 
 // ============================================================================
@@ -159,32 +161,6 @@ fn min_max_normalize(latent: &Var) -> Result<Var, GraphError> {
 // Representation 网络 h: obs → latent（min-max 归一化）
 // ============================================================================
 
-/// obs 编码规格（模型入口形状契约；env 事实 + 预处理管线共同决定）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ObsSpec {
-    /// 低维向量 obs（MLP 编码器），值 = 展平维度
-    Flat(usize),
-    /// 图像 obs（CNN 编码器）：`channels`（帧堆叠数）× `side`²，
-    /// 展平后进模型（`[B, c·side²]`），conv 前向内部 reshape 回 4D。
-    Image { channels: usize, side: usize },
-    /// 棋盘 obs（stride-1 CNN 编码器）：`channels` 平面 × `side`² 小棋盘。
-    /// 与 `Image` 的差异：不做 stride-2 降采样——棋类的局部模式（连珠等）
-    /// 依赖满分辨率空间结构（AlphaZero 系棋盘塔均为 stride-1）。
-    Board { channels: usize, side: usize },
-}
-
-impl ObsSpec {
-    /// 模型输入的展平维度
-    pub const fn dim(&self) -> usize {
-        match *self {
-            Self::Flat(d) => d,
-            Self::Image { channels, side } | Self::Board { channels, side } => {
-                channels * side * side
-            }
-        }
-    }
-}
-
 pub struct RepresentationNet {
     fc1: Linear,
     fc2: Linear,
@@ -222,7 +198,8 @@ pub struct ConvRepresentationNet {
     convs: Vec<Conv2d>,
     fc_latent: Linear,
     channels: usize,
-    side: usize,
+    height: usize,
+    width: usize,
 }
 
 impl ConvRepresentationNet {
@@ -232,13 +209,24 @@ impl ConvRepresentationNet {
         side: usize,
         latent_dim: usize,
     ) -> Result<Self, GraphError> {
+        Self::new_rect(graph, channels, side, side, latent_dim)
+    }
+
+    pub fn new_rect(
+        graph: &Graph,
+        channels: usize,
+        height: usize,
+        width: usize,
+        latent_dim: usize,
+    ) -> Result<Self, GraphError> {
         let graph = graph.with_model_name("ConvRepr");
-        // stride-2 conv 堆到空间 ≤7：84→42→21→11→6（4 层）、42→21→11→6（3 层）
+        // stride-2 conv 堆到两个空间轴均 ≤7；矩形输入保持宽高比，不裁方图。
         let mut convs = Vec::new();
-        let mut cur_side = side;
+        let mut cur_h = height;
+        let mut cur_w = width;
         let mut cur_c = channels;
         let mut i = 0;
-        while cur_side > 7 {
+        while cur_h > 7 || cur_w > 7 {
             let out_c = if i == 0 { 32 } else { 64 };
             convs.push(Conv2d::new(
                 &graph,
@@ -252,20 +240,22 @@ impl ConvRepresentationNet {
                 &format!("conv{}", i + 1),
             )?);
             cur_c = out_c;
-            cur_side = cur_side.div_ceil(2);
+            cur_h = cur_h.div_ceil(2);
+            cur_w = cur_w.div_ceil(2);
             i += 1;
         }
         assert!(
             !convs.is_empty(),
-            "ConvRepresentationNet: side 过小（≤7），请用 Flat 编码器"
+            "ConvRepresentationNet: 图像过小（高宽均 ≤7），请用 Flat 编码器"
         );
-        let flat_dim = cur_c * cur_side * cur_side;
+        let flat_dim = cur_c * cur_h * cur_w;
         let fc_latent = Linear::new(&graph, flat_dim, latent_dim, true, "fc_latent")?;
         Ok(Self {
             convs,
             fc_latent,
             channels,
-            side,
+            height,
+            width,
         })
     }
 
@@ -273,7 +263,7 @@ impl ConvRepresentationNet {
     pub fn forward(&self, x: impl IntoVar) -> Result<Var, GraphError> {
         let x = x.into_var(&self.fc_latent.parameters()[0].get_graph())?;
         let batch = x.value_expected_shape()[0];
-        let mut h = x.reshape(&[batch, self.channels, self.side, self.side])?;
+        let mut h = x.reshape(&[batch, self.channels, self.height, self.width])?;
         for conv in &self.convs {
             h = conv.forward(&h).relu();
         }
@@ -355,12 +345,129 @@ impl Module for BoardConvRepresentationNet {
     }
 }
 
+/// 已预处理矩形图像 + 稠密辅助向量的双分支 encoder。
+pub struct ImageDenseRepresentationNet {
+    image: ConvRepresentationNet,
+    aux: RepresentationNet,
+    fusion: Linear,
+    image_dim: usize,
+}
+
+impl ImageDenseRepresentationNet {
+    pub fn new(
+        graph: &Graph,
+        channels: usize,
+        height: usize,
+        width: usize,
+        aux_dim: usize,
+        latent_dim: usize,
+    ) -> Result<Self, GraphError> {
+        assert!(aux_dim > 0, "ImageDenseRepresentationNet: aux_dim 必须 > 0");
+        let image = ConvRepresentationNet::new_rect(graph, channels, height, width, latent_dim)?;
+        let aux = RepresentationNet::new(graph, aux_dim, latent_dim)?;
+        let fusion = Linear::new(
+            &graph.with_model_name("ImageDenseRepr"),
+            latent_dim * 2,
+            latent_dim,
+            true,
+            "fusion",
+        )?;
+        Ok(Self {
+            image,
+            aux,
+            fusion,
+            image_dim: channels * height * width,
+        })
+    }
+
+    pub fn forward(&self, x: impl IntoVar) -> Result<Var, GraphError> {
+        let graph = self.fusion.parameters()[0].get_graph();
+        let x = x.into_var(&graph)?;
+        let total_dim = x.value_expected_shape()[1];
+        let image_x = x.narrow(1, 0, self.image_dim)?;
+        let aux_x = x.narrow(1, self.image_dim, total_dim - self.image_dim)?;
+        let image_latent = self.image.forward(&image_x)?;
+        let aux_latent = self.aux.forward(&aux_x)?;
+        let fused = Var::concat(&[&image_latent, &aux_latent], 1)?;
+        min_max_normalize(&self.fusion.forward(&fused))
+    }
+}
+
+impl Module for ImageDenseRepresentationNet {
+    fn parameters(&self) -> Vec<Var> {
+        [
+            self.image.parameters(),
+            self.aux.parameters(),
+            self.fusion.parameters(),
+        ]
+        .concat()
+    }
+}
+
+/// 固定长度 token encoder：Embedding → flatten → MLP → latent。
+///
+/// 这是 CPU 友好的最小 sequence encoder 纵切；后续可在同一 schema 下替换为
+/// RNN/Transformer，而无需改 replay / MCTS 契约。
+pub struct TokenRepresentationNet {
+    embedding: Embedding,
+    fc1: Linear,
+    fc_latent: Linear,
+    length: usize,
+}
+
+impl TokenRepresentationNet {
+    pub fn new(
+        graph: &Graph,
+        length: usize,
+        vocab_size: usize,
+        embed_dim: usize,
+        latent_dim: usize,
+    ) -> Result<Self, GraphError> {
+        assert!(length > 0, "TokenRepresentationNet: length 必须 > 0");
+        let graph = graph.with_model_name("TokenRepr");
+        Ok(Self {
+            embedding: Embedding::new(&graph, vocab_size, embed_dim, "embedding")?,
+            fc1: Linear::new(&graph, length * embed_dim, 128, true, "fc1")?,
+            fc_latent: Linear::new(&graph, 128, latent_dim, true, "fc_latent")?,
+            length,
+        })
+    }
+
+    pub fn forward(&self, x: impl IntoVar) -> Result<Var, GraphError> {
+        let graph = self.fc1.parameters()[0].get_graph();
+        let x = x.into_var(&graph)?;
+        let batch = x.value_expected_shape()[0];
+        let tokens = x.narrow(1, 0, self.length)?;
+        let mask = x
+            .narrow(1, self.length, self.length)?
+            .reshape(&[batch, self.length, 1])?
+            .repeat(&[1, 1, self.embedding.embed_dim()])?;
+        let embedded = self.embedding.forward(&tokens);
+        let flat = (&embedded * &mask).flatten()?;
+        let hidden = self.fc1.forward(&flat).relu();
+        min_max_normalize(&self.fc_latent.forward(&hidden))
+    }
+}
+
+impl Module for TokenRepresentationNet {
+    fn parameters(&self) -> Vec<Var> {
+        [
+            self.embedding.parameters(),
+            self.fc1.parameters(),
+            self.fc_latent.parameters(),
+        ]
+        .concat()
+    }
+}
+
 /// representation 编码器统一封装（recipe 按 [`ObsSpec`] 注入）。
 pub enum ReprNet {
     Mlp(RepresentationNet),
     Conv(ConvRepresentationNet),
     // Box：Conv2d 按值内联使该变体显著大于其余两支（clippy large_enum_variant）
     Board(Box<BoardConvRepresentationNet>),
+    ImageDense(Box<ImageDenseRepresentationNet>),
+    Tokens(TokenRepresentationNet),
 }
 
 impl ReprNet {
@@ -372,9 +479,34 @@ impl ReprNet {
             ObsSpec::Image { channels, side } => Ok(Self::Conv(ConvRepresentationNet::new(
                 graph, channels, side, latent_dim,
             )?)),
+            ObsSpec::ImageRect {
+                channels,
+                height,
+                width,
+            } => Ok(Self::Conv(ConvRepresentationNet::new_rect(
+                graph, channels, height, width, latent_dim,
+            )?)),
             ObsSpec::Board { channels, side } => Ok(Self::Board(Box::new(
                 BoardConvRepresentationNet::new(graph, channels, side, latent_dim)?,
             ))),
+            ObsSpec::ImageDense {
+                channels,
+                height,
+                width,
+                aux_dim,
+            } => Ok(Self::ImageDense(Box::new(
+                ImageDenseRepresentationNet::new(
+                    graph, channels, height, width, aux_dim, latent_dim,
+                )?,
+            ))),
+            ObsSpec::Tokens {
+                length,
+                vocab_size,
+                embed_dim,
+                pad_id: _,
+            } => Ok(Self::Tokens(TokenRepresentationNet::new(
+                graph, length, vocab_size, embed_dim, latent_dim,
+            )?)),
         }
     }
 
@@ -383,6 +515,8 @@ impl ReprNet {
             Self::Mlp(net) => net.forward(x),
             Self::Conv(net) => net.forward(x),
             Self::Board(net) => net.forward(x),
+            Self::ImageDense(net) => net.forward(x),
+            Self::Tokens(net) => net.forward(x),
         }
     }
 }
@@ -393,6 +527,8 @@ impl Module for ReprNet {
             Self::Mlp(net) => net.parameters(),
             Self::Conv(net) => net.parameters(),
             Self::Board(net) => net.parameters(),
+            Self::ImageDense(net) => net.parameters(),
+            Self::Tokens(net) => net.parameters(),
         }
     }
 }
@@ -604,8 +740,13 @@ pub struct MyZeroModel {
     pub recon: ReconstructionNet,
     pub lstm: ValuePrefixLstm, // value prefix LSTM
     pub graph: Graph,
+    /// 联合动作数（MCTS `ActionId` / replay target 的稳定宽度）。
     pub action_dim: usize,
+    /// policy head 实际输出宽度；factorized schema 下等于各 factor 宽度之和。
+    pub policy_dim: usize,
     pub latent_dim: usize,
+    pub action_schema: ActionSchema,
+    policy_layout: PolicyLayout,
     /// value/reward 训练目标编码开关（false = two-hot，true = HL-Gauss）。
     /// 只影响训练目标构造，解码端（期望 → h⁻¹）与推理路径完全无关；
     /// 由 runner 按 `Components.hl_gauss` 注入（[`Self::with_value_encoding`]）。
@@ -637,11 +778,24 @@ impl MyZeroModel {
         action_dim: usize,
         latent_dim: usize,
     ) -> Result<Self, GraphError> {
+        Self::new_with_schemas(graph, spec, ActionSchema::discrete(action_dim), latent_dim)
+    }
+
+    /// 按观测与动作 schema 构造通用 learned world model。
+    pub fn new_with_schemas(
+        graph: &Graph,
+        spec: ObservationSchema,
+        action_schema: ActionSchema,
+        latent_dim: usize,
+    ) -> Result<Self, GraphError> {
         let obs_dim = spec.dim();
+        let action_dim = action_schema.action_count();
+        let policy_layout = action_schema.policy_layout();
+        let policy_dim = policy_layout.output_dim();
         let lstm_hidden = latent_dim; // LSTM hidden 维度 = latent_dim
         let repr = ReprNet::new(graph, spec, latent_dim)?;
         let dyn_net = DynamicsNet::new(graph, latent_dim, action_dim)?;
-        let pred = PredictionNet::new(graph, latent_dim, action_dim)?;
+        let pred = PredictionNet::new(graph, latent_dim, policy_dim)?;
         let projector = ProjectorNet::new(graph, latent_dim)?;
         let predictor = PredictorNet::new(graph, latent_dim)?;
         let recon = ReconstructionNet::new(graph, latent_dim, obs_dim)?;
@@ -701,7 +855,10 @@ impl MyZeroModel {
             lstm,
             graph: graph.clone(),
             action_dim,
+            policy_dim,
             latent_dim,
+            action_schema,
+            policy_layout,
             value_hl_gauss: false,
             obs_symlog: false,
             root_infer,
@@ -766,6 +923,68 @@ impl MyZeroModel {
             oh[action_idx] = 1.0;
         }
         oh
+    }
+
+    fn encode_policy_target(&self, joint: &[f32]) -> Vec<f32> {
+        self.action_schema.encode_policy_target(joint)
+    }
+
+    fn policy_loss(&self, logits: &Var, target: Tensor) -> Result<Var, GraphError> {
+        match &self.policy_layout {
+            PolicyLayout::Categorical { .. } => logits.cross_entropy(target),
+            PolicyLayout::Factorized { factors } => {
+                let mut offset = 0;
+                let mut losses = Vec::with_capacity(factors.len());
+                for &width in factors {
+                    let pred = logits.narrow(1, offset, width)?;
+                    let expected = target.narrow(1, offset, width);
+                    losses.push(pred.cross_entropy(expected)?);
+                    offset += width;
+                }
+                let mut total = losses.remove(0);
+                for loss in losses {
+                    total = &total + &loss;
+                }
+                Ok(total)
+            }
+        }
+    }
+
+    /// `Σ target·log π`；factorized policy 对每个 factor 独立 log-softmax 后求和。
+    fn weighted_policy_log_prob(&self, logits: &Var, target: Tensor) -> Result<Var, GraphError> {
+        match &self.policy_layout {
+            PolicyLayout::Categorical { .. } => Ok((&logits.log_softmax() * target).sum()),
+            PolicyLayout::Factorized { factors } => {
+                let mut offset = 0;
+                let mut terms = Vec::with_capacity(factors.len());
+                for &width in factors {
+                    let pred = logits.narrow(1, offset, width)?;
+                    let expected = target.narrow(1, offset, width);
+                    terms.push((&pred.log_softmax() * expected).sum());
+                    offset += width;
+                }
+                let mut total = terms.remove(0);
+                for term in terms {
+                    total = &total + &term;
+                }
+                Ok(total)
+            }
+        }
+    }
+
+    fn decode_policy_logits(&self, logits: &[f32]) -> Vec<f32> {
+        match &self.policy_layout {
+            PolicyLayout::Categorical { .. } => softmax_row(logits),
+            PolicyLayout::Factorized { factors } => {
+                let mut offset = 0;
+                let mut factor_probs = Vec::with_capacity(logits.len());
+                for &width in factors {
+                    factor_probs.extend(softmax_row(&logits[offset..offset + width]));
+                    offset += width;
+                }
+                self.action_schema.joint_priors(&factor_probs)
+            }
+        }
     }
 
     /// 标量 value/reward → two-hot 目标张量 [1, `support_size`]
@@ -842,9 +1061,10 @@ impl MyZeroModel {
         let mut latent = self.repr.forward(&obs_tensor)?;
 
         let (pred_policy, pred_value_logits) = self.pred.forward(&latent);
-        let target_p0 = Tensor::new(&target_policies[0], &[1, self.action_dim]);
+        let target_p0_encoded = self.encode_policy_target(&target_policies[0]);
+        let target_p0 = Tensor::new(&target_p0_encoded, &[1, self.policy_dim]);
         let target_v0 = self.two_hot_target(target_values[0]);
-        let mut total_loss = pred_policy.cross_entropy(&target_p0)?;
+        let mut total_loss = self.policy_loss(&pred_policy, target_p0)?;
         total_loss =
             &total_loss + &(&pred_value_logits.cross_entropy(&target_v0)? * loss::VALUE_LOSS_COEF);
 
@@ -878,12 +1098,13 @@ impl MyZeroModel {
                 self.dyn_net.forward(&latent, &oh_var)?;
             let (pred_p, pred_v_logits) = self.pred.forward(&next_latent);
 
-            let tp = Tensor::new(&target_policies[i + 1], &[1, self.action_dim]);
+            let tp_encoded = self.encode_policy_target(&target_policies[i + 1]);
+            let tp = Tensor::new(&tp_encoded, &[1, self.policy_dim]);
             let tv = self.two_hot_target(target_values[i + 1]);
             let tr = self.two_hot_target(target_rewards[i]);
             let tc = Tensor::new(&[target_continuations[i].clamp(0.0, 1.0)], &[1, 1]);
 
-            let step_policy_loss = pred_p.cross_entropy(&tp)?;
+            let step_policy_loss = self.policy_loss(&pred_p, tp)?;
             let step_value_loss = pred_v_logits.cross_entropy(&tv)?;
 
             // reward loss：value_prefix 开启时用 LSTM prefix logits，否则走原 DynamicsNet reward head
@@ -992,13 +1213,14 @@ impl MyZeroModel {
         };
         // obs_t（k=0 输入 + reconstruction k=0 目标）
         let obs_tensor = stack_obs_sources(&mut items.iter().map(|it| &it.obs_t));
-        // 各步 policy 目标 [G, action_dim]（slot 0..=k）
+        // 各步 policy 目标 [G, policy_dim]（joint target 按 schema 投影）
         let policy_at = |slot: usize| -> Tensor {
-            let rows: Vec<&[f32]> = items
+            let encoded: Vec<Vec<f32>> = items
                 .iter()
-                .map(|it| it.target_policies[slot].as_slice())
+                .map(|it| self.encode_policy_target(&it.target_policies[slot]))
                 .collect();
-            stack(&rows, self.action_dim)
+            let rows: Vec<&[f32]> = encoded.iter().map(Vec::as_slice).collect();
+            stack(&rows, self.policy_dim)
         };
         // 各步 value 标量 → categorical 目标 [G, support]（slot 0..=k）
         let value_two_hot_at = |slot: usize| -> Tensor {
@@ -1010,23 +1232,25 @@ impl MyZeroModel {
             if bc_coef <= 0.0 {
                 return None;
             }
-            let mut flat = vec![0.0f32; g * self.action_dim];
+            let mut flat = Vec::with_capacity(g * self.policy_dim);
             let mut any = false;
-            for (row, it) in items.iter().enumerate() {
+            for it in items {
                 let w = it.bc_weights.get(slot).copied().unwrap_or(0.0);
+                let mut joint = vec![0.0f32; self.action_dim];
                 if w > 0.0 {
                     let a = it.actions[slot];
                     if a < self.action_dim {
-                        flat[row * self.action_dim + a] = w;
+                        joint[a] = w;
                         any = true;
                     }
                 }
+                flat.extend(self.encode_policy_target(&joint));
             }
-            any.then(|| Tensor::new(flat, &[g, self.action_dim]))
+            any.then(|| Tensor::new(flat, &[g, self.policy_dim]))
         };
-        // BC 项：−(bc_coef/G)·Σ w·log π(a)（log_softmax 与 CE 共享同一 logits 节点）
-        let bc_term = |logits: &Var, wt: Tensor| -> Var {
-            (&logits.log_softmax() * wt).sum() * (-bc_coef / g as f32)
+        // BC 项：−(bc_coef/G)·Σ w·log π(a)。
+        let bc_term = |logits: &Var, wt: Tensor| -> Result<Var, GraphError> {
+            Ok(self.weighted_policy_log_prob(logits, wt)? * (-bc_coef / g as f32))
         };
 
         // ---- k=0：repr → pred（policy + value）+ reconstruction ----
@@ -1041,11 +1265,11 @@ impl MyZeroModel {
         let (pred_policy, pred_value_logits) = self.pred.forward(&latent);
         let tp0 = policy_at(0);
         let tv0 = value_two_hot_at(0);
-        let mut total_loss = pred_policy.cross_entropy(tp0)?;
+        let mut total_loss = self.policy_loss(&pred_policy, tp0)?;
         total_loss =
             &total_loss + &(&pred_value_logits.cross_entropy(tv0)? * loss::VALUE_LOSS_COEF);
         if let Some(wt) = bc_target_at(0) {
-            total_loss = &total_loss + &bc_term(&pred_policy, wt);
+            total_loss = &total_loss + &bc_term(&pred_policy, wt)?;
         }
 
         if let Some(target0) = recon_target0 {
@@ -1097,7 +1321,7 @@ impl MyZeroModel {
                 .collect();
             let tc = Tensor::new(tc_flat, &[g, 1]);
 
-            let step_policy_loss = pred_p.cross_entropy(tp)?;
+            let step_policy_loss = self.policy_loss(&pred_p, tp)?;
             let step_value_loss = pred_v_logits.cross_entropy(tv)?;
 
             let step_reward_loss = if use_value_prefix {
@@ -1121,7 +1345,7 @@ impl MyZeroModel {
             if i + 1 < k
                 && let Some(wt) = bc_target_at(i + 1)
             {
-                step_loss = &step_loss + &bc_term(&pred_p, wt);
+                step_loss = &step_loss + &bc_term(&pred_p, wt)?;
             }
 
             // consistency / reconstruction：仅在该步有真实 next_obs 时（组内 i<n_next 统一成立）
@@ -1243,7 +1467,21 @@ impl Dynamics for &MyZeroModel {
     }
 
     fn recurrent(&self, state: &[f32], action: &ActionPayload) -> DynamicsOutput {
-        (**self).recurrent_impl(state, action)
+        let ActionPayload::Discrete(action_idx) = action else {
+            panic!(
+                "MyZeroModel::recurrent: 结构化 payload 必须通过 WorldModel / recurrent_with_id 传入稳定 ActionId"
+            );
+        };
+        (**self).recurrent_impl(state, ActionId(*action_idx), action)
+    }
+
+    fn recurrent_with_id(
+        &self,
+        state: &[f32],
+        action_id: ActionId,
+        action: &ActionPayload,
+    ) -> DynamicsOutput {
+        (**self).recurrent_impl(state, action_id, action)
     }
 }
 
@@ -1261,18 +1499,24 @@ impl MyZeroModel {
 
         // 读取输出：借用直取（单次拷贝）+ 无 Tensor 解码（softmax/categorical 走切片路径）
         let latent_vec = read_value_vec(&r.latent);
-        let policy_vec = softmax_row(&read_value_vec(&r.policy));
+        let policy_vec = self.decode_policy_logits(&read_value_vec(&r.policy));
         let value = Self::decode_categorical_slice(&read_value_vec(&r.value_logits));
 
         (latent_vec, policy_vec, value)
     }
 
-    fn recurrent_impl(&self, state: &[f32], action: &ActionPayload) -> DynamicsOutput {
-        let action_idx = match action {
-            ActionPayload::Discrete(idx) => *idx,
-            _ => 0,
-        };
-
+    fn recurrent_impl(
+        &self,
+        state: &[f32],
+        action_id: ActionId,
+        _action: &ActionPayload,
+    ) -> DynamicsOutput {
+        let action_idx = action_id.index();
+        assert!(
+            action_idx < self.action_dim,
+            "MyZeroModel::recurrent: ActionId {action_idx} 越界 {}",
+            self.action_dim
+        );
         let rc = &self.rec_infer;
 
         // setup：只写入 latent / action onehot（复用持久化输入节点，不新建；
@@ -1304,7 +1548,7 @@ impl MyZeroModel {
         let next_state = read_value_vec(&rc.next_latent);
         let reward = Self::decode_categorical_slice(&read_value_vec(&rc.reward_logits));
         let value = Self::decode_categorical_slice(&read_value_vec(&rc.value_logits));
-        let prior = softmax_row(&read_value_vec(&rc.policy));
+        let prior = self.decode_policy_logits(&read_value_vec(&rc.policy));
         let continuation_logit = rc.continuation_logit.node().with_value(|v| {
             v.expect("推理输出没有值，需先执行 forward")
                 .to_vec()

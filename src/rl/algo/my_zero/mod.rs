@@ -65,13 +65,16 @@
 //! - [`sve`]：search-based value estimation blend（可用组件，接线属后续消融）
 
 pub mod action;
+#[cfg(test)]
 pub(crate) mod board;
+#[cfg(test)]
 pub(crate) mod board_model_io;
 pub mod builder;
 pub mod checkpoint;
 pub mod component;
 pub mod config;
 pub mod consistency;
+#[cfg(test)]
 pub(crate) mod gomoku;
 pub mod loss;
 pub mod model_io;
@@ -89,6 +92,7 @@ pub mod report;
 pub mod rosmo;
 pub mod runner;
 pub(crate) mod sampled_params;
+pub mod schema;
 pub(crate) mod search_policy;
 pub mod sve;
 pub mod target;
@@ -104,7 +108,8 @@ pub use action::ActionAdapter;
 pub use builder::MyZeroBuilder;
 pub use config::{
     ActionPlan, CheckpointSettings, DEFAULT_EVAL_SEED, DEFAULT_ROLLOUT_SEED, DEFAULT_SEED,
-    DEFAULT_TRAIN_SEED, EnvSettings, EvalSettings, ModelSettings, MyZeroConfig, TrainSettings,
+    DEFAULT_TRAIN_SEED, EnvSettings, EvalSettings, ModelSettings, MyZeroConfig, ObservationPlan,
+    TrainSettings,
 };
 pub use consistency::negative_cosine_similarity;
 pub use my_zero::MyZero;
@@ -112,7 +117,11 @@ pub use n_step::{compute_n_step_target, compute_n_step_target_with};
 pub use network::MyZeroModel;
 pub use reanalyze::{reanalyze_game, reanalyze_step, reanalyze_unroll_window};
 pub use report::{EvalReport, RunReport, TrainReport};
-pub use rosmo::{RosmoTargets, one_step_improved_policy, rosmo_refresh_window};
+pub use rosmo::{
+    RosmoTargets, one_step_improved_policy, one_step_improved_policy_with_actions,
+    rosmo_refresh_window, rosmo_refresh_window_with_actions,
+};
+pub use schema::{ActionCodec, ActionSchema, ObsSpec, ObservationSchema, PolicyLayout};
 pub use sve::sve_blend;
 pub use target::completed_q_policy_target;
 pub use target_net::{TargetConfig, ema_update, hard_update, is_hard_sync_step, sync_target};

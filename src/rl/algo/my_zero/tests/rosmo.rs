@@ -2,7 +2,10 @@
 //! prepare 路径（Refreshed 变体 + RNG 消耗与 Borrowed 逐 bit 一致 + 不写回）。
 
 use super::super::component::Components;
-use super::super::rosmo::{one_step_improved_policy, rosmo_refresh_window};
+use super::super::rosmo::{
+    one_step_improved_policy, one_step_improved_policy_with_actions, rosmo_refresh_window,
+    validated_replay_action_id,
+};
 use crate::rl::mcts::{ActionPayload, Dynamics, DynamicsOutput};
 use crate::rl::{GameOutcome, SelfPlayGame, SelfPlayStep};
 
@@ -49,6 +52,72 @@ fn make_step(obs: Vec<f32>, action: usize) -> SelfPlayStep {
         continuation: 1.0,
         extras: Default::default(),
     }
+}
+
+struct StructuredMock;
+
+impl Dynamics for StructuredMock {
+    fn initial_state(&self, _obs: &[f32]) -> (Vec<f32>, Vec<f32>, f32) {
+        (vec![0.0], vec![0.5, 0.5], 0.0)
+    }
+
+    fn recurrent(&self, state: &[f32], action: &ActionPayload) -> DynamicsOutput {
+        let ActionPayload::MultiDiscrete(values) = action else {
+            panic!("ROSMO 必须保留结构化 payload");
+        };
+        DynamicsOutput {
+            next_state: state.to_vec(),
+            reward: values.iter().sum::<usize>() as f32,
+            prior: vec![0.5, 0.5],
+            value: 0.0,
+            terminal: false,
+            continuation: 1.0,
+        }
+    }
+}
+
+#[test]
+fn structured_rosmo_uses_real_payload_catalog() {
+    let actions = vec![
+        ActionPayload::MultiDiscrete(vec![0, 0]),
+        ActionPayload::MultiDiscrete(vec![1, 2]),
+    ];
+    let (policy, _, advs) =
+        one_step_improved_policy_with_actions(&StructuredMock, &[0.0], 0.99, &actions);
+    assert!(advs[1] > advs[0]);
+    assert!(policy[1] > policy[0]);
+}
+
+#[test]
+#[should_panic(expected = "prior 宽度")]
+fn rosmo_rejects_prior_catalog_mismatch() {
+    let model = MockDyn {
+        prior: vec![1.0],
+        root_v: 0.0,
+        next_v: 0.0,
+        r0: 0.0,
+        r1: 0.0,
+    };
+    let actions = vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)];
+    let _ = one_step_improved_policy_with_actions(&model, &[0.0], 0.99, &actions);
+}
+
+#[test]
+fn rosmo_rejects_malformed_replay_action_ids_before_cast() {
+    for invalid in [
+        vec![],
+        vec![f32::NAN],
+        vec![-1.0],
+        vec![0.5],
+        vec![0.0, 1.0],
+        vec![2.0],
+    ] {
+        assert!(
+            std::panic::catch_unwind(|| validated_replay_action_id(&invalid, 2)).is_err(),
+            "非法 replay action 应被拒绝: {invalid:?}"
+        );
+    }
+    assert_eq!(validated_replay_action_id(&[1.0], 2), 1);
 }
 
 // ---- one_step_improved_policy ----

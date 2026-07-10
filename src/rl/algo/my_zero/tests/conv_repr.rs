@@ -153,7 +153,7 @@ fn my_zero_model_image_spec_trains() {
 /// Image spec 的搜索期推理（initial_state + recurrent）产出合法输出
 #[test]
 fn my_zero_model_image_spec_inference() {
-    use crate::rl::mcts::{ActionPayload, Dynamics};
+    use crate::rl::mcts::{ActionId, ActionPayload, Dynamics};
 
     let graph = Graph::new_with_seed(42);
     let spec = ObsSpec::Image {
@@ -169,7 +169,8 @@ fn my_zero_model_image_spec_inference() {
     assert!(value.is_finite());
     assert_abs_diff_eq!(policy.iter().sum::<f32>(), 1.0, epsilon = 1e-4);
 
-    let out = Dynamics::recurrent(&&model, &latent, &ActionPayload::Discrete(1));
+    let out =
+        Dynamics::recurrent_with_id(&&model, &latent, ActionId(1), &ActionPayload::Discrete(1));
     assert_eq!(out.next_state.len(), LATENT);
     assert!(out.reward.is_finite() && out.value.is_finite());
 }

@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-07-02
-updated: 2026-07-02
+updated: 2026-07-10
 owners: []
 reviewers: []
 ---
@@ -28,13 +28,16 @@ reviewers: []
 该商业标的的私有设计文档曾**否决 MuZero 系**,算术是:Python/PyTorch 栈单次推理 ~5–6ms × 50 sims ≈ 300ms,80ms 周期内只能跑 2–4 sims。
 本框架 Phase 1 spike([数据与协议](cpu_only_mcts_image_realtime_risk.md))实测:被 sims 放大的单元(flat-latent MLP recurrent)仅 **0.03ms**,50 sims 想象共 ~1.5ms;完整 acting 单步(含树簿记)sims=50 仅 3.9ms(84² 口径)。**旧否决否决的是「Python 栈上的 MuZero」,不是 MuZero 本身**——wall-clock 维度上该标的对 MyZero 重新开放。私有项目侧的复议记录由私有仓库自行维护,本 issue 不承载其内容。
 
-## 三、能力缺口清单(按依赖序;均为表征/适配层,dynamics/prediction 零改动)
+## 三、能力缺口清单（按依赖序）
 
-- [ ] **矩形输入**:`ConvRepresentationNet` 从 `side` 参数化为 `(h, w)`(卷积栈本身宽高比无关);`obs_pipeline` 预处理目标尺寸可配、支持非方形。**触发**:图像基准跑通后、或该标的接入前。
-- [ ] **堆叠数可配**:STACK 从常量提升为 recipe 注入(3/4 皆常用)。
-- [ ] **Dict obs 双分支表征**:图像 CNN + 辅助向量 MLP → 融合 latent;`ObsAdapter` 相应扩展(env 侧 Gymnasium Dict space 解析 GymEnv 已部分支持,Tuple 路径在)。
-- [ ] **MultiDiscrete 动作适配**:`ActionAdapter` 支持多维离散(联合枚举或 factored);与 Sampled K 公式对接(\|A\|≫sims 域)。**依赖**:Phase 2 Gumbel/completedQ 复裁结论。
+- [x] **矩形输入**：`ConvRepresentationNet` 支持 `(h,w)`，图像预处理目标尺寸可配、无需裁方图（2026-07-10）。
+- [x] **堆叠数可配**：history 从常量提升为 `ObservationPlan::Image` 注入；默认 4 不变，1/4/8 有性质测试与 benchmark。
+- [x] **Dict obs 双分支表征**：GymEnv 保留 Dict keys，Image+Dense 走图像 CNN + 辅助 MLP → fusion latent；纯 toy smoke 已通。
+- [x] **MultiDiscrete 动作适配**：`ActionSchema` mixed-radix joint ID + factorized policy + Sampled 节点级 K 候选；`[4,4,16]` toy smoke 已通。
 - [ ] **POMDP 表征验证**(研究项,非工程项):帧堆叠 + learned dynamics 在遮挡/隐身域的学习能力——纲领 §6 已留 history/帧堆叠插件位(**非** BetaZero,§5.3 已裁决)。**依赖**:Phase 1 图像基准先证明干净域(Pong)管线在学。
+
+> 前四项仅表示接口与最小纵切完成，不代表真实商业环境已收敛；生产支持仍需 native
+> 环境统计 benchmark。实现与验收见[通用 world model 地基](../../.doc/design/my_zero_world_model_foundation.md)。
 
 ## 四、触发与不做的边界
 

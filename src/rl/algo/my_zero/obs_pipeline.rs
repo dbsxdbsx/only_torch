@@ -14,7 +14,8 @@
 //! 相对旧「f32 直存 `v/255`」每像素误差 ≤ 0.5/255（DQN→MuZero 系标准做法）。
 //! 计算层 f32-only 契约不变，见 [`StoredObs`] 模块文档。
 
-use super::network::ObsSpec;
+use super::config::ObservationPlan;
+use super::schema::ObservationSchema;
 use crate::rl::{GymEnv, ObsType, StoredObs};
 use std::collections::VecDeque;
 
@@ -23,12 +24,52 @@ pub const OUT_SIDE: usize = 84;
 /// 帧堆叠数（Atari 社区标准 4）
 pub const STACK: usize = 4;
 
+/// 图像预处理的运行时配置。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImageConfig {
+    pub height: usize,
+    pub width: usize,
+    pub history: usize,
+}
+
+impl Default for ImageConfig {
+    fn default() -> Self {
+        Self {
+            height: OUT_SIDE,
+            width: OUT_SIDE,
+            history: STACK,
+        }
+    }
+}
+
+impl ImageConfig {
+    pub fn new(height: usize, width: usize, history: usize) -> Self {
+        assert!(height > 0 && width > 0, "ImageConfig: 高宽必须 > 0");
+        assert!(history > 0, "ImageConfig: history 必须 > 0");
+        Self {
+            height,
+            width,
+            history,
+        }
+    }
+
+    pub const fn frame_len(self) -> usize {
+        self.height * self.width
+    }
+
+    pub const fn stacked_obs_dim(self) -> usize {
+        self.history * self.frame_len()
+    }
+}
+
 /// 处理后单帧长度
+#[cfg_attr(not(test), allow(dead_code))]
 pub const fn frame_len() -> usize {
     OUT_SIDE * OUT_SIDE
 }
 
 /// 模型输入维度（堆叠后展平）
+#[cfg_attr(not(test), allow(dead_code))]
 pub const fn stacked_obs_dim() -> usize {
     STACK * frame_len()
 }
@@ -46,6 +87,7 @@ pub struct ImagePipe {
     in_w: usize,
     in_c: usize,
     channel_first: bool,
+    config: ImageConfig,
     /// 首帧像素域校验是否已通过（仅在第一次 reset 时检查一次）
     domain_checked: bool,
     /// 最近 STACK 个处理后量化单帧（老 → 新；与 buffer 存储同编码）
@@ -54,7 +96,7 @@ pub struct ImagePipe {
 
 impl ImagePipe {
     /// 从 env 观察空间事实构造；非图像 obs（普通向量）返回 `None`。
-    pub fn from_env(env: &GymEnv) -> Option<Self> {
+    pub fn from_env(env: &GymEnv, config: ImageConfig) -> Option<Self> {
         let shape = &env.get_obs_prop().first()?.shape_vec;
         let (in_h, in_w, in_c, channel_first) = match env.get_obs_type() {
             ObsType::NoChannel => (shape[0] as usize, shape[1] as usize, 1, false),
@@ -77,8 +119,9 @@ impl ImagePipe {
             in_w,
             in_c,
             channel_first,
+            config,
             domain_checked: false,
-            frames: VecDeque::with_capacity(STACK),
+            frames: VecDeque::with_capacity(config.history),
         })
     }
 
@@ -115,7 +158,7 @@ impl ImagePipe {
         }
         let frame = self.process_frame(raw);
         self.frames.clear();
-        for _ in 0..STACK {
+        for _ in 0..self.config.history {
             self.frames.push_back(frame.clone());
         }
         frame
@@ -124,7 +167,7 @@ impl ImagePipe {
     /// episode 中：处理新帧入滑窗（挤出最老帧），返回处理后量化单帧。
     pub fn push(&mut self, raw: &[f32]) -> StoredObs {
         let frame = self.process_frame(raw);
-        if self.frames.len() >= STACK {
+        if self.frames.len() >= self.config.history {
             self.frames.pop_front();
         }
         self.frames.push_back(frame.clone());
@@ -138,10 +181,10 @@ impl ImagePipe {
     pub fn stacked(&self) -> Vec<f32> {
         assert_eq!(
             self.frames.len(),
-            STACK,
+            self.config.history,
             "ImagePipe::stacked: 须先 reset 填满滑窗"
         );
-        let mut out = Vec::with_capacity(stacked_obs_dim());
+        let mut out = Vec::with_capacity(self.config.stacked_obs_dim());
         for f in &self.frames {
             f.append_f32_into(&mut out);
         }
@@ -160,8 +203,18 @@ impl ImagePipe {
             "ImagePipe::process_frame: 输入长度与声明形状不符"
         );
         let gray = self.to_gray(raw);
-        let resized = bilinear_resize(&gray, self.in_h, self.in_w, OUT_SIDE, OUT_SIDE);
+        let resized = bilinear_resize(
+            &gray,
+            self.in_h,
+            self.in_w,
+            self.config.height,
+            self.config.width,
+        );
         StoredObs::quantize_pixels(&resized)
+    }
+
+    pub const fn config(&self) -> ImageConfig {
+        self.config
     }
 
     /// 灰度化（BT.601）；单通道原样返回。输出 [h*w]（行主序）。
@@ -259,35 +312,116 @@ pub(crate) fn assemble_stacked_obs(frames: &[&StoredObs], t: usize, stack: usize
 /// | `Flat` | 原始展平 obs | 同左（[`StoredObs::F32`] 直通） |
 /// | `Image` | [`STACK`] 帧堆叠（[`stacked_obs_dim`]） | 处理后**量化单帧**（[`StoredObs::U8`]，[`frame_len`] 个 u8，f32 整局的 1/16） |
 pub(crate) enum ObsAdapter {
-    Flat,
+    Flat {
+        schema: ObservationSchema,
+    },
     Image(ImagePipe),
+    ImageDense {
+        schema: ObservationSchema,
+        image_index: usize,
+        channel_first: bool,
+        image_shape: (usize, usize, usize),
+    },
+    Tokens {
+        schema: ObservationSchema,
+        vocab_size: usize,
+        pad_id: usize,
+    },
 }
 
 impl ObsAdapter {
     /// 按 env 观察空间事实解析（图像 obs → 图像管线）。
-    pub fn resolve(env: &GymEnv) -> Self {
-        match ImagePipe::from_env(env) {
-            Some(pipe) => Self::Image(pipe),
-            None => Self::Flat,
+    pub fn resolve(env: &GymEnv, plan: ObservationPlan) -> Self {
+        match plan {
+            ObservationPlan::Tokens {
+                length,
+                vocab_size,
+                embed_dim,
+                pad_id,
+            } => {
+                assert_eq!(
+                    env.get_flatten_observation_len(),
+                    length,
+                    "MyZero token observation 长度与 env 不一致"
+                );
+                Self::Tokens {
+                    schema: ObservationSchema::Tokens {
+                        length,
+                        vocab_size,
+                        embed_dim,
+                        pad_id,
+                    },
+                    vocab_size,
+                    pad_id,
+                }
+            }
+            ObservationPlan::Image {
+                height,
+                width,
+                history,
+            } => Self::Image(
+                ImagePipe::from_env(env, ImageConfig::new(height, width, history))
+                    .expect("MyZero: ObservationPlan::Image 只能用于单一图像 observation"),
+            ),
+            ObservationPlan::Auto => {
+                if env.get_obs_prop().len() == 1
+                    && let Some(pipe) = ImagePipe::from_env(env, ImageConfig::default())
+                {
+                    return Self::Image(pipe);
+                }
+                if let Some((image_index, channel_first, channels, height, width)) =
+                    detect_image_component(env)
+                {
+                    let image_dim = channels * height * width;
+                    let aux_dim = env.get_flatten_observation_len() - image_dim;
+                    return Self::ImageDense {
+                        schema: ObservationSchema::ImageDense {
+                            channels,
+                            height,
+                            width,
+                            aux_dim,
+                        },
+                        image_index,
+                        channel_first,
+                        image_shape: (channels, height, width),
+                    };
+                }
+                Self::Flat {
+                    schema: ObservationSchema::Flat(env.get_flatten_observation_len()),
+                }
+            }
         }
     }
 
     /// 模型入口 obs 规格
-    pub fn model_obs_spec(&self, env: &GymEnv) -> ObsSpec {
+    pub const fn model_obs_spec(&self, _env: &GymEnv) -> ObservationSchema {
         match self {
-            Self::Flat => ObsSpec::Flat(env.get_flatten_observation_len()),
-            Self::Image(_) => ObsSpec::Image {
-                channels: STACK,
-                side: OUT_SIDE,
-            },
+            Self::Flat { schema }
+            | Self::ImageDense { schema, .. }
+            | Self::Tokens { schema, .. } => *schema,
+            Self::Image(pipe) => {
+                let config = pipe.config();
+                if config.height == config.width {
+                    ObservationSchema::Image {
+                        channels: config.history,
+                        side: config.height,
+                    }
+                } else {
+                    ObservationSchema::ImageRect {
+                        channels: config.history,
+                        height: config.height,
+                        width: config.width,
+                    }
+                }
+            }
         }
     }
 
     /// 训练期堆叠参数（Flat → `None`，Image → `Some(STACK)`），供 batch 组装。
     pub const fn image_stack(&self) -> Option<usize> {
         match self {
-            Self::Flat => None,
-            Self::Image(_) => Some(STACK),
+            Self::Image(pipe) => Some(pipe.config().history),
+            Self::Flat { .. } | Self::ImageDense { .. } | Self::Tokens { .. } => None,
         }
     }
 
@@ -295,13 +429,30 @@ impl ObsAdapter {
     pub fn reset(&mut self, env: &GymEnv, seed: Option<u64>) -> (Vec<f32>, StoredObs) {
         let raw = env.reset(seed);
         match self {
-            Self::Flat => {
-                let o = raw[0].clone();
+            Self::Flat { .. } => {
+                let o = env.flatten_obs(&raw);
                 (o.clone(), o.into())
             }
             Self::Image(pipe) => {
                 let frame = pipe.reset(&raw[0]);
                 (pipe.stacked(), frame)
+            }
+            Self::ImageDense {
+                image_index,
+                channel_first,
+                image_shape,
+                ..
+            } => {
+                let o = compose_image_dense(&raw, *image_index, *channel_first, *image_shape);
+                (o.clone(), o.into())
+            }
+            Self::Tokens {
+                vocab_size, pad_id, ..
+            } => {
+                let o = env.flatten_obs(&raw);
+                validate_tokens(&o, *vocab_size);
+                let o = encode_tokens_with_mask(o, *pad_id);
+                (o.clone(), o.into())
             }
         }
     }
@@ -313,14 +464,108 @@ impl ObsAdapter {
             env.step(action)
         };
         match self {
-            Self::Flat => {
-                let o = raw[0].clone();
+            Self::Flat { .. } => {
+                let o = env.flatten_obs(&raw);
                 (o.clone(), o.into(), reward, terminated, truncated)
             }
             Self::Image(pipe) => {
                 let frame = pipe.push(&raw[0]);
                 (pipe.stacked(), frame, reward, terminated, truncated)
             }
+            Self::ImageDense {
+                image_index,
+                channel_first,
+                image_shape,
+                ..
+            } => {
+                let o = compose_image_dense(&raw, *image_index, *channel_first, *image_shape);
+                (o.clone(), o.into(), reward, terminated, truncated)
+            }
+            Self::Tokens {
+                vocab_size, pad_id, ..
+            } => {
+                let o = env.flatten_obs(&raw);
+                validate_tokens(&o, *vocab_size);
+                let o = encode_tokens_with_mask(o, *pad_id);
+                (o.clone(), o.into(), reward, terminated, truncated)
+            }
         }
     }
+}
+
+fn detect_image_component(env: &GymEnv) -> Option<(usize, bool, usize, usize, usize)> {
+    env.get_obs_prop()
+        .iter()
+        .enumerate()
+        .find_map(|(index, dim)| match dim.shape_vec.as_slice() {
+            [h, w] if *h > 1 && *w > 1 => Some((index, false, 1, *h as usize, *w as usize)),
+            [c, h, w] if *c <= 4 && *h > 4 && *w > 4 => {
+                Some((index, true, *c as usize, *h as usize, *w as usize))
+            }
+            [h, w, c] if *c <= 4 && *h > 4 && *w > 4 => {
+                Some((index, false, *c as usize, *h as usize, *w as usize))
+            }
+            _ => None,
+        })
+}
+
+fn compose_image_dense(
+    raw: &[Vec<f32>],
+    image_index: usize,
+    channel_first: bool,
+    (channels, height, width): (usize, usize, usize),
+) -> Vec<f32> {
+    let image = &raw[image_index];
+    let image_dim = channels * height * width;
+    assert_eq!(
+        image.len(),
+        image_dim,
+        "ImageDense 图像长度与 schema 不一致"
+    );
+    let aux_dim: usize = raw
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| *index != image_index)
+        .map(|(_, values)| values.len())
+        .sum();
+    let mut out = Vec::with_capacity(image_dim + aux_dim);
+    if channel_first || channels == 1 {
+        out.extend_from_slice(image);
+    } else {
+        for channel in 0..channels {
+            for y in 0..height {
+                for x in 0..width {
+                    out.push(image[(y * width + x) * channels + channel]);
+                }
+            }
+        }
+    }
+    for (index, values) in raw.iter().enumerate() {
+        if index != image_index {
+            out.extend_from_slice(values);
+        }
+    }
+    out
+}
+
+fn validate_tokens(tokens: &[f32], vocab_size: usize) {
+    for &token in tokens {
+        assert!(
+            token.is_finite()
+                && token >= 0.0
+                && token.fract() == 0.0
+                && token < vocab_size as f32
+                && token <= 16_777_216.0,
+            "MyZero token ID {token} 非法（须为 [0,{vocab_size}) 内可由 f32 精确表示的整数）"
+        );
+    }
+}
+
+fn encode_tokens_with_mask(mut tokens: Vec<f32>, pad_id: usize) -> Vec<f32> {
+    let mask: Vec<f32> = tokens
+        .iter()
+        .map(|&token| f32::from(token as usize != pad_id))
+        .collect();
+    tokens.extend(mask);
+    tokens
 }

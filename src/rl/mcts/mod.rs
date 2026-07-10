@@ -30,7 +30,9 @@ pub mod traits;
 pub mod types;
 
 // 重新导出核心公开 API
-pub use dynamics::{Dynamics, DynamicsModel, DynamicsOutput};
+pub use dynamics::{
+    Dynamics, DynamicsModel, DynamicsOutput, LatentState, WorldModel, WorldModelOutput,
+};
 pub use gumbel::GumbelPolicy;
 pub use min_max::MinMaxStats;
 pub use puct::PuctPolicy;

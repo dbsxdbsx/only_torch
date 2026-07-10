@@ -1,10 +1,15 @@
 //! 图像 obs 管线单测（v0.26 Phase 1）：灰度 / 双线性缩放 / 帧堆叠 / 训练期组装一致性。
 
+use crate::rl::GymEnv;
 use crate::rl::StoredObs;
 use crate::rl::algo::my_zero::obs_pipeline::{
-    OUT_SIDE, STACK, assemble_stacked_obs, bilinear_resize, frame_len, stacked_obs_dim,
+    ImageConfig, OUT_SIDE, ObsAdapter, STACK, assemble_stacked_obs, bilinear_resize, frame_len,
+    stacked_obs_dim,
 };
+use crate::rl::algo::my_zero::{ObservationPlan, ObservationSchema};
 use approx::assert_abs_diff_eq;
+use pyo3::Python;
+use serial_test::serial;
 
 // ---- bilinear_resize ----
 
@@ -215,4 +220,82 @@ fn assemble_quantized_frames_matches_manual_dequant() {
     let padded = assemble_stacked_obs(&frames, 0, 4);
     let f0 = f[0].to_f32_vec();
     assert_eq!(padded, [&f0[..], &f0[..], &f0[..], &f0[..]].concat());
+}
+
+#[test]
+fn runtime_image_config_supports_rectangular_history() {
+    let cfg = ImageConfig::new(144, 256, 3);
+    assert_eq!(cfg.frame_len(), 144 * 256);
+    assert_eq!(cfg.stacked_obs_dim(), 3 * 144 * 256);
+}
+
+#[test]
+fn stacked_obs_supports_history_1_4_8() {
+    let stored: Vec<StoredObs> = (0..10).map(|i| vec![i as f32].into()).collect();
+    let frames: Vec<&StoredObs> = stored.iter().collect();
+    for history in [1usize, 4, 8] {
+        let start = assemble_stacked_obs(&frames, 0, history);
+        assert_eq!(start, vec![0.0; history]);
+        let end = assemble_stacked_obs(&frames, 9, history);
+        let expected: Vec<f32> = ((10 - history)..10).map(|i| i as f32).collect();
+        assert_eq!(end, expected);
+    }
+}
+
+#[test]
+#[serial]
+fn dict_image_dense_is_reordered_to_chw_then_aux() {
+    Python::attach(|py| {
+        let env = GymEnv::new(py, "MyZero-ImageDense-v0");
+        let mut adapter = ObsAdapter::resolve(&env, ObservationPlan::Auto);
+        assert_eq!(
+            adapter.model_obs_spec(&env),
+            ObservationSchema::ImageDense {
+                channels: 3,
+                height: 16,
+                width: 24,
+                aux_dim: 5,
+            }
+        );
+        let (search, stored) = adapter.reset(&env, Some(42));
+        assert_eq!(search.len(), 3 * 16 * 24 + 5);
+        assert_eq!(stored.to_f32_vec(), search);
+        let plane = 16 * 24;
+        assert_abs_diff_eq!(search[0], 0.0, epsilon = 1e-6);
+        assert_abs_diff_eq!(search[24], 10.0 / 600.0, epsilon = 1e-6);
+        assert_abs_diff_eq!(search[plane], 200.0 / 600.0, epsilon = 1e-6);
+        assert_abs_diff_eq!(search[2 * plane], 400.0 / 600.0, epsilon = 1e-6);
+        assert_eq!(&search[3 * plane..], &[0.0, 0.0, 1.0, -1.0, 0.5]);
+        env.close();
+    });
+}
+
+#[test]
+#[serial]
+fn token_plan_keeps_f32_ids_and_schema() {
+    Python::attach(|py| {
+        let env = GymEnv::new(py, "MyZero-Token-v0");
+        let plan = ObservationPlan::Tokens {
+            length: 6,
+            vocab_size: 32,
+            embed_dim: 8,
+            pad_id: 0,
+        };
+        let mut adapter = ObsAdapter::resolve(&env, plan);
+        assert_eq!(
+            adapter.model_obs_spec(&env),
+            ObservationSchema::Tokens {
+                length: 6,
+                vocab_size: 32,
+                embed_dim: 8,
+                pad_id: 0,
+            }
+        );
+        let (obs, _) = adapter.reset(&env, Some(42));
+        assert_eq!(
+            obs,
+            vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+        );
+        env.close();
+    });
 }

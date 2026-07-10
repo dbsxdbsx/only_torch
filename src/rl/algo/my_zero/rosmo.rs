@@ -20,7 +20,7 @@
 
 use super::n_step::compute_n_step_target_indexed;
 use crate::rl::SelfPlayStep;
-use crate::rl::mcts::{ActionPayload, Dynamics};
+use crate::rl::mcts::{ActionId, ActionPayload, Dynamics};
 
 /// 一条训练样本 unroll 窗口的 ROSMO 现算 target（对齐 [`UnrollItem`](super::network::UnrollItem) 的槽位结构）。
 #[derive(Debug, Clone)]
@@ -44,11 +44,31 @@ pub fn one_step_improved_policy<D: Dynamics>(
     gamma: f32,
     action_dim: usize,
 ) -> (Vec<f32>, f32, Vec<f32>) {
+    let actions: Vec<ActionPayload> = (0..action_dim).map(ActionPayload::Discrete).collect();
+    one_step_improved_policy_with_actions(model, obs, gamma, &actions)
+}
+
+/// 结构化动作版本；`ActionId` 取 catalog 下标，payload 保持真实执行语义。
+pub fn one_step_improved_policy_with_actions<D: Dynamics>(
+    model: &D,
+    obs: &[f32],
+    gamma: f32,
+    actions: &[ActionPayload],
+) -> (Vec<f32>, f32, Vec<f32>) {
+    let action_dim = actions.len();
+    assert!(action_dim > 0, "ROSMO action catalog 不能为空");
     let (latent, prior, root_v) = model.initial_state(obs);
+    assert_eq!(
+        prior.len(),
+        action_dim,
+        "ROSMO prior 宽度 {} 与 action catalog {} 不一致",
+        prior.len(),
+        action_dim
+    );
 
     let mut advs = Vec::with_capacity(action_dim);
-    for a in 0..action_dim {
-        let out = model.recurrent(&latent, &ActionPayload::Discrete(a));
+    for (a, payload) in actions.iter().enumerate() {
+        let out = model.recurrent_with_id(&latent, ActionId(a), payload);
         let q = if out.terminal {
             out.reward
         } else {
@@ -94,6 +114,25 @@ pub fn rosmo_refresh_window<D: Dynamics>(
     action_dim: usize,
     obs_at: &dyn Fn(usize) -> Vec<f32>,
 ) -> RosmoTargets {
+    let actions: Vec<ActionPayload> = (0..action_dim).map(ActionPayload::Discrete).collect();
+    rosmo_refresh_window_with_actions(
+        model, steps, start, actual_k, td_steps, gamma, &actions, obs_at,
+    )
+}
+
+/// 结构化动作 catalog 版本；其余 ROSMO 目标语义与历史函数相同。
+#[allow(clippy::too_many_arguments)]
+pub fn rosmo_refresh_window_with_actions<D: Dynamics>(
+    model: &D,
+    steps: &[SelfPlayStep],
+    start: usize,
+    actual_k: usize,
+    td_steps: usize,
+    gamma: f32,
+    actions: &[ActionPayload],
+    obs_at: &dyn Fn(usize) -> Vec<f32>,
+) -> RosmoTargets {
+    let action_dim = actions.len();
     let len = steps.len();
     let uniform = vec![1.0 / action_dim as f32; action_dim];
 
@@ -108,18 +147,14 @@ pub fn rosmo_refresh_window<D: Dynamics>(
         let pos = start + j;
         if pos < len {
             let (policy, _root_v, advs) =
-                one_step_improved_policy(model, &obs_at(pos), gamma, action_dim);
+                one_step_improved_policy_with_actions(model, &obs_at(pos), gamma, actions);
             policies.push(policy);
             values.push(compute_n_step_target_indexed(
                 steps, pos, td_steps, gamma, value_at,
             ));
             if j < actual_k {
-                let a = steps[pos].action.first().copied().unwrap_or(0.0) as usize;
-                let w = if advs.get(a).copied().unwrap_or(f32::NEG_INFINITY) > 0.0 {
-                    1.0
-                } else {
-                    0.0
-                };
+                let a = validated_replay_action_id(&steps[pos].action, action_dim);
+                let w = if advs[a] > 0.0 { 1.0 } else { 0.0 };
                 bc_weights.push(w);
             }
         } else {
@@ -136,4 +171,23 @@ pub fn rosmo_refresh_window<D: Dynamics>(
         values,
         bc_weights,
     }
+}
+
+pub(crate) fn validated_replay_action_id(action: &[f32], action_dim: usize) -> usize {
+    assert_eq!(
+        action.len(),
+        1,
+        "ROSMO replay action 必须只存一个稳定 joint ActionId"
+    );
+    let raw = action[0];
+    assert!(
+        raw.is_finite() && raw >= 0.0 && raw.fract() == 0.0,
+        "ROSMO replay ActionId 必须是有限非负整数，实际 {raw}"
+    );
+    let action_id = raw as usize;
+    assert!(
+        action_id < action_dim,
+        "ROSMO replay ActionId {action_id} 越界 action catalog {action_dim}"
+    );
+    action_id
 }

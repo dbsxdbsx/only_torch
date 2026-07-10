@@ -18,15 +18,15 @@ only_torch 是一个纯 Rust 的 PyTorch 风格玩具框架，当前重点是：
 | 项 | 内容 |
 |----|------|
 | **版本** | `0.25.0`（2026-07-02；本地可能超前 `origin/master`，以 `git log` / `CHANGELOG.md` 为准） |
-| **刚闭环** | **✅ Gomoku 纯 self-play 战役全线收官（①–⑱，2026-07-04→07-10）**：真规则树上限 naive0 中位 **0.90** 证明任务可学；learned dynamics 规则学习税主导（同配置 0.10–0.15）且对 12.5× 预算/CNN/增广钝感；生成端（课程）、消费端（PER 单药+复叠）、监督端（recon / consistency）三端系统性排除——recon coef=1 发现集 0.35 被未见-seed 终审（control 0.28 vs 0.20）否决，G3 selected holdout（100 局/档）0.19/0.09/0.07/0.00 未达标，**棋盘 recipe 维持 base**。工程沉淀：seed 并行跑法（`just bench-m3-seedpar`）、通用 OTM 契约内核 + board 适配器、「发现集调参 → 未见-seed 终审」纪律。全档案：[棋盘账本](examples/my_zero/gomoku/README.md)（含 Phase/M/G/臂 命名词典）· [naive0 issue](.issue/items/gomoku_naive0_tactical_wall.md) · CHANGELOG 2026-07-10 |
-| **当前主线** | **强化学习** v0.26（[路线图 §5](.doc/design/rl_roadmap.md#5-v026-方向2026-07-01-战略转向定稿)），**处于战略复盘点——三选一等用户定档，未定档前不开新组件臂**：① 棋类走真规则树（0.90 上限已证，直接服务象棋目标；万金油铁律在棋类域进入复议）② learned dynamics 预算量级重投（⑬ 证当前量级钝感 = 弱赌注，须先定算力档 + 预注册）③ 转图像线（learned dynamics native 场景，后台预算标定 issue 在案）。已闭环：P0/Phase 0、CartPole 哨兵、ROSMO 阶梯、Phase 2 Gomoku 支柱 M0–M4、战役 ①–⑱。次级轨道维持原状：图像 pilot 后台、Phase 3 暂缓、Pendulum 压轴。详见[收口规划 §4](.doc/design/rl_closure_plan.md#4-phase-3--样本效率纵深v027-下半) |
+| **刚闭环** | **✅ MyZero 通用 learned-world-model 前两阶段地基（2026-07-10）**：四契约 `ObservationSchema / ActionSchema+Codec / LatentState / WorldModel` 落地；生产始终 learned dynamics，棋盘真规则/reference 仅 `cfg(test)`；矩形/可配 history、Image+Dense Dict、token+padding mask、MultiDiscrete([4,4,16])、2D continuous、Platform Hybrid 纵切全通。验证：`just test` 3421 主测试全绿、RL 344 passed、`just smoke-rl` 全绿、CartPole 3-seed **8,741 / 71,969 / 6,744，中位 8,741、3/3**（逐值复现官方哨兵）。详见[地基设计](.doc/design/my_zero_world_model_foundation.md)与 CHANGELOG 2026-07-10。前一闭环 Gomoku ①–⑱ 见[棋盘账本](examples/my_zero/gomoku/README.md)与 [naive0 issue](.issue/items/gomoku_naive0_tactical_wall.md)。 |
+| **当前主线** | **强化学习** v0.26：战略复盘已定档为“一个入口 + 稳定 learned-world-model 契约 + 可退化模块族”，不再按真规则/预算/图像载体三选一。前两阶段地基已完成；下一阶段是新论文方向的 observable-grounded error 相关性与主动数据生成（默认关、独立裁决），之后才是 recurrent posterior/POMDP 与 stochastic chance search。当前确定性完全可观测 MDP 路径是后续统一模型的 CPU 轻量特例，详见[路线图 §5](.doc/design/rl_roadmap.md#5-v026-方向2026-07-01-战略转向定稿)与[地基设计](.doc/design/my_zero_world_model_foundation.md)。 |
 | **刻意暂缓** | 演化 **阶段 D**（`CellAttention` ONNX、`Attention` Net2Net 函数保持、Conv2d Attention；3D batched MatMul 已于 2026-07-04 完成出表）——与 RL 零耦合，见 [记忆机制设计 — Phase D](.doc/design/memory_mechanism_design.md#-后续-phase-d刻意未做)（该表为「阶段 D」唯一权威定义） |
 | **一级风险** | CPU-only × 图像 CNN × MCTS × 实时结构性冲突：[.issue/items/cpu_only_mcts_image_realtime_risk.md](.issue/items/cpu_only_mcts_image_realtime_risk.md)（图像线推进前必读） |
 | **路线展望** | 真实目标 = **中国象棋** + **商业图像游戏**（[纲领 §2.3](.doc/design/my_zero_algorithm_vision.md#23-战略目标与优先轴2026-07-01-定稿)）；MyZero 消融驱动迭代，基准判据「变慢 ≠ 失败，新实测即新基线；仅不收敛才记 issue」 |
 
 **进度符号**（设计文档统一口径）：✅ Phase 验收范围内已完成 · ⏳ 已识别、留后续 Phase · 🔲 可选增强 · 📦 已归档历史路径。
 
-**接手 RL 时建议顺序**：读 `rl_roadmap.md`（薄版当前态）→ 配环境 [`.doc/rl_python_env_setup.md`](.doc/rl_python_env_setup.md)（**仅 Gymnasium**）→ `just test-filter rl`（300+ 测试确认 buffer + algo helper + MCTS + MyZero + board）→ `just smoke-rl`（8 目标 RL 管线聚合验证，含 Gomoku）→ 当前处于战略复盘点（三选一见「当前主线」行与 naive0 issue 终局快照），定档前不开新组件臂。
+**接手 RL 时建议顺序**：读 `rl_roadmap.md`（薄版当前态）→ 读[通用 world model 地基](.doc/design/my_zero_world_model_foundation.md) → 配环境 [`.doc/rl_python_env_setup.md`](.doc/rl_python_env_setup.md)（**仅 Gymnasium**）→ `just test-filter rl`（344+ 测试确认 buffer + MCTS + MyZero + schema）→ `just smoke-rl`（含既有支柱、四类 schema toy 与 Platform Hybrid）→ 下一阶段按路线图单独预注册，不把主动数据/POMDP/stochastic 混批。
 
 **接手 Attention 阶段 D 时**：先读 [记忆机制设计 — 实现状态速览](.doc/design/memory_mechanism_design.md#-实现状态速览)（含 105 个相关单元测试与 IT-* 示例表），勿假设「打勾 = ONNX 也做完」。
 
@@ -53,6 +53,8 @@ just example-xor           # 最小传统示例
 just example-evolution-mnist   # 演化版 MNIST 示例
 just examples-memory-unit      # parity RNN/LSTM/GRU/Transformer + 演化序列示例聚合
 just example-cartpole-sac      # RL 示例，需 Python + gymnasium
+just smoke-my-zero-schema      # MyZero 输入/动作 schema 四类最小纵切
+just smoke-my-zero-platform    # MyZero Platform Hybrid 纵切
 just smoke-rl                  # 全部 RL smoke 聚合（发版固定关卡，需 Python 依赖齐全）
 ```
 
@@ -79,7 +81,7 @@ just smoke-rl                  # 全部 RL smoke 聚合（发版固定关卡，�
 - Node 与 Layer 的边界：[节点与层边界设计](.doc/design/node_vs_layer_design.md)
 - 演化系统：[神经架构演化设计](.doc/design/neural_architecture_evolution_design.md)
 - 记忆 / RNN / Attention（含 Phase 进度与留坑表）：[记忆机制设计](.doc/design/memory_mechanism_design.md)
-- 强化学习（当前主线）：[MyZero 算法纲领](.doc/design/my_zero_algorithm_vision.md)、[RL 路线图](.doc/design/rl_roadmap.md)、[MyZero 示例总览](examples/my_zero/README.md)、[Python 环境配置](.doc/rl_python_env_setup.md)
+- 强化学习（当前主线）：[MyZero 算法纲领](.doc/design/my_zero_algorithm_vision.md)、[通用 world model 地基](.doc/design/my_zero_world_model_foundation.md)、[RL 路线图](.doc/design/rl_roadmap.md)、[MyZero 示例总览](examples/my_zero/README.md)、[Python 环境配置](.doc/rl_python_env_setup.md)
 - 空间视觉任务路线：[空间视觉任务路线图](.doc/design/spatial_vision_tasks_roadmap.md)
 - 并行 / Rayon / 线程与分配画像：[线程模型](.doc/design/threading_model.md)
 - DataLoader / 变长序列：[数据加载设计](.doc/design/data_loader_design.md)

@@ -5,8 +5,8 @@
 //! 增量）**无需改动 MCTS 内核**——现有泛型 `State` + backup 已足以承载。
 
 use crate::rl::mcts::{
-    ActionPayload, CandidateSet, MctsConfig, MctsModel, PuctPolicy, RecurrentOut, RootOut,
-    mcts_search,
+    ActionId, ActionPayload, CandidateSet, MctsConfig, MctsModel, PuctPolicy, RecurrentOut,
+    RootOut, mcts_search,
 };
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -47,7 +47,12 @@ impl MctsModel for ValuePrefixMock {
         }
     }
 
-    fn recurrent(&self, state: &Self::State, _action: &ActionPayload) -> RecurrentOut<Self::State> {
+    fn recurrent(
+        &self,
+        state: &Self::State,
+        _action_id: ActionId,
+        _action: &ActionPayload,
+    ) -> RecurrentOut<Self::State> {
         let depth = state.depth + 1;
         // LSTM hidden 累加（玩具）：体现 hidden 随 unroll 穿过搜索树
         let hidden = state.hidden + 1.0;
@@ -98,7 +103,12 @@ impl MctsModel for SingleStepMock {
         }
     }
 
-    fn recurrent(&self, state: &Self::State, _action: &ActionPayload) -> RecurrentOut<Self::State> {
+    fn recurrent(
+        &self,
+        state: &Self::State,
+        _action_id: ActionId,
+        _action: &ActionPayload,
+    ) -> RecurrentOut<Self::State> {
         let depth = state + 1;
         let terminal = depth >= 3;
         RecurrentOut {
@@ -128,7 +138,7 @@ fn test_recurrent_state_threads_hidden_and_prefix_delta() {
     assert_eq!(root.state.hidden, 0.0);
     assert_eq!(root.state.prefix, 0.0);
 
-    let s1 = model.recurrent(&root.state, &ActionPayload::Discrete(0));
+    let s1 = model.recurrent(&root.state, ActionId(0), &ActionPayload::Discrete(0));
     assert_eq!(s1.state.hidden, 1.0, "hidden 应随 unroll 累加");
     assert_eq!(s1.state.prefix, STEP_REWARD, "prefix 应累计");
     assert!(
@@ -136,7 +146,7 @@ fn test_recurrent_state_threads_hidden_and_prefix_delta() {
         "reward 应为 prefix 增量"
     );
 
-    let s2 = model.recurrent(&s1.state, &ActionPayload::Discrete(1));
+    let s2 = model.recurrent(&s1.state, ActionId(1), &ActionPayload::Discrete(1));
     assert_eq!(s2.state.hidden, 2.0, "hidden 继续累加 = 穿过搜索树");
     assert_eq!(s2.state.prefix, 2.0 * STEP_REWARD);
     assert!((s2.reward - STEP_REWARD).abs() < 1e-6);

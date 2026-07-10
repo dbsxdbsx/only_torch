@@ -15,7 +15,7 @@
 //! **权重语义**：`.train()` 返回 **latest** 训末权重；eval 前若要用磁盘 best，须显式
 //! [`.load_model_if_exists(path)`](super::my_zero::MyZero::load_model_if_exists)（`path` 见 [`TrainReport::model_path`](super::report::TrainReport::model_path)）。
 
-use super::config::{ActionPlan, EvalSettings, MyZeroConfig, TrainSettings};
+use super::config::{ActionPlan, EvalSettings, MyZeroConfig, ObservationPlan, TrainSettings};
 use super::my_zero::MyZero;
 use super::runner::train_all_seeds;
 use crate::nn::GraphError;
@@ -79,6 +79,44 @@ impl MyZeroBuilder {
     /// 连续动作 env：将力矩/控制量均匀离散为 `buckets` 档 MCTS 候选（**须显式声明**）。
     pub fn discretize(mut self, buckets: usize) -> Self {
         self.cfg.env.action = ActionPlan::Discretize { buckets };
+        self
+    }
+
+    /// 配置原生图像预处理的矩形尺寸与帧历史。
+    pub fn image_observation(mut self, height: usize, width: usize, history: usize) -> Self {
+        self.cfg.env.observation = ObservationPlan::Image {
+            height,
+            width,
+            history,
+        };
+        self
+    }
+
+    /// 固定长度 token observation；环境须直接返回 token IDs。
+    pub fn token_observation(mut self, length: usize, vocab_size: usize, embed_dim: usize) -> Self {
+        self.cfg.env.observation = ObservationPlan::Tokens {
+            length,
+            vocab_size,
+            embed_dim,
+            pad_id: 0,
+        };
+        self
+    }
+
+    /// 与 [`token_observation`](Self::token_observation) 相同，但显式指定 padding token。
+    pub fn token_observation_with_padding(
+        mut self,
+        length: usize,
+        vocab_size: usize,
+        embed_dim: usize,
+        pad_id: usize,
+    ) -> Self {
+        self.cfg.env.observation = ObservationPlan::Tokens {
+            length,
+            vocab_size,
+            embed_dim,
+            pad_id,
+        };
         self
     }
 

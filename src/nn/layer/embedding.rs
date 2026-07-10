@@ -13,7 +13,6 @@
 
 use crate::nn::graph::NodeGroupContext;
 use crate::nn::{Graph, GraphError, Init, Module, Var, VarShapeOps};
-use crate::tensor::Tensor;
 
 /// 词嵌入层
 ///
@@ -93,32 +92,19 @@ impl Embedding {
             NodeGroupContext::for_layer(indices, "Embedding", self.instance_id, &self.name, &desc);
         _guard.tag_existing(&self.weight);
 
-        // 获取索引数据（整数值）
-        let idx_tensor = indices.value().expect("Embedding: 索引尚未计算").unwrap();
-        let idx_shape = idx_tensor.shape();
+        // 索引必须保持为 Var：persistent inference 会在同一个输入节点上 set_value，
+        // 若在建图期把当前值读回 host 构造固定 Tensor，后续 token 改变却仍会查旧行。
+        let idx_shape = indices.value_expected_shape();
+        let total = idx_shape.iter().product::<usize>();
+        let flat_idx = indices
+            .reshape(&[total, 1])
+            .expect("Embedding: 索引 flatten 失败");
+        let gather_idx = flat_idx
+            .repeat(&[1, self.embed_dim])
+            .expect("Embedding: 索引 repeat 失败");
 
-        // 将索引展平为 [total_indices]
-        let flat_idx = idx_tensor.flatten();
-        let total = flat_idx.size();
-
-        // 构建 Gather 用的 2D 索引 [total_indices, embed_dim]
-        // 每行重复相同的索引值
-        let flat_data = flat_idx.flatten_view();
-        let mut gather_idx_data = Vec::with_capacity(total * self.embed_dim);
-        for i in 0..total {
-            let idx_val = flat_data[i] as usize;
-            assert!(
-                idx_val < self.vocab_size,
-                "Embedding: 索引 {idx_val} 超出 vocab_size {}",
-                self.vocab_size
-            );
-            for _ in 0..self.embed_dim {
-                gather_idx_data.push(idx_val as f32);
-            }
-        }
-        let gather_idx = Tensor::new(&gather_idx_data, &[total, self.embed_dim]);
-
-        // 使用 Gather(dim=0) 从 weight[V, D] 中选取行
+        // 使用动态 Gather(dim=0) 从 weight[V, D] 中选取行。
+        // Gather 节点在运行时校验索引范围，训练与 set_value 推理共用同一语义。
         let gathered = self
             .weight
             .gather(0, &gather_idx)

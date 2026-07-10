@@ -46,6 +46,17 @@ fn unknown_env_is_base() {
     assert_eq!(c, Components::base());
 }
 
+#[test]
+fn large_structured_action_recipes_enable_sampled_only() {
+    for env in ["MyZero-MultiDiscrete-v0", "Platform-v0"] {
+        let c = components_for(env);
+        assert!(c.sampled, "env={env} 应避免展开完整 joint catalog");
+        let mut expected = Components::base();
+        expected.sampled = true;
+        assert_eq!(c, expected, "env={env}");
+    }
+}
+
 /// 棋盘栈 = base 全关（M4 收口定型；M3 九臂消融无组件过 promote 线）。
 #[test]
 fn gomoku_is_base() {

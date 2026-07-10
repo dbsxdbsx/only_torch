@@ -35,3 +35,19 @@ for _level in _gomoku_levels:
             },
             max_episode_steps=_max_steps,
         )
+
+# ============================================================================
+# MyZero 通用 schema 纵切环境（纯测试 / smoke）
+# ============================================================================
+
+for _id, _class in [
+    ("MyZero-MultiDiscrete-v0", "MultiDiscreteToyEnv"),
+    ("MyZero-Continuous2D-v0", "Continuous2DToyEnv"),
+    ("MyZero-ImageDense-v0", "ImageDenseToyEnv"),
+    ("MyZero-Token-v0", "TokenToyEnv"),
+]:
+    register(
+        id=_id,
+        entry_point=f"gym_env.toy:{_class}",
+        max_episode_steps=8,
+    )

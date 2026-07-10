@@ -14,6 +14,8 @@
 #[derive(Debug, Clone, PartialEq)]
 pub enum ActionPayload {
     Discrete(usize),
+    /// 固定结构的多维离散动作（如 `MultiDiscrete([4,4,16])`）。
+    MultiDiscrete(Vec<usize>),
     Continuous(Vec<f32>),
     Hybrid {
         discrete: usize,
@@ -114,6 +116,18 @@ impl CandidateSet {
         Self { candidates }
     }
 
+    /// WorldModel 契约用严格构造：动作与 prior 宽度不一致立即报错。
+    pub fn from_actions_and_priors_strict(actions: Vec<ActionPayload>, priors: Vec<f32>) -> Self {
+        assert_eq!(
+            actions.len(),
+            priors.len(),
+            "CandidateSet: WorldModel prior 宽度 {} 与动作数 {} 不一致",
+            priors.len(),
+            actions.len()
+        );
+        Self::from_actions_and_priors(actions, priors)
+    }
+
     pub const fn len(&self) -> usize {
         self.candidates.len()
     }
@@ -187,6 +201,8 @@ pub struct SearchResult {
     pub children: Vec<ChildStat>,
     /// 推荐动作
     pub recommended: ActionPayload,
+    /// 推荐动作对应的稳定 policy / dynamics 槽位。
+    pub recommended_id: ActionId,
     /// 学习用策略目标（visit count 归一化）
     pub learn_policy: Vec<f32>,
     /// root 推理时 value network 对当前状态的估计 `vπ`（Gumbel `MuZero` completedQ 未访问动作回填）

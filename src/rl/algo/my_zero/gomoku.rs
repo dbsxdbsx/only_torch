@@ -239,11 +239,13 @@ impl MctsModel for TrueRulesBoardModel<'_> {
         }
     }
 
-    fn recurrent(&self, state: &Self::State, action: &ActionPayload) -> RecurrentOut<Self::State> {
-        let action_idx = match action {
-            ActionPayload::Discrete(idx) => *idx,
-            _ => 0,
-        };
+    fn recurrent(
+        &self,
+        state: &Self::State,
+        action_id: ActionId,
+        _action: &ActionPayload,
+    ) -> RecurrentOut<Self::State> {
+        let action_idx = action_id.index();
         let mut board = state.clone();
         let (reward, terminal) = board.step(action_idx);
         let next_player = board.to_play();

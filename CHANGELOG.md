@@ -4,6 +4,13 @@
 
 ### Added
 
+- **feat(rl): MyZero 通用 learned-world-model 前两阶段地基完成——稳定契约 + 输入/动作跨轴纵切**（2026-07-10）
+  - **四个核心契约**：新增 `ObservationSchema`、`ActionSchema/ActionCodec`、透明 `LatentState` 与 associated-state `WorldModel`；历史 `Dynamics` 接口保留并由 blanket adapter 接入。MCTS `recurrent` 同时传稳定 `ActionId` 与真实 `ActionPayload`，`SearchResult` 新增 `recommended_id`，从结构上消灭 continuous/hybrid payload 静默退回 action 0
+  - **观测扩展**：图像预处理支持矩形 `(height,width)` 与可配 history（默认 84²×4 逐 bit 保持）；新增矩形 CNN、Image+Dense Dict 的 CNN/MLP 双分支融合、固定 token IDs + 动态 Embedding + padding mask。计算层/latent 继续 f32，`StoredObs` 继续 F32/U8
+  - **动作扩展**：GymEnv 新增 `MultiDiscrete` 与 Dict observation 解析；MyZero 接通 factorized MultiDiscrete、2D continuous categorical bins 与固定 Tuple Hybrid，joint `ActionId` 用 mixed-radix 稳定编码，factorized policy target/priors 与 Sampled MuZero 节点级 K 候选贯通；联合枚举显式上限 2048，joint≥128 自动 Sampled（Gumbel 除外），variable-length/autoregressive 留真实需求驱动
+  - **生产边界与兼容**：true-rules / env snapshot 棋盘 reference 代码仅 `cfg(test)`，生产路径保持全程 learned dynamics；OTM observation 契约为可选字段，旧模型缺字段仍可加载；新增四个纯 toy Gym 环境与 `smoke-my-zero-schema` / `smoke-my-zero-platform`
+  - **验收**：`just test` 3421 主测试 + 集成/doctest 全绿，RL **344 passed**，`just smoke-rl` 全绿；CartPole 3-seed **8,741 / 71,969 / 6,744** env-steps（中位 8,741，3/3，逐值复现官方哨兵）；Criterion 新增 MultiDiscrete([4,4,16]) recurrent 与 image history=1/8 case
+
 - **feat(rl): Gomoku 监督端 ⑮–⑱ 终审收口——recon 发现集正信号未外推，G3 科学/交付双失败，棋盘 recipe 维持 base**（2026-07-10）
   - **监督端剂量与家族裁决**：⑮ 在 seeds 42–46 上 recon coef=1 naive0 中位 0.15→0.35（coef=4 仅 0.20）；⑯ consistency 0.25 带内弱阳；⑰ recon1×PER 回落 0.15，PER 单药/复叠双排除
   - **未见 seed 配对终审**：为避免发现集复用，⑱ 改用 seeds 47–51 同步跑 learned control 与 recon1（40 局/naive 档）——control naive0 中位 **0.28**、recon1 **0.20**（−0.08，配对仅 1/5 不劣，未达 +0.15 复现线）→ recon 不 promote；四档中位 0.20/0.03/0/0，G3 未达部分线

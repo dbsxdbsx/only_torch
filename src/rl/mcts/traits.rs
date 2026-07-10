@@ -3,7 +3,9 @@
 use rand::RngCore;
 
 use super::min_max::MinMaxStats;
-use super::types::{ActionPayload, CandidateSet, ChildStat, MctsConfig, RecurrentOut, RootOut};
+use super::types::{
+    ActionId, ActionPayload, CandidateSet, ChildStat, MctsConfig, RecurrentOut, RootOut,
+};
 
 /// MCTS 模型接口（root + recurrent，与 mctx 同构）
 ///
@@ -33,7 +35,12 @@ pub trait MctsModel {
     fn root(&self, obs: &[f32]) -> RootOut<Self::State>;
 
     /// 从父状态和动作推演子状态
-    fn recurrent(&self, state: &Self::State, action: &ActionPayload) -> RecurrentOut<Self::State>;
+    fn recurrent(
+        &self,
+        state: &Self::State,
+        action_id: ActionId,
+        action: &ActionPayload,
+    ) -> RecurrentOut<Self::State>;
 }
 
 /// 子节点选择规则（PUCT / MENTS / RENTS / ANT 等）。

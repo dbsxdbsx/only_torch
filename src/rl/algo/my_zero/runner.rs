@@ -10,7 +10,7 @@ use super::network::{MyZeroModel, ObsSource, UnrollItem};
 use super::obs_pipeline::ObsAdapter;
 use super::reanalyze::reanalyze_unroll_window;
 use super::report::TrainReport;
-use super::rosmo::{RosmoTargets, rosmo_refresh_window};
+use super::rosmo::{RosmoTargets, rosmo_refresh_window_with_actions};
 use super::sampled_params::{
     compute_sampled_k_cfg, format_sampled_log, resolve_sampled_params, sampled_k_effective,
 };
@@ -19,14 +19,17 @@ use super::target::mcts_policy_target;
 use super::value_prefix::reward_prefix_targets;
 use crate::nn::{Adam, Graph, GraphError, Optimizer};
 use crate::rl::mcts::{
-    ActionPayload, Dynamics, DynamicsModel, MctsConfig, MctsRecipe, PuctConfig,
-    RootDirichletConfig, SampledConfig, SearchBudget, mcts_search,
+    Dynamics, DynamicsModel, MctsConfig, MctsRecipe, PuctConfig, RootDirichletConfig,
+    SampledConfig, SearchBudget, mcts_search,
 };
 use crate::rl::{GameOutcome, GymEnv, ReplayBuffer, SelfPlayGame, SelfPlayStep};
 use pyo3::Python;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::collections::{BTreeMap, HashMap, VecDeque};
+
+/// 未显式 recipe 时，大联合 catalog 自动启用 Sampled，避免每节点全展开。
+const AUTO_SAMPLED_MIN_JOINT_ACTIONS: usize = 128;
 
 /// 打印已启用的消融组件（全关时不输出）。
 fn print_components(c: &Components) {
@@ -160,7 +163,7 @@ pub(crate) fn probe_obs_of(
 }
 
 /// 由训练超参 + 组件开关 + joint 候选数 N 构造 MCTS 配置（Sampled 时 K 按公式解析）。
-fn my_zero_mcts_config(
+pub(crate) fn my_zero_mcts_config(
     num_simulations: u32,
     temperature: f32,
     discount: f32,
@@ -182,7 +185,9 @@ fn my_zero_mcts_config(
             alpha: MctsConfig::default().root_dirichlet_alpha,
             exploration_fraction: root_exploration_fraction,
         },
-        sampled: if components.sampled {
+        sampled: if components.sampled
+            || (!components.gumbel && joint_n >= AUTO_SAMPLED_MIN_JOINT_ACTIONS)
+        {
             Some(SampledConfig {
                 k: sampled_k_effective(compute_sampled_k_cfg(joint_n, num_simulations), joint_n),
             })
@@ -216,10 +221,7 @@ fn self_play_one_episode(
         let policy = MyZeroSearchPolicy::from_components(components);
         let result = mcts_search(&dyn_model, &policy, &search_obs, mcts_cfg, rng);
 
-        let action_idx = match &result.recommended {
-            ActionPayload::Discrete(idx) => *idx,
-            _ => 0,
-        };
+        let action_idx = result.recommended_id.index();
 
         let root_value = result.root_value();
         let policy_target = mcts_policy_target(&result, cq, adapter.action_dim(), 0);
@@ -306,7 +308,7 @@ pub(crate) enum PreparedBatch {
 ///
 /// # 流程（ROSMO 开启时）
 /// 零克隆采样（RNG 消耗与 Borrowed 路径逐 bit 一致）+ 逐样本一步 look-ahead
-/// 现算 target（[`rosmo_refresh_window`]），**不写回**——见 [`super::rosmo`] 模块文档。
+/// 现算 target（[`rosmo_refresh_window_with_actions`]），**不写回**——见 [`super::rosmo`] 模块文档。
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn prepare_train_batch(
     buffer: &ReplayBuffer<SelfPlayGame>,
@@ -396,14 +398,14 @@ pub(crate) fn prepare_train_batch(
                     src.append_into(&mut v);
                     v
                 };
-                rosmo_refresh_window(
+                rosmo_refresh_window_with_actions(
                     &model,
                     steps,
                     start,
                     actual_k,
                     td_steps,
                     gamma,
-                    adapter.action_dim(),
+                    adapter.candidates(),
                     &obs_at,
                 )
             })
@@ -635,10 +637,7 @@ pub(crate) fn greedy_one_episode(
         let dyn_model = DynamicsModel::new(model, adapter.candidates().to_vec(), gamma);
         let policy = MyZeroSearchPolicy::from_components(components);
         let result = mcts_search(&dyn_model, &policy, &obs, &eval_cfg, &mut rng);
-        let action_idx = match &result.recommended {
-            ActionPayload::Discrete(idx) => *idx,
-            _ => 0,
-        };
+        let action_idx = result.recommended_id.index();
         let env_action = adapter.to_env(action_idx);
         let (next_obs, _, reward, terminated, truncated) = obs_adapter.step(env, &env_action);
         total_reward += reward;
@@ -754,10 +753,7 @@ fn dynamics_diagnostic(
         let dyn_model = DynamicsModel::new(model, adapter.candidates().to_vec(), gamma);
         let policy = MyZeroSearchPolicy::from_components(components);
         let result = mcts_search(&dyn_model, &policy, &obs, &eval_cfg, &mut rng);
-        let action_idx = match &result.recommended {
-            ActionPayload::Discrete(idx) => *idx,
-            _ => 0,
-        };
+        let action_idx = result.recommended_id.index();
         let env_action = adapter.to_env(action_idx);
         let (next_obs, _, reward, terminated, truncated) = obs_adapter.step(env, &env_action);
         obses.push(obs.clone());
@@ -836,7 +832,9 @@ fn dynamics_diagnostic(
     let mut value_mae = 0.0f32;
     for t in 0..n {
         let (latent, _prior, rv_scaled) = Dynamics::initial_state(&model, &obses[t]);
-        let out = Dynamics::recurrent(&model, &latent, &ActionPayload::Discrete(act_idxs[t]));
+        let action_id = crate::rl::mcts::ActionId(act_idxs[t]);
+        let payload = adapter.candidates()[act_idxs[t]].clone();
+        let out = Dynamics::recurrent_with_id(&model, &latent, action_id, &payload);
         let r_pred = out.reward * inv_scale;
         let v_root = rv_scaled * inv_scale;
         reward_mae += (r_pred - true_rewards[t]).abs();
@@ -984,12 +982,16 @@ pub(crate) fn materialize(
 ) -> Result<MyZero, GraphError> {
     let env = GymEnv::new(py, cfg.env.env_id);
     let adapter = ActionAdapter::resolve(&env, cfg.env.action);
-    let obs_spec = ObsAdapter::resolve(&env).model_obs_spec(&env);
-    let action_dim = adapter.action_dim();
+    let obs_spec = ObsAdapter::resolve(&env, cfg.env.observation).model_obs_spec(&env);
     let graph = Graph::new_with_seed(seed);
-    let model = MyZeroModel::new_with_spec(&graph, obs_spec, action_dim, cfg.model.latent_dim)?
-        .with_value_encoding(cfg.components.hl_gauss)
-        .with_obs_symlog(cfg.components.obs_symlog);
+    let model = MyZeroModel::new_with_schemas(
+        &graph,
+        obs_spec,
+        adapter.schema().clone(),
+        cfg.model.latent_dim,
+    )?
+    .with_value_encoding(cfg.components.hl_gauss)
+    .with_obs_symlog(cfg.components.obs_symlog);
     env.close();
     Ok(MyZero::from_parts(cfg.clone(), model, adapter))
 }
@@ -1025,7 +1027,7 @@ fn train_one_seed(
 
     let env = GymEnv::new(py, cfg.env.env_id);
     let adapter = ActionAdapter::resolve(&env, cfg.env.action);
-    let mut obs_adapter = ObsAdapter::resolve(&env);
+    let mut obs_adapter = ObsAdapter::resolve(&env, cfg.env.observation);
     let obs_spec = obs_adapter.model_obs_spec(&env);
     let obs_dim = obs_spec.dim();
     let action_dim = adapter.action_dim();
@@ -1049,16 +1051,19 @@ fn train_one_seed(
             adapter.describe(),
             t.num_simulations,
         );
-        if cfg.components.sampled {
+        if cfg.components.sampled
+            || (!cfg.components.gumbel && action_dim >= AUTO_SAMPLED_MIN_JOINT_ACTIONS)
+        {
             let p = resolve_sampled_params(cfg.env.action, action_dim, t.num_simulations);
             println!("{}", format_sampled_log(&p, t.num_simulations));
         }
     }
 
     let graph = Graph::new_with_seed(seed);
-    let model = MyZeroModel::new_with_spec(&graph, obs_spec, action_dim, latent_dim)?
-        .with_value_encoding(cfg.components.hl_gauss)
-        .with_obs_symlog(cfg.components.obs_symlog);
+    let model =
+        MyZeroModel::new_with_schemas(&graph, obs_spec, adapter.schema().clone(), latent_dim)?
+            .with_value_encoding(cfg.components.hl_gauss)
+            .with_obs_symlog(cfg.components.obs_symlog);
     let mut optimizer = Adam::new(&graph, &model.parameters(), t.lr);
     let mut buffer: ReplayBuffer<SelfPlayGame> = ReplayBuffer::new(t.buffer_capacity);
     let mut rng = StdRng::seed_from_u64(seed);

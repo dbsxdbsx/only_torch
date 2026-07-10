@@ -263,6 +263,18 @@ pub(crate) fn apply_params_to_graph(
     params: &HashMap<String, Tensor>,
 ) -> Result<(), GraphError> {
     let inner = graph.inner();
+    let missing: Vec<String> = inner
+        .get_all_parameters()
+        .into_iter()
+        .map(|(name, _)| name)
+        .filter(|name| !params.contains_key(name))
+        .collect();
+    if !missing.is_empty() {
+        return Err(GraphError::InvalidOperation(format!(
+            "权重文件缺少目标图参数: {}",
+            missing.join(", ")
+        )));
+    }
     for (name, tensor) in params {
         if let Some(node) = inner.get_parameter(name) {
             node.set_value(Some(tensor))?;

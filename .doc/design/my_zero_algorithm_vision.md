@@ -51,25 +51,30 @@ MyZero 的两个**真实落地目标**，及其对路线优先级的含义：
 由此得出的路线裁决：
 
 1. **A 路定锚**：坚持 EZ-V2 / MCTS 谱系（样本效率 + 棋类能力），**不转向** DreamerV3 派（world model + imagination、无 MCTS）——后者在棋类/纯离散非 SOTA，与象棋目标相悖。文献依据：EZ-V2（ICML 2024）已证明 Zero 系可跨离散+连续+视觉+低维（66 任务 50 胜 DreamerV3）。
-2. **优先轴转向**：两个目标都不在「动作空间广度」轴上（象棋=离散、图像游戏≈离散），而在**观测空间（图像/CNN）与训练范式（self-play）**轴上。因此 CNN 表征 + 图像基准、Gomoku self-play **升为高优先**；Pendulum（连续）/ Platform（混合）**降级**为「具体需求出现再做」。
+2. **优先轴转向（2026-07-10 修订）**：观测空间（图像/复合输入）与 self-play 仍是两大目标的价值轴；但真实商业画像已确认 `MultiDiscrete([4,4,16])`，动作 schema 不再是纯远期问题。先完成通用 learned-world-model 契约及 MultiDiscrete / continuous / fixed Hybrid 最小纵切，作为后续算法实验地基；这不等于把 Pendulum / Platform 升为价值裁决场。
 3. **acting / reanalyze 解耦**（应对「环境不等你」）：实时决策用轻量 acting（Gumbel 少 sim 或 policy 先验，毫秒级）；样本榨取放离线 reanalyze（buffer 上重跑完整 MCTS 刷新 target）。文献依据：规划的主要价值在训练期 target 质量而非部署期前瞻（Hamrick et al. 2020 arXiv:2011.04021；De Vries et al. 2023 arXiv:2306.00840）。**reanalyze 由此升为战略组件**（CartPole 负结果不构成否定）。
 4. **CartPole 定位收紧**：它是「叠组件不崩」的 sanity 哨兵，**不是**组件价值证明台（规划红利在简单稠密奖励任务上本就近乎为零，见上引文献）；更不拿 wall-clock 判生死（§2.2）。
 5. **一级风险显式管理**：CPU-only × 图像 CNN × MCTS × 实时存在结构性冲突（学界加速方案 TransZero/SpeedyZero 均依赖 GPU）——见 [.issue/items/cpu_only_mcts_image_realtime_risk.md](../../.issue/items/cpu_only_mcts_image_realtime_risk.md)；象棋（低维盘面）不受此约束，图像游戏推进前须重估。
 
 ---
 
-## 3. 双轨架构（已定）
+## 3. 一主多基线架构（2026-07-10 修订）
 
-不存在单一「万金油」RL 底座；采用 **双轨**：
+生产目标统一为 **一个 MyZero 入口 + 一组可退化模块契约**：完全可观测确定性环境走当前
+`h + deterministic g + f` 轻路径，未来 stochastic / POMDP 在同一契约上增加概率 prior
+与 recurrent posterior。这里的“万金油”不是一张固定 MLP，也不意味着删除 model-free
+对照；SAC / PPO 继续作为基线与故障隔离器。
 
 | 轨道 | 角色 | 典型环境 |
 |------|------|----------|
-| **MyZero** | 旗舰、样本效率、规划+学模型 | CartPole → Pendulum → Platform → Gomoku → … |
-| **SAC / PPO** | model-free 基线、对照、开箱即用 | CartPole / Pendulum / Platform（Hybrid SAC 已通） |
+| **MyZero（唯一生产主线）** | 旗舰、样本效率、规划+learned world model | vector / board / image / token；discrete / MultiDiscrete / continuous / Hybrid |
+| **SAC / PPO（基线）** | model-free 对照、诊断、回归 | CartPole / Pendulum / Platform |
 
-**为什么保留 SAC**：离散/连续/混合动作已验证；Platform 等 MyZero 尚未覆盖；跨算法比 env-step 需要对照。
+**为什么保留 SAC/PPO**：跨算法比 env-step 需要对照；当 MyZero learned model 或 MCTS 出现问题时，model-free 路径能隔离“环境不可学”与“世界模型/规划失败”。
 
 **为什么不把 SAC 升格为母算法**：棋类/self-play 需重造 MCTS 与 visit 蒸馏；与 MyZero 栈正交。
+
+已实现地基与后续阶段边界见[通用 learned world model 地基](./my_zero_world_model_foundation.md)。
 
 ---
 
@@ -160,7 +165,7 @@ MaxEnt-MCTS 系（搜索内 Boltzmann backup，非完整 MuZero 栈）
 | hidden task / meta-POMDP（Eysenbach） | **≠** 仅 sparse terminal reward |
 | 随机转移环境 | 最优策略**仍常可确定性**（同一 state 固定 action） |
 | POMDP 最优策略 | **未必** raw observation 上 greedy；information-gathering 问题里 **π\* 可本身随机** |
-| Zero 系「证明不要 MaxEnt」 | **无**此类定理；是**问题设定 + FOMDP 经典结果 + 工程传统** |
+| Zero 系「证明不要 MaxEnt」 | **无**此类定理；是**问题设定 + 完全可观测 MDP 经典结果 + 工程传统** |
 | Klein A0C = AlphaZero + SAC 最佳统一 | **否**；熵正则只在训练 loss，MCTS 无 MaxEnt backup |
 | BetaZero = MyZero 的 POMDP 下一站 | **否**；已知 \(T,O\) 的 belief 规划，与学 latent 模型正交 |
 | 万金油 MyZero 应内置 BetaZero | **否**；黑盒 env 只有 `step(obs,a)`，见 §5.3 |
@@ -249,6 +254,7 @@ Gumbel 不要求 completedQ（论文推荐同开，但库内可拆测）；compl
 
 | 日期 | 变更 |
 |------|------|
+| 2026-07-10 | 战略复盘定档：生产统一为 learned-world-model 模块族，Reference transition 仅诊断；§2.3 动作轴按真实 MultiDiscrete 画像修订，§3 从“双轨底座”改“一主多基线”；前两阶段实现链入 world model 地基文档 |
 | 2026-06-20 | 初版：沉淀 SAC vs MyZero、MaxEnt 谱系、ANTS/BTS/Gumbel/BetaZero、POMDP/greedy 口径、Klein 论文评估、双轨决策 |
 | 2026-06-20 | §2 用语：「北极星」拆为 **核心原则** + **首要评价指标**（env-steps-to-solved） |
 | 2026-06-21 | §5.1 / §6：CartPole reconstruction 验收（当时口径 ~11.7k env-steps，consistency + reconstruction） |

@@ -616,17 +616,18 @@ cargo build --features blas-openblas
 
 ### 🟢 当前主线（v0.26）
 
-**强化学习** — 详见 [MyZero 算法纲领](.doc/design/my_zero_algorithm_vision.md)、[RL 路线图](.doc/design/rl_roadmap.md)、[MyZero 示例总览](examples/my_zero/README.md) 与 [AGENTS.md — 当前版本与焦点](AGENTS.md#当前版本与焦点)
+**强化学习** — 详见 [MyZero 算法纲领](.doc/design/my_zero_algorithm_vision.md)、[通用 world model 地基](.doc/design/my_zero_world_model_foundation.md)、[RL 路线图](.doc/design/rl_roadmap.md)、[MyZero 示例总览](examples/my_zero/README.md) 与 [AGENTS.md — 当前版本与焦点](AGENTS.md#当前版本与焦点)
 
 已完成（v0.20–v0.25）：Gymnasium-only 环境层 + buffer 入库 → SAC 三动作类型示例 → MCTS 内核 → **MyZero 统一算法**（项目唯一 `*Zero` 实现，CartPole 哨兵达标，样本效率领先 model-free 基线）。
 
-v0.26 方向（[RL 路线图 §5](.doc/design/rl_roadmap.md#5-v026-方向2026-07-01-战略转向定稿)）：
+v0.26 当前方向（[RL 路线图 §5](.doc/design/rl_roadmap.md#5-v026-方向2026-07-01-战略转向定稿)）：
 
 | 优先级 | 任务 | 入口 |
 |--------|------|------|
 | ✅ P0 | loss 系数重标定消融（已完成：recon_coef 16 promote，官方哨兵中位 ~9.8k env-steps） | [基准账本](examples/my_zero/cartpole/README.md) |
-| P0 | CNN 图像表征 + 图像离散基准（商业游戏代理；风险 spike 已裁决 GO） | [Phase 1 计划](.doc/design/rl_phase1_image_plan.md)、[纲领 §2.3](.doc/design/my_zero_algorithm_vision.md) |
-| P1 | Gomoku self-play（象棋踏脚石）；reanalyze 复活 + acting 解耦 | `python/gym_env/gomoku/` |
+| ✅ P0 | 通用 learned-world-model 前两阶段：稳定 schema / world model 契约 + 图像、token、MultiDiscrete、连续、Hybrid 纵切 | [地基设计](.doc/design/my_zero_world_model_foundation.md) |
+| ✅ P1 | Gomoku self-play M0–M4 + 战术纵深 ①–⑱ 收口 | [棋盘账本](examples/my_zero/gomoku/README.md) |
+| 下一步 | 新论文方向的 observable-grounded error 与主动数据生成（独立实验，尚未启动） | [RL 路线图](.doc/design/rl_roadmap.md) |
 
 环境配置： [`.doc/rl_python_env_setup.md`](.doc/rl_python_env_setup.md)
 
@@ -685,6 +686,7 @@ v0.26 方向（[RL 路线图 §5](.doc/design/rl_roadmap.md#5-v026-方向2026-07
 - [优化器架构设计](.doc/design/optimizer_architecture_design.md) - SGD / Adam 优化器的内部实现和 API 设计
 - [概率分布模块设计](.doc/design/distributions_design.md) - Categorical / Normal / TanhNormal 三种分布的 API 设计原则（Var vs Tensor、构造时缓存、梯度追踪策略）
 - [MyZero 算法纲领](.doc/design/my_zero_algorithm_vision.md) - MyZero 战略层：做/不做、文献谱系、双轨架构、首要评价指标
+- [MyZero 通用 learned world model 地基](.doc/design/my_zero_world_model_foundation.md) - 前两阶段已实现契约、输入/动作纵切、兼容边界与后续阶段接缝
 - [强化学习路线图](.doc/design/rl_roadmap.md) - RL 当前状态、验收协议与 v0.26 方向（v0.20–v0.24 历史决策见 [归档](.doc/design/_archive/rl_roadmap_v020_v024.md)）
 - [MatrixSlow 项目识别文档](.doc/reference/python_MatrixSlow_pid.md) - 基于 MatrixSlow 的 Python 深度学习框架分析，包含计算图、自动求导、静态图执行等核心概念的详细说明
 

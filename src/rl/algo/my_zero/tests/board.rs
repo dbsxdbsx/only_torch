@@ -13,7 +13,7 @@ use crate::rl::algo::my_zero::gomoku::{
 };
 use crate::rl::algo::my_zero::network::{MyZeroModel, ObsSpec};
 use crate::rl::algo::my_zero::runner::kl_lr_multiplier;
-use crate::rl::mcts::{ActionPayload, MctsModel};
+use crate::rl::mcts::{ActionId, ActionPayload, MctsModel};
 use crate::rl::{GameOutcome, GymEnv, SelfPlayGame, SelfPlayStep};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -468,14 +468,14 @@ fn true_rules_model_masks_and_terminal() {
     assert!((prior_sum - 1.0).abs() < 1e-5, "根 prior 应归一化");
 
     // 树内走 4：黑连五 → 终局边
-    let rec = bm.recurrent(&root.state, &ActionPayload::Discrete(4));
+    let rec = bm.recurrent(&root.state, ActionId(4), &ActionPayload::Discrete(4));
     assert!(rec.terminal, "连五应终局");
     assert_eq!(rec.reward, 1.0, "落子方胜 reward=+1");
     assert_eq!(rec.discount, 0.0, "终局边 discount=0");
     assert!(rec.candidates.is_empty(), "终局无候选");
 
     // 树内走 80（无关处）：轮白、候选按真规则 mask（又少一空位）
-    let rec2 = bm.recurrent(&root.state, &ActionPayload::Discrete(80));
+    let rec2 = bm.recurrent(&root.state, ActionId(80), &ActionPayload::Discrete(80));
     assert!(!rec2.terminal);
     assert_eq!(rec2.to_play, 1, "recurrent 应轮转执子方");
     assert_eq!(
@@ -548,12 +548,12 @@ fn board_model_masks_root_and_alternates_to_play() {
     );
 
     // 树内推演：to_play 轮转，候选全量（learned dynamics 不 mask）
-    let rec = bm.recurrent(&root.state, &ActionPayload::Discrete(0));
+    let rec = bm.recurrent(&root.state, ActionId(0), &ActionPayload::Discrete(0));
     assert_eq!(rec.to_play, 0, "recurrent 应轮转执子方");
     assert_eq!(rec.state.1, 0);
     if !rec.terminal {
         assert_eq!(rec.candidates.len(), action_dim, "树内候选应全量");
     }
-    let rec2 = bm.recurrent(&rec.state, &ActionPayload::Discrete(1));
+    let rec2 = bm.recurrent(&rec.state, ActionId(1), &ActionPayload::Discrete(1));
     assert_eq!(rec2.to_play, 1, "二层应轮转回原执子方");
 }

@@ -402,6 +402,16 @@ smoke-my-zero-gomoku:
     @echo "=== Running MyZero Gomoku Smoke [{{_blas_name}}] ==="
     cargo test {{_blas_flag}} --lib gomoku_m1_smoke -- --ignored --nocapture --test-threads=1
 
+# MyZero 通用 schema smoke（MultiDiscrete / 2D continuous / Dict image+dense / token）
+smoke-my-zero-schema:
+    @echo "=== Running MyZero Schema Smokes [{{_blas_name}}] ==="
+    cargo test {{_blas_flag}} --lib myzero_smoke -- --nocapture --test-threads=1
+
+# Platform 固定 Hybrid MyZero smoke（需 hybrid-platform）
+smoke-my-zero-platform:
+    @echo "=== Running MyZero Platform Hybrid Smoke [{{_blas_name}}] ==="
+    cargo test {{_blas_flag}} --lib platform_hybrid_myzero_smoke -- --ignored --nocapture --test-threads=1
+
 # Phase 1 风险 spike：CNN × MCTS 单步 wall-clock（假输入纯计时，不需 Python；手动档 bench）
 spike-cnn-mcts:
     @echo "=== Phase 1 spike: CNN x MCTS wall-clock [{{_blas_name}}] ==="
@@ -416,7 +426,7 @@ example-pendulum-my-zero:
 examples-rl: example-cartpole-sac example-pendulum-sac example-platform-sac example-lunarlander-sac example-cartpole-ppo example-cartpole-my-zero
 
 # 全部 RL smoke（管线验证聚合；发版固定关卡。需 Python + gymnasium + box2d + hybrid-platform）
-smoke-rl: smoke-my-zero-cartpole smoke-my-zero-pendulum smoke-my-zero-gomoku smoke-cartpole-ppo smoke-cartpole-sac smoke-pendulum-sac smoke-platform-sac smoke-lunarlander-sac
+smoke-rl: smoke-my-zero-cartpole smoke-my-zero-pendulum smoke-my-zero-gomoku smoke-my-zero-schema smoke-my-zero-platform smoke-cartpole-ppo smoke-cartpole-sac smoke-pendulum-sac smoke-platform-sac smoke-lunarlander-sac
     @echo "=== smoke-rl 全部通过 ==="
 
 # 验证 Platform-v0 Python 环境可用

@@ -484,11 +484,10 @@ impl Dynamics for &FlatModel {
     }
 
     fn recurrent(&self, state: &[f32], action: &ActionPayload) -> DynamicsOutput {
-        let idx = match action {
-            ActionPayload::Discrete(i) => *i,
-            _ => 0,
+        let ActionPayload::Discrete(idx) = action else {
+            panic!("benchmark 只支持离散动作");
         };
-        self.rec.step(state, idx)
+        self.rec.step(state, *idx)
     }
 }
 
@@ -720,11 +719,10 @@ impl Dynamics for &ConvModel {
     }
 
     fn recurrent(&self, state: &[f32], action: &ActionPayload) -> DynamicsOutput {
-        let idx = match action {
-            ActionPayload::Discrete(i) => *i,
-            _ => 0,
+        let ActionPayload::Discrete(idx) = action else {
+            panic!("benchmark 只支持离散动作");
         };
-        self.rec.step(state, idx)
+        self.rec.step(state, *idx)
     }
 }
 

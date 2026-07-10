@@ -107,9 +107,15 @@
 >   consistency ⑯）三端系统性排除——recon 发现集正信号被未见-seed 配对终审否决，
 >   G3 selected holdout 未达标，**棋盘 recipe 维持 base**。并行轨 KL-lr：CartPole
 >   ❌ 不 promote、棋盘无害留库。
-> - **出口 = 战略复盘点（待用户定档，未定档前不开新组件臂）**：① 棋类走真规则树
->   （万金油铁律在棋类域进入复议）② learned dynamics 预算量级重投（须先定算力档 +
->   预注册）③ 转图像线（learned dynamics native 场景）。
+> - **战略复盘已定档（2026-07-10）**：生产搜索保持全程 learned dynamics；
+>   true-rules / env snapshot 只作 reference diagnostic。路线不再按载体三选一，改为
+>   “一个入口 + 稳定契约 + 可退化模块族”。前两阶段地基已完成：
+>   `ObservationSchema / ActionSchema+Codec / LatentState / WorldModel`，以及矩形图像、
+>   Image+Dense Dict、token、MultiDiscrete、2D continuous、Platform Hybrid 最小纵切。
+>   详见[通用 world model 地基](./my_zero_world_model_foundation.md)。
+> - **后续次序**：先做新论文方向的 observable-grounded error 相关性与主动数据生成
+>   （默认关、独立裁决），再分别扩 recurrent posterior / sequence burn-in 与 stochastic
+>   chance nodes；三者均不得反向破坏已验收的确定性完全可观测 MDP 轻路径。
 > - **后台 = Phase 1 轻量图像 pilot**（§2 修订注记：单 seed + 判停协议；
 >   预注册见[图像负结果 issue](../../.issue/items/my_zero_pong_image_flat_negative.md)）。
 > - **ROSMO「哨兵基础组件」提案已否决（2026-07-05）**：CartPole 叠加 29.6k vs 哨兵

@@ -66,9 +66,13 @@ fn assemble_old(episode: &[Vec<u8>], starts: &[usize]) -> Vec<f32> {
 
 /// 新路径 (1)+(2) 融合：来源直写最终 flat（零中间 Vec）
 fn assemble_fused(episode: &[Vec<u8>], starts: &[usize]) -> Vec<f32> {
-    let mut flat = Vec::with_capacity(G * OBS_DIM);
+    assemble_fused_with_stack(episode, starts, STACK)
+}
+
+fn assemble_fused_with_stack(episode: &[Vec<u8>], starts: &[usize], stack: usize) -> Vec<f32> {
+    let mut flat = Vec::with_capacity(G * stack * FRAME);
     for &t in starts {
-        for i in (0..STACK).rev() {
+        for i in (0..stack).rev() {
             append_dequant(&episode[t.saturating_sub(i)], &mut flat);
         }
     }
@@ -95,6 +99,11 @@ fn bench_assembly(c: &mut Criterion) {
     grp.bench_function("assemble_fused_direct_flat", |b| {
         b.iter(|| black_box(assemble_fused(&episode, &starts)));
     });
+    for history in [1usize, 8] {
+        grp.bench_function(format!("assemble_fused_history_{history}"), |b| {
+            b.iter(|| black_box(assemble_fused_with_stack(&episode, &starts, history)));
+        });
+    }
 
     // ---- 入图（拷贝 3：clone vs move）----
     let g_old = Graph::new();

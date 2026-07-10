@@ -21,6 +21,15 @@ fn candidate_set_keeps_action_id_separate_from_payload() {
 }
 
 #[test]
+#[should_panic(expected = "WorldModel prior 宽度")]
+fn strict_candidate_set_rejects_prior_width_mismatch() {
+    let _ = CandidateSet::from_actions_and_priors_strict(
+        vec![ActionPayload::Discrete(0), ActionPayload::Discrete(1)],
+        vec![1.0],
+    );
+}
+
+#[test]
 fn mcts_recipe_roundtrip_preserves_legacy_config() {
     let cfg = MctsConfig {
         num_simulations: 32,

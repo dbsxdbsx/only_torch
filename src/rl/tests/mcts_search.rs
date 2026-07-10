@@ -4,8 +4,9 @@
 //! 纯 Rust，不依赖 pyo3。
 
 use crate::rl::mcts::{
-    ActionPayload, CandidateSet, ChildStat, MctsConfig, MctsModel, MinMaxStats, PuctPolicy,
-    RecurrentOut, RootOut, RootScheduler, RootStrategy, SelectionRule, TargetRule, mcts_search,
+    ActionId, ActionPayload, CandidateSet, ChildStat, MctsConfig, MctsModel, MinMaxStats,
+    PuctPolicy, RecurrentOut, RootOut, RootScheduler, RootStrategy, SelectionRule, TargetRule,
+    mcts_search,
 };
 use rand::RngCore;
 use rand::SeedableRng;
@@ -38,7 +39,12 @@ impl MctsModel for SingleAgentMock {
         }
     }
 
-    fn recurrent(&self, state: &Self::State, _action: &ActionPayload) -> RecurrentOut<Self::State> {
+    fn recurrent(
+        &self,
+        state: &Self::State,
+        _action_id: ActionId,
+        _action: &ActionPayload,
+    ) -> RecurrentOut<Self::State> {
         let depth = state + 1;
         let terminal = depth >= 3;
         RecurrentOut {
@@ -87,7 +93,12 @@ impl MctsModel for TwoPlayerMock {
         }
     }
 
-    fn recurrent(&self, state: &Self::State, _action: &ActionPayload) -> RecurrentOut<Self::State> {
+    fn recurrent(
+        &self,
+        state: &Self::State,
+        _action_id: ActionId,
+        _action: &ActionPayload,
+    ) -> RecurrentOut<Self::State> {
         let (depth, current) = *state;
         let next_depth = depth + 1;
         let next_player = 1 - current;
@@ -321,7 +332,12 @@ impl MctsModel for PerEdgeDiscountMock {
         }
     }
 
-    fn recurrent(&self, _state: &Self::State, action: &ActionPayload) -> RecurrentOut<Self::State> {
+    fn recurrent(
+        &self,
+        _state: &Self::State,
+        _action_id: ActionId,
+        action: &ActionPayload,
+    ) -> RecurrentOut<Self::State> {
         let discount = match action {
             ActionPayload::Discrete(0) => 0.0,
             _ => 1.0,
@@ -396,7 +412,12 @@ impl MctsModel for AllTerminalMock {
         }
     }
 
-    fn recurrent(&self, _state: &Self::State, action: &ActionPayload) -> RecurrentOut<Self::State> {
+    fn recurrent(
+        &self,
+        _state: &Self::State,
+        _action_id: ActionId,
+        action: &ActionPayload,
+    ) -> RecurrentOut<Self::State> {
         let reward = match action {
             ActionPayload::Discrete(0) => 1.0,
             _ => -1.0,

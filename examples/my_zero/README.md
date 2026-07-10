@@ -7,7 +7,7 @@
 
 - **一个算法，持续迭代**：维护不断进化的 MyZero，不再为每篇论文建独立实现
 - **用户零组件概念**：`MyZero::new(env_id)` 自动套用库内按环境配置的组件组合；团队 promote 组件时只改 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)
-- **优先轴（2026-07 起）**：磨观测空间（图像/CNN）与 self-play（[纲领 §2.3](../../.doc/design/my_zero_algorithm_vision.md#23-战略目标与优先轴2026-07-01-定稿)）；连续/混合动作降级
+- **优先轴（2026-07-10 修订）**：生产统一为 learned-world-model 模块族；先完成稳定 schema 地基，再分别验证主动数据、POMDP 与 stochastic。实现边界见[地基设计](../../.doc/design/my_zero_world_model_foundation.md)
 
 ## 环境 × 状态
 
@@ -17,7 +17,8 @@
 | [**Pendulum-v1**](pendulum/README.md) | 纯连续（1） | return ≥ -200 | 诊断中·已降级（当前 recipe 复用 CartPole 栈作诊断，不代表组件已裁决；[issue](../../.issue/items/pendulum_failure_diagnosis.md)） |
 | 图像离散（Atari-100k 类） | 离散 | 任务指标 | 后台预算标定中（S2 基准 0/3 平直，[负结果 issue](../../.issue/items/my_zero_pong_image_flat_negative.md)） |
 | [**Gomoku 9×9**](gomoku/README.md)（→ 象棋） | 离散棋盘（81） | vs random ≥0.95 + gating ≥0.55 | ✅ 支柱已立（M2 双门槛 3/3 · recipe=base；naive0 战术墙留 [issue](../../.issue/items/gomoku_naive0_tactical_wall.md)） |
-| Platform-v0 | 混合 Tuple | return 趋势上升 | 已降级，待具体需求 |
+| Schema toys | MultiDiscrete / 2D continuous / token / Image+Dense | loss 有限、管线通 | ✅ 接口纵切；只证明骨架，不作可学习性声明 |
+| Platform-v0 | 固定混合 Tuple | return 趋势上升 | ✅ MyZero smoke 接通；统计价值未裁决 |
 
 ## 内部组件进展（团队 · promote 时改 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)）
 
@@ -29,7 +30,7 @@
 | ------------ | :-------------------------------: | :-------------------------------: | :--: | :---: | --------------------------- |
 | consistency  |                ✅                 |                 ⏳                 |  ⏳   | ⚠️ 带内弱阳（⑯ CNN 底座：naive0 中位 0.15→0.25，4/5 seed 抬升但 <0.30 线，不 promote） | SimSiam 一致性 loss；棋盘两裁：M3 MLP 底座中性 → ⑯ CNN 底座带内弱阳（同底座对照 recon=1 越线 = 冻结真值 > 自指目标实测，[账本](gomoku/README.md)） |
 | reconstruction |              ✅※                |                 ⏳                 |  ⏳   | ❌ **新-seed 未复现**（⑮ 发现集 0.15→0.35；⑱ 未见 seed 配对 0.28→0.20，仅 1/5 不劣，不 promote） | ※ autograd 修复后 3-seed 中位不再显示增益（方差大、未回滚），v0.26 P0 重标定 loss 系数后复裁，见[账本结论](cartpole/README.md#结论v025-收口)；棋盘 coef=1 的发现集正信号保留为探索证据，但终审否决外推（[账本](gomoku/README.md)） |
-| Sampled（连续采样候选） |       ✅ 接入不回归        |                 ⏳                 |  ⏸   |  ⏸   | CartPole K=N 退化全枚举、与无 Sampled 逐步等价；Pendulum B=7 才是真实子采样 |
+| Sampled（联合候选采样） |       ✅ 接入不回归        |                 ⏳                 |  ⏸   |  ⏸   | MultiDiscrete([4,4,16])、2D continuous 与 Platform Hybrid 接缝已通；CartPole K=N 退化全枚举，native 统计价值仍须单独裁决 |
 | HL-Gauss value/reward 编码 | ❌ 显著劣化（中位 9.8k→27.6k） | ⏸ | ⏳ **native 场景** | ⏸ | 窄 support 低噪声下 two-hot 尖标签是信息优势；开关留库，Phase 1 图像域复测（[账本](cartpole/README.md#v026-phase-0编码--量纲消融2026-07-02)）；图像域初裁中性 |
 | obs symlog 无量纲化 | ❌ 无增益且系数不回移 | ⏳ | ⏸ 图像走 [0,1] 归一 | ⏸ 0/1 平面 | CartPole obs 本就小量纲；开关留库，触发条件回归 [Simulus 计划 §3](../../.doc/design/my_zero_simulus_ablation_plan.md)（连续特征范围失控时） |
 | reanalyze    | ❌ 当前实现有害（[issue](../../.issue/items/my_zero_reanalyze_cartpole_regression.md)） | ⏳ | **v0.26 战略组件** | ⏸ | 「实时轻 acting + 离线重 reanalyze」解耦，图像线优先验证；棋盘 target = 终局事实不过期，非 native 场景 |

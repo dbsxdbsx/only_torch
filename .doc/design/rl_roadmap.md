@@ -13,6 +13,7 @@
 |------|----------|
 | **本文** | 当前模块状态、验收协议、v0.25 结果、v0.26 方向 |
 | [my_zero_algorithm_vision.md](./my_zero_algorithm_vision.md) | 算法哲学、文献谱系、做/不做决策、战略目标 |
+| [my_zero_world_model_foundation.md](./my_zero_world_model_foundation.md) | 通用 learned world model 前两阶段实现、契约与后续接缝 |
 | [examples/my_zero/README.md](../../examples/my_zero/README.md) | 组件×环境实测矩阵、命令、门禁 |
 | [examples/my_zero/cartpole/README.md](../../examples/my_zero/cartpole/README.md) | **基准账本**（所有 benchmark 数字的唯一事实源） |
 | [rl_python_env_setup.md](../rl_python_env_setup.md) | Python / Gymnasium 环境搭建 |
@@ -81,6 +82,13 @@
 ## 5. v0.26 方向（2026-07-01 战略转向定稿）
 
 > **执行次序总纲**：v0.26→v0.28 五阶段收口战役（终态验收、阶段退出判据、issue 裁决映射、制度化条款）见 [RL 全面收口规划](./rl_closure_plan.md)；本节只保留方向级优先级。
+>
+> **战略复盘已定档（2026-07-10）**：生产树坚持全程 learned dynamics，真规则 /
+> env snapshot 仅作 reference diagnostic；先建设“同一稳定契约下可退化的模块族”，不再在
+> 棋类真规则 / learned 预算 / 图像三条载体之间三选一。前两阶段（零行为契约重构 +
+> 输入/动作最小纵切）已完成，事实源见[通用 world model 地基](./my_zero_world_model_foundation.md)；
+> 后续主动数据生成、recurrent POMDP、stochastic chance search 均建立在该地基上，仍须
+> 分阶段独立验收。
 
 > 依据：真实目标是**中国象棋**（离散完美信息 self-play）与**商业图像游戏**（图像 obs + 实时 + 样本贵）——两者都不在「动作空间广度」轴上。路线从「磨动作空间（Pendulum 连续 / Platform 混合）」**转向「磨观测空间（图像/CNN）+ self-play」**。完整论证见[算法纲领 §2.3](./my_zero_algorithm_vision.md#23-战略目标与优先轴2026-07-01-定稿)。
 
@@ -88,6 +96,7 @@
 |--------|------|------|
 | **P0 ✅（2026-07-02 完成）** | loss 系数重标定消融 | 已裁决：**recon_coef 1→16 promote**（新哨兵中位 **~9.8k** env-steps、3/3，超过 bug 时代 13.1k；cont 保持 1.0，cons 无重标定理由）；同批 5-seed 复裁「recon=1 有害、recon 去留终审留图像环境」。数字与预注册协议见[基准账本](../../examples/my_zero/cartpole/README.md#v026-p0loss-系数重标定2026-07-02--当前官方哨兵) |
 | **P0 ✅（2026-07-02 完成）** | **收口规划 Phase 0 全项闭环**（训练信号收口） | 梯度流审计：现状 canonical，sg 两臂不追加；**HL-Gauss 编码负结果**（中位 9.8k→27.6k，回退 two-hot，开关留库 Phase 1 图像域复测）；**obs symlog 负结果**（三臂系数不回移，recon_coef=16 裁决为权衡旋钮非单位换算，开关留库）。recipe 零变更定稿、哨兵逐 bit 复现 ~9.8k，**CartPole 自此冻结为纯回归哨兵（条款二生效）**。细节见[收口规划 §1](./rl_closure_plan.md)与[账本](../../examples/my_zero/cartpole/README.md#v026-phase-0编码--量纲消融2026-07-02) |
+| **P0 ✅（2026-07-10 完成）** | 通用 learned-world-model 地基 | `ObservationSchema / ActionSchema+Codec / LatentState / WorldModel` 四契约落地；矩形/可配 history、Image+Dense Dict、token+mask、MultiDiscrete、2D continuous、Platform Hybrid 纵切全通；Reference board 仅 `cfg(test)`；CartPole 哨兵 8,741 中位、3/3 逐值复现 |
 | **P0** | CNN 图像表征 + 图像离散基准（Atari-100k 类） | 商业游戏直接代理；复用已验收 consistency + reconstruction（自监督正是图像+少样本的命门组件） |
 | **P1 ✅（2026-07-10 纵深终审完成）** | Gomoku self-play → 象棋踏脚石 | **棋盘支柱 M0–M4 已立，naive 战术纵深 ①–⑱ 全裁决**：真规则上限 0.90 证明纯 self-play 可行；learned dynamics 规则学习税主导。PER、consistency、reconstruction 均未获未见 seed 稳健增益（recon1 发现集 0.35，未见 seed 对照 0.28 vs recon1 0.20）；G3 selected 100 局/档 holdout 0.19/0.09/0.07/0，交付未过线，recipe 维持 base。全账见[棋盘账本](../../examples/my_zero/gomoku/README.md)与[战术墙 issue](../../.issue/items/gomoku_naive0_tactical_wall.md)；下一步为预算 / 真规则 / 图像线战略复盘，不自动追加组件 |
 | **P1** | reanalyze 复活 + acting/reanalyze 解耦 | 「实时轻 acting（少 sim / policy 先验）+ 离线重 reanalyze（榨样本）」是商业游戏路线的战略组件；CartPole 负结果不构成否定 |

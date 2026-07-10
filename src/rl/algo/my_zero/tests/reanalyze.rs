@@ -3,8 +3,8 @@
 use super::super::reanalyze::{reanalyze_game, reanalyze_step, reanalyze_unroll_window};
 use super::super::target::{completed_q_policy_target, mcts_policy_target};
 use crate::rl::mcts::{
-    ActionPayload, CandidateSet, MctsConfig, MctsModel, PuctPolicy, RecurrentOut, RootOut,
-    mcts_search,
+    ActionId, ActionPayload, CandidateSet, MctsConfig, MctsModel, PuctPolicy, RecurrentOut,
+    RootOut, mcts_search,
 };
 use crate::rl::{GameOutcome, SelfPlayGame, SelfPlayStep};
 use rand::SeedableRng;
@@ -26,7 +26,12 @@ impl MctsModel for MockModel {
             to_play: 0,
         }
     }
-    fn recurrent(&self, state: &Self::State, _action: &ActionPayload) -> RecurrentOut<Self::State> {
+    fn recurrent(
+        &self,
+        state: &Self::State,
+        _action_id: ActionId,
+        _action: &ActionPayload,
+    ) -> RecurrentOut<Self::State> {
         RecurrentOut {
             state: state.clone(),
             reward: 1.0,

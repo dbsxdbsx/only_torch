@@ -43,6 +43,13 @@ fn board_stack() -> Components {
     Components::base()
 }
 
+/// 大联合动作空间的接口纵切：只开启 Sampled 候选，避免每节点展开完整 catalog。
+fn structured_action_stack() -> Components {
+    let mut c = Components::base();
+    c.sampled = true;
+    c
+}
+
 /// 给定 Gymnasium `env_id` 返回当前内置组件组合。
 pub(crate) fn components_for(env_id: &str) -> Components {
     if env_id.starts_with("ALE/") {
@@ -54,6 +61,7 @@ pub(crate) fn components_for(env_id: &str) -> Components {
     match env_id {
         "CartPole-v1" => cartpole_stack(),
         "Pendulum-v1" => pendulum_diagnostic_stack(),
+        "Platform-v0" | "MyZero-MultiDiscrete-v0" => structured_action_stack(),
         _ => Components::base(),
     }
 }

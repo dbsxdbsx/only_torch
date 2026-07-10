@@ -12,8 +12,8 @@ use pyo3::types::PyDict;
 use serial_test::serial;
 
 use crate::rl::mcts::{
-    ActionPayload, CandidateSet, MctsConfig, MctsModel, PuctPolicy, RecurrentOut, RootOut,
-    mcts_search,
+    ActionId, ActionPayload, CandidateSet, MctsConfig, MctsModel, PuctPolicy, RecurrentOut,
+    RootOut, mcts_search,
 };
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -63,7 +63,12 @@ impl MctsModel for CartPoleEnvModel {
         })
     }
 
-    fn recurrent(&self, state: &Self::State, action: &ActionPayload) -> RecurrentOut<Self::State> {
+    fn recurrent(
+        &self,
+        state: &Self::State,
+        _action_id: ActionId,
+        action: &ActionPayload,
+    ) -> RecurrentOut<Self::State> {
         Python::attach(|py| {
             let copy_mod = py.import("copy").expect("import copy 失败");
             let env_copy = copy_mod

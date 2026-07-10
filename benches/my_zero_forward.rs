@@ -12,8 +12,8 @@
 //! `recurrent` 是搜索热点（`sims` × 每个 env step 各一次），故单列。
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use only_torch::nn::Graph;
-use only_torch::rl::algo::my_zero::MyZeroModel;
-use only_torch::rl::mcts::{ActionPayload, Dynamics};
+use only_torch::rl::algo::my_zero::{ActionSchema, MyZeroModel, ObservationSchema};
+use only_torch::rl::mcts::{ActionId, ActionPayload, Dynamics};
 
 const OBS_DIM: usize = 4; // CartPole-v1
 const ACTION_DIM: usize = 2;
@@ -49,7 +49,30 @@ fn bench_my_zero_forward(c: &mut Criterion) {
             .collect();
         let action = ActionPayload::Discrete(1);
         b.iter(|| {
-            black_box(m.recurrent(black_box(&state), black_box(&action)));
+            black_box(m.recurrent_with_id(black_box(&state), ActionId(1), black_box(&action)));
+        });
+    });
+
+    // 商业游戏画像：MultiDiscrete([4,4,16]) factorized policy → 256 joint priors。
+    group.bench_function("recurrent_latent64_multidiscrete_4x4x16", |b| {
+        let graph = Graph::new_with_seed(42);
+        let schema = ActionSchema::MultiDiscrete {
+            factors: vec![4, 4, 16],
+        };
+        let model = MyZeroModel::new_with_schemas(
+            &graph,
+            ObservationSchema::Flat(4),
+            schema.clone(),
+            LATENT_DIM,
+        )
+        .unwrap();
+        let state: Vec<f32> = (0..LATENT_DIM)
+            .map(|i| i as f32 / LATENT_DIM as f32)
+            .collect();
+        let action_id = ActionId(schema.encode_joint(&[1, 2, 3]));
+        let action = schema.payload(action_id.index());
+        b.iter(|| {
+            black_box((&model).recurrent_with_id(black_box(&state), action_id, black_box(&action)));
         });
     });
 

@@ -2,9 +2,10 @@
 //!
 //! 用 mock 验证 Dynamics → MctsModel 桥接正确性和 mcts_search 兼容性。
 
+use crate::rl::algo::my_zero::ActionSchema;
 use crate::rl::mcts::{
-    ActionPayload, Dynamics, DynamicsModel, DynamicsOutput, MctsConfig, MctsModel, PuctPolicy,
-    RecurrentOut, RootOut, mcts_search,
+    ActionId, ActionPayload, Dynamics, DynamicsModel, DynamicsOutput, LatentState, MctsConfig,
+    MctsModel, PuctPolicy, RecurrentOut, RootOut, WorldModel, WorldModelOutput, mcts_search,
 };
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -51,9 +52,9 @@ fn make_model() -> DynamicsModel<DummyDynamics> {
 #[test]
 fn test_dynamics_model_root() {
     let model = make_model();
-    let out: RootOut<Vec<f32>> = model.root(&[0.0; 4]);
+    let out: RootOut<LatentState> = model.root(&[0.0; 4]);
 
-    assert_eq!(out.state, vec![1.0, 2.0, 3.0]);
+    assert_eq!(out.state.as_ref(), &[1.0, 2.0, 3.0]);
     assert_eq!(out.candidates.policy_priors(), vec![0.4, 0.3, 0.3]);
     assert!((out.value - 0.5).abs() < 1e-6);
     assert_eq!(out.candidates.len(), 3);
@@ -67,10 +68,11 @@ fn test_dynamics_model_root() {
 #[test]
 fn test_dynamics_model_recurrent() {
     let model = make_model();
-    let state = vec![1.0, 2.0, 3.0];
-    let out: RecurrentOut<Vec<f32>> = model.recurrent(&state, &ActionPayload::Discrete(0));
+    let state = LatentState::new(vec![1.0, 2.0, 3.0]);
+    let out: RecurrentOut<LatentState> =
+        model.recurrent(&state, ActionId(0), &ActionPayload::Discrete(0));
 
-    assert_eq!(out.state, vec![2.0, 3.0, 4.0]);
+    assert_eq!(out.state.as_ref(), &[2.0, 3.0, 4.0]);
     assert!((out.reward - 0.1).abs() < 1e-6);
     assert!((out.value - 0.4).abs() < 1e-6);
     assert_eq!(out.candidates.policy_priors(), vec![0.33, 0.34, 0.33]);
@@ -104,8 +106,9 @@ impl Dynamics for TerminalDynamics {
 #[test]
 fn test_terminal_edge_zeroes_discount() {
     let model = DynamicsModel::new(TerminalDynamics, vec![ActionPayload::Discrete(0)], 0.99);
-    let state = vec![0.0];
-    let out: RecurrentOut<Vec<f32>> = model.recurrent(&state, &ActionPayload::Discrete(0));
+    let state = LatentState::new(vec![0.0]);
+    let out: RecurrentOut<LatentState> =
+        model.recurrent(&state, ActionId(0), &ActionPayload::Discrete(0));
     assert!(out.terminal, "终止边 terminal 应为 true");
     assert!(
         out.discount.abs() < 1e-6,
@@ -143,4 +146,110 @@ fn test_dynamics_model_mcts_search() {
         (policy_sum - 1.0).abs() < 1e-4,
         "learn_policy 之和应为 1.0，实际: {policy_sum}"
     );
+}
+
+struct StructuredDynamics;
+
+impl Dynamics for StructuredDynamics {
+    fn initial_state(&self, _obs: &[f32]) -> (Vec<f32>, Vec<f32>, f32) {
+        (vec![0.0], vec![0.05, 0.1, 0.15, 0.2, 0.2, 0.3], 0.0)
+    }
+
+    fn recurrent(&self, state: &[f32], action: &ActionPayload) -> DynamicsOutput {
+        let ActionPayload::MultiDiscrete(values) = action else {
+            panic!("应为 MultiDiscrete payload");
+        };
+        self.recurrent_with_id(state, ActionId(values[0] * 3 + values[1]), action)
+    }
+
+    fn recurrent_with_id(
+        &self,
+        state: &[f32],
+        action_id: ActionId,
+        action: &ActionPayload,
+    ) -> DynamicsOutput {
+        assert_eq!(
+            action,
+            &ActionPayload::MultiDiscrete(vec![action_id.index() / 3, action_id.index() % 3])
+        );
+        DynamicsOutput {
+            next_state: vec![state[0] + 1.0],
+            reward: action_id.index() as f32,
+            prior: vec![0.3, 0.2, 0.2, 0.15, 0.1, 0.05],
+            value: 0.0,
+            terminal: false,
+            continuation: 1.0,
+        }
+    }
+}
+
+#[test]
+fn structured_payload_uses_action_id_without_discrete_fallback() {
+    let schema = ActionSchema::MultiDiscrete {
+        factors: vec![2, 3],
+    };
+    let actions = (0..schema.action_count())
+        .map(|id| schema.payload(id))
+        .collect();
+    let model = DynamicsModel::new(StructuredDynamics, actions, 0.99);
+    let root = model.root(&[0.0]);
+    let id = ActionId(schema.encode_joint(&[1, 2]));
+    let payload = schema.payload(id.index());
+    let out = model.recurrent(&root.state, id, &payload);
+    assert_eq!(out.reward, 5.0);
+    assert_eq!(
+        out.candidates.policy_priors(),
+        vec![0.3, 0.2, 0.2, 0.15, 0.1, 0.05]
+    );
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct RecurrentPlannerState {
+    latent: Vec<f32>,
+    hidden: f32,
+}
+
+struct RecurrentWorldModel;
+
+impl WorldModel for RecurrentWorldModel {
+    type State = RecurrentPlannerState;
+
+    fn initial_state(&self, _obs: &[f32]) -> (Self::State, Vec<f32>, f32) {
+        (
+            RecurrentPlannerState {
+                latent: vec![0.0],
+                hidden: 1.0,
+            },
+            vec![1.0],
+            0.0,
+        )
+    }
+
+    fn recurrent(
+        &self,
+        state: &Self::State,
+        _action_id: ActionId,
+        _action: &ActionPayload,
+    ) -> WorldModelOutput<Self::State> {
+        WorldModelOutput {
+            next_state: RecurrentPlannerState {
+                latent: vec![state.latent[0] + 1.0],
+                hidden: state.hidden + 2.0,
+            },
+            reward: 0.0,
+            prior: vec![1.0],
+            value: 0.0,
+            terminal: false,
+            continuation: 1.0,
+        }
+    }
+}
+
+#[test]
+fn world_model_state_can_carry_recurrent_hidden() {
+    let model = DynamicsModel::new(RecurrentWorldModel, vec![ActionPayload::Discrete(0)], 0.99);
+    let root = model.root(&[0.0]);
+    let next = model.recurrent(&root.state, ActionId(0), &ActionPayload::Discrete(0));
+    assert_eq!(next.state.latent, vec![1.0]);
+    assert_eq!(next.state.hidden, 3.0);
 }

@@ -45,6 +45,26 @@ pub enum ActionPlan {
     // 连续 env 默认 B=7 由 recipe / ActionAdapter::Auto 注入；`.discretize(b)` 仅作 override。
 }
 
+/// 环境 observation 到模型入口的处理方案。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ObservationPlan {
+    /// 按环境空间自动解析；原生图像沿用 84×84×4 历史口径。
+    Auto,
+    /// 原生图像预处理到指定矩形尺寸并堆叠最近 `history` 帧。
+    Image {
+        height: usize,
+        width: usize,
+        history: usize,
+    },
+    /// 固定长度 token IDs；tokenizer 位于环境或上层 adapter。
+    Tokens {
+        length: usize,
+        vocab_size: usize,
+        embed_dim: usize,
+        pad_id: usize,
+    },
+}
+
 /// env I/O 适配层
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnvSettings {
@@ -54,6 +74,8 @@ pub struct EnvSettings {
     pub reward_scale: f32,
     /// 动作方案（默认 `Auto`：离散 env 自动；连续/混合 env 需指定）
     pub action: ActionPlan,
+    /// observation schema / 预处理方案。
+    pub observation: ObservationPlan,
 }
 
 impl Default for EnvSettings {
@@ -63,6 +85,7 @@ impl Default for EnvSettings {
             env_id: "CartPole-v1",
             reward_scale: 1.0,
             action: ActionPlan::Auto,
+            observation: ObservationPlan::Auto,
         }
     }
 }

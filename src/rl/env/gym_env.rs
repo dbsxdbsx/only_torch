@@ -53,6 +53,8 @@ pub enum ObsType {
 pub enum ActionType {
     /// 单维离散动作（如 `CartPole`）
     SingleDiscrete,
+    /// 固定结构的多维离散动作（Gymnasium `MultiDiscrete`）。
+    MultiDiscrete,
     /// 连续动作（单维或多维）
     Continuous,
     /// 混合动作（离散 + 连续，如 Platform）
@@ -169,6 +171,8 @@ pub struct GymEnv<'py> {
     // 观察空间相关
     /// 观察空间属性列表
     obs_prop_vec: Vec<ObsDim>,
+    /// Dict observation 的 key；Tuple / 单一空间对应 `None`。
+    obs_keys: Vec<Option<String>>,
     /// 观察类型（向量/图像）
     obs_type: ObsType,
 
@@ -219,7 +223,7 @@ impl<'py> GymEnv<'py> {
         let obs_space = env
             .getattr("observation_space")
             .expect("获取 observation_space 失败");
-        let obs_prop_vec = init_obs_prop(&obs_space);
+        let (obs_prop_vec, obs_keys) = init_obs_prop(&obs_space);
 
         // 解析动作空间
         let action_space = env.getattr("action_space").expect("获取 action_space 失败");
@@ -234,6 +238,7 @@ impl<'py> GymEnv<'py> {
             py,
             env,
             obs_prop_vec,
+            obs_keys,
             obs_type: ObsType::Vector,
             action_space,
             action_prop_vec,
@@ -576,6 +581,11 @@ impl<'py> GymEnv<'py> {
         &self.obs_prop_vec
     }
 
+    /// 与 [`get_obs_prop`](Self::get_obs_prop) 同序的 Dict key。
+    pub fn get_obs_keys(&self) -> &[Option<String>] {
+        &self.obs_keys
+    }
+
     /// 获取观察类型
     pub const fn get_obs_type(&self) -> ObsType {
         self.obs_type
@@ -708,49 +718,49 @@ impl<'py> GymEnv<'py> {
 
     /// 从 Python 对象获取观察向量
     fn get_obs_vec_from_python(&self, obs_py: &Bound<'py, PyAny>) -> Vec<Vec<f32>> {
-        let mut obs_vec = Vec::new();
+        if self.obs_prop_vec.len() == 1 && self.obs_keys[0].is_none() {
+            return vec![Self::obs_component_to_f32(obs_py)];
+        }
 
-        // 图像 obs 快路径：numpy astype(f32) + tobytes 一次性拷贝，
-        // 避免逐元素 extract（210×160×3 = 10 万元素/步时逐元素慢一个量级）。
-        if self.obs_type != ObsType::Vector
-            && let Ok(bytes) = obs_py
-                .call_method1("astype", ("float32",))
-                .and_then(|arr| arr.call_method0("tobytes"))
-                .and_then(|b| b.extract::<Vec<u8>>())
+        self.obs_keys
+            .iter()
+            .enumerate()
+            .map(|(i, key)| {
+                let component = match key {
+                    Some(key) => obs_py
+                        .get_item(key)
+                        .unwrap_or_else(|_| panic!("获取 Dict obs[{key}] 失败")),
+                    None => obs_py.get_item(i).expect("获取 tuple obs 元素失败"),
+                };
+                Self::obs_component_to_f32(&component)
+            })
+            .collect()
+    }
+
+    fn obs_component_to_f32(obs: &Bound<'py, PyAny>) -> Vec<f32> {
+        if let Ok(v) = obs.extract::<f32>() {
+            return vec![v];
+        }
+        if let Ok(v) = obs.extract::<i64>() {
+            return vec![v as f32];
+        }
+        if let Ok(values) = obs.extract::<Vec<f32>>() {
+            return values;
+        }
+        if let Ok(values) = obs.extract::<Vec<i64>>() {
+            return values.into_iter().map(|v| v as f32).collect();
+        }
+        if let Ok(bytes) = obs
+            .call_method1("astype", ("float32",))
+            .and_then(|arr| arr.call_method0("tobytes"))
+            .and_then(|b| b.extract::<Vec<u8>>())
         {
-            let obs: Vec<f32> = bytes
+            return bytes
                 .chunks_exact(4)
                 .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
                 .collect();
-            return vec![obs];
         }
-
-        if self.obs_prop_vec.len() == 1 {
-            // 常规情况：单个 obs
-            let obs = if let Ok(flattened) = obs_py.getattr("flatten") {
-                if let Ok(flat_obs) = flattened.call0() {
-                    flat_obs.extract::<Vec<f32>>().unwrap_or_else(|_| vec![0.0])
-                } else {
-                    obs_py.extract::<Vec<f32>>().unwrap_or_else(|_| vec![0.0])
-                }
-            } else {
-                obs_py.extract::<Vec<f32>>().unwrap_or_else(|_| vec![0.0])
-            };
-            obs_vec.push(obs);
-        } else {
-            // Tuple 情况（如 Platform）
-            for (i, _obs_prop) in self.obs_prop_vec.iter().enumerate() {
-                let cur_obs = obs_py.get_item(i).expect("获取 tuple obs 元素失败");
-                let obs = if let Ok(v) = cur_obs.extract::<f32>() {
-                    vec![v]
-                } else {
-                    cur_obs.extract::<Vec<f32>>().unwrap_or_else(|_| vec![0.0])
-                };
-                obs_vec.push(obs);
-            }
-        }
-
-        obs_vec
+        panic!("不支持的 observation component 类型");
     }
 
     /// 将 Rust 动作转换为 Python 对象
@@ -760,6 +770,13 @@ impl<'py> GymEnv<'py> {
                 // 离散动作：返回整数
                 let action_int = action.first().map_or(0, |&a| a as i64);
                 action_int.into_py_any(self.py).unwrap()
+            }
+            ActionType::MultiDiscrete => {
+                let values: Vec<i64> = action.iter().map(|&v| v as i64).collect();
+                Array1::from_vec(values)
+                    .to_pyarray(self.py)
+                    .unbind()
+                    .into_any()
             }
             ActionType::Continuous => {
                 // 连续动作：返回浮点数组
@@ -845,6 +862,10 @@ impl<'py> GymEnv<'py> {
                 let v: i64 = action_py.extract().unwrap_or(0);
                 vec![v as f32]
             }
+            ActionType::MultiDiscrete => action_py
+                .extract::<Vec<i64>>()
+                .map(|values| values.into_iter().map(|v| v as f32).collect())
+                .unwrap_or_else(|_| self.flatten_python_action(action_py)),
             ActionType::Continuous => {
                 action_py.extract::<Vec<f32>>().unwrap_or_else(|_| {
                     // 尝试单个浮点数
@@ -890,34 +911,66 @@ impl<'py> GymEnv<'py> {
 // ============================================================================
 
 /// 初始化观察空间属性
-fn init_obs_prop(obs_space: &Bound<'_, PyAny>) -> Vec<ObsDim> {
+fn init_obs_prop(obs_space: &Bound<'_, PyAny>) -> (Vec<ObsDim>, Vec<Option<String>>) {
     let mut obs_prop_vec = Vec::new();
+    let mut obs_keys = Vec::new();
+    let type_name = obs_space
+        .get_type()
+        .name()
+        .expect("获取 observation space 类型名失败")
+        .to_string();
 
-    let shape = obs_space.getattr("shape").expect("获取 obs shape 失败");
-
-    match shape.extract::<Vec<i64>>() {
-        Ok(shape_vec) => {
+    if type_name == "Dict" {
+        let spaces = obs_space
+            .getattr("spaces")
+            .expect("获取 Dict observation spaces 失败");
+        let keys_obj = spaces.call_method0("keys").expect("获取 Dict keys 失败");
+        let builtins = obs_space
+            .py()
+            .import("builtins")
+            .expect("import builtins 失败");
+        let keys: Vec<String> = builtins
+            .getattr("list")
+            .expect("获取 builtins.list 失败")
+            .call1((keys_obj,))
+            .expect("转换 Dict keys 为 list 失败")
+            .extract()
+            .expect("解析 Dict keys 失败");
+        for key in keys {
+            let sub_space = spaces
+                .get_item(&key)
+                .unwrap_or_else(|_| panic!("获取 Dict observation space[{key}] 失败"));
+            let shape_vec = sub_space
+                .getattr("shape")
+                .ok()
+                .and_then(|shape| shape.extract::<Vec<i64>>().ok())
+                .unwrap_or_default();
             obs_prop_vec.push(ObsDim { shape_vec });
+            obs_keys.push(Some(key));
         }
-        Err(_) => {
-            // Tuple 类型的观察空间
-            if let Ok(tuple_size) = obs_space.len() {
-                for i in 0..tuple_size {
-                    let cur_obs = obs_space.get_item(i).expect("获取 tuple obs 元素失败");
-                    let cur_shape: Vec<i64> = cur_obs
-                        .getattr("shape")
-                        .expect("获取子 obs shape 失败")
-                        .extract()
-                        .unwrap_or_default();
-                    obs_prop_vec.push(ObsDim {
-                        shape_vec: cur_shape,
-                    });
-                }
-            }
+    } else if type_name == "Tuple" {
+        let tuple_size = obs_space.len().expect("获取 Tuple observation 长度失败");
+        for i in 0..tuple_size {
+            let cur_obs = obs_space.get_item(i).expect("获取 tuple obs 元素失败");
+            let shape_vec = cur_obs
+                .getattr("shape")
+                .ok()
+                .and_then(|shape| shape.extract::<Vec<i64>>().ok())
+                .unwrap_or_default();
+            obs_prop_vec.push(ObsDim { shape_vec });
+            obs_keys.push(None);
         }
+    } else {
+        let shape_vec = obs_space
+            .getattr("shape")
+            .ok()
+            .and_then(|shape| shape.extract::<Vec<i64>>().ok())
+            .unwrap_or_default();
+        obs_prop_vec.push(ObsDim { shape_vec });
+        obs_keys.push(None);
     }
 
-    obs_prop_vec
+    (obs_prop_vec, obs_keys)
 }
 
 /// 初始化动作空间属性
@@ -945,6 +998,25 @@ fn init_act_prop(action_space: &Bound<'_, PyAny>, check_type: bool) -> Vec<Actio
                 action_type: ActionDimType::default(),
                 sub_action_dim_op: None,
             });
+        }
+        "MultiDiscrete" => {
+            let nvec: Vec<i64> = action_space
+                .getattr("nvec")
+                .expect("获取 MultiDiscrete.nvec 失败")
+                .call_method0("tolist")
+                .expect("MultiDiscrete.nvec.tolist() 失败")
+                .extract()
+                .expect("解析 MultiDiscrete.nvec 失败");
+            assert!(!nvec.is_empty(), "MultiDiscrete.nvec 不能为空");
+            for n in nvec {
+                assert!(n > 0, "MultiDiscrete 每个 factor 的动作数必须 > 0");
+                action_prop_vec.push(ActionDim {
+                    high_v_op: Some((n - 1) as f32),
+                    low_v_op: Some(0.0),
+                    action_type: ActionDimType::Int64,
+                    sub_action_dim_op: None,
+                });
+            }
         }
         "Box" => {
             // 连续动作
@@ -1116,9 +1188,15 @@ fn check_action_type(action_dims: &[ActionDim]) -> ActionType {
         return ActionType::Mix;
     }
 
-    // 检查是否为单维离散
-    if action_dims.len() == 1 && action_dims[0].action_type == ActionDimType::Int64 {
-        return ActionType::SingleDiscrete;
+    if action_dims
+        .iter()
+        .all(|d| d.action_type == ActionDimType::Int64)
+    {
+        return if action_dims.len() == 1 {
+            ActionType::SingleDiscrete
+        } else {
+            ActionType::MultiDiscrete
+        };
     }
 
     // 默认为连续
