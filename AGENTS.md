@@ -18,15 +18,15 @@ only_torch 是一个纯 Rust 的 PyTorch 风格玩具框架，当前重点是：
 | 项 | 内容 |
 |----|------|
 | **版本** | `0.25.0`（2026-07-02；本地可能超前 `origin/master`，以 `git log` / `CHANGELOG.md` 为准） |
-| **刚闭环** | **✅ Gomoku 监督端战役 ⑮–⑱ + G3 新-seed 终审（2026-07-10）**：① ⑮ recon1 在发现 seeds 42–46 呈正信号（对照 0.15→0.35），但⑱ 未见 seeds 47–51 配对终审为 **control 0.28 vs recon1 0.20**（仅 1/5 不劣）→ **不复现、不 promote**；② ⑯ consistency 0.25 带内弱阳，⑰ recon1×PER 回落 0.15，监督端/消费端当前量级无稳健赢家；③ G3 selected seed48 独立 100 局/档 holdout = **0.19/0.09/0.07/0.00**，科学与交付双失败，棋盘 recipe 维持 base；④ 工程侧：通用 MyZero OTM I/O 内核 + board recipe 契约适配器进库，selected 失败候选 1.9 MiB 落盘并真实加载通过（忽略目录、不标 release）；⑤ 全账见[棋盘账本](examples/my_zero/gomoku/README.md)与 [naive0 issue §四](.issue/items/gomoku_naive0_tactical_wall.md)。前战役 ⑫⑬⑭（真规则上限 0.90 / learned 税 / PER 排除）见 CHANGELOG 2026-07-07 |
-| **当前主线** | **强化学习** v0.26（[路线图 §5](.doc/design/rl_roadmap.md#5-v026-方向2026-07-01-战略转向定稿)）：战略转向「磨观测空间 + self-play」。**已闭环**：P0/Phase 0、CartPole 哨兵、ROSMO 阶梯、Phase 2 Gomoku 支柱，以及纯 self-play 万金油战役 ⑫–⑱。当前结论：真规则上限证明任务可行，但 learned dynamics 在当前 CPU 预算下规则学习税主导；PER、consistency、recon 均未获未见 seed 稳健增益，G3 交付未通过。**下一步是战略复盘，不自动再开组件臂**：三选一——① recon/监督形态下重新投资预算量级（新战役须先定算力档）；② 棋类采用真规则树、接受领域结构；③ 转图像线（后台预算标定 issue 仍在）。图像线/Phase 3/Pendulum 等原暂缓项维持既有顺位，详见[收口规划 §4](.doc/design/rl_closure_plan.md#4-phase-3--样本效率纵深v027-下半) |
+| **刚闭环** | **✅ Gomoku 纯 self-play 战役全线收官（①–⑱，2026-07-04→07-10）**：真规则树上限 naive0 中位 **0.90** 证明任务可学；learned dynamics 规则学习税主导（同配置 0.10–0.15）且对 12.5× 预算/CNN/增广钝感；生成端（课程）、消费端（PER 单药+复叠）、监督端（recon / consistency）三端系统性排除——recon coef=1 发现集 0.35 被未见-seed 终审（control 0.28 vs 0.20）否决，G3 selected holdout（100 局/档）0.19/0.09/0.07/0.00 未达标，**棋盘 recipe 维持 base**。工程沉淀：seed 并行跑法（`just bench-m3-seedpar`）、通用 OTM 契约内核 + board 适配器、「发现集调参 → 未见-seed 终审」纪律。全档案：[棋盘账本](examples/my_zero/gomoku/README.md)（含 Phase/M/G/臂 命名词典）· [naive0 issue](.issue/items/gomoku_naive0_tactical_wall.md) · CHANGELOG 2026-07-10 |
+| **当前主线** | **强化学习** v0.26（[路线图 §5](.doc/design/rl_roadmap.md#5-v026-方向2026-07-01-战略转向定稿)），**处于战略复盘点——三选一等用户定档，未定档前不开新组件臂**：① 棋类走真规则树（0.90 上限已证，直接服务象棋目标；万金油铁律在棋类域进入复议）② learned dynamics 预算量级重投（⑬ 证当前量级钝感 = 弱赌注，须先定算力档 + 预注册）③ 转图像线（learned dynamics native 场景，后台预算标定 issue 在案）。已闭环：P0/Phase 0、CartPole 哨兵、ROSMO 阶梯、Phase 2 Gomoku 支柱 M0–M4、战役 ①–⑱。次级轨道维持原状：图像 pilot 后台、Phase 3 暂缓、Pendulum 压轴。详见[收口规划 §4](.doc/design/rl_closure_plan.md#4-phase-3--样本效率纵深v027-下半) |
 | **刻意暂缓** | 演化 **阶段 D**（`CellAttention` ONNX、`Attention` Net2Net 函数保持、Conv2d Attention；3D batched MatMul 已于 2026-07-04 完成出表）——与 RL 零耦合，见 [记忆机制设计 — Phase D](.doc/design/memory_mechanism_design.md#-后续-phase-d刻意未做)（该表为「阶段 D」唯一权威定义） |
 | **一级风险** | CPU-only × 图像 CNN × MCTS × 实时结构性冲突：[.issue/items/cpu_only_mcts_image_realtime_risk.md](.issue/items/cpu_only_mcts_image_realtime_risk.md)（图像线推进前必读） |
 | **路线展望** | 真实目标 = **中国象棋** + **商业图像游戏**（[纲领 §2.3](.doc/design/my_zero_algorithm_vision.md#23-战略目标与优先轴2026-07-01-定稿)）；MyZero 消融驱动迭代，基准判据「变慢 ≠ 失败，新实测即新基线；仅不收敛才记 issue」 |
 
 **进度符号**（设计文档统一口径）：✅ Phase 验收范围内已完成 · ⏳ 已识别、留后续 Phase · 🔲 可选增强 · 📦 已归档历史路径。
 
-**接手 RL 时建议顺序**：读 `rl_roadmap.md`（薄版当前态）→ 配环境 [`.doc/rl_python_env_setup.md`](.doc/rl_python_env_setup.md)（**仅 Gymnasium**）→ `just test-filter rl`（290+ 测试确认 buffer + algo helper + MCTS + MyZero + board）→ `just smoke-rl`（8 目标 RL 管线聚合验证，含 Gomoku）→ 推进 v0.26（棋盘支柱已立，下一步见路线图 §5 与 naive0 issue 裁决入口）。
+**接手 RL 时建议顺序**：读 `rl_roadmap.md`（薄版当前态）→ 配环境 [`.doc/rl_python_env_setup.md`](.doc/rl_python_env_setup.md)（**仅 Gymnasium**）→ `just test-filter rl`（300+ 测试确认 buffer + algo helper + MCTS + MyZero + board）→ `just smoke-rl`（8 目标 RL 管线聚合验证，含 Gomoku）→ 当前处于战略复盘点（三选一见「当前主线」行与 naive0 issue 终局快照），定档前不开新组件臂。
 
 **接手 Attention 阶段 D 时**：先读 [记忆机制设计 — 实现状态速览](.doc/design/memory_mechanism_design.md#-实现状态速览)（含 105 个相关单元测试与 IT-* 示例表），勿假设「打勾 = ONNX 也做完」。
 

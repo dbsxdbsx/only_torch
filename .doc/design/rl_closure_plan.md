@@ -99,45 +99,23 @@
 > **重启触发条件** = 图像基线出信号（正负终审皆可）：若预算标定救活基线 → 按原范围开启；
 > 若终审负向触发条款一改道（载体收缩棋盘单支柱）→ 本阶段范围重审，target_net/SVE
 > 大概率直接裁决 ⏸/删除、解耦架构按「acting 期真规则」诊断结论重设计。
-> **当前实际次序**（注意力分轨；2026-07-05 晚随「纯 self-play 万金油」定稿刷新——
-> 旧「五子棋纵深三臂」①②③ 已全部执行完毕，档案见 [naive0 issue §四](../../.issue/items/gomoku_naive0_tactical_wall.md)）：
-> - **哲学修正（2026-07-05 晚与用户定稿，路线级）**：五子棋验收必须以**纯粹、无课程、
->   无领域后门的 self-play** 达成；终态 recipe 目标 = **learned dynamics × 纯 self-play ×
->   通用常驻组件**。战术开局课程（`tactical_opening`）与树内真规则（`true_rules_tree`）
->   降级为**诊断脚手架**——历史价值是归因（⑥⑦ 臂证明病理在训练数据分布、②臂证明
->   规则学习税存在），开关保留但不进终态 recipe；**万金油铁律（树内 learned dynamics）
->   维持不改**，真规则树仅作对照尺子。「数据质量」根因拆两成分：分布覆盖不足
->   （通用治法 = PER 改采样分布）× target 质量损耗（通用治法 = 预算/容量摊税）。
-> - **前台主线 = 纯 self-play 万金油战役**（预注册入口见 naive0 issue §四 ⑫⑬⑭）：
->   ⑫ 纯 self-play 上限标定（真规则 × CNN × 5000 局 × 无课程，参照实现同构）
->   → ⑬ learned dynamics 同配置（⑫⑬ 之差 = 规则学习税定量账，裁决万金油底座）
->   → ⑭ PER 优先回放（Simulus B1 转正，分布覆盖的通用机制治法）；
->   并行工程轨 = KL 自适应 lr 公共化（CartPole A/B，「等效不劣 + 去旋钮」验收，
->   不劣则 promote 进 recipe 并重标哨兵基线）。终局 = 赢家配方 G3 四档验收复训 +
->   多 seed 择优交付协议（择优模型须用独立新评测局验收，科学口径中位与交付口径并记）。
->   前情：naive0 战术墙已由「真规则 × 课程」组合击破（⑦ 配方 0.70）但 G3 四档验收
->   未达标（naive0 0.62 <0.75、naive1+ 未开），11 臂消融档案见 issue §二/§四。
->   **⑫⑬⑭ 战役三臂收官（2026-07-07）**：⑫ ✅ 0.90（纯 self-play 可行坐实）·
->   ⑬ ❌ 0.10（规则学习税 0.8 档，对 12.5× 预算+CNN+增广钝感）· ⑭ ❌ 0.15 带内
->   持平（消费端排除：PER 重排已有数据治不了「dynamics 学不会终局」）；并行轨
->   KL-lr CartPole ❌ 灾难不 promote（棋盘无害留库）。
->   **⑮–⑱ 监督端 + G3 终审收官（2026-07-10）**：⑮ recon1 在发现 seeds 42–46
->   由对照 0.15→0.35，随后⑯ consistency 仅 0.25 带内、⑰ recon1×PER 回落 0.15；
->   ⑱ 改用未见 seeds 47–51 配对终审，control naive0 中位 0.28、recon1 **0.20**
->   （−0.08，仅 1/5 不劣）→ 发现集信号不外推、**不 promote**。预注册 selected
->   seed48 独立 100 局/档 holdout = **0.19/0.09/0.07/0.00**，科学与交付均未过线，
->   棋盘 recipe 维持 base。至此监督端/消费端当前量级均无稳健赢家，进入**战略复盘点**：
->   预算量级重新投资 / 棋类采用真规则树 / 转图像线，另立新战役后再开跑。
->   工程红利：seed 级进程并行跑法已进库（候选 #8 便宜档，臂墙钟 ÷3，⑭ 首战实录
->   ~25 min/臂）；G3 selected 模型走通通用 OTM 内核 + board 契约保存/真实加载，
->   但因 holdout 未达标仅作失败候选复现，不标 release。
+> **当前实际次序（终态快照，2026-07-10；过程档案一律见
+> [naive0 issue §四](../../.issue/items/gomoku_naive0_tactical_wall.md) 与[棋盘账本](../../examples/my_zero/gomoku/README.md)，本文不再复述逐臂经过）**：
+> - **Gomoku 纯 self-play 战役 ①–⑱ 全线收官**：真规则树上限 0.90 证明任务可学；
+>   learned dynamics 规则学习税主导且对 12.5× 预算/CNN/增广钝感；生成端（课程，
+>   降级诊断脚手架）、消费端（PER 单药 ⑭ + 复叠 ⑰）、监督端（recon ⑮⑱ /
+>   consistency ⑯）三端系统性排除——recon 发现集正信号被未见-seed 配对终审否决，
+>   G3 selected holdout 未达标，**棋盘 recipe 维持 base**。并行轨 KL-lr：CartPole
+>   ❌ 不 promote、棋盘无害留库。
+> - **出口 = 战略复盘点（待用户定档，未定档前不开新组件臂）**：① 棋类走真规则树
+>   （万金油铁律在棋类域进入复议）② learned dynamics 预算量级重投（须先定算力档 +
+>   预注册）③ 转图像线（learned dynamics native 场景）。
 > - **后台 = Phase 1 轻量图像 pilot**（§2 修订注记：单 seed + 判停协议；
 >   预注册见[图像负结果 issue](../../.issue/items/my_zero_pong_image_flat_negative.md)）。
-> - **ROSMO「哨兵基础组件」提案已否决（2026-07-05）**：CartPole 叠加实测中位 **29.6k vs
->   官方哨兵 ~8.7k env-steps（慢 ~3.4×，无增益）**——其对症场景是陈旧数据 × 高 replay ratio，
->   CartPole 新鲜数据低 replay 形态无此病；棋盘域价值裁决已出（③臂有害，issue §四-③）。
-> - **Pendulum 不提前（2026-07-05 复议维持压轴）**：连续域不在战略轴（象棋/图像均离散）、
->   属开放性诊断（注意力黑洞）、压轴可免费吃前序修复红利，两个出口都算收口（§5）。
+> - **ROSMO「哨兵基础组件」提案已否决（2026-07-05）**：CartPole 叠加 29.6k vs 哨兵
+>   ~8.7k env-steps 无增益；棋盘域 ③臂有害。
+> - **Pendulum 不提前（2026-07-05 复议维持压轴）**：连续域不在战略轴，压轴免费吃
+>   前序修复红利（§5）。
 
 - target_net 接入训练循环 + 消融（staleness 治理；若 Phase 1 阶梯一实测需要 target 网 bootstrap 则相应前移）→ acting/reanalyze 解耦落地（[纲领 §2.3](./my_zero_algorithm_vision.md#23-战略目标与优先轴2026-07-01-定稿) 战略架构：实时轻 acting + 离线重刷新，刷新引擎 = Phase 1 裁决出的阶梯档位）→ SVE 接入消融或删除（不留 ⏳）
 - **退出判据**：target_net/SVE 零 ⏳、解耦架构跑通并入账本；[reanalyze issue](../../.issue/items/my_zero_reanalyze_cartpole_regression.md) 若 Phase 1 未终局则在此归档。
