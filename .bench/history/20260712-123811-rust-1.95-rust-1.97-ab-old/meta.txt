@@ -1,0 +1,22 @@
+schema: 2
+baseline: rust-1.95
+label: rust-1.97-ab-old
+archived_at: 20260712-123811
+git_commit: f0f919854cc27fd6ab0fdd4d4247ff702f17b653
+git_dirty: yes
+rustc: rustc 1.95.0 (59807616e 2026-04-14)
+rustc_host: x86_64-pc-windows-msvc
+llvm: 22.1.2
+cargo: cargo 1.95.0 (f2d3ce0bd 2026-03-21)
+blas: Intel MKL
+blas_feature: blas-mkl
+profile: bench
+cargo_target_dir: target/toolchain-runtime
+os: MINGW64_NT-10.0-19045 3.3.6-bec3d608-341.x86_64
+cpu: 13th Gen Intel(R) Core(TM) i9-13900HX
+rustflags: unset
+rayon_num_threads: 32
+mkl_num_threads: 1
+openblas_num_threads: 1
+omp_num_threads: 1
+cases: 18

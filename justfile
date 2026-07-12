@@ -99,7 +99,8 @@ bench-compare baseline:
 bench-archive baseline label="":
     #!/usr/bin/env bash
     set -euo pipefail
-    src="target/criterion"
+    target_dir="${CARGO_TARGET_DIR:-target}"
+    src="$target_dir/criterion"
     [ -d "$src" ] || { echo "找不到 $src，请先 just bench-save {{baseline}}"; exit 1; }
     ts=$(date +%Y%m%d-%H%M%S)
     suffix="{{baseline}}"
@@ -119,15 +120,44 @@ bench-archive baseline label="":
     done < <(find "$src" -type d -name "{{baseline}}")
     [ "$found" -gt 0 ] || { echo "baseline '{{baseline}}' 下无数据，请先 just bench-save {{baseline}}"; rmdir "$dst"; exit 1; }
     # 环境指纹
+    rustc_vv="$(rustc -Vv 2>/dev/null || true)"
+    rustc_host="$(printf '%s\n' "$rustc_vv" | awk -F ': ' '$1 == "host" { print $2; exit }')"
+    llvm_version="$(printf '%s\n' "$rustc_vv" | awk -F ': ' '$1 == "LLVM version" { print $2; exit }')"
+    cpu=""
+    if command -v powershell.exe >/dev/null 2>&1; then
+        cpu="$(powershell.exe -NoProfile -Command \
+          "(Get-CimInstance Win32_Processor | Select-Object -First 1 -ExpandProperty Name).Trim()" \
+          2>/dev/null | tr -d '\r' || true)"
+    elif [ -r /proc/cpuinfo ]; then
+        cpu="$(awk -F ': ' '/^model name/ { print $2; exit }' /proc/cpuinfo)"
+    elif command -v sysctl >/dev/null 2>&1; then
+        cpu="$(sysctl -n machdep.cpu.brand_string 2>/dev/null || true)"
+    fi
+    [ -n "$cpu" ] || cpu="unknown"
+    blas_feature="{{_detected_blas}}"
+    [ -n "$blas_feature" ] || blas_feature="none"
     {
+        echo "schema: 2"
         echo "baseline: {{baseline}}"
         echo "label: {{label}}"
         echo "archived_at: $ts"
         echo "git_commit: $(git rev-parse HEAD 2>/dev/null || echo unknown)"
         echo "git_dirty: $([ -n "$(git status --porcelain 2>/dev/null)" ] && echo yes || echo no)"
         echo "rustc: $(rustc -V 2>/dev/null || echo unknown)"
+        echo "rustc_host: ${rustc_host:-unknown}"
+        echo "llvm: ${llvm_version:-unknown}"
+        echo "cargo: $(cargo -V 2>/dev/null || echo unknown)"
         echo "blas: {{_blas_name}}"
+        echo "blas_feature: $blas_feature"
+        echo "profile: bench"
+        echo "cargo_target_dir: $target_dir"
         echo "os: $(uname -sr 2>/dev/null || echo unknown)"
+        echo "cpu: $cpu"
+        echo "rustflags: ${RUSTFLAGS:-unset}"
+        echo "rayon_num_threads: ${RAYON_NUM_THREADS:-unset}"
+        echo "mkl_num_threads: ${MKL_NUM_THREADS:-unset}"
+        echo "openblas_num_threads: ${OPENBLAS_NUM_THREADS:-unset}"
+        echo "omp_num_threads: ${OMP_NUM_THREADS:-unset}"
         echo "cases: $found"
     } > "$dst/meta.txt"
     echo "已归档 $found 个 case 到 $dst"

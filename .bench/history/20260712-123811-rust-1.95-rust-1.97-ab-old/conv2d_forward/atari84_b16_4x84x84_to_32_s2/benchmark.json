@@ -1,0 +1,1 @@
+{"group_id":"conv2d_forward","function_id":null,"value_str":"atari84_b16_4x84x84_to_32_s2","throughput":null,"full_id":"conv2d_forward/atari84_b16_4x84x84_to_32_s2","directory_name":"conv2d_forward/atari84_b16_4x84x84_to_32_s2","title":"conv2d_forward/atari84_b16_4x84x84_to_32_s2"}

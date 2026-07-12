@@ -72,6 +72,13 @@
 
 ### Changed
 
+- **chore(toolchain/perf): Rust 1.97.0 升级闭环 + 双工具链性能裁决**（2026-07-12）
+  - 新增 `rust-toolchain.toml` 固定项目开发/验证工具链为 1.97.0（不等同于提升 crate MSRV，`Cargo.toml` 暂不声明 `rust-version`）；全局 stable 同步到 1.97.0。无需关闭 IDE，重启 rust-analyzer / Reload Window 即可刷新编辑器分析进程
+  - 正确性门禁全绿：`just check`、3421 主测试、`just lint`、`just smoke-rl`；1.97 v0 symbol backtrace 可正常 demangle，未出现新 linker warning。间接依赖 `proc-macro-error2 2.0.1` 有 future-incompat 提示，当前不阻断
+  - 运行时 A-B-B-A：归档 1.95/1.97 同口径 18-case 代表集合；Criterion 受时段漂移影响出现双向翻转，无可复现整体回归；release CNN×MCTS 两版重复均为 GO，核心 acting / train 路径无实质退化
+  - 构建与产物：1.97 clean bench build 稳定约慢 4–5%（完整工具链差异，不能单归因于 mangling）；代表 EXE -0.21%、PDB +0.38%，总体中性，裁定升级通过
+  - benchmark 基础设施补账：工作流清单 11→15，新增工具链 A/B 协议；归档 schema 2 记录 rustc host / LLVM / Cargo / CPU / profile / feature / target dir / 线程环境，并支持自定义 `CARGO_TARGET_DIR`
+
 - **perf(nn): Conv2d 隐式 lowering（流式分 tile）+ col 驻留预算化（优化 S）**（2026-07-05）
   - 整批 im2col 超预算（>16 MiB）时前向切**流式分 tile**（per-worker L2 级缓冲现场 im2row，col 永不整块物化）、dK 反向按样本重算——大形状前向 -22~-40%（board15/atari84 b128 探针）、超预算 col 驻留内存归零（外推 Atari 84×84 栈 batch 256 约 274 MiB → 0）；预算内路径与旧实现**逐 bit 一致**（数值冻结面，现役负载全部在内）
   - 等价性契约实测定稿：流式 vs 物化 = **ulp 级等价**（MKL sgemm 对不同 N 选内核致 K 维累加序漂移，~1e-6、<1% 元素，金测试 ≤1e-5 报警线）+ 流式样本间逐 bit 自洽 + dK 重算/驻留整数构造交叉验证精确相等

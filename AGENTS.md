@@ -18,10 +18,12 @@ only_torch 是一个纯 Rust 的 PyTorch 风格玩具框架，当前重点是：
 | 项 | 内容 |
 |----|------|
 | **版本** | `0.25.0`（2026-07-02；本地可能超前 `origin/master`，以 `git log` / `CHANGELOG.md` 为准） |
+| **Rust** | `1.97.0`（`rust-toolchain.toml` 固定；2026-07-12 双工具链 A/B、3421 主测试与 `just smoke-rl` 已通过，口径见[性能工作流](.doc/performance/benchmark_workflow.md#rust-工具链升级-ab)） |
 | **刚闭环** | **✅ MyZero 通用 learned-world-model 前两阶段地基（2026-07-10）**：四契约 `ObservationSchema / ActionSchema+Codec / LatentState / WorldModel` 落地；生产始终 learned dynamics，棋盘真规则/reference 仅 `cfg(test)`；矩形/可配 history、Image+Dense Dict、token+padding mask、MultiDiscrete([4,4,16])、2D continuous、Platform Hybrid 纵切全通。验证：`just test` 3421 主测试全绿、RL 344 passed、`just smoke-rl` 全绿、CartPole 3-seed **8,741 / 71,969 / 6,744，中位 8,741、3/3**（逐值复现官方哨兵）。详见[地基设计](.doc/design/my_zero_world_model_foundation.md)与 CHANGELOG 2026-07-10。前一闭环 Gomoku ①–⑱ 见[棋盘账本](examples/my_zero/gomoku/README.md)与 [naive0 issue](.issue/items/gomoku_naive0_tactical_wall.md)。 |
 | **当前主线** | **强化学习** v0.26：战略复盘已定档为“一个入口 + 稳定 learned-world-model 契约 + 可退化模块族”，不再按真规则/预算/图像载体三选一。前两阶段地基已完成；下一阶段是新论文方向的 observable-grounded error 相关性与主动数据生成（默认关、独立裁决），之后才是 recurrent posterior/POMDP 与 stochastic chance search。当前确定性完全可观测 MDP 路径是后续统一模型的 CPU 轻量特例，详见[路线图 §5](.doc/design/rl_roadmap.md#5-v026-方向2026-07-01-战略转向定稿)与[地基设计](.doc/design/my_zero_world_model_foundation.md)。 |
 | **刻意暂缓** | 演化 **阶段 D**（`CellAttention` ONNX、`Attention` Net2Net 函数保持、Conv2d Attention；3D batched MatMul 已于 2026-07-04 完成出表）——与 RL 零耦合，见 [记忆机制设计 — Phase D](.doc/design/memory_mechanism_design.md#-后续-phase-d刻意未做)（该表为「阶段 D」唯一权威定义） |
 | **一级风险** | CPU-only × 图像 CNN × MCTS × 实时结构性冲突：[.issue/items/cpu_only_mcts_image_realtime_risk.md](.issue/items/cpu_only_mcts_image_realtime_risk.md)（图像线推进前必读） |
+| **工具链提示** | `blas-mkl` 间接依赖 `proc-macro-error2 2.0.1` 在 Rust 1.97 报 future-incompat warning，当前不阻断；跟踪见 [.issue/items/proc_macro_error2_future_incompat.md](.issue/items/proc_macro_error2_future_incompat.md) |
 | **路线展望** | 真实目标 = **中国象棋** + **商业图像游戏**（[纲领 §2.3](.doc/design/my_zero_algorithm_vision.md#23-战略目标与优先轴2026-07-01-定稿)）；MyZero 消融驱动迭代，基准判据「变慢 ≠ 失败，新实测即新基线；仅不收敛才记 issue」 |
 
 **进度符号**（设计文档统一口径）：✅ Phase 验收范围内已完成 · ⏳ 已识别、留后续 Phase · 🔲 可选增强 · 📦 已归档历史路径。

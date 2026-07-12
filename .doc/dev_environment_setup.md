@@ -1,8 +1,29 @@
 # 开发环境配置指南
 
-> 最后更新: 2025-01-31
+> 最后更新: 2026-07-12
 > 状态: **已验证**
 > 适用范围: Only Torch 开发者
+
+---
+
+## Rust 工具链
+
+项目根目录的 `rust-toolchain.toml` 固定开发与验证工具链为 **Rust 1.97.0**。
+进入仓库后，普通 `cargo` / `rustc` / `just` 命令会由 rustup 自动选择该版本：
+
+```bash
+rustup show active-toolchain
+rustc -Vv
+```
+
+工具链升级后，终端命令都会启动新进程，**无需关闭 Cursor / IDE 才能生效**。
+编辑器中的 rust-analyzer 可能仍保留旧分析进程，此时执行 Restart rust-analyzer 或
+Reload Window 即可；只有修改 Windows 持久环境变量并要求旧进程继承时，才需要重开
+终端或 IDE。
+
+`rust-toolchain.toml` 约束本仓库开发工具链，不等于 crate 的 MSRV 声明。本项目当前
+未在 `Cargo.toml` 设置 `rust-version`；只有明确决定下游也必须使用 1.97+ 时才提升
+MSRV，不能仅因本地工具链升级顺手添加。
 
 ---
 
