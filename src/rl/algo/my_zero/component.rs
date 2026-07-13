@@ -59,6 +59,10 @@ pub(crate) struct Components {
     /// Sampled MuZero：展开时采 K 个候选 + PUCT 用 π̂_β（Hubert et al. 2021）
     /// K 由 [`sampled_params`](super::sampled_params) 按 N、sims 公式自动解析，非本字段配置。
     pub sampled: bool,
+    /// Recurrent posterior（GRU 状态估计器）：`h(obs)` 升级为 `posterior(obs, prev_hidden, prev_action)`，
+    /// 使 agent 能利用观测历史推断部分可观测环境的隐藏状态。完全可观测环境默认关，
+    /// 退化为无记忆 `h(obs)` 直出 latent。配套 sequence replay + burn-in。
+    pub recurrent_posterior: bool,
 }
 
 impl Default for Components {
@@ -82,6 +86,7 @@ impl Default for Components {
             cq_c_visit: 50.0,
             cq_c_scale: 1.0,
             sampled: false,
+            recurrent_posterior: false,
         }
     }
 }

@@ -182,6 +182,24 @@ impl Gru {
         self.unroll(&x, seq_len, true)
     }
 
+    /// 单步前向传播
+    ///
+    /// 处理单个时间步输入，适用于推理期逐步推进（如 MCTS 搜索期间维护 hidden state）。
+    ///
+    /// # 参数
+    /// - `x_t`: 当前时间步输入，形状 [`batch_size`, `input_size`]
+    /// - `h`: 上一步隐藏状态，形状 [`batch_size`, `hidden_size`]
+    ///
+    /// # 返回
+    /// 新的隐藏状态，形状 [`batch_size`, `hidden_size`]
+    pub fn step(&self, x_t: &Var, h: &Var) -> Result<Var, GraphError> {
+        let r_gate = (x_t.matmul(&self.w_ir)? + h.matmul(&self.w_hr)? + &self.b_r).sigmoid();
+        let z_gate = (x_t.matmul(&self.w_iz)? + h.matmul(&self.w_hz)? + &self.b_z).sigmoid();
+        let n_gate =
+            (x_t.matmul(&self.w_in)? + &r_gate * h.matmul(&self.w_hn)? + &self.b_n).tanh();
+        Ok(&n_gate + &z_gate * (h - &n_gate))
+    }
+
     /// 验证输入并返回 (x_var, seq_len)
     fn validate_input(&self, x: impl IntoVar) -> Result<(Var, usize), GraphError> {
         let x = x

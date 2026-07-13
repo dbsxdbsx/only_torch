@@ -203,6 +203,27 @@ impl Lstm {
         self.unroll(&x, seq_len, true)
     }
 
+    /// 单步前向传播
+    ///
+    /// 处理单个时间步输入，适用于推理期逐步推进。
+    ///
+    /// # 参数
+    /// - `x_t`: 当前时间步输入，形状 [`batch_size`, `input_size`]
+    /// - `h`: 上一步隐藏状态，形状 [`batch_size`, `hidden_size`]
+    /// - `c`: 上一步细胞状态，形状 [`batch_size`, `hidden_size`]
+    ///
+    /// # 返回
+    /// `(h_new, c_new)` 新的隐藏状态和细胞状态
+    pub fn step(&self, x_t: &Var, h: &Var, c: &Var) -> Result<(Var, Var), GraphError> {
+        let i_gate = (x_t.matmul(&self.w_ii)? + h.matmul(&self.w_hi)? + &self.b_i).sigmoid();
+        let f_gate = (x_t.matmul(&self.w_if)? + h.matmul(&self.w_hf)? + &self.b_f).sigmoid();
+        let g_gate = (x_t.matmul(&self.w_ig)? + h.matmul(&self.w_hg)? + &self.b_g).tanh();
+        let o_gate = (x_t.matmul(&self.w_io)? + h.matmul(&self.w_ho)? + &self.b_o).sigmoid();
+        let c_new = &f_gate * c + &i_gate * &g_gate;
+        let h_new = &o_gate * c_new.tanh();
+        Ok((h_new, c_new))
+    }
+
     /// 验证输入并返回 (x_var, seq_len)
     fn validate_input(&self, x: impl IntoVar) -> Result<(Var, usize), GraphError> {
         let x = x

@@ -64,3 +64,23 @@ fn gomoku_is_base() {
         assert_eq!(components_for(env), Components::base(), "env={env}");
     }
 }
+
+/// 所有内置 recipe 的 recurrent_posterior 均为 false（POMDP-lite 尚未 promote 到任何环境）。
+#[test]
+fn all_recipes_recurrent_posterior_off() {
+    for env in [
+        "CartPole-v1",
+        "Pendulum-v1",
+        "ALE/Pong-v5",
+        "Gomoku-selfplay-v0",
+        "Gomoku-random-v0",
+        "MyZero-MultiDiscrete-v0",
+        "Platform-v0",
+        "LunarLander-v3",
+    ] {
+        assert!(
+            !components_for(env).recurrent_posterior,
+            "env={env} 不应默认开启 recurrent_posterior"
+        );
+    }
+}

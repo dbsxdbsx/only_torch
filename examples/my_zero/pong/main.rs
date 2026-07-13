@@ -36,6 +36,7 @@ fn main() -> Result<(), GraphError> {
         temp_hold_episodes: 75,
         temp_decay_episodes: 75,
         kl_adaptive_lr: false,
+        ..TrainSettings::default()
     };
 
     let max_ep: usize = std::env::var("MAX_EP")

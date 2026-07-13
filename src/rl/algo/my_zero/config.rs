@@ -146,6 +146,14 @@ pub struct TrainSettings {
     /// 默认 false（现有路径逐 bit 不变）；棋盘域 ⑨ 臂已验证无害（batch 512 自动配平），
     /// 单智能体域 promote 前须过 CartPole A/B「等效不劣」闸门。
     pub kl_adaptive_lr: bool,
+    /// Burn-in 步数（`recurrent_posterior=true` 时生效）：sequence 采样时在训练区间之前
+    /// 预跑多少步 GRU 产出初始 hidden（不反传梯度）。R2D2 经验值 40/80，本项目 episode
+    /// 较短，默认 **10**。
+    pub burn_in_steps: usize,
+    /// 训练 sequence 总长度（`recurrent_posterior=true` 时生效）：从 replay 抽取的连续片段长度，
+    /// 包含 burn-in 前缀 + 训练区间。训练区间 = `sequence_length - burn_in_steps`。
+    /// 默认 **20**（burn-in 10 + 训练 10）。
+    pub sequence_length: usize,
 }
 
 impl Default for TrainSettings {
@@ -164,7 +172,26 @@ impl Default for TrainSettings {
             temp_hold_episodes: 1000,
             temp_decay_episodes: 1000,
             kl_adaptive_lr: false,
+            burn_in_steps: 10,
+            sequence_length: 20,
         }
+    }
+}
+
+impl TrainSettings {
+    /// 校验 recurrent posterior 相关约束。
+    pub(crate) fn validate_sequence_config(&self) {
+        assert!(
+            self.sequence_length > 0,
+            "sequence_length 必须 > 0，当前 {}",
+            self.sequence_length
+        );
+        assert!(
+            self.burn_in_steps < self.sequence_length,
+            "burn_in_steps ({}) 必须 < sequence_length ({})",
+            self.burn_in_steps,
+            self.sequence_length
+        );
     }
 }
 

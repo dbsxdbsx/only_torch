@@ -393,3 +393,76 @@ fn test_gru_seeded_reproducibility() -> Result<(), GraphError> {
 
     Ok(())
 }
+
+/// step 逐步展开应与 forward 整序列结果一致
+#[test]
+fn test_gru_step_equals_forward() -> Result<(), GraphError> {
+    let graph = Graph::new_with_seed(99);
+    let input_size = 3;
+    let hidden_size = 4;
+    let batch = 2;
+    let seq_len = 5;
+    let gru = Gru::new(&graph, input_size, hidden_size, "gru")?;
+
+    let x_data: Vec<f32> = (0..batch * seq_len * input_size)
+        .map(|i| (i as f32) * 0.1 - 0.7)
+        .collect();
+    let x = graph.input(&Tensor::new(&x_data, &[batch, seq_len, input_size]))?;
+
+    let h_forward = gru.forward(&x)?;
+    h_forward.forward()?;
+    let forward_vals: Vec<f32> = h_forward.value()?.unwrap().to_vec();
+
+    let mut h = graph.input(&Tensor::zeros(&[batch, hidden_size]))?;
+    for t in 0..seq_len {
+        let mut x_t_data = vec![0.0f32; batch * input_size];
+        for b in 0..batch {
+            for f in 0..input_size {
+                x_t_data[b * input_size + f] =
+                    x_data[b * seq_len * input_size + t * input_size + f];
+            }
+        }
+        let x_t = graph.input(&Tensor::new(&x_t_data, &[batch, input_size]))?;
+        h = gru.step(&x_t, &h)?;
+        h.forward()?;
+    }
+    let step_vals: Vec<f32> = h.value()?.unwrap().to_vec();
+
+    assert_eq!(forward_vals.len(), step_vals.len());
+    for (a, b) in forward_vals.iter().zip(&step_vals) {
+        assert_abs_diff_eq!(a, b, epsilon = 1e-5);
+    }
+
+    Ok(())
+}
+
+/// step 产出的 hidden 可正常反传梯度（全部 9 个参数 + 外部 h0）
+#[test]
+fn test_gru_step_backward() -> Result<(), GraphError> {
+    let graph = Graph::new_with_seed(42);
+    let gru = Gru::new(&graph, 2, 3, "gru")?;
+
+    let h0 = graph.parameter(&[1, 3], crate::nn::Init::Zeros, "h0_trainable")?;
+    let x1 = graph.input(&Tensor::new(&[0.5f32, -0.3], &[1, 2]))?;
+    let h1 = gru.step(&x1, &h0)?;
+    let x2 = graph.input(&Tensor::new(&[0.1f32, 0.8], &[1, 2]))?;
+    let h2 = gru.step(&x2, &h1)?;
+
+    let target = graph.input(&Tensor::zeros(&[1, 3]))?;
+    let loss = h2.mse_loss(&target)?;
+    loss.backward()?;
+
+    for (i, p) in gru.parameters().iter().enumerate() {
+        let grad = p.grad()?.unwrap_or_else(|| panic!("GRU 参数 {i}/9 应有梯度"));
+        assert!(
+            grad.to_vec().iter().all(|v| v.is_finite()),
+            "GRU 参数 {i}/9 梯度应全部有限"
+        );
+    }
+    assert!(
+        h0.grad()?.is_some(),
+        "外部可训练 h0 应有梯度（验证 step 梯度穿过 hidden 链）"
+    );
+
+    Ok(())
+}
