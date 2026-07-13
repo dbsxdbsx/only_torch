@@ -104,3 +104,45 @@ cargo test --release --features blas-mkl gomoku_m3_<arm> -- --ignored --nocaptur
 2. **naive0 战术墙为结构性遗留**：头号假设 = MuZero 规则学习税（参照 AlphaZero 实现树内真规则、零规则学习负担）；后续裁决入口（sims 400 臂 / 树内真规则诊断臂 / 增广大预算复核）见 [issue](../../../.issue/items/gomoku_naive0_tactical_wall.md)，不阻塞支柱。
 3. **Gumbel / completedQ 负结果 issue 终局归档**：|A|≫sims（s16）复裁中性、无灾难，CartPole 灾难确系 n≫|A| regime + 前置双 bug（greedy 去噪 + q_range）所致；棋盘域两组件按中性处置（不 promote、代码保留）。
 4. **监督端战役 ⑮–⑱ 收口**：recon1 发现集正信号未在未见 seed 复现，consistency 仅带内弱阳、PER 单药/复叠均无增益；G3 selected holdout 亦未通过。当前预算/容量下无通用组件赢家，下一步进入预算 / 真规则 / 转图像线的战略复盘点。
+
+## Phase 3A0 · 主动数据误差 proxy 审计（2026-07-12）
+
+**问题**：在实现 ErrorQ / Collector 前，先验证真实 transition 上的 model-error proxy
+是否同时满足「任务相关」与「新增数据可稳定降低」。
+
+**协议**：
+
+- 所有 audit episode 从真实空盘 `reset()` 开始；behavior lane 复用训练口径
+  `temperature=1 + root Dirichlet`，diagnostic lane 才使用 greedy/no-noise。
+- true-rules 只生成 reference-policy 与一步胜威胁局面标签，不生成训练 target。
+- seeds 52–54；每个 fixed block 约 800 条多样化 transition。首轮 greedy audit
+  因 20 局完全重复而整体作废；新增最小守门测试，锁死两个不同 seed lane 的单局
+  action 序列不得完全相同。
+- 可学习性做两层检查：同一 early future block 在 400/2000/5000 局 checkpoint
+  重评分；以及 2000 局 checkpoint 新增 30 局真实 game、按原 MuZero loss 更新
+  500 次，再评估剔除 bitwise-exact 重复 state-action 的未来 20 局 holdout。
+  本轮未做 D4 等价状态 canonical 去重，列为结论边界。
+
+| seed | fixed raw reward CE* | fixed continuation | 干预后 raw reward CE* | 干预后 continuation |
+|---|---:|---:|---:|---:|
+| 52 | −3.2% | +1.3% | −6.15% | −0.51% |
+| 53 | +3.7% | +2.2% | +12.57% | +11.64% |
+| 54 | −5.8% | −1.5% | +6.03% | +7.11% |
+
+\* 首轮实验记录的是 two-hot reward target 的 raw cross-entropy；它含类别相关的
+target entropy 下界，不能据此声称 reward 模型误差与战术相关。保留该列仅用于同一
+fixed block / holdout 的 before-after 方向；代码终态已改为
+`KL(target || prediction) = CE - H(target)`，后续复用不会再混入该下界。
+
+**任务相关性成立的无混淆证据**：late checkpoint 上 continuation Brier 对
+reference-policy JSD 的 Spearman 为 `0.54 / 0.52 / 0.69`，tactical-position
+top-decile lift 为 `2.23 / 2.29 / 2.40`。
+
+**❌ 最终裁决**：当前协议未通过“新增数据后稳定降低”门槛。fixed block 的
+continuation 只有 seed54 小幅下降；新增 30 局真实 game 干预后，也仅 seed52 小幅改善，
+seed53/54 分别回归约 11.6% / 7.1%。因此没有证据支持当前 proxy 在现有
+MuZero loss、容量、500-update 干预下可跨 seed 稳定降低，主动追逐它存在放大干扰的
+风险。该结论不外推为“proxy 本质不可学习”：实验仅 3 seeds、局内 transition 相关，
+且干预重新初始化 Adam、没有 matched old-replay control。按预注册仍应停止 ErrorQ、
+Collector、H=K 与 5+5 seed 战役，不调 proxy 权重、KL 或 SAC/WGAN 补救。代码只保留
+test-only 3A0 诊断与可复现审计载体。

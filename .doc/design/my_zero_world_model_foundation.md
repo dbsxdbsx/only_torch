@@ -96,8 +96,11 @@ flowchart LR
 
 ## 7. 后续阶段如何建立在此之上
 
-1. **主动数据生成**：在稳定 `WorldModel` / schema 上增加 observable-grounded error
-   与 `ErrorIndex`，不再改输入输出契约。
+1. **主动数据生成（3A0 已负裁，2026-07-12）**：稳定 `WorldModel` / schema
+   接缝已足够；但 Gomoku 实测 continuation proxy 虽任务相关，新增真实数据
+   训练后 2/3 seed 反而增大，当前协议未证明其可稳定降低，故未进入 ErrorQ /
+   Collector。详见
+   [棋盘账本 Phase 3A0](../../examples/my_zero/gomoku/README.md#phase-3a0--主动数据误差-proxy-审计2026-07-12)。
 2. **recurrent POMDP**：把 `LatentState` 扩成 posterior hidden；replay 改 sequence +
    burn-in，现有完全可观测 MDP 路径自动退化为无记忆特例。
 3. **stochastic planning**：让 prior 输出 chance distribution，并扩 MCTS decision/chance

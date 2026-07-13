@@ -11,6 +11,8 @@
 
 use super::consistency::negative_cosine_similarity;
 use super::loss;
+#[cfg(test)]
+use super::model_error::{ModelErrorComponents, TransitionDiagnostics, score_transition};
 use super::obs_transform::{maybe_symlog, maybe_symlog_in_place};
 pub use super::schema::ObsSpec;
 use super::schema::{ActionSchema, ObservationSchema, PolicyLayout};
@@ -731,6 +733,20 @@ struct RecInfer {
     sink: Var,
 }
 
+/// recurrent 持久化子图的一次数值输出。
+///
+/// 3A0 诊断需要 categorical reward distribution；MCTS 热路径继续从同一份结果
+/// 构造 [`DynamicsOutput`]，避免诊断 API 与生产解码口径漂移。
+struct RecurrentValues {
+    next_state: Vec<f32>,
+    #[cfg(test)]
+    reward_probs: Vec<f32>,
+    reward: f32,
+    prior: Vec<f32>,
+    value: f32,
+    continuation: f32,
+}
+
 pub struct MyZeroModel {
     pub repr: ReprNet,
     pub dyn_net: DynamicsNet,
@@ -1014,6 +1030,58 @@ impl MyZeroModel {
     /// value/reward logits 切片 → 标量（softmax 期望 + h⁻¹，无 Tensor 中间分配）
     pub(super) fn decode_categorical_slice(logits: &[f32]) -> f32 {
         two_hot_to_scalar(&softmax_row(logits), &SUPPORT)
+    }
+
+    /// 在冻结 world-model revision 上计算一条真实 transition 的原始诊断输出。
+    ///
+    /// 该方法只执行数值前向，不建训练 target、不反传，也不消耗 RNG。终止步可把
+    /// `next_obs` 设为 `None`，此时 re-encoded policy/value 分量明确缺失。
+    #[cfg(test)]
+    pub(crate) fn transition_diagnostics(
+        &self,
+        obs: &[f32],
+        action_id: ActionId,
+        next_obs: Option<&[f32]>,
+    ) -> TransitionDiagnostics {
+        let (root_latent, _, _) = self.initial_state_impl(obs);
+        let imagined = self.recurrent_values_impl(&root_latent, action_id);
+        let (reencoded_next_policy, reencoded_next_value) = match next_obs {
+            Some(next_obs) => {
+                let (_, policy, value) = self.initial_state_impl(next_obs);
+                (Some(policy), Some(value))
+            }
+            None => (None, None),
+        };
+
+        TransitionDiagnostics {
+            reward_probs: imagined.reward_probs,
+            continuation: imagined.continuation,
+            imagined_next_policy: imagined.prior,
+            imagined_next_value: imagined.value,
+            reencoded_next_policy,
+            reencoded_next_value,
+        }
+    }
+
+    /// 用真实 reward / continuation 与可选真实 next observation 给一条 transition 打分。
+    #[cfg(test)]
+    pub(crate) fn transition_error_components(
+        &self,
+        obs: &[f32],
+        action_id: ActionId,
+        observed_reward: f32,
+        observed_continuation: f32,
+        next_obs: Option<&[f32]>,
+        next_legal_mask: Option<&[bool]>,
+    ) -> ModelErrorComponents {
+        let diagnostics = self.transition_diagnostics(obs, action_id, next_obs);
+        let reward_target = self.encode_scalar(observed_reward);
+        score_transition(
+            &diagnostics,
+            &reward_target,
+            observed_continuation,
+            next_legal_mask,
+        )
     }
 
     // ========================================================================
@@ -1511,6 +1579,19 @@ impl MyZeroModel {
         action_id: ActionId,
         _action: &ActionPayload,
     ) -> DynamicsOutput {
+        let values = self.recurrent_values_impl(state, action_id);
+        let terminal = values.continuation <= TERMINAL_CONTINUATION_THRESHOLD;
+        DynamicsOutput {
+            next_state: values.next_state,
+            reward: values.reward,
+            prior: values.prior,
+            value: values.value,
+            terminal,
+            continuation: values.continuation,
+        }
+    }
+
+    fn recurrent_values_impl(&self, state: &[f32], action_id: ActionId) -> RecurrentValues {
         let action_idx = action_id.index();
         assert!(
             action_idx < self.action_dim,
@@ -1546,7 +1627,10 @@ impl MyZeroModel {
         // read + decode：借用直取（单次拷贝）+ 无 Tensor 解码（softmax/categorical 走切片路径）
         crate::prof_scope!("model.rec.decode");
         let next_state = read_value_vec(&rc.next_latent);
-        let reward = Self::decode_categorical_slice(&read_value_vec(&rc.reward_logits));
+        let reward_logits = read_value_vec(&rc.reward_logits);
+        let reward = Self::decode_categorical_slice(&reward_logits);
+        #[cfg(test)]
+        let reward_probs = softmax_row(&reward_logits);
         let value = Self::decode_categorical_slice(&read_value_vec(&rc.value_logits));
         let prior = self.decode_policy_logits(&read_value_vec(&rc.policy));
         let continuation_logit = rc.continuation_logit.node().with_value(|v| {
@@ -1559,12 +1643,13 @@ impl MyZeroModel {
         let continuation =
             sigmoid_scalar(continuation_logit + CONTINUATION_LOGIT_BIAS).clamp(0.0, 1.0);
 
-        DynamicsOutput {
+        RecurrentValues {
             next_state,
+            #[cfg(test)]
+            reward_probs,
             reward,
             prior,
             value,
-            terminal: continuation <= TERMINAL_CONTINUATION_THRESHOLD,
             continuation,
         }
     }

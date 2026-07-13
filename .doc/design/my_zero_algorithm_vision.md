@@ -1,7 +1,7 @@
 # MyZero 算法纲领与路线决策
 
 > **定位**：记录 MyZero 及 RL 母算法选型的**战略层**结论——我们讨论过什么、为什么可能做、为什么大概率不做。  
-> **不是**实施 checklist（见 [RL 路线图](./rl_roadmap.md)）；**不是**消融实测表（实测数字唯一账本：[CartPole 基准账本](../../examples/my_zero/cartpole/README.md)；组件×环境矩阵：[MyZero 示例总览](../../examples/my_zero/README.md)）。**组件→论文**对照见本文 §4.1。  
+> **不是**实施 checklist（见 [RL 路线图](./rl_roadmap.md)）；**不是**消融实测表（数字按环境分账：[CartPole](../../examples/my_zero/cartpole/README.md) / [Gomoku](../../examples/my_zero/gomoku/README.md)；组件×环境矩阵：[MyZero 示例总览](../../examples/my_zero/README.md)）。**组件→论文**对照见本文 §4.1。
 > **创建日期**：2026-06-20 · **状态**：讨论沉淀，条目可随新证据修订
 
 ---
@@ -13,7 +13,8 @@
 | **本文** | 算法哲学、战略目标、文献谱系、做/不做决策；**组件→论文**见 §4.1 |
 | [rl_roadmap.md](./rl_roadmap.md) | 当前状态、验收协议、v0.25 结果、v0.26 方向 |
 | [examples/my_zero/README.md](../../examples/my_zero/README.md) | 组件×环境实测矩阵、命令、门禁 |
-| [examples/my_zero/cartpole/README.md](../../examples/my_zero/cartpole/README.md) | **基准账本**（benchmark 数字唯一事实源；本文不维护数字） |
+| [examples/my_zero/cartpole/README.md](../../examples/my_zero/cartpole/README.md) | CartPole benchmark 数字 owner |
+| [examples/my_zero/gomoku/README.md](../../examples/my_zero/gomoku/README.md) | Gomoku / 棋盘 benchmark 数字 owner |
 | [rl.instructions.md](../../.github/instructions/rl.instructions.md) | 改 RL 代码时的 agent 约束（含搬运≠改进） |
 
 ---
@@ -262,4 +263,4 @@ Gumbel 不要求 completedQ（论文推荐同开，但库内可拆测）；compl
 | 2026-06-21 | §4.1：组件文献对照迁入本文（单一事实源）；示例 README 改链入 |
 | 2026-06-21 | §5.3：BetaZero 论文已读，**❌ 不学**（已知 \(T,O\) belief 规划 vs 黑盒 MyZero）；POMDP 默认 history |
 | 2026-07-03 | §4：文献谱系补 MuZero Unplugged / ROSMO / QZero / COMBO 四行（2026-07-02 两轮调研落档：SAC 万金油裁决 + 离线数据效率地图）；reanalyze 复活定为 **ROSMO-first 两级阶梯**并自 Phase 3 提前至 Phase 1 图像线（见收口规划） |
-| 2026-07-02 | **§2.3 战略目标定稿**（象棋 + 商业图像游戏；A 路定锚不转 Dreamer；优先轴转向观测空间 + self-play；acting/reanalyze 解耦；CPU-only 风险 issue 化）。**本文去数字化**：§5.1/§6 实测数字移除，唯一账本为 cartpole README；官方口径改 3-seed 中位（autograd 修复后历史单 seed 数字失效） |
+| 2026-07-02 | **§2.3 战略目标定稿**（象棋 + 商业图像游戏；A 路定锚不转 Dreamer；优先轴转向观测空间 + self-play；acting/reanalyze 解耦；CPU-only 风险 issue 化）。**本文去数字化**：§5.1/§6 实测数字移除；当时仅有 CartPole owner，后续 Gomoku 独立分账；官方口径改 3-seed 中位（autograd 修复后历史单 seed 数字失效） |

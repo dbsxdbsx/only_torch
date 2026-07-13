@@ -823,8 +823,109 @@ pub(crate) struct BoardTrainReport {
     pub naive_win_rates: Vec<(&'static str, f32)>,
 }
 
+/// 在冻结 checkpoint 的副本上，用新增真实完整 game 做固定次数原 MuZero 更新。
+///
+/// Phase 3A0 只用它回答“当前 proxy 是否可被新增真实数据降低”；不进入正式 recipe，
+/// 不改变 replay 分布，也不引入新的监督 loss。
+pub(crate) fn train_board_on_games(
+    model: &MyZeroModel,
+    games: &[SelfPlayGame],
+    cfg: &BoardTrainConfig,
+    updates: usize,
+    seed: u64,
+) -> Result<Vec<f32>, GraphError> {
+    assert!(!games.is_empty(), "train_board_on_games: games 不能为空");
+    let action_dim = model.action_dim;
+    let side = (action_dim as f32).sqrt() as usize;
+    let perms: Vec<Vec<usize>> = (0..8).map(|sym| symmetry_perm(side, sym)).collect();
+    let mut optimizer = Adam::new(&model.graph, &model.parameters(), cfg.lr);
+    let mut rng = StdRng::seed_from_u64(seed);
+    let mut losses = Vec::with_capacity(updates);
+
+    for _ in 0..updates {
+        let picks: Vec<(usize, usize)> = (0..cfg.train_batch_size)
+            .map(|_| {
+                let game_index = rng.gen_range(0..games.len());
+                let len = games[game_index].steps.len();
+                assert!(len >= 2, "审计 game 至少需要两个 position");
+                (game_index, rng.gen_range(0..len))
+            })
+            .collect();
+        let augmented: Vec<SelfPlayGame> = if cfg.augment {
+            picks
+                .iter()
+                .map(|&(game_index, _)| {
+                    let symmetry = rng.gen_range(0..8);
+                    augment_game(&games[game_index], &perms[symmetry], side)
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let game_at = |sample: usize, game_index: usize| -> &SelfPlayGame {
+            if cfg.augment {
+                &augmented[sample]
+            } else {
+                &games[game_index]
+            }
+        };
+        let targets: Vec<RosmoTargets> = picks
+            .iter()
+            .enumerate()
+            .map(|(sample, &(game_index, start))| {
+                let game = game_at(sample, game_index);
+                let actual_k = unroll_len_at(&game.steps, start, cfg.k_unroll);
+                board_targets(
+                    &game.steps,
+                    start,
+                    actual_k,
+                    action_dim,
+                    cfg.rosmo_refresh.then_some(model),
+                )
+            })
+            .collect();
+        let train_view: Vec<(&SelfPlayGame, usize)> = picks
+            .iter()
+            .enumerate()
+            .map(|(sample, &(game_index, start))| (game_at(sample, game_index), start))
+            .collect();
+        losses.push(train_batch(
+            model,
+            &mut optimizer,
+            &train_view,
+            Some(&targets),
+            cfg.k_unroll,
+            cfg.k_unroll,
+            1.0,
+            &cfg.components,
+            None,
+        )?);
+    }
+    Ok(losses)
+}
+
 /// 棋盘双人训练闭环（单 seed）：self-play → negamax target 训练 → vs 对手评测。
 pub(crate) fn train_board(cfg: &BoardTrainConfig) -> Result<BoardTrainReport, GraphError> {
+    train_board_with_model(cfg).map(|(report, _)| report)
+}
+
+/// 与 [`train_board`] 相同，但保留训练后的模型供 test-only 诊断/手动 benchmark 使用。
+///
+/// 生产入口不暴露该函数；Phase 3A0 用它在训练完成后对未来真实 episode 做冻结
+/// revision 审计，审计数据不写回 replay。
+pub(crate) fn train_board_with_model(
+    cfg: &BoardTrainConfig,
+) -> Result<(BoardTrainReport, MyZeroModel), GraphError> {
+    train_board_with_checkpoints(cfg, &[]).map(|(report, model, _)| (report, model))
+}
+
+/// 单趟训练并在指定 episode 捕获只读模型快照（Phase 3A0 固定 future block 审计）。
+///
+/// `checkpoint_episodes` 为空时没有额外模型、前向或 RNG 消耗；现有训练路径行为不变。
+pub(crate) fn train_board_with_checkpoints(
+    cfg: &BoardTrainConfig,
+    checkpoint_episodes: &[usize],
+) -> Result<(BoardTrainReport, MyZeroModel, Vec<(usize, MyZeroModel)>), GraphError> {
     Python::attach(|py| {
         let wall_t0 = std::time::Instant::now();
         let mut components = cfg.components.clone();
@@ -885,6 +986,8 @@ pub(crate) fn train_board(cfg: &BoardTrainConfig) -> Result<BoardTrainReport, Gr
         let mut final_win_rate = 0.0f32;
         let mut hit_solved: Option<u64> = None;
         let mut snapshot: Option<MyZeroModel> = None;
+        let mut audit_snapshots: Vec<(usize, MyZeroModel)> =
+            Vec::with_capacity(checkpoint_episodes.len());
         let mut lr_mult = 1.0f32;
         if cfg.kl_adaptive_lr {
             println!("[MyZero-board] KL 自适应 lr 开启（target={KL_TARGET}，乘子 [0.1,10]）");
@@ -1106,6 +1209,19 @@ pub(crate) fn train_board(cfg: &BoardTrainConfig) -> Result<BoardTrainReport, Gr
                 )?);
                 println!("  📸 已拍权重快照（ep={}，gating 对弈基准）", ep + 1);
             }
+            if checkpoint_episodes.contains(&(ep + 1)) {
+                audit_snapshots.push((
+                    ep + 1,
+                    snapshot_model(
+                        &model,
+                        obs_spec,
+                        action_dim,
+                        cfg.latent_dim,
+                        cfg.seed.wrapping_add(0x3A00 + ep as u64),
+                    )?,
+                ));
+                println!("  [3A0] 已捕获冻结 model revision（ep={}）", ep + 1);
+            }
         }
 
         // ---- 训后终局闸门（M2）----
@@ -1193,15 +1309,19 @@ pub(crate) fn train_board(cfg: &BoardTrainConfig) -> Result<BoardTrainReport, Gr
             "📈 {} win_rate={final_win_rate:.2}（best {best_win_rate:.2}）| 门槛 {} | {wall_secs:.1}s",
             cfg.env_id, cfg.solved_win_rate,
         );
-        Ok(BoardTrainReport {
-            final_win_rate,
-            best_win_rate,
-            solved_at_steps: hit_solved,
-            total_env_steps: total_steps,
-            wall_secs,
-            gate_vs_random,
-            gate_vs_checkpoint,
-            naive_win_rates,
-        })
+        Ok((
+            BoardTrainReport {
+                final_win_rate,
+                best_win_rate,
+                solved_at_steps: hit_solved,
+                total_env_steps: total_steps,
+                wall_secs,
+                gate_vs_random,
+                gate_vs_checkpoint,
+                naive_win_rates,
+            },
+            model,
+            audit_snapshots,
+        ))
     })
 }

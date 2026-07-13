@@ -1,7 +1,7 @@
 # RL 全面收口规划（v0.26 → v0.28）
 
 > **定位**：把「所有 RL 基准 + MyZero 万金油算法」收口到可验收终态的**战役次序文档**——回答"先做什么、后做什么、为什么这个顺序、做到什么算过关"。
-> 当前状态与验收协议见 [rl_roadmap.md](./rl_roadmap.md)；战术细节各自链出（Simulus 消融见 [my_zero_simulus_ablation_plan.md](./my_zero_simulus_ablation_plan.md)）；实测数字唯一账本仍是 [cartpole README](../../examples/my_zero/cartpole/README.md)。
+> 当前状态与验收协议见 [rl_roadmap.md](./rl_roadmap.md)；战术细节各自链出（Simulus 消融见 [my_zero_simulus_ablation_plan.md](./my_zero_simulus_ablation_plan.md)）；实测数字按环境分账：[CartPole](../../examples/my_zero/cartpole/README.md) / [Gomoku](../../examples/my_zero/gomoku/README.md)。
 > **创建**：2026-07-02 · 贯穿纪律沿用 [roadmap §3.2](./rl_roadmap.md#32-改动纪律搬运--改进沿用)：一次一项、预注册协议、3-seed 消融、数字只进账本；性能优化 measure-first、挂实测需求（内核级优化路线已盖棺，见 [optimization_candidates](../performance/optimization_candidates.md)）。
 
 ---
@@ -113,9 +113,11 @@
 >   `ObservationSchema / ActionSchema+Codec / LatentState / WorldModel`，以及矩形图像、
 >   Image+Dense Dict、token、MultiDiscrete、2D continuous、Platform Hybrid 最小纵切。
 >   详见[通用 world model 地基](./my_zero_world_model_foundation.md)。
-> - **后续次序**：先做新论文方向的 observable-grounded error 相关性与主动数据生成
->   （默认关、独立裁决），再分别扩 recurrent posterior / sequence burn-in 与 stochastic
->   chance nodes；三者均不得反向破坏已验收的确定性完全可观测 MDP 轻路径。
+> - **主动数据 3A0 已负裁（2026-07-12）**：continuation Brier 与任务关键
+>   局面相关，但新增真实 game 按原 MuZero loss 更新后仅 1/3 seed 改善、2/3 回归；
+>   未进入 ErrorQ/Collector/H=K，不用 SAC/WGAN 补救。下一步顺位改为 recurrent
+>   posterior / sequence burn-in，再做 stochastic chance nodes；均不得破坏已验收的
+>   确定性完全可观测 MDP 轻路径。
 > - **后台 = Phase 1 轻量图像 pilot**（§2 修订注记：单 seed + 判停协议；
 >   预注册见[图像负结果 issue](../../.issue/items/my_zero_pong_image_flat_negative.md)）。
 > - **ROSMO「哨兵基础组件」提案已否决（2026-07-05）**：CartPole 叠加 29.6k vs 哨兵

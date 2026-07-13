@@ -19,8 +19,8 @@ only_torch 是一个纯 Rust 的 PyTorch 风格玩具框架，当前重点是：
 |----|------|
 | **版本** | `0.25.0`（2026-07-02；本地可能超前 `origin/master`，以 `git log` / `CHANGELOG.md` 为准） |
 | **Rust** | `1.97.0`（`rust-toolchain.toml` 固定；2026-07-12 双工具链 A/B、3421 主测试与 `just smoke-rl` 已通过，口径见[性能工作流](.doc/performance/benchmark_workflow.md#rust-工具链升级-ab)） |
-| **刚闭环** | **✅ MyZero 通用 learned-world-model 前两阶段地基（2026-07-10）**：四契约 `ObservationSchema / ActionSchema+Codec / LatentState / WorldModel` 落地；生产始终 learned dynamics，棋盘真规则/reference 仅 `cfg(test)`；矩形/可配 history、Image+Dense Dict、token+padding mask、MultiDiscrete([4,4,16])、2D continuous、Platform Hybrid 纵切全通。验证：`just test` 3421 主测试全绿、RL 344 passed、`just smoke-rl` 全绿、CartPole 3-seed **8,741 / 71,969 / 6,744，中位 8,741、3/3**（逐值复现官方哨兵）。详见[地基设计](.doc/design/my_zero_world_model_foundation.md)与 CHANGELOG 2026-07-10。前一闭环 Gomoku ①–⑱ 见[棋盘账本](examples/my_zero/gomoku/README.md)与 [naive0 issue](.issue/items/gomoku_naive0_tactical_wall.md)。 |
-| **当前主线** | **强化学习** v0.26：战略复盘已定档为“一个入口 + 稳定 learned-world-model 契约 + 可退化模块族”，不再按真规则/预算/图像载体三选一。前两阶段地基已完成；下一阶段是新论文方向的 observable-grounded error 相关性与主动数据生成（默认关、独立裁决），之后才是 recurrent posterior/POMDP 与 stochastic chance search。当前确定性完全可观测 MDP 路径是后续统一模型的 CPU 轻量特例，详见[路线图 §5](.doc/design/rl_roadmap.md#5-v026-方向2026-07-01-战略转向定稿)与[地基设计](.doc/design/my_zero_world_model_foundation.md)。 |
+| **刚闭环** | **❌ MyZero 主动数据 Phase 3A0 负裁（2026-07-12）**：修正 greedy audit 的重复轨迹测量 bug 后，seeds 52–54 从真实 reset 产生的多样化轨迹中观察到 continuation Brier 与战术关键局面关联；但同一 fixed block 不稳健下降，新增 30 局真实 game 再训练仅 1/3 seed 小幅改善、2/3 明显回归。按预注册停止 ErrorQ/Collector/H=K/5+5，不用 SAC/WGAN 补救；结论限于当前 loss/容量/500-update 协议，不宣称 proxy 本质不可学。仅保留 `cfg(test)` 诊断与审计载体，数字与 raw reward CE 熵下界说明见[棋盘账本 Phase 3A0](examples/my_zero/gomoku/README.md#phase-3a0--主动数据误差-proxy-审计2026-07-12)。 |
+| **当前主线** | **强化学习** v0.26：生产保持“一个入口 + 稳定 learned-world-model 契约 + 可退化模块族”。主动数据当前 proxy 已独立清账且不 promote；下一阶段顺位进入 recurrent posterior / sequence replay / burn-in 的 POMDP-lite，再做 stochastic chance search。当前确定性完全可观测 MDP 路径保持 CPU 轻量特例，详见[路线图 §5](.doc/design/rl_roadmap.md#5-v026-方向2026-07-01-战略转向定稿)与[地基设计](.doc/design/my_zero_world_model_foundation.md)。 |
 | **刻意暂缓** | 演化 **阶段 D**（`CellAttention` ONNX、`Attention` Net2Net 函数保持、Conv2d Attention；3D batched MatMul 已于 2026-07-04 完成出表）——与 RL 零耦合，见 [记忆机制设计 — Phase D](.doc/design/memory_mechanism_design.md#-后续-phase-d刻意未做)（该表为「阶段 D」唯一权威定义） |
 | **一级风险** | CPU-only × 图像 CNN × MCTS × 实时结构性冲突：[.issue/items/cpu_only_mcts_image_realtime_risk.md](.issue/items/cpu_only_mcts_image_realtime_risk.md)（图像线推进前必读） |
 | **工具链提示** | `blas-mkl` 间接依赖 `proc-macro-error2 2.0.1` 在 Rust 1.97 报 future-incompat warning，当前不阻断；跟踪见 [.issue/items/proc_macro_error2_future_incompat.md](.issue/items/proc_macro_error2_future_incompat.md) |
@@ -28,7 +28,7 @@ only_torch 是一个纯 Rust 的 PyTorch 风格玩具框架，当前重点是：
 
 **进度符号**（设计文档统一口径）：✅ Phase 验收范围内已完成 · ⏳ 已识别、留后续 Phase · 🔲 可选增强 · 📦 已归档历史路径。
 
-**接手 RL 时建议顺序**：读 `rl_roadmap.md`（薄版当前态）→ 读[通用 world model 地基](.doc/design/my_zero_world_model_foundation.md) → 配环境 [`.doc/rl_python_env_setup.md`](.doc/rl_python_env_setup.md)（**仅 Gymnasium**）→ `just test-filter rl`（344+ 测试确认 buffer + MCTS + MyZero + schema）→ `just smoke-rl`（含既有支柱、四类 schema toy 与 Platform Hybrid）→ 下一阶段按路线图单独预注册，不把主动数据/POMDP/stochastic 混批。
+**接手 RL 时建议顺序**：读 `rl_roadmap.md`（薄版当前态）→ 读[通用 world model 地基](.doc/design/my_zero_world_model_foundation.md) → 看[棋盘账本 Phase 3A0](examples/my_zero/gomoku/README.md#phase-3a0--主动数据误差-proxy-审计2026-07-12)避免重启已否决 proxy → 配环境 [`.doc/rl_python_env_setup.md`](.doc/rl_python_env_setup.md)（**仅 Gymnasium**）→ `just test-filter rl` → `just smoke-rl` → recurrent posterior 另立预注册，不与 stochastic 混批。
 
 **接手 Attention 阶段 D 时**：先读 [记忆机制设计 — 实现状态速览](.doc/design/memory_mechanism_design.md#-实现状态速览)（含 105 个相关单元测试与 IT-* 示例表），勿假设「打勾 = ONNX 也做完」。
 
@@ -116,7 +116,7 @@ just smoke-rl                  # 全部 RL smoke 聚合（发版固定关卡，�
 ### 修改 RL
 1. 改前读 [RL 路线图](.doc/design/rl_roadmap.md)（含验收协议与改动纪律）与 [`.github/instructions/rl.instructions.md`](.github/instructions/rl.instructions.md)。
 2. 环境铁律：`GymEnv` 仅 `gymnasium.make`，禁止 `import gym`；混合动作用 **`Platform-v0`**（`hybrid-platform`），不用 gym-hybrid / Moving。
-3. 改基线数字只改唯一账本 [examples/my_zero/cartpole/README.md](examples/my_zero/cartpole/README.md)（带口径列），其余文档链入；「搬运 ≠ 改进」：改行为必须一次一项 + 3-seed 消融。
+3. 基线数字按环境写入 owner 账本：[CartPole](examples/my_zero/cartpole/README.md) / [Gomoku](examples/my_zero/gomoku/README.md)（带口径列），其余文档只链入；「搬运 ≠ 改进」：改行为必须一次一项 + 多 seed 消融。
 4. 验证：`just test-filter rl` → `just smoke-rl`；改 MyZero 行为后跑 `SEEDS=3 cargo run --example my_zero_cartpole --release` 过哨兵。
 
 ### 修改 Evolution

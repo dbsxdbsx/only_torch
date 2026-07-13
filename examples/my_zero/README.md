@@ -1,7 +1,7 @@
 # MyZero — 统一 Model-Based RL 算法
 
 > only_torch 的终极强化学习算法：learned-model MCTS，按环境内置已验收组件组合，持续迭代。  
-> 战略层（做/不做、文献谱系、战略目标）：[MyZero 算法纲领](../../.doc/design/my_zero_algorithm_vision.md) · 当前状态与方向：[RL 路线图](../../.doc/design/rl_roadmap.md) · **实测数字唯一账本**：[CartPole 基准账本](cartpole/README.md)
+> 战略层（做/不做、文献谱系、战略目标）：[MyZero 算法纲领](../../.doc/design/my_zero_algorithm_vision.md) · 当前状态与方向：[RL 路线图](../../.doc/design/rl_roadmap.md) · **实测数字按环境分账**：[CartPole](cartpole/README.md) / [Gomoku](gomoku/README.md)
 
 ## 设计理念
 

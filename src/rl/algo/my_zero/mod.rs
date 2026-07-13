@@ -77,6 +77,10 @@ pub mod consistency;
 #[cfg(test)]
 pub(crate) mod gomoku;
 pub mod loss;
+#[cfg(test)]
+pub(crate) mod model_error;
+#[cfg(test)]
+pub(crate) mod model_error_audit;
 pub mod model_io;
 // 模块与算法同名属刻意设计（my_zero::my_zero::MyZero 仅内部路径，公开面已 re-export）
 #[allow(clippy::module_inception)]

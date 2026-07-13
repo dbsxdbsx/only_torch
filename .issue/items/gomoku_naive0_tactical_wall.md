@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-07-05
-updated: 2026-07-10
+updated: 2026-07-12
 owners: []
 reviewers: []
 ---
@@ -19,8 +19,12 @@ reviewers: []
 >   naive0–3 **0.19/0.09/0.07/0.00**；棋盘 recipe 维持 **base**。
 > - **方法论主教训**：seed 方差 > 组件效应（九度复现，0.03–0.60 同配置散布）；
 >   任何组件裁决必须「发现集探索 → 未见-seed 配对终审」两段式。
-> - **出口 = 战略复盘（待用户定档，不再自动加组件臂）**：① 棋类走真规则树
->   ② learned dynamics 预算量级重投（先定算力档+预注册）③ 转图像线。
+> - **Phase 3A0 主动数据 proxy 已负裁（2026-07-12）**：continuation Brier
+>   与任务关键局面相关，但新增 30 局真实数据再训练后仅 1/3 seed 小幅下降、
+>   2/3 明显回归；停止 ErrorQ/Collector，不用 SAC/WGAN 补救。数字见
+>   [棋盘账本 Phase 3A0](../../examples/my_zero/gomoku/README.md#phase-3a0--主动数据误差-proxy-审计2026-07-12)。
+> - **下一出口**：主动数据当前 proxy 已清账；统一路线顺位进入 recurrent posterior，
+>   棋盘墙本体继续保留为规则学习税事实，不再自动加组件臂。
 >
 > **状态**：active——保留为战略复盘的决策入口与全量预注册档案。棋盘支柱本身
 > 已立（M2 双门槛 3/3），本 issue 不阻塞工程收口。

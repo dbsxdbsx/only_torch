@@ -4,6 +4,13 @@
 
 ### Added
 
+- **test(rl): MyZero 主动数据 Phase 3A0 负裁——当前协议未证明 error proxy 可稳定降低**（2026-07-12）
+  - 新增 test-only `model_error` / `model_error_audit`：在冻结 world-model revision 上逐 transition 报告 reward categorical KL（扣除 two-hot target entropy）、continuation Brier、imagined/re-encoded policy JSD 与 value difference；true-rules 仅生成 reference-policy 与一步胜威胁局面诊断标签，不进入训练 target
+  - 测量仪器先自证：首版 greedy/no-noise audit 使不同 episode seed 重复同一棋局，全部漂亮数字作废；修正为 behavior lane `temperature=1 + Dirichlet`、diagnostic lane greedy/no-noise。最小守门测试锁死两个固定 seed lane 的单局 action 序列不得完全相同；干预 holdout 仅剔除 bitwise-exact 重复 state-action，未做 D4 canonical 去重
+  - 修正后 seeds 52–54、每 seed 约 800 条真实 transition：continuation Brier 对 reference-policy JSD 的 rank correlation 约 0.5–0.7、战术局面 top-decile lift 约 2×；但 fixed block 400→5000 局未稳健下降，新增 30 局真实 game 再按原 MuZero loss 更新 500 次仅 seed52 小幅改善，seed53/54 均回归。首轮 raw reward CE 含 two-hot target entropy，只保留 before-after 方向，不作任务相关性证据
+  - 裁决：当前协议未通过“可跨 seed 稳定降低”门槛，停止 ErrorQ、Collector、H=K 与 5+5 seed 战役，不调权重/KL、不以 SAC/WGAN 补救；不外推为 proxy 本质不可学习。代码只保留诊断、冻结 checkpoint、固定 block 重评分和真实 game 干预载体，生产 recipe / RNG / MCTS backup 零变化。数字唯一账本见 `examples/my_zero/gomoku/README.md`
+  - 验证：3428 主测试、RL 351 passed、`just lint` 与 `just smoke-rl` 全绿；新增金测试锁死“插入 diagnostics 前后 MCTS 输出与下一次训练更新逐 bit 一致”
+
 - **feat(rl): MyZero 通用 learned-world-model 前两阶段地基完成——稳定契约 + 输入/动作跨轴纵切**（2026-07-10）
   - **四个核心契约**：新增 `ObservationSchema`、`ActionSchema/ActionCodec`、透明 `LatentState` 与 associated-state `WorldModel`；历史 `Dynamics` 接口保留并由 blanket adapter 接入。MCTS `recurrent` 同时传稳定 `ActionId` 与真实 `ActionPayload`，`SearchResult` 新增 `recommended_id`，从结构上消灭 continuous/hybrid payload 静默退回 action 0
   - **观测扩展**：图像预处理支持矩形 `(height,width)` 与可配 history（默认 84²×4 逐 bit 保持）；新增矩形 CNN、Image+Dense Dict 的 CNN/MLP 双分支融合、固定 token IDs + 动态 Embedding + padding mask。计算层/latent 继续 f32，`StoredObs` 继续 F32/U8
