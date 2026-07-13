@@ -57,6 +57,37 @@ MyZero 的两个**真实落地目标**，及其对路线优先级的含义：
 4. **CartPole 定位收紧**：它是「叠组件不崩」的 sanity 哨兵，**不是**组件价值证明台（规划红利在简单稠密奖励任务上本就近乎为零，见上引文献）；更不拿 wall-clock 判生死（§2.2）。
 5. **一级风险显式管理**：CPU-only × 图像 CNN × MCTS × 实时存在结构性冲突（学界加速方案 TransZero/SpeedyZero 均依赖 GPU）——见 [.issue/items/cpu_only_mcts_image_realtime_risk.md](../../.issue/items/cpu_only_mcts_image_realtime_risk.md)；象棋（低维盘面）不受此约束，图像游戏推进前须重估。
 
+### 2.4 组件留存与数据路由方法论（2026-07-13 定稿）
+
+**目标**：让 MyZero 成为万金油——进入新环境时尽可能复用已验证能力，而非每次从零消融。
+
+**但"万金油"不等于"一套固定 recipe 包治百病"**。项目实测数据已反复证明组件价值是环境依赖的（consistency 在 CartPole 正信号、Gomoku 未见 seed 未复现；PER 全域无增益；ROSMO 棋盘有害），因此正确的定义是：
+
+> **代码永远保留（开关留库、不删），每个环境独立拥有自己的 recipe（由消融裁决）。**
+> "CartPole 上有效"不自动等于"Gomoku 上也开"。
+
+在此基础上，**数据效率层面**的通用路由遵循以下流程：
+
+```text
+真实转移
+  ↓
+按环境类型计算 model-error evidence
+（obs/reward/continuation 预测误差，或 imagined-vs-encoded 决策差）
+  ↓
+自动校准 / 有效性检查
+  ├─ 有效且单调相关：限幅驱动 task-aware 主动采集
+  └─ 无效或不稳定：退回 uniform/task 数据（安全出口）
+  ↓
+训练世界模型
+```
+
+**操作纪律**：
+
+- **基础设施常驻，recipe 由数据说话**：DataRouter、ErrorIndex、model-error 诊断等基础设施一旦建成即为通用件；但"主动采集是否开启"由运行时自动校准决定，不是一次配好永远不变。
+- **新环境的默认 recipe 是 base**（全关），然后逐项打开、消融裁决，通过才写入该环境的 recipe。
+- **Phase 3A0 的教训**（2026-07-12 负裁）：continuation proxy 与战术局面相关，但 3-seed / 500-update 协议未证明可稳定降低——"有相关性"不等于"可用于驱动采集"。校准必须同时检验相关性**和**可干预性。
+- **跨环境迁移的正确姿态**：在新环境上，先继承代码能力（所有开关可用），再用该环境的消融数据决定 recipe；不继承旧环境的裁决结论。
+
 ---
 
 ## 3. 一主多基线架构（2026-07-10 修订）
