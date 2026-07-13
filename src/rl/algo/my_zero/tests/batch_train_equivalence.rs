@@ -71,6 +71,10 @@ fn to_item(
         target_continuations: tcs.to_vec(),
         next_obs: next_obs.iter().cloned().map(Into::into).collect(),
         bc_weights: Vec::new(),
+        burn_in_obs: Vec::new(),
+        burn_in_actions: Vec::new(),
+        burn_in_leading_action: None,
+        train_prev_action: None,
     }
 }
 

@@ -775,6 +775,31 @@ impl Module for ReconstructionNet {
 // MyZero 组合模型
 // ============================================================================
 
+/// 持久化 posterior burn-in 推理子图（repr_latent + action + hidden → posterior_latent + new_hidden）。
+///
+/// 训练期 burn-in 阶段逐步调用（batch=1，无 autograd），用来把 recurrent hidden 从零
+/// 向量「暖」到当前 position 的观测历史。train portion 再把最终 hidden 当 detached input
+/// 注入 autograd 训练路径。
+struct PosteriorBurnInInfer {
+    repr_latent_in: Var,
+    prev_action_in: Var,
+    prev_hidden_in: Var,
+    posterior_latent: Var,
+    new_hidden: Var,
+    sink: Var,
+}
+
+/// 持久化 pred-only 推理子图（latent → policy + value）。
+///
+/// posterior self-play 用：posterior_latent 已由 [`PosteriorBurnInInfer`] 算出，
+/// 直接跑 pred 解码，不需要经过 repr 或 dynamics。
+struct PredOnlyInfer {
+    latent_in: Var,
+    policy: Var,
+    value_logits: Var,
+    sink: Var,
+}
+
 /// 持久化 root 推理子图（h + f）：建一次、搜索期只 `set_value(obs)` + forward + 读缓存，
 /// 避免每次 root 推理重建节点。`sink` 是全部输出的 concat，用于单趟 forward 一并计算。
 struct RootInfer {
@@ -821,6 +846,8 @@ pub struct MyZeroModel {
     pub recon: ReconstructionNet,
     pub lstm: ValuePrefixLstm, // value prefix LSTM
     pub posterior: Option<PosteriorEncoder>,
+    posterior_infer: Option<PosteriorBurnInInfer>,
+    pred_only_infer: PredOnlyInfer,
     pub graph: Graph,
     /// 联合动作数（MCTS `ActionId` / replay target 的稳定宽度）。
     pub action_dim: usize,
@@ -927,6 +954,18 @@ impl MyZeroModel {
             }
         };
 
+        let pred_only_infer = {
+            let latent_in = graph.input(&Tensor::zeros(&[1, latent_dim]))?;
+            let (policy, value_logits) = pred.forward(&latent_in);
+            let sink = Var::concat(&[&policy, &value_logits], 1)?;
+            PredOnlyInfer {
+                latent_in,
+                policy,
+                value_logits,
+                sink,
+            }
+        };
+
         Ok(Self {
             repr,
             dyn_net,
@@ -936,6 +975,8 @@ impl MyZeroModel {
             recon,
             lstm,
             posterior: None,
+            posterior_infer: None,
+            pred_only_infer,
             graph: graph.clone(),
             action_dim,
             policy_dim,
@@ -970,16 +1011,37 @@ impl MyZeroModel {
     /// 启用 recurrent posterior（GRU 状态估计器，POMDP-lite）。
     ///
     /// hidden_size 默认等于 latent_dim；关闭时不构造、不消耗参数。
+    /// 同时构建 burn-in 推理子图（batch=1，无 autograd，训练期用来暖 hidden）。
     pub(crate) fn with_recurrent_posterior(mut self, on: bool) -> Result<Self, GraphError> {
         if on {
-            self.posterior = Some(PosteriorEncoder::new(
+            let hidden_size = self.latent_dim;
+            let posterior = PosteriorEncoder::new(
                 &self.graph,
                 self.latent_dim,
                 self.action_dim,
-                self.latent_dim, // hidden_size = latent_dim
-            )?);
+                hidden_size,
+            )?;
+            let repr_latent_in =
+                self.graph.input(&Tensor::zeros(&[1, self.latent_dim]))?;
+            let prev_action_in =
+                self.graph.input(&Tensor::zeros(&[1, self.action_dim]))?;
+            let prev_hidden_in =
+                self.graph.input(&Tensor::zeros(&[1, hidden_size]))?;
+            let (posterior_latent, new_hidden) =
+                posterior.step(&repr_latent_in, &prev_action_in, &prev_hidden_in)?;
+            let sink = Var::concat(&[&posterior_latent, &new_hidden], 1)?;
+            self.posterior_infer = Some(PosteriorBurnInInfer {
+                repr_latent_in,
+                prev_action_in,
+                prev_hidden_in,
+                posterior_latent,
+                new_hidden,
+                sink,
+            });
+            self.posterior = Some(posterior);
         } else {
             self.posterior = None;
+            self.posterior_infer = None;
         }
         Ok(self)
     }
@@ -1409,15 +1471,67 @@ impl MyZeroModel {
             Ok(self.weighted_policy_log_prob(logits, wt)? * (-bc_coef / g as f32))
         };
 
-        // ---- k=0：repr → pred（policy + value）+ reconstruction ----
-        // recon 开启时 obs 数据在图里需要两份（repr 输入节点 + recon 目标节点），clone 一次；
-        // 关闭时整条 flat 直接 move 入图，零拷贝。
+        // ---- POMDP-lite burn-in：逐样本暖 posterior hidden（无 autograd） ----
+        let posterior_hidden_batch: Option<Tensor> =
+            if let Some(ref posterior) = self.posterior {
+                let hs = posterior.hidden_size;
+                let mut all_hidden = Vec::with_capacity(g * hs);
+                for item in items {
+                    let mut h = vec![0.0f32; hs];
+                    for (j, burn_obs) in item.burn_in_obs.iter().enumerate() {
+                        let mut obs_data = Vec::with_capacity(obs_dim);
+                        burn_obs.append_into(&mut obs_data);
+                        let repr_lat = self.repr_inference(&obs_data);
+                        let mut prev_oh = vec![0.0f32; self.action_dim];
+                        let prev_a = if j == 0 {
+                            item.burn_in_leading_action
+                        } else {
+                            Some(item.burn_in_actions[j - 1])
+                        };
+                        if let Some(a) = prev_a {
+                            if a < self.action_dim {
+                                prev_oh[a] = 1.0;
+                            }
+                        }
+                        let (_lat, new_h) =
+                            self.posterior_step_inference(&repr_lat, &prev_oh, &h);
+                        h = new_h;
+                    }
+                    all_hidden.extend_from_slice(&h);
+                }
+                Some(Tensor::new(all_hidden, &[g, hs]))
+            } else {
+                None
+            };
+
+        // ---- k=0：repr → (optional posterior) → pred（policy + value）+ reconstruction ----
         let (repr_in, recon_target0) = if reconstruction_coef > 0.0 {
             (obs_tensor.clone(), Some(obs_tensor))
         } else {
             (obs_tensor, None)
         };
         let mut latent = self.repr.forward(repr_in)?;
+
+        if let (Some(posterior), Some(hidden_t)) =
+            (&self.posterior, posterior_hidden_batch)
+        {
+            let mut prev_oh_flat = vec![0.0f32; g * self.action_dim];
+            for (row, item) in items.iter().enumerate() {
+                if let Some(a) = item.train_prev_action {
+                    if a < self.action_dim {
+                        prev_oh_flat[row * self.action_dim + a] = 1.0;
+                    }
+                }
+            }
+            let prev_action_var = self
+                .graph
+                .input(&Tensor::new(prev_oh_flat, &[g, self.action_dim]))?;
+            let hidden_var = self.graph.input(&hidden_t)?;
+            let (posterior_latent, _) =
+                posterior.step(&latent, &prev_action_var, &hidden_var)?;
+            latent = posterior_latent;
+        }
+
         let (pred_policy, pred_value_logits) = self.pred.forward(&latent);
         let tp0 = policy_at(0);
         let tv0 = value_two_hot_at(0);
@@ -1611,6 +1725,16 @@ pub(crate) struct UnrollItem<'a> {
     /// ROSMO 优势过滤行为正则权重（len = actual_k，槽位 j 对应执行动作 `actions[j]`；
     /// 空 = 非 ROSMO 路径，BC 不参与）。
     pub bc_weights: Vec<f32>,
+    // ---- POMDP-lite burn-in 上下文（recurrent_posterior=false 时全空） ----
+    /// Burn-in 阶段观测序列：`[obs at burn_start, ..., obs at t-1]`。
+    pub burn_in_obs: Vec<ObsSource<'a>>,
+    /// Burn-in 位置上执行的动作：`[action at burn_start, ..., action at t-1]`。
+    /// `burn_in_actions[j]` 用作第 `j+1` 步 posterior 的 prev_action。
+    pub burn_in_actions: Vec<usize>,
+    /// burn-in 首步的 prev_action（`None` = 游戏开头，使用零向量）。
+    pub burn_in_leading_action: Option<usize>,
+    /// 训练位置 t 的 prev_action（`None` = t==0，使用零向量）。
+    pub train_prev_action: Option<usize>,
 }
 
 // ============================================================================
@@ -1641,7 +1765,108 @@ impl Dynamics for &MyZeroModel {
     }
 }
 
+/// Pre-computed root wrapper for posterior self-play.
+///
+/// `initial_state` 返回事先计算好的 posterior_latent + policy + value，
+/// `recurrent` 透传至原模型。用于把 posterior GRU 累积的 root state 注入 MCTS 搜索。
+pub(crate) struct PrecomputedRootDynamics<'a> {
+    model: &'a MyZeroModel,
+    root_latent: Vec<f32>,
+    root_policy: Vec<f32>,
+    root_value: f32,
+}
+
+impl<'a> PrecomputedRootDynamics<'a> {
+    pub fn new(
+        model: &'a MyZeroModel,
+        root_latent: Vec<f32>,
+        root_policy: Vec<f32>,
+        root_value: f32,
+    ) -> Self {
+        Self { model, root_latent, root_policy, root_value }
+    }
+}
+
+impl Dynamics for PrecomputedRootDynamics<'_> {
+    fn initial_state(&self, _obs: &[f32]) -> (Vec<f32>, Vec<f32>, f32) {
+        (self.root_latent.clone(), self.root_policy.clone(), self.root_value)
+    }
+
+    fn recurrent(&self, state: &[f32], action: &ActionPayload) -> DynamicsOutput {
+        Dynamics::recurrent(&self.model, state, action)
+    }
+
+    fn recurrent_with_id(
+        &self,
+        state: &[f32],
+        action_id: ActionId,
+        action: &ActionPayload,
+    ) -> DynamicsOutput {
+        Dynamics::recurrent_with_id(&self.model, state, action_id, action)
+    }
+}
+
 impl MyZeroModel {
+    /// repr-only 推理（返回 min-max 归一化后的 latent `Vec<f32>`）。
+    ///
+    /// 复用 `root_infer` 子图但只 forward 到 `latent` 节点（跳过 pred）。
+    /// 用于 burn-in / self-play 期间取 repr_latent，配合 [`Self::posterior_step_inference`] 使用。
+    pub(crate) fn repr_inference(&self, obs: &[f32]) -> Vec<f32> {
+        let obs_tf = maybe_symlog(self.obs_symlog, obs);
+        let obs_len = obs_tf.len();
+        self.root_infer
+            .obs_in
+            .set_value(&Tensor::new(obs_tf.into_owned(), &[1, obs_len]))
+            .expect("set obs 失败");
+        self.graph
+            .forward(&self.root_infer.latent)
+            .expect("repr forward 失败");
+        read_value_vec(&self.root_infer.latent)
+    }
+
+    /// posterior 单步推理（无 autograd，burn-in 和 self-play 用）。
+    ///
+    /// 返回 `(posterior_latent, new_hidden)` 均为 `Vec<f32>`（batch=1 展平）。
+    /// `repr_latent` 应由 [`Self::repr_inference`] 预先取得。
+    pub(crate) fn posterior_step_inference(
+        &self,
+        repr_latent: &[f32],
+        prev_action_oh: &[f32],
+        prev_hidden: &[f32],
+    ) -> (Vec<f32>, Vec<f32>) {
+        let pi = self
+            .posterior_infer
+            .as_ref()
+            .expect("posterior_infer 未构建（需 with_recurrent_posterior(true)）");
+        pi.repr_latent_in
+            .set_value(&Tensor::new(repr_latent.to_vec(), &[1, self.latent_dim]))
+            .expect("set repr_latent 失败");
+        pi.prev_action_in
+            .set_value(&Tensor::new(prev_action_oh.to_vec(), &[1, self.action_dim]))
+            .expect("set prev_action 失败");
+        let hs = self.posterior.as_ref().unwrap().hidden_size;
+        pi.prev_hidden_in
+            .set_value(&Tensor::new(prev_hidden.to_vec(), &[1, hs]))
+            .expect("set prev_hidden 失败");
+        self.graph.forward(&pi.sink).expect("posterior forward 失败");
+        (read_value_vec(&pi.posterior_latent), read_value_vec(&pi.new_hidden))
+    }
+
+    /// pred-only 推理（给定 latent → policy + value）。
+    ///
+    /// 用于 posterior self-play：posterior_latent 已由 [`Self::posterior_step_inference`] 取得，
+    /// 直接跑 pred 得到 MCTS 根节点的 policy prior 和 value。
+    pub(crate) fn pred_inference(&self, latent: &[f32]) -> (Vec<f32>, f32) {
+        let pi = &self.pred_only_infer;
+        pi.latent_in
+            .set_value(&Tensor::new(latent.to_vec(), &[1, self.latent_dim]))
+            .expect("set latent 失败");
+        self.graph.forward(&pi.sink).expect("pred forward 失败");
+        let policy_vec = self.decode_policy_logits(&read_value_vec(&pi.policy));
+        let value = Self::decode_categorical_slice(&read_value_vec(&pi.value_logits));
+        (policy_vec, value)
+    }
+
     fn initial_state_impl(&self, obs: &[f32]) -> (Vec<f32>, Vec<f32>, f32) {
         // 复用持久化 root 子图：只写入 obs、单趟 forward、读缓存输出（不重建节点）。
         // obs 入口单点变换（与训练路径同一开关，保证搜索/推理量纲一致）。

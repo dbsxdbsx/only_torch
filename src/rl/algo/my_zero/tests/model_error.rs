@@ -133,6 +133,10 @@ fn training_item() -> UnrollItem<'static> {
         target_continuations: vec![1.0],
         next_obs: Vec::new(),
         bc_weights: Vec::new(),
+        burn_in_obs: Vec::new(),
+        burn_in_actions: Vec::new(),
+        burn_in_leading_action: None,
+        train_prev_action: None,
     }
 }
 

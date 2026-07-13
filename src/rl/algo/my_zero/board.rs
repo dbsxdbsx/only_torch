@@ -899,6 +899,7 @@ pub(crate) fn train_board_on_games(
             1.0,
             &cfg.components,
             None,
+            0, // board 环境无 burn-in
         )?);
     }
     Ok(losses)
@@ -1145,11 +1146,11 @@ pub(crate) fn train_board_with_checkpoints(
                         &train_view,
                         Some(&targets),
                         cfg.k_unroll,
-                        // td_steps 在 Refreshed 通道不参与 value target（现算 negamax）
                         cfg.k_unroll,
                         1.0,
                         &components,
                         None,
+                        0, // board 环境无 burn-in
                     )?;
                 }
                 avg_loss = loss_sum / cfg.trains_per_episode as f32;

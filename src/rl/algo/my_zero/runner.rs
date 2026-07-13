@@ -207,21 +207,51 @@ fn self_play_one_episode(
     mcts_cfg: &MctsConfig,
     components: &Components,
     gamma: f32,
-    cq: Option<(f32, f32)>, // Some((c_visit, c_scale)) → completedQ 策略目标；None → visit-count
+    cq: Option<(f32, f32)>,
     reward_scale: f32,
     reset_seed: u64,
     rng: &mut StdRng,
 ) -> Vec<SelfPlayStep> {
-    // 搜索 obs（图像模式 = 帧堆叠）与存储 obs（图像模式 = 单帧）分离，见 ObsAdapter
+    use super::network::PrecomputedRootDynamics;
+
     let (mut search_obs, mut store_obs) = obs_adapter.reset(env, Some(reset_seed));
     let mut steps = Vec::new();
+    let use_posterior = components.recurrent_posterior && model.posterior.is_some();
+    let hidden_size = model
+        .posterior
+        .as_ref()
+        .map(|p| p.hidden_size)
+        .unwrap_or(0);
+    let mut posterior_hidden = vec![0.0f32; hidden_size];
+    let mut prev_action_idx: Option<usize> = None;
 
     loop {
-        let dyn_model = DynamicsModel::new(model, adapter.candidates().to_vec(), gamma);
+        let candidates = adapter.candidates().to_vec();
         let policy = MyZeroSearchPolicy::from_components(components);
-        let result = mcts_search(&dyn_model, &policy, &search_obs, mcts_cfg, rng);
+
+        let result = if use_posterior {
+            let repr_latent = model.repr_inference(&search_obs);
+            let mut prev_oh = vec![0.0f32; model.action_dim];
+            if let Some(a) = prev_action_idx {
+                if a < model.action_dim {
+                    prev_oh[a] = 1.0;
+                }
+            }
+            let (posterior_latent, new_hidden) =
+                model.posterior_step_inference(&repr_latent, &prev_oh, &posterior_hidden);
+            posterior_hidden = new_hidden;
+            let (root_policy, root_value) = model.pred_inference(&posterior_latent);
+            let root_dyn =
+                PrecomputedRootDynamics::new(model, posterior_latent, root_policy, root_value);
+            let dyn_model = DynamicsModel::new(root_dyn, candidates, gamma);
+            mcts_search(&dyn_model, &policy, &search_obs, mcts_cfg, rng)
+        } else {
+            let dyn_model = DynamicsModel::new(model, candidates, gamma);
+            mcts_search(&dyn_model, &policy, &search_obs, mcts_cfg, rng)
+        };
 
         let action_idx = result.recommended_id.index();
+        prev_action_idx = Some(action_idx);
 
         let root_value = result.root_value();
         let policy_target = mcts_policy_target(&result, cq, adapter.action_dim(), 0);
@@ -451,6 +481,7 @@ pub(crate) fn train_batch(
     gamma: f32,
     components: &Components,
     image_stack: Option<usize>,
+    burn_in_steps: usize,
 ) -> Result<f32, GraphError> {
     if samples.is_empty() {
         return Ok(0.0);
@@ -576,6 +607,28 @@ pub(crate) fn train_batch(
             Vec::new()
         };
 
+        // POMDP-lite burn-in 上下文
+        let (bi_obs, bi_actions, bi_leading, train_prev) = if components.recurrent_posterior {
+            let burn_start = t.saturating_sub(burn_in_steps);
+            let bi_obs: Vec<ObsSource<'_>> = (burn_start..t).map(|p| obs_at(p)).collect();
+            let bi_actions: Vec<usize> = (burn_start..t)
+                .map(|p| steps[p].action[0] as usize)
+                .collect();
+            let leading = if burn_start > 0 {
+                Some(steps[burn_start - 1].action[0] as usize)
+            } else {
+                None
+            };
+            let train_prev = if t > 0 {
+                Some(steps[t - 1].action[0] as usize)
+            } else {
+                None
+            };
+            (bi_obs, bi_actions, leading, train_prev)
+        } else {
+            (vec![], vec![], None, None)
+        };
+
         let key = (actual_k, next_obs.len());
         groups.entry(key).or_default().push(UnrollItem {
             obs_t: obs_at(t),
@@ -586,6 +639,10 @@ pub(crate) fn train_batch(
             target_continuations,
             next_obs,
             bc_weights: rosmo_t.map(|rt| rt.bc_weights.clone()).unwrap_or_default(),
+            burn_in_obs: bi_obs,
+            burn_in_actions: bi_actions,
+            burn_in_leading_action: bi_leading,
+            train_prev_action: train_prev,
         });
     }
 
@@ -1188,6 +1245,7 @@ fn train_one_seed(
                     gamma,
                     &cfg.components,
                     obs_adapter.image_stack(),
+                    t.burn_in_steps,
                 )?;
                 prof_train_step += train_t0.elapsed().as_secs_f32();
                 drop(train_view);

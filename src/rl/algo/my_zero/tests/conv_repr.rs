@@ -140,6 +140,10 @@ fn my_zero_model_image_spec_trains() {
         target_continuations: vec![1.0, 1.0],
         next_obs: vec![fake_obs(dim, 12).into(), fake_obs(dim, 13).into()],
         bc_weights: Vec::new(),
+        burn_in_obs: Vec::new(),
+        burn_in_actions: Vec::new(),
+        burn_in_leading_action: None,
+        train_prev_action: None,
     };
     let loss = model
         .train_unroll_batch(&[item], 2.0, 0.0, 1.0, false, 0.0)
