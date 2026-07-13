@@ -991,7 +991,8 @@ pub(crate) fn materialize(
         cfg.model.latent_dim,
     )?
     .with_value_encoding(cfg.components.hl_gauss)
-    .with_obs_symlog(cfg.components.obs_symlog);
+    .with_obs_symlog(cfg.components.obs_symlog)
+    .with_recurrent_posterior(cfg.components.recurrent_posterior)?;
     env.close();
     Ok(MyZero::from_parts(cfg.clone(), model, adapter))
 }
@@ -1063,7 +1064,8 @@ fn train_one_seed(
     let model =
         MyZeroModel::new_with_schemas(&graph, obs_spec, adapter.schema().clone(), latent_dim)?
             .with_value_encoding(cfg.components.hl_gauss)
-            .with_obs_symlog(cfg.components.obs_symlog);
+            .with_obs_symlog(cfg.components.obs_symlog)
+            .with_recurrent_posterior(cfg.components.recurrent_posterior)?;
     let mut optimizer = Adam::new(&graph, &model.parameters(), t.lr);
     let mut buffer: ReplayBuffer<SelfPlayGame> = ReplayBuffer::new(t.buffer_capacity);
     let mut rng = StdRng::seed_from_u64(seed);

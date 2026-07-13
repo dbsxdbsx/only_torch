@@ -160,6 +160,71 @@ fn min_max_normalize(latent: &Var) -> Result<Var, GraphError> {
 }
 
 // ============================================================================
+// Posterior 状态估计器（GRU，POMDP-lite）
+// ============================================================================
+
+/// Recurrent posterior 状态估计器：把无记忆的 `repr_latent` 升级为
+/// 融合观测历史的 `posterior_latent`。
+///
+/// 数据流：`concat(repr_latent, prev_action_onehot) → fc_merge → GRU step → fc_out → posterior_latent`
+///
+/// 完全可观测环境不构造此组件（`MyZeroModel.posterior = None`），
+/// `repr.forward(obs)` 直出 latent，零行为变化。
+pub struct PosteriorEncoder {
+    fc_merge: Linear,
+    gru: crate::nn::layer::Gru,
+    fc_out: Linear,
+    pub hidden_size: usize,
+}
+
+impl PosteriorEncoder {
+    pub fn new(
+        graph: &Graph,
+        latent_dim: usize,
+        action_dim: usize,
+        hidden_size: usize,
+    ) -> Result<Self, GraphError> {
+        let graph = graph.with_model_name("Posterior");
+        let merge_input = latent_dim + action_dim;
+        Ok(Self {
+            fc_merge: Linear::new(&graph, merge_input, hidden_size, true, "fc_merge")?,
+            gru: crate::nn::layer::Gru::new(&graph, hidden_size, hidden_size, "gru")?,
+            fc_out: Linear::new(&graph, hidden_size, latent_dim, true, "fc_out")?,
+            hidden_size,
+        })
+    }
+
+    /// 单步：融合当前 repr latent + 上一步动作 + 上一步 hidden → 新 posterior latent + 新 hidden。
+    ///
+    /// - `repr_latent`: `[batch, latent_dim]`（`repr.forward(obs)` 的输出）
+    /// - `prev_action_onehot`: `[batch, action_dim]`（首步使用全零向量）
+    /// - `prev_hidden`: `[batch, hidden_size]`（首步使用全零向量）
+    ///
+    /// 返回 `(posterior_latent, new_hidden)`，posterior_latent 经 min-max 归一化。
+    pub fn step(
+        &self,
+        repr_latent: &Var,
+        prev_action_onehot: &Var,
+        prev_hidden: &Var,
+    ) -> Result<(Var, Var), GraphError> {
+        let merged = Var::concat(&[repr_latent, prev_action_onehot], 1)?;
+        let gru_input = self.fc_merge.forward(&merged).relu();
+        let new_hidden = self.gru.step(&gru_input, prev_hidden)?;
+        let posterior_latent = min_max_normalize(&self.fc_out.forward(&new_hidden))?;
+        Ok((posterior_latent, new_hidden))
+    }
+
+    pub fn parameters(&self) -> Vec<Var> {
+        [
+            self.fc_merge.parameters(),
+            self.gru.parameters(),
+            self.fc_out.parameters(),
+        ]
+        .concat()
+    }
+}
+
+// ============================================================================
 // Representation 网络 h: obs → latent（min-max 归一化）
 // ============================================================================
 
@@ -755,6 +820,7 @@ pub struct MyZeroModel {
     pub predictor: PredictorNet,
     pub recon: ReconstructionNet,
     pub lstm: ValuePrefixLstm, // value prefix LSTM
+    pub posterior: Option<PosteriorEncoder>,
     pub graph: Graph,
     /// 联合动作数（MCTS `ActionId` / replay target 的稳定宽度）。
     pub action_dim: usize,
@@ -869,6 +935,7 @@ impl MyZeroModel {
             predictor,
             recon,
             lstm,
+            posterior: None,
             graph: graph.clone(),
             action_dim,
             policy_dim,
@@ -900,8 +967,25 @@ impl MyZeroModel {
         self
     }
 
+    /// 启用 recurrent posterior（GRU 状态估计器，POMDP-lite）。
+    ///
+    /// hidden_size 默认等于 latent_dim；关闭时不构造、不消耗参数。
+    pub(crate) fn with_recurrent_posterior(mut self, on: bool) -> Result<Self, GraphError> {
+        if on {
+            self.posterior = Some(PosteriorEncoder::new(
+                &self.graph,
+                self.latent_dim,
+                self.action_dim,
+                self.latent_dim, // hidden_size = latent_dim
+            )?);
+        } else {
+            self.posterior = None;
+        }
+        Ok(self)
+    }
+
     pub fn parameters(&self) -> Vec<Var> {
-        [
+        let mut params = [
             self.repr.parameters(),
             self.dyn_net.parameters(),
             self.pred.parameters(),
@@ -910,7 +994,11 @@ impl MyZeroModel {
             self.recon.parameters(),
             self.lstm.parameters(),
         ]
-        .concat()
+        .concat();
+        if let Some(ref posterior) = self.posterior {
+            params.extend(posterior.parameters());
+        }
+        params
     }
 
     /// 用于 `.otm` 拓扑序列化的代表输出 Var（dummy obs 前向，覆盖 h/g/f 子网）。

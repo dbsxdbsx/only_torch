@@ -77,18 +77,35 @@ impl<T: Dynamics> WorldModel for T {
     }
 }
 
-/// MCTS 对 learned latent 的透明包装。
-#[repr(transparent)]
+/// MCTS 对 learned latent 的包装，可选携带 recurrent hidden state。
+///
+/// `hidden = None`（默认）：完全可观测环境的无记忆特例，行为与旧 `Vec<f32>` 包装一致。
+/// `hidden = Some(vec)`：recurrent posterior 模式，MCTS 根节点的 hidden 来自真实观测
+/// 历史的 posterior 累积；树内节点的 hidden 随 dynamics 推演透传不更新。
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct LatentState(Vec<f32>);
+pub struct LatentState {
+    latent: Vec<f32>,
+    /// Recurrent posterior hidden（`None` = 无记忆 MDP 模式）。
+    pub hidden: Option<Vec<f32>>,
+}
 
 impl LatentState {
     pub fn new(values: Vec<f32>) -> Self {
-        Self(values)
+        Self {
+            latent: values,
+            hidden: None,
+        }
+    }
+
+    pub fn with_hidden(values: Vec<f32>, hidden: Vec<f32>) -> Self {
+        Self {
+            latent: values,
+            hidden: Some(hidden),
+        }
     }
 
     pub fn into_inner(self) -> Vec<f32> {
-        self.0
+        self.latent
     }
 }
 
@@ -96,13 +113,13 @@ impl Deref for LatentState {
     type Target = [f32];
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.latent
     }
 }
 
 impl AsRef<[f32]> for LatentState {
     fn as_ref(&self) -> &[f32] {
-        &self.0
+        &self.latent
     }
 }
 
