@@ -247,7 +247,7 @@ fn stacked_obs_supports_history_1_4_8() {
 fn dict_image_dense_is_reordered_to_chw_then_aux() {
     Python::attach(|py| {
         let env = GymEnv::new(py, "MyZero-ImageDense-v0");
-        let mut adapter = ObsAdapter::resolve(&env, ObservationPlan::Auto);
+        let mut adapter = ObsAdapter::resolve(&env, ObservationPlan::Auto, vec![]);
         assert_eq!(
             adapter.model_obs_spec(&env),
             ObservationSchema::ImageDense {
@@ -281,7 +281,7 @@ fn token_plan_keeps_f32_ids_and_schema() {
             embed_dim: 8,
             pad_id: 0,
         };
-        let mut adapter = ObsAdapter::resolve(&env, plan);
+        let mut adapter = ObsAdapter::resolve(&env, plan, vec![]);
         assert_eq!(
             adapter.model_obs_spec(&env),
             ObservationSchema::Tokens {

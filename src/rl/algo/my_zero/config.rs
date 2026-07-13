@@ -76,6 +76,12 @@ pub struct EnvSettings {
     pub action: ActionPlan,
     /// observation schema / 预处理方案。
     pub observation: ObservationPlan,
+    /// 观测遮蔽索引（POMDP-lite 验证用）。
+    ///
+    /// 非空时，ObsAdapter 会在 `reset`/`step` 后把对应维度置零。
+    /// 例如 CartPole `[1, 3]` 遮蔽 cart_velocity 和 pole_velocity，
+    /// 使单帧信息不完整但 history 可解。默认空 = 不遮蔽。
+    pub obs_mask: Vec<usize>,
 }
 
 impl Default for EnvSettings {
@@ -86,6 +92,7 @@ impl Default for EnvSettings {
             reward_scale: 1.0,
             action: ActionPlan::Auto,
             observation: ObservationPlan::Auto,
+            obs_mask: Vec::new(),
         }
     }
 }

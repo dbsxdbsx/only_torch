@@ -412,6 +412,11 @@ smoke-my-zero-cartpole:
     @echo "=== Running MyZero CartPole Smoke (no checkpoint) [{{_blas_name}}] ==="
     SMOKE=1 cargo run --example my_zero_cartpole {{_blas_flag}}
 
+# MyZero CartPole POMDP-lite smoke（velocity-masked + posterior；管线验证，不验收敛）
+smoke-my-zero-cartpole-pomdp:
+    @echo "=== Running MyZero CartPole POMDP-lite Smoke [{{_blas_name}}] ==="
+    SMOKE=1 cargo run --example my_zero_cartpole_pomdp {{_blas_flag}}
+
 # MyZero Pendulum smoke（管线验证，不验收敛）
 smoke-my-zero-pendulum:
     @echo "=== Running MyZero Pendulum Smoke [{{_blas_name}}] ==="

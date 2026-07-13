@@ -50,6 +50,7 @@ mod hl_gauss_ablation_bench;
 mod kl_lr_cartpole_bench;
 mod loss_coef_ablation_bench;
 mod obs_symlog_ablation_bench;
+mod pomdp_cartpole_bench;
 mod pong_image_ablation_bench;
 mod rosmo_cartpole_bench;
 mod spike_cnn_mcts_bench;

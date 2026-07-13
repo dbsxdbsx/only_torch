@@ -314,6 +314,7 @@ pub(crate) fn assemble_stacked_obs(frames: &[&StoredObs], t: usize, stack: usize
 pub(crate) enum ObsAdapter {
     Flat {
         schema: ObservationSchema,
+        mask_indices: Vec<usize>,
     },
     Image(ImagePipe),
     ImageDense {
@@ -331,7 +332,9 @@ pub(crate) enum ObsAdapter {
 
 impl ObsAdapter {
     /// 按 env 观察空间事实解析（图像 obs → 图像管线）。
-    pub fn resolve(env: &GymEnv, plan: ObservationPlan) -> Self {
+    ///
+    /// `obs_mask` 仅对 `Flat` 模式生效：`reset`/`step` 返回 obs 前把指定维度置零。
+    pub fn resolve(env: &GymEnv, plan: ObservationPlan, obs_mask: Vec<usize>) -> Self {
         match plan {
             ObservationPlan::Tokens {
                 length,
@@ -388,6 +391,7 @@ impl ObsAdapter {
                 }
                 Self::Flat {
                     schema: ObservationSchema::Flat(env.get_flatten_observation_len()),
+                    mask_indices: obs_mask,
                 }
             }
         }
@@ -396,7 +400,7 @@ impl ObsAdapter {
     /// 模型入口 obs 规格
     pub const fn model_obs_spec(&self, _env: &GymEnv) -> ObservationSchema {
         match self {
-            Self::Flat { schema }
+            Self::Flat { schema, .. }
             | Self::ImageDense { schema, .. }
             | Self::Tokens { schema, .. } => *schema,
             Self::Image(pipe) => {
@@ -429,8 +433,13 @@ impl ObsAdapter {
     pub fn reset(&mut self, env: &GymEnv, seed: Option<u64>) -> (Vec<f32>, StoredObs) {
         let raw = env.reset(seed);
         match self {
-            Self::Flat { .. } => {
-                let o = env.flatten_obs(&raw);
+            Self::Flat { mask_indices, .. } => {
+                let mut o = env.flatten_obs(&raw);
+                for &i in mask_indices.iter() {
+                    if i < o.len() {
+                        o[i] = 0.0;
+                    }
+                }
                 (o.clone(), o.into())
             }
             Self::Image(pipe) => {
@@ -464,8 +473,13 @@ impl ObsAdapter {
             env.step(action)
         };
         match self {
-            Self::Flat { .. } => {
-                let o = env.flatten_obs(&raw);
+            Self::Flat { mask_indices, .. } => {
+                let mut o = env.flatten_obs(&raw);
+                for &i in mask_indices.iter() {
+                    if i < o.len() {
+                        o[i] = 0.0;
+                    }
+                }
                 (o.clone(), o.into(), reward, terminated, truncated)
             }
             Self::Image(pipe) => {

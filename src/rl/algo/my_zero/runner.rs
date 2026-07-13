@@ -1039,7 +1039,8 @@ pub(crate) fn materialize(
 ) -> Result<MyZero, GraphError> {
     let env = GymEnv::new(py, cfg.env.env_id);
     let adapter = ActionAdapter::resolve(&env, cfg.env.action);
-    let obs_spec = ObsAdapter::resolve(&env, cfg.env.observation).model_obs_spec(&env);
+    let obs_spec =
+        ObsAdapter::resolve(&env, cfg.env.observation, cfg.env.obs_mask.clone()).model_obs_spec(&env);
     let graph = Graph::new_with_seed(seed);
     let model = MyZeroModel::new_with_schemas(
         &graph,
@@ -1063,6 +1064,10 @@ fn train_one_seed(
 ) -> Result<(MyZero, TrainReport), GraphError> {
     let wall_t0 = std::time::Instant::now();
 
+    if cfg.components.recurrent_posterior {
+        cfg.train.validate_sequence_config();
+    }
+
     let t = &cfg.train;
     let gamma = t.gamma;
     let smoke = cfg.eval.smoke;
@@ -1085,7 +1090,7 @@ fn train_one_seed(
 
     let env = GymEnv::new(py, cfg.env.env_id);
     let adapter = ActionAdapter::resolve(&env, cfg.env.action);
-    let mut obs_adapter = ObsAdapter::resolve(&env, cfg.env.observation);
+    let mut obs_adapter = ObsAdapter::resolve(&env, cfg.env.observation, cfg.env.obs_mask.clone());
     let obs_spec = obs_adapter.model_obs_spec(&env);
     let obs_dim = obs_spec.dim();
     let action_dim = adapter.action_dim();

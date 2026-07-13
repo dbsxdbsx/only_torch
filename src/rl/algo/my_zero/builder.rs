@@ -202,6 +202,25 @@ impl MyZeroBuilder {
         self
     }
 
+    /// 启用 recurrent posterior（GRU 状态估计器，POMDP-lite）。
+    ///
+    /// 关闭时（默认）为无记忆 MDP 路径；开启后 self-play 和训练均走
+    /// posterior burn-in + hidden state 管理。配合 [`obs_mask`](Self::obs_mask)
+    /// 可验证"单帧失败、history posterior 成功"。
+    pub fn recurrent_posterior(mut self, enabled: bool) -> Self {
+        self.cfg.components.recurrent_posterior = enabled;
+        self
+    }
+
+    /// 观测遮蔽（POMDP-lite 验证用）。
+    ///
+    /// `indices` 中的维度在 `ObsAdapter::reset/step` 后被置零。
+    /// 例如 CartPole `&[1, 3]` 遮蔽速度维度。
+    pub fn obs_mask(mut self, indices: &[usize]) -> Self {
+        self.cfg.env.obs_mask = indices.to_vec();
+        self
+    }
+
     pub fn train_batch_size(mut self, n: usize) -> Self {
         self.cfg.train.train_batch_size = n.max(1);
         self

@@ -140,3 +140,71 @@ fn precomputed_root_dynamics_consistent_with_direct() -> Result<(), GraphError> 
 
     Ok(())
 }
+
+/// ObsAdapter::Flat mask_indices 应正确置零指定维度
+#[test]
+fn obs_mask_zeros_velocity_dims() {
+    use crate::rl::algo::my_zero::obs_pipeline::ObsAdapter;
+    use crate::rl::algo::my_zero::config::ObservationPlan;
+
+    pyo3::Python::attach(|py| {
+        let env = crate::rl::GymEnv::new(py, "CartPole-v1");
+        let mut adapter = ObsAdapter::resolve(&env, ObservationPlan::Auto, vec![1, 3]);
+        let (obs, _store) = adapter.reset(&env, Some(42));
+        assert_eq!(obs.len(), 4, "CartPole obs 应为 4 维");
+        assert_eq!(obs[1], 0.0, "cart_velocity（索引 1）应被遮蔽为 0");
+        assert_eq!(obs[3], 0.0, "pole_velocity（索引 3）应被遮蔽为 0");
+        assert!(obs[0] != 0.0 || obs[2] != 0.0, "至少有一个非速度维度非零");
+
+        let action = vec![0.0]; // left
+        let (obs2, _, _, _, _) = adapter.step(&env, &action);
+        assert_eq!(obs2[1], 0.0, "step 后 cart_velocity 仍应为 0");
+        assert_eq!(obs2[3], 0.0, "step 后 pole_velocity 仍应为 0");
+    });
+}
+
+/// masked obs + posterior=true 的 train_unroll_batch 能跑通且有梯度
+#[test]
+fn masked_obs_posterior_trains() -> Result<(), GraphError> {
+    let graph = Graph::new_with_seed(77);
+    let model = MyZeroModel::new(&graph, 4, 2, 32)?
+        .with_recurrent_posterior(true)?;
+    let mut opt = Adam::new(&graph, &model.parameters(), 0.01);
+
+    let masked_obs = |seed: u32| -> Vec<f32> {
+        let mut o = vec![0.1 * seed as f32, 0.0, -0.05 * seed as f32, 0.0];
+        o[1] = 0.0; // masked
+        o[3] = 0.0; // masked
+        o
+    };
+
+    let item = UnrollItem {
+        obs_t: masked_obs(3).into(),
+        actions: vec![1],
+        target_policies: vec![vec![0.6, 0.4]; 2],
+        target_values: vec![0.8, 0.5],
+        target_rewards: vec![1.0],
+        target_continuations: vec![1.0],
+        next_obs: Vec::new(),
+        bc_weights: Vec::new(),
+        burn_in_obs: vec![masked_obs(1).into(), masked_obs(2).into()],
+        burn_in_actions: vec![0, 1],
+        burn_in_leading_action: None,
+        train_prev_action: Some(1),
+    };
+
+    opt.zero_grad()?;
+    let loss = model.train_unroll_batch(&[item], 0.0, 0.0, 1.0, false, 0.0)?;
+    let lv = loss.backward()?;
+    assert!(lv.is_finite(), "masked + posterior loss 应有限，got {lv}");
+
+    let posterior = model.posterior.as_ref().unwrap();
+    for (i, p) in posterior.parameters().iter().enumerate() {
+        assert!(
+            p.grad()?.is_some(),
+            "posterior 参数 {i} 在 masked 训练后应有梯度"
+        );
+    }
+    opt.step()?;
+    Ok(())
+}
