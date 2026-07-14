@@ -678,6 +678,8 @@ pub(crate) fn greedy_one_episode(
     num_simulations: u32,
     reset_seed: u64,
 ) -> (f32, usize) {
+    use super::network::PrecomputedRootDynamics;
+
     let eval_cfg = my_zero_mcts_config(
         num_simulations,
         0.0,
@@ -688,13 +690,43 @@ pub(crate) fn greedy_one_episode(
     );
     let mut rng = StdRng::seed_from_u64(reset_seed);
     let (mut obs, _) = obs_adapter.reset(env, Some(reset_seed));
+    let use_posterior = components.recurrent_posterior && model.posterior.is_some();
+    let hidden_size = model
+        .posterior
+        .as_ref()
+        .map(|p| p.hidden_size)
+        .unwrap_or(0);
+    let mut posterior_hidden = vec![0.0f32; hidden_size];
+    let mut prev_action_idx: Option<usize> = None;
     let mut total_reward = 0.0f32;
     let mut length = 0usize;
     loop {
-        let dyn_model = DynamicsModel::new(model, adapter.candidates().to_vec(), gamma);
+        let candidates = adapter.candidates().to_vec();
         let policy = MyZeroSearchPolicy::from_components(components);
-        let result = mcts_search(&dyn_model, &policy, &obs, &eval_cfg, &mut rng);
+
+        let result = if use_posterior {
+            let repr_latent = model.repr_inference(&obs);
+            let mut prev_oh = vec![0.0f32; model.action_dim];
+            if let Some(a) = prev_action_idx {
+                if a < model.action_dim {
+                    prev_oh[a] = 1.0;
+                }
+            }
+            let (posterior_latent, new_hidden) =
+                model.posterior_step_inference(&repr_latent, &prev_oh, &posterior_hidden);
+            posterior_hidden = new_hidden;
+            let (root_policy, root_value) = model.pred_inference(&posterior_latent);
+            let root_dyn =
+                PrecomputedRootDynamics::new(model, posterior_latent, root_policy, root_value);
+            let dyn_model = DynamicsModel::new(root_dyn, candidates, gamma);
+            mcts_search(&dyn_model, &policy, &obs, &eval_cfg, &mut rng)
+        } else {
+            let dyn_model = DynamicsModel::new(model, candidates, gamma);
+            mcts_search(&dyn_model, &policy, &obs, &eval_cfg, &mut rng)
+        };
+
         let action_idx = result.recommended_id.index();
+        prev_action_idx = Some(action_idx);
         let env_action = adapter.to_env(action_idx);
         let (next_obs, _, reward, terminated, truncated) = obs_adapter.step(env, &env_action);
         total_reward += reward;
