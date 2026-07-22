@@ -25,3 +25,6 @@ pub const CONSISTENCY_LOSS_COEF: f32 = 2.0;
 /// K 步 unroll 中 dynamics 边界的梯度缩放因子（每个 dynamics step 边界乘 0.5，
 /// 防 K 步反传梯度指数增长）。
 pub const DYNAMICS_GRADIENT_SCALE: f32 = 0.5;
+
+// STOCHASTIC_COMMITMENT_BETA 已移除：F3 改用 KL(posterior||prior)，
+// 确定性环境中自然归零，不再需要 commitment 项。

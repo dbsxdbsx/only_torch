@@ -24,6 +24,7 @@ mod sampled_params;
 mod schema;
 mod schema_model;
 mod schema_smoke;
+mod stochastic;
 mod sve;
 mod target;
 mod target_net;

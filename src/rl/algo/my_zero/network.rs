@@ -23,7 +23,9 @@ use crate::nn::{
     Conv2d, Embedding, Graph, GraphError, IntoVar, Linear, Module, Var, VarActivationOps,
     VarLossOps, VarReduceOps, VarShapeOps,
 };
-use crate::rl::mcts::{ActionId, ActionPayload, Dynamics, DynamicsOutput};
+use crate::rl::mcts::{
+    ActionId, ActionPayload, Dynamics, DynamicsAfterstateDynOut, DynamicsOutput,
+};
 use crate::tensor::Tensor;
 
 // ============================================================================
@@ -607,8 +609,8 @@ impl Module for ReprNet {
 pub struct DynamicsNet {
     fc1: Linear,
     fc_latent: Linear,
-    fc_reward: Linear,
-    fc_continuation: Linear,
+    pub(super) fc_reward: Linear,
+    pub(super) fc_continuation: Linear,
 }
 
 impl DynamicsNet {
@@ -618,8 +620,8 @@ impl DynamicsNet {
         Ok(Self {
             fc1: Linear::new(&graph, input_dim, 128, true, "fc1")?,
             fc_latent: Linear::new(&graph, 128, latent_dim, true, "fc_latent")?,
-            fc_reward: Linear::new(&graph, 128, SUPPORT.size(), true, "fc_reward")?,
-            fc_continuation: Linear::new(&graph, 128, 1, true, "fc_continuation")?,
+            fc_reward: Linear::new(&graph, latent_dim, SUPPORT.size(), true, "fc_reward")?,
+            fc_continuation: Linear::new(&graph, latent_dim, 1, true, "fc_continuation")?,
         })
     }
 
@@ -632,8 +634,8 @@ impl DynamicsNet {
         let input = Var::concat(&[latent, action_onehot], 1)?;
         let h = self.fc1.forward(&input).relu();
         let next_latent = min_max_normalize(&self.fc_latent.forward(&h))?;
-        let reward_logits = self.fc_reward.forward(&h);
-        let continuation_logit = self.fc_continuation.forward(&h);
+        let reward_logits = self.fc_reward.forward(&next_latent);
+        let continuation_logit = self.fc_continuation.forward(&next_latent);
         Ok((next_latent, reward_logits, continuation_logit))
     }
 }
@@ -688,6 +690,193 @@ impl Module for PredictionNet {
         ]
         .concat()
     }
+}
+
+// ============================================================================
+// Stochastic MuZero 组件（Antonoglou et al. 2022 ICLR）
+// ============================================================================
+
+/// Afterstate dynamics：(latent, action_onehot) → afterstate latent。
+///
+/// 确定性转移的一半——只建模 agent 的决策，不含环境的随机响应。
+/// `num_chance_outcomes > 1` 时替代 `DynamicsNet` 的第一步。
+pub struct AfterstateDynNet {
+    fc: Linear,
+}
+
+impl AfterstateDynNet {
+    pub fn new(
+        graph: &Graph,
+        latent_dim: usize,
+        action_dim: usize,
+    ) -> Result<Self, GraphError> {
+        let graph = graph.with_model_name("AsDyn");
+        Ok(Self {
+            fc: Linear::new(&graph, latent_dim + action_dim, latent_dim, true, "fc")?,
+        })
+    }
+
+    /// (latent, action_onehot) → afterstate（min-max 归一化）
+    pub fn forward(&self, latent: &Var, action_onehot: &Var) -> Result<Var, GraphError> {
+        let input = Var::concat(&[latent, action_onehot], 1)?;
+        min_max_normalize(&self.fc.forward(&input).relu())
+    }
+}
+
+impl Module for AfterstateDynNet {
+    fn parameters(&self) -> Vec<Var> {
+        self.fc.parameters()
+    }
+}
+
+/// Afterstate prediction heads：afterstate → (chance_prior, afterstate_value)。
+///
+/// - `chance_prior_head`：P(c|afterstate)，搜索期用 softmax 分配 chance 子节点先验。
+/// - `afterstate_value_head`：afterstate 处的 V(afterstate)，训练用 MSE 对齐 target。
+pub struct AfterstatePredNet {
+    chance_prior_head: Linear,
+    afterstate_value_head: Linear,
+}
+
+impl AfterstatePredNet {
+    pub fn new(
+        graph: &Graph,
+        latent_dim: usize,
+        num_chance_outcomes: usize,
+    ) -> Result<Self, GraphError> {
+        let graph = graph.with_model_name("AsPred");
+        Ok(Self {
+            chance_prior_head: Linear::new(
+                &graph,
+                latent_dim,
+                num_chance_outcomes,
+                true,
+                "chance_prior",
+            )?,
+            afterstate_value_head: Linear::new(&graph, latent_dim, SUPPORT.size(), true, "as_value")?,
+        })
+    }
+
+    /// afterstate → (chance_prior_logits, afterstate_value_logits)
+    pub fn forward(&self, afterstate: &Var) -> (Var, Var) {
+        let chance_logits = self.chance_prior_head.forward(afterstate);
+        let as_value_logits = self.afterstate_value_head.forward(afterstate);
+        (chance_logits, as_value_logits)
+    }
+}
+
+impl Module for AfterstatePredNet {
+    fn parameters(&self) -> Vec<Var> {
+        [
+            self.chance_prior_head.parameters(),
+            self.afterstate_value_head.parameters(),
+        ]
+        .concat()
+    }
+}
+
+/// Stochastic dynamics：(afterstate, chance_onehot) → next latent。
+///
+/// 把 afterstate 与采样到的 chance outcome 合并，产生下一个完整 latent。
+pub struct StochasticDynNet {
+    fc: Linear,
+}
+
+impl StochasticDynNet {
+    pub fn new(
+        graph: &Graph,
+        latent_dim: usize,
+        num_chance_outcomes: usize,
+    ) -> Result<Self, GraphError> {
+        let graph = graph.with_model_name("StoDyn");
+        Ok(Self {
+            fc: Linear::new(
+                &graph,
+                latent_dim + num_chance_outcomes,
+                latent_dim,
+                true,
+                "fc",
+            )?,
+        })
+    }
+
+    /// (afterstate, chance_onehot) → next_latent（min-max 归一化）
+    pub fn forward(&self, afterstate: &Var, chance_onehot: &Var) -> Result<Var, GraphError> {
+        let input = Var::concat(&[afterstate, chance_onehot], 1)?;
+        min_max_normalize(&self.fc.forward(&input).relu())
+    }
+}
+
+impl Module for StochasticDynNet {
+    fn parameters(&self) -> Vec<Var> {
+        self.fc.parameters()
+    }
+}
+
+/// Chance encoder（训练期专用，搜索期不使用）。
+///
+/// 输入 `[repr(obs_t), repr(obs_{t+1})]` → chance code logits。
+/// 训练时用 Gumbel-Softmax straight-through 离散化：forward 取 argmax one-hot，
+/// backward 用连续 softmax 梯度近似，兼得离散采样与可微训练。
+pub struct ChanceEncoder {
+    fc: Linear,
+}
+
+impl ChanceEncoder {
+    pub fn new(
+        graph: &Graph,
+        latent_dim: usize,
+        num_chance_outcomes: usize,
+    ) -> Result<Self, GraphError> {
+        let graph = graph.with_model_name("ChanceEnc");
+        Ok(Self {
+            fc: Linear::new(
+                &graph,
+                latent_dim * 2,
+                num_chance_outcomes,
+                true,
+                "fc",
+            )?,
+        })
+    }
+
+    /// `[repr(obs_t), repr(obs_{t+1})]` → chance code logits `[batch, num_chance_outcomes]`
+    pub fn forward(&self, repr_t: &Var, repr_next: &Var) -> Result<Var, GraphError> {
+        let input = Var::concat(&[repr_t, repr_next], 1)?;
+        Ok(self.fc.forward(&input))
+    }
+}
+
+impl Module for ChanceEncoder {
+    fn parameters(&self) -> Vec<Var> {
+        self.fc.parameters()
+    }
+}
+
+/// Gumbel-Softmax straight-through：前向取 hard argmax one-hot，反向走连续 softmax 梯度。
+///
+/// `logits`: `[batch, K]`，返回 `[batch, K]` hard one-hot（梯度经 softmax 路径反传）。
+fn gumbel_softmax_straight_through(logits: &Var, k: usize) -> Result<Var, GraphError> {
+    let soft = logits.softmax();
+    let batch = logits.value_expected_shape()[0];
+    // 训练路径中 soft 尚未经过 forward，需显式求值才能读取 argmax
+    logits.get_graph().forward(&soft)?;
+    let soft_data = read_value_vec(&soft);
+    let mut hard_flat = vec![0.0f32; batch * k];
+    for b in 0..batch {
+        let row = &soft_data[b * k..(b + 1) * k];
+        let max_idx = row
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+        hard_flat[b * k + max_idx] = 1.0;
+    }
+    let hard_tensor = Tensor::new(hard_flat, &[batch, k]);
+    let hard_var = logits.get_graph().input(&hard_tensor)?;
+    // straight-through：hard_detached + soft - soft_detached
+    Ok(&(&hard_var.detach() + &soft) - &soft.detach())
 }
 
 // ============================================================================
@@ -848,6 +1037,13 @@ pub struct MyZeroModel {
     pub posterior: Option<PosteriorEncoder>,
     posterior_infer: Option<PosteriorBurnInInfer>,
     pred_only_infer: PredOnlyInfer,
+    // ---- Stochastic MuZero 组件（`num_chance_outcomes > 1` 时构建） ----
+    afterstate_dyn: Option<AfterstateDynNet>,
+    afterstate_pred: Option<AfterstatePredNet>,
+    stochastic_dyn: Option<StochasticDynNet>,
+    chance_encoder: Option<ChanceEncoder>,
+    /// Stochastic chance outcome 数量（1 = 确定性快路径，不构建 stochastic 组件）。
+    pub num_chance_outcomes: usize,
     pub graph: Graph,
     /// 联合动作数（MCTS `ActionId` / replay target 的稳定宽度）。
     pub action_dim: usize,
@@ -977,6 +1173,11 @@ impl MyZeroModel {
             posterior: None,
             posterior_infer: None,
             pred_only_infer,
+            afterstate_dyn: None,
+            afterstate_pred: None,
+            stochastic_dyn: None,
+            chance_encoder: None,
+            num_chance_outcomes: 1,
             graph: graph.clone(),
             action_dim,
             policy_dim,
@@ -1046,6 +1247,38 @@ impl MyZeroModel {
         Ok(self)
     }
 
+    /// 启用 Stochastic MuZero 组件（afterstate dynamics / prediction / stochastic dynamics / chance encoder）。
+    ///
+    /// `num_chance_outcomes <= 1` 时不构建任何新组件（确定性快路径）。
+    /// `num_chance_outcomes > 1` 时构建全部四个 stochastic 子网络。
+    pub(crate) fn with_stochastic(
+        mut self,
+        num_chance_outcomes: usize,
+    ) -> Result<Self, GraphError> {
+        self.num_chance_outcomes = num_chance_outcomes;
+        if num_chance_outcomes > 1 {
+            self.afterstate_dyn =
+                Some(AfterstateDynNet::new(&self.graph, self.latent_dim, self.action_dim)?);
+            self.afterstate_pred =
+                Some(AfterstatePredNet::new(&self.graph, self.latent_dim, num_chance_outcomes)?);
+            self.stochastic_dyn =
+                Some(StochasticDynNet::new(&self.graph, self.latent_dim, num_chance_outcomes)?);
+            self.chance_encoder =
+                Some(ChanceEncoder::new(&self.graph, self.latent_dim, num_chance_outcomes)?);
+        } else {
+            self.afterstate_dyn = None;
+            self.afterstate_pred = None;
+            self.stochastic_dyn = None;
+            self.chance_encoder = None;
+        }
+        Ok(self)
+    }
+
+    /// 是否启用了 Stochastic MuZero 路径
+    pub(crate) fn is_stochastic(&self) -> bool {
+        self.num_chance_outcomes > 1
+    }
+
     pub fn parameters(&self) -> Vec<Var> {
         let mut params = [
             self.repr.parameters(),
@@ -1059,6 +1292,18 @@ impl MyZeroModel {
         .concat();
         if let Some(ref posterior) = self.posterior {
             params.extend(posterior.parameters());
+        }
+        if let Some(ref as_dyn) = self.afterstate_dyn {
+            params.extend(as_dyn.parameters());
+        }
+        if let Some(ref as_pred) = self.afterstate_pred {
+            params.extend(as_pred.parameters());
+        }
+        if let Some(ref sto_dyn) = self.stochastic_dyn {
+            params.extend(sto_dyn.parameters());
+        }
+        if let Some(ref chance_enc) = self.chance_encoder {
+            params.extend(chance_enc.parameters());
         }
         params
     }
@@ -1560,6 +1805,9 @@ impl MyZeroModel {
 
         let step_scale = if k > 0 { 1.0 / k as f32 } else { 1.0 };
 
+        // stochastic 路径需要 repr(obs_{k+1}) 做 chance encoder 输入
+        let stochastic = self.is_stochastic();
+
         for i in 0..k {
             // action onehot [G, action_dim]
             let mut oh_flat = vec![0.0f32; g * self.action_dim];
@@ -1573,8 +1821,67 @@ impl MyZeroModel {
                 .graph
                 .input(&Tensor::new(oh_flat, &[g, self.action_dim]))?;
 
-            let (next_latent, pred_reward_logits, pred_continuation_logit) =
-                self.dyn_net.forward(&latent, &oh_var)?;
+            // ---- 两条路径：stochastic vs 确定性 ----
+            let (next_latent, pred_reward_logits, pred_continuation_logit, stochastic_loss) =
+                if stochastic {
+                    // Stochastic MuZero：afterstate → chance → next_latent
+                    let as_dyn = self.afterstate_dyn.as_ref().unwrap();
+                    let as_pred = self.afterstate_pred.as_ref().unwrap();
+                    let sto_dyn = self.stochastic_dyn.as_ref().unwrap();
+                    let chance_enc = self.chance_encoder.as_ref().unwrap();
+                    let nco = self.num_chance_outcomes;
+
+                    // 1. afterstate = afterstate_dyn(latent, action_onehot)
+                    let afterstate = as_dyn.forward(&latent, &oh_var)?;
+
+                    // 2. (chance_prior_logits, as_value_logits) = afterstate_pred(afterstate)
+                    let (chance_prior_logits, as_value_logits) = as_pred.forward(&afterstate);
+
+                    // 3. chance_code = chance_encoder(repr(obs_k), repr(obs_{k+1})) [straight-through]
+                    //    obs_k 的 repr 就是当前 latent（已 detach + min-max）；
+                    //    obs_{k+1} 需要从 next_obs 取得
+                    let repr_next = if i < n_next {
+                        let next_obs_t =
+                            stack_obs_sources(&mut items.iter().map(|it| &it.next_obs[i]));
+                        self.repr.forward(next_obs_t)?
+                    } else {
+                        // 超出有效 obs 范围，用 latent 自身作 fallback（absorbing state）
+                        latent.clone()
+                    };
+                    let chance_logits = chance_enc.forward(&latent, &repr_next)?;
+                    let chance_code = gumbel_softmax_straight_through(&chance_logits, nco)?;
+
+                    // 4. next_latent = stochastic_dyn(afterstate, chance_code)
+                    let next_lat = sto_dyn.forward(&afterstate, &chance_code)?;
+
+                    // 5. reward / continuation：对 next_lat 直接应用 dyn_net 的 head（保持梯度连通）
+                    let rw_logits = self.dyn_net.fc_reward.forward(&next_lat);
+                    let cont_logit = self.dyn_net.fc_continuation.forward(&next_lat);
+
+                    // ---- stochastic 附加 loss ----
+                    // afterstate value loss：categorical CE（与主 value head 同口径 two-hot 编码）
+                    let as_value_targets: Vec<f32> =
+                        items.iter().map(|it| it.target_values[i + 1]).collect();
+                    let as_tv = self.two_hot_batch(&as_value_targets);
+                    let as_value_loss = as_value_logits.cross_entropy(as_tv)?;
+
+                    // KL(posterior || prior)：确定性环境中两者收敛到同一单峰 → KL 自然归零
+                    let q = chance_logits.softmax();   // posterior (encoder)
+                    let p = chance_prior_logits.softmax(); // prior (afterstate prediction)
+                    let eps = 1e-8_f32;
+                    let log_q = (q.clone() + eps).ln();
+                    let log_p = (p + eps).ln();
+                    let kl_loss = (&q * &(&log_q - &log_p)).sum();
+
+                    let sto_loss = &as_value_loss + &kl_loss;
+
+                    (next_lat, rw_logits, cont_logit, Some(sto_loss))
+                } else {
+                    // 确定性快路径（K=1）：原 DynamicsNet 直出
+                    let (nl, rw, cont) = self.dyn_net.forward(&latent, &oh_var)?;
+                    (nl, rw, cont, None)
+                };
+
             let (pred_p, pred_v_logits) = self.pred.forward(&next_latent);
 
             let tp = policy_at(i + 1);
@@ -1611,6 +1918,11 @@ impl MyZeroModel {
                 + &(&step_reward_loss * loss::REWARD_LOSS_COEF)
                 + &(&step_continuation_loss * continuation_coef);
 
+            // stochastic 附加 loss
+            if let Some(sto_loss) = stochastic_loss {
+                step_loss = &step_loss + &sto_loss;
+            }
+
             // ROSMO 行为正则：槽位 i+1 的执行动作（槽位 K 无动作，天然跳过）
             if i + 1 < k
                 && let Some(wt) = bc_target_at(i + 1)
@@ -1620,9 +1932,12 @@ impl MyZeroModel {
 
             // consistency / reconstruction：仅在该步有真实 next_obs 时（组内 i<n_next 统一成立）
             if i < n_next && (consistency_coef > 0.0 || reconstruction_coef > 0.0) {
-                let next_obs_tensor =
-                    stack_obs_sources(&mut items.iter().map(|it| &it.next_obs[i]));
-                // 两个分支都开时数据在图里需要两份（consistency 输入 + recon 目标），clone 一次
+                let next_obs_tensor = if stochastic {
+                    // stochastic 路径已在上面取过 repr_next，这里重新堆叠 obs 张量
+                    stack_obs_sources(&mut items.iter().map(|it| &it.next_obs[i]))
+                } else {
+                    stack_obs_sources(&mut items.iter().map(|it| &it.next_obs[i]))
+                };
                 let (cons_in, recon_target) =
                     match (consistency_coef > 0.0, reconstruction_coef > 0.0) {
                         (true, true) => (Some(next_obs_tensor.clone()), Some(next_obs_tensor)),
@@ -1763,6 +2078,40 @@ impl Dynamics for &MyZeroModel {
     ) -> DynamicsOutput {
         (**self).recurrent_impl(state, action_id, action)
     }
+
+    fn num_chance_outcomes(&self) -> usize {
+        (**self).num_chance_outcomes
+    }
+
+    fn afterstate_dynamics(
+        &self,
+        state: &[f32],
+        action_id: ActionId,
+        _action: &ActionPayload,
+    ) -> DynamicsAfterstateDynOut {
+        let (afterstate, chance_prior, afterstate_value) =
+            (**self).afterstate_dynamics_inference(state, action_id.index());
+        DynamicsAfterstateDynOut {
+            afterstate,
+            chance_prior,
+            afterstate_value,
+            to_play: 0,
+        }
+    }
+
+    fn stochastic_dynamics(&self, afterstate: &[f32], chance_id: usize) -> DynamicsOutput {
+        let (next_latent, reward, prior, value, continuation) =
+            (**self).stochastic_dynamics_inference(afterstate, chance_id);
+        let terminal = continuation <= TERMINAL_CONTINUATION_THRESHOLD;
+        DynamicsOutput {
+            next_state: next_latent,
+            reward,
+            prior,
+            value,
+            terminal,
+            continuation,
+        }
+    }
 }
 
 /// Pre-computed root wrapper for posterior self-play.
@@ -1803,6 +2152,23 @@ impl Dynamics for PrecomputedRootDynamics<'_> {
         action: &ActionPayload,
     ) -> DynamicsOutput {
         Dynamics::recurrent_with_id(&self.model, state, action_id, action)
+    }
+
+    fn num_chance_outcomes(&self) -> usize {
+        Dynamics::num_chance_outcomes(&self.model)
+    }
+
+    fn afterstate_dynamics(
+        &self,
+        state: &[f32],
+        action_id: ActionId,
+        action: &ActionPayload,
+    ) -> DynamicsAfterstateDynOut {
+        Dynamics::afterstate_dynamics(&self.model, state, action_id, action)
+    }
+
+    fn stochastic_dynamics(&self, afterstate: &[f32], chance_id: usize) -> DynamicsOutput {
+        Dynamics::stochastic_dynamics(&self.model, afterstate, chance_id)
     }
 }
 
@@ -1965,5 +2331,118 @@ impl MyZeroModel {
             value,
             continuation,
         }
+    }
+
+    // ========================================================================
+    // Stochastic MuZero 搜索期推理（inference scope，无 autograd）
+    // ========================================================================
+
+    /// Afterstate dynamics 推理：(latent, action_id) → (afterstate, chance_prior, afterstate_value)。
+    ///
+    /// 搜索期在 inference scope 内执行，每次新建临时前向子图（stochastic 路径调用频率
+    /// 低于确定性 recurrent，暂不做持久化子图优化）。
+    pub(crate) fn afterstate_dynamics_inference(
+        &self,
+        latent: &[f32],
+        action_id: usize,
+    ) -> (Vec<f32>, Vec<f32>, f32) {
+        let as_dyn = self
+            .afterstate_dyn
+            .as_ref()
+            .expect("afterstate_dyn 未构建（需 with_stochastic）");
+        let as_pred = self
+            .afterstate_pred
+            .as_ref()
+            .expect("afterstate_pred 未构建（需 with_stochastic）");
+
+        self.graph.inference_scope(|_g| {
+            let latent_t = Tensor::new(latent.to_vec(), &[1, self.latent_dim]);
+            let latent_var = self.graph.input(&latent_t).expect("input latent 失败");
+            let mut oh = vec![0.0f32; self.action_dim];
+            if action_id < self.action_dim {
+                oh[action_id] = 1.0;
+            }
+            let oh_t = Tensor::new(oh, &[1, self.action_dim]);
+            let oh_var = self.graph.input(&oh_t).expect("input action 失败");
+
+            let afterstate = as_dyn
+                .forward(&latent_var, &oh_var)
+                .expect("afterstate_dyn forward 失败");
+            let (chance_logits, as_value_logits_var) = as_pred.forward(&afterstate);
+
+            // sink 驱动一次 forward
+            let sink = Var::concat(&[&afterstate, &chance_logits, &as_value_logits_var], 1)
+                .expect("concat 失败");
+            self.graph.forward(&sink).expect("afterstate forward 失败");
+
+            let afterstate_vec = read_value_vec(&afterstate);
+            let chance_prior = softmax_row(&read_value_vec(&chance_logits));
+            let as_value_logits_vec = read_value_vec(&as_value_logits_var);
+            let as_value =
+                Self::decode_categorical_slice(&softmax_row(&as_value_logits_vec));
+
+            (afterstate_vec, chance_prior, as_value)
+        })
+    }
+
+    /// Stochastic dynamics 推理：(afterstate, chance_id) → (next_latent, reward, policy, value, continuation)。
+    ///
+    /// afterstate + chance outcome → 完整下一状态，再经 prediction heads + dynamics reward/continuation。
+    /// 这里的 reward/continuation 走原 DynamicsNet 的 rec_infer 路径是不对的——
+    /// stochastic 路径没有单独的 reward head，故复用 `dyn_net` 的 reward/continuation
+    /// 作为「afterstate→next_state 的 transition reward」近似。
+    pub(crate) fn stochastic_dynamics_inference(
+        &self,
+        afterstate: &[f32],
+        chance_id: usize,
+    ) -> (Vec<f32>, f32, Vec<f32>, f32, f32) {
+        let sto_dyn = self
+            .stochastic_dyn
+            .as_ref()
+            .expect("stochastic_dyn 未构建（需 with_stochastic）");
+        let k = self.num_chance_outcomes;
+
+        self.graph.inference_scope(|_g| {
+            let as_t = Tensor::new(afterstate.to_vec(), &[1, self.latent_dim]);
+            let as_var = self.graph.input(&as_t).expect("input afterstate 失败");
+            let mut ch_oh = vec![0.0f32; k];
+            if chance_id < k {
+                ch_oh[chance_id] = 1.0;
+            }
+            let ch_t = Tensor::new(ch_oh, &[1, k]);
+            let ch_var = self.graph.input(&ch_t).expect("input chance 失败");
+
+            let next_latent = sto_dyn
+                .forward(&as_var, &ch_var)
+                .expect("stochastic_dyn forward 失败");
+            let (policy_logits, value_logits) = self.pred.forward(&next_latent);
+
+            // reward/continuation：对 next_latent 直接应用 dyn_net 的 head
+            let reward_logits_var = self.dyn_net.fc_reward.forward(&next_latent);
+            let cont_logit_var = self.dyn_net.fc_continuation.forward(&next_latent);
+
+            let sink = Var::concat(
+                &[
+                    &next_latent,
+                    &policy_logits,
+                    &value_logits,
+                    &reward_logits_var,
+                    &cont_logit_var,
+                ],
+                1,
+            )
+            .expect("concat 失败");
+            self.graph.forward(&sink).expect("stochastic forward 失败");
+
+            let next_vec = read_value_vec(&next_latent);
+            let reward = Self::decode_categorical_slice(&read_value_vec(&reward_logits_var));
+            let prior = self.decode_policy_logits(&read_value_vec(&policy_logits));
+            let value = Self::decode_categorical_slice(&read_value_vec(&value_logits));
+            let cont_logit = read_value_vec(&cont_logit_var)[0];
+            let continuation =
+                sigmoid_scalar(cont_logit + CONTINUATION_LOGIT_BIAS).clamp(0.0, 1.0);
+
+            (next_vec, reward, prior, value, continuation)
+        })
     }
 }

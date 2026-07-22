@@ -31,7 +31,8 @@ pub mod types;
 
 // 重新导出核心公开 API
 pub use dynamics::{
-    Dynamics, DynamicsModel, DynamicsOutput, LatentState, WorldModel, WorldModelOutput,
+    AfterstateDynamicsOutput, Dynamics, DynamicsAfterstateDynOut, DynamicsModel, DynamicsOutput,
+    LatentState, WorldModel, WorldModelOutput,
 };
 pub use gumbel::GumbelPolicy;
 pub use min_max::MinMaxStats;
@@ -43,7 +44,7 @@ pub use traits::{
     TargetRule,
 };
 pub use types::{
-    ActionCandidate, ActionId, ActionPayload, CandidateSet, ChildStat, MctsConfig, MctsRecipe,
-    PuctConfig, RecurrentOut, RootDirichletConfig, RootOut, SampledConfig, SearchBudget,
-    SearchResult,
+    ActionCandidate, ActionId, ActionPayload, CandidateSet, ChildStat, DecisionRecurrentOut,
+    MctsConfig, MctsRecipe, PuctConfig, RecurrentOut, RootDirichletConfig, RootOut, SampledConfig,
+    SearchBudget, SearchResult,
 };

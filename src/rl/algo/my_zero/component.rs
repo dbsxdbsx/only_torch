@@ -63,6 +63,10 @@ pub(crate) struct Components {
     /// 使 agent 能利用观测历史推断部分可观测环境的隐藏状态。完全可观测环境默认关，
     /// 退化为无记忆 `h(obs)` 直出 latent。配套 sequence replay + burn-in。
     pub recurrent_posterior: bool,
+    /// Stochastic MuZero chance outcome 数量（Antonoglou et al. 2022 ICLR）。
+    /// 默认 8（always-on）：确定性环境中 chance distribution 自然退化为单峰、KL→0；
+    /// 随机环境中自动发现并利用随机结构。设 1 可退回纯确定性快路径（零 chance 开销）。
+    pub num_chance_outcomes: usize,
 }
 
 impl Default for Components {
@@ -87,6 +91,7 @@ impl Default for Components {
             cq_c_scale: 1.0,
             sampled: false,
             recurrent_posterior: false,
+            num_chance_outcomes: 8,
         }
     }
 }

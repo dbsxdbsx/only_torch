@@ -154,7 +154,7 @@ pub struct RootOut<S> {
     pub to_play: u8,
 }
 
-/// recurrent 推理输出
+/// recurrent 推理输出（确定性路径 / chance→decision 转移）
 #[derive(Debug, Clone)]
 pub struct RecurrentOut<S> {
     /// 隐状态
@@ -171,6 +171,21 @@ pub struct RecurrentOut<S> {
     pub to_play: u8,
     /// 折扣因子（双人零和时为 1.0）
     pub discount: f32,
+}
+
+/// decision_recurrent 推理输出：decision node → afterstate（Stochastic MuZero）。
+///
+/// 不含 reward / candidates / terminal——这些属于 chance→decision 转移。
+#[derive(Debug, Clone)]
+pub struct DecisionRecurrentOut<S> {
+    /// Afterstate（action 已施加、环境随机性尚未 resolve 的中间 latent）
+    pub afterstate: S,
+    /// Learned chance outcome 分布 P(c|afterstate)，长度 = `num_chance_outcomes`
+    pub chance_prior: Vec<f32>,
+    /// Afterstate value 估计（MCTS 在 chance node 未展开时的叶 value 回退）
+    pub afterstate_value: f32,
+    /// Afterstate 侧的 to_play（与 parent decision node 相同）
+    pub to_play: u8,
 }
 
 /// 子节点统计信息（暴露给 `SearchPolicy`）
@@ -258,6 +273,10 @@ pub struct MctsConfig {
     pub discount: f32,
     /// Sampled MuZero：每节点展开采 K 个候选；`None` = 全量枚举（标准 `MuZero`）。
     pub sampled_k: Option<usize>,
+    /// Stochastic MuZero chance outcome 数量。
+    /// `1` = 确定性快路径（不创建 chance 节点，行为与旧代码完全一致）；
+    /// `>1` = 每步 afterstate 产生 K 条 chance 边、decision/chance 节点交替。
+    pub num_chance_outcomes: usize,
 }
 
 /// 搜索预算与通用运行参数。
@@ -295,6 +314,8 @@ pub struct MctsRecipe {
     pub puct: PuctConfig,
     pub root_dirichlet: RootDirichletConfig,
     pub sampled: Option<SampledConfig>,
+    /// Stochastic MuZero chance outcome 数量（`1` = 确定性快路径）。
+    pub num_chance_outcomes: usize,
 }
 
 impl Default for MctsConfig {
@@ -308,6 +329,7 @@ impl Default for MctsConfig {
             temperature: 1.0,
             discount: 1.0,
             sampled_k: None,
+            num_chance_outcomes: 1,
         }
     }
 }
@@ -345,6 +367,7 @@ impl MctsConfig {
             puct: self.puct(),
             root_dirichlet: self.root_dirichlet(),
             sampled: self.sampled(),
+            num_chance_outcomes: self.num_chance_outcomes,
         }
     }
 
@@ -358,6 +381,7 @@ impl MctsConfig {
             root_dirichlet_alpha: recipe.root_dirichlet.alpha,
             root_exploration_fraction: recipe.root_dirichlet.exploration_fraction,
             sampled_k: recipe.sampled.map(|s| s.k),
+            num_chance_outcomes: recipe.num_chance_outcomes,
         }
     }
 }

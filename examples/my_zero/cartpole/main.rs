@@ -32,6 +32,10 @@ fn main() -> Result<(), GraphError> {
     if std::env::var("KL_LR").is_ok() {
         builder = builder.kl_adaptive_lr(true);
     }
+    // CHANCE_K=N：Stochastic MuZero chance outcome 数量（默认 1 = 确定性快路径）。
+    if let Ok(v) = std::env::var("CHANCE_K") {
+        builder = builder.num_chance_outcomes(v.parse().expect("CHANCE_K 必须是正整数"));
+    }
     if smoke {
         builder = builder.smoke();
     }

@@ -202,6 +202,16 @@ impl MyZeroBuilder {
         self
     }
 
+    /// Stochastic MuZero chance outcome 数量（默认 1 = 确定性快路径）。
+    ///
+    /// K>1 时启用 stochastic 分支：dynamics 额外输出 chance logits，
+    /// MCTS 在 decision 节点后插入 chance 节点。确定性环境中 chance
+    /// distribution 自然退化为单一 outcome；CPU 轻量场景建议 K=8。
+    pub fn num_chance_outcomes(mut self, k: usize) -> Self {
+        self.cfg.components.num_chance_outcomes = k;
+        self
+    }
+
     /// 启用 recurrent posterior（GRU 状态估计器，POMDP-lite）。
     ///
     /// 关闭时（默认）为无记忆 MDP 路径；开启后 self-play 和训练均走

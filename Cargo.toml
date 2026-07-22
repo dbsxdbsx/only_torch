@@ -331,6 +331,10 @@
     path="examples/my_zero/cartpole/main.rs"
 
 [[example]]
+    name="my_zero_cartpole_stochastic"
+    path="examples/my_zero/cartpole_stochastic/main.rs"
+
+[[example]]
     name="my_zero_cartpole_pomdp"
     path="examples/my_zero/cartpole_pomdp/main.rs"
 

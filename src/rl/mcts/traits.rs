@@ -4,43 +4,78 @@ use rand::RngCore;
 
 use super::min_max::MinMaxStats;
 use super::types::{
-    ActionId, ActionPayload, CandidateSet, ChildStat, MctsConfig, RecurrentOut, RootOut,
+    ActionId, ActionPayload, CandidateSet, ChildStat, DecisionRecurrentOut, MctsConfig,
+    RecurrentOut, RootOut,
 };
 
 /// MCTS 模型接口（root + recurrent，与 mctx 同构）
 ///
 /// 实现者提供：
 /// - `root`：从原始观测生成初始隐状态和先验
-/// - `recurrent`：从父状态 + 动作推演下一步
+/// - `recurrent`：从父状态 + 动作推演下一步（确定性快路径 K=1）
+///
+/// Stochastic MuZero 扩展（K>1 时搜索循环调用）：
+/// - `decision_recurrent`：decision node → afterstate + chance_prior
+/// - `chance_recurrent`：afterstate + chance_outcome → next state
+/// - `num_chance_outcomes`：chance outcome 数量
 ///
 /// # State 是不透明的
 ///
 /// `State` 为关联类型、对内核不透明，搜索树原样克隆 / 存储它。因此它可承载**任意**推演期
 /// 状态，不止 latent：
-/// - v0.22 AlphaZero：`State = PyObject` 棋盘快照
 /// - v0.23 MuZero：`State = Vec<f32>` learned latent（经 `Dynamics` + `DynamicsModel` 适配）
-/// - v0.24 EfficientZero **value prefix 忠实版**：`State` 额外携带 **LSTM hidden + 累计 prefix**，
-///   `recurrent` 返回的 `reward` 取 **value prefix 增量**（`prefix_k − prefix_{k-1}`）。
-///   如此忠实 value prefix **无需改内核 backup**——backup 照常用每条边的 `reward`。
-///   契约测试见 `rl::tests::mcts_recurrent_state`。
+/// - Stochastic MuZero：state / afterstate 共用同一 `State` 类型，由 `NodeKind` 区分语义
 ///
 /// # 后续 TODO
 /// - 并行时条件加 `State: Send + Sync`
-/// - Stochastic MuZero 的 chance node 会改变 recurrent 语义（核心扩展级）
 pub trait MctsModel {
-    /// 隐状态类型
+    /// 隐状态类型（同时承载 state 和 afterstate）
     type State: Clone + 'static;
 
     /// 从原始观测生成根节点信息
     fn root(&self, obs: &[f32]) -> RootOut<Self::State>;
 
-    /// 从父状态和动作推演子状态
+    /// 从父状态和动作推演子状态（确定性快路径，K=1 时搜索循环使用）
     fn recurrent(
         &self,
         state: &Self::State,
         action_id: ActionId,
         action: &ActionPayload,
     ) -> RecurrentOut<Self::State>;
+
+    /// Stochastic MuZero chance outcome 数量。
+    /// 返回 `1` 时搜索循环走确定性快路径（不创建 chance 节点）。
+    fn num_chance_outcomes(&self) -> usize {
+        1
+    }
+
+    /// Decision node → afterstate 转移（Stochastic MuZero，K>1 时调用）。
+    ///
+    /// 输出 afterstate latent + P(c|afterstate) + afterstate value。
+    /// 默认实现 panic——仅当 `num_chance_outcomes() > 1` 时搜索循环才会调用。
+    fn decision_recurrent(
+        &self,
+        _state: &Self::State,
+        _action_id: ActionId,
+        _action: &ActionPayload,
+    ) -> DecisionRecurrentOut<Self::State> {
+        unimplemented!(
+            "decision_recurrent requires stochastic model (num_chance_outcomes > 1)"
+        )
+    }
+
+    /// Afterstate + chance outcome → next state 转移（Stochastic MuZero，K>1 时调用）。
+    ///
+    /// 输出 next state + reward + value + candidates + terminal，同 `RecurrentOut`。
+    fn chance_recurrent(
+        &self,
+        _afterstate: &Self::State,
+        _chance_id: usize,
+    ) -> RecurrentOut<Self::State> {
+        unimplemented!(
+            "chance_recurrent requires stochastic model (num_chance_outcomes > 1)"
+        )
+    }
 }
 
 /// 子节点选择规则（PUCT / MENTS / RENTS / ANT 等）。

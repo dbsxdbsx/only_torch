@@ -101,10 +101,13 @@ flowchart LR
    训练后 2/3 seed 反而增大，当前协议未证明其可稳定降低，故未进入 ErrorQ /
    Collector。详见
    [棋盘账本 Phase 3A0](../../examples/my_zero/gomoku/README.md#phase-3a0--主动数据误差-proxy-审计2026-07-12)。
-2. **recurrent POMDP**：把 `LatentState` 扩成 posterior hidden；replay 改 sequence +
-   burn-in，现有完全可观测 MDP 路径自动退化为无记忆特例。
-3. **stochastic planning**：让 prior 输出 chance distribution，并扩 MCTS decision/chance
-   node；既有 deterministic 路径退化为单 outcome。
+2. **recurrent POMDP（2026-07-14 负裁）**：`LatentState` + posterior hidden + burn-in 已入库；
+   velocity-masked CartPole ON ~45 vs OFF ~40 未达标，归因容量/预算，架构未否定，
+   代码保留默认关（[issue](../../.issue/items/my_zero_pomdp_lite_posterior_negative.md)）。
+3. **stochastic planning（2026-07-15 验收）**：Stochastic MuZero always-on 实现。afterstate dynamics +
+   chance encoder（Gumbel-Softmax ST）+ KL(posterior‖prior) loss + chance-in-edge 搜索（不消耗树深度）。
+   确定性 CartPole K=8 3/3（26k，1.7x）；StochasticCartPole K=8 3/3 vs K=1 2/3。默认 K=8，
+   确定性环境 chance distribution 自动退化为单峰。
 4. **跨轴验收**：只有 native 环境统计 benchmark 通过后，才把接口就绪升级为生产支持。
 
 本地接口纵切不等于算法价值证明；smoke 只证明骨架通顺，不替代后续 native 环境的收敛验收。

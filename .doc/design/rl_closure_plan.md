@@ -115,8 +115,11 @@
 >   详见[通用 world model 地基](./my_zero_world_model_foundation.md)。
 > - **主动数据 3A0 已负裁（2026-07-12）**：continuation Brier 与任务关键
 >   局面相关，但新增真实 game 按原 MuZero loss 更新后仅 1/3 seed 改善、2/3 回归；
->   未进入 ErrorQ/Collector/H=K，不用 SAC/WGAN 补救。下一步顺位改为 recurrent
->   posterior / sequence burn-in，再做 stochastic chance nodes；均不得破坏已验收的
+>   未进入 ErrorQ/Collector/H=K，不用 SAC/WGAN 补救。
+> - **POMDP-lite 已负裁（2026-07-14）**：recurrent posterior 工程骨架全入库；
+>   velocity-masked CartPole 3-seed ON ~45 vs OFF ~40，0/3 未达 400 门槛。
+>   归因容量/预算、架构未否定，代码保留 recipe 默认关（[issue](../../.issue/items/my_zero_pomdp_lite_posterior_negative.md)）。
+>   下一步顺位改为 stochastic chance nodes；均不得破坏已验收的
 >   确定性完全可观测 MDP 轻路径。
 > - **后台 = Phase 1 轻量图像 pilot**（§2 修订注记：单 seed + 判停协议；
 >   预注册见[图像负结果 issue](../../.issue/items/my_zero_pong_image_flat_negative.md)）。

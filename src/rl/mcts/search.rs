@@ -1,23 +1,21 @@
 //! MCTS 主搜索循环
+//!
+//! Chance 合并到 action edge：展开叶子时立即按 chance prior 采样 outcome，
+//! 树中仅保留 Decision 节点。多次模拟中同一 action 会被采样到不同 outcome，
+//! Q 自然对分布取均值。`num_chance_outcomes == 1` 时走确定性快路径，行为不变。
 
-use rand::RngCore;
+use rand::{Rng, RngCore};
 
 use super::min_max::MinMaxStats;
-use super::node::{Node, Tree};
+use super::node::{Node, NodeKind, Tree};
 use super::sampled::{sample_for_expansion, sample_root_for_expansion};
 use super::traits::{CandidateProvider, MctsModel, SearchPolicy};
 use super::types::{ActionCandidate, CandidateSet, ChildStat, MctsConfig, SearchResult};
 
 /// 执行 MCTS 搜索
 ///
-/// # 参数
-/// - `model`: 提供 root/recurrent 推理的模型
-/// - `policy`: 搜索策略 hook（选择、推荐、噪声注入）
-/// - `obs`: 当前观测
-/// - `cfg`: 搜索配置
-///
-/// # 返回
-/// 搜索结果，包含子节点统计、推荐动作和学习用策略目标
+/// `cfg.num_chance_outcomes > 1` 时启用 stochastic 路径：展开叶子时按 chance prior
+/// 采样 outcome，树中仅保留 Decision 节点。K=1 时走确定性快路径。
 pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
     model: &M,
     policy: &P,
@@ -31,7 +29,6 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
         model.root(obs)
     };
 
-    // 空候选 / 终局 root → 直接返回空结果
     if root_out.candidates.is_empty() {
         return SearchResult {
             children: Vec::new(),
@@ -47,16 +44,16 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
     let candidate_provider = ConfiguredCandidateProvider;
     let root_candidates =
         candidate_provider.expand_candidates(&root_out.candidates, cfg, true, rng);
-    expand_root(
+
+    // 根子节点统一为 Decision（chance 合并到 action edge）
+    expand_root_with_kind(
         &mut tree,
-        model,
         &root_candidates.candidates,
-        &root_out.state,
         root_out.to_play,
         cfg.discount,
+        NodeKind::Decision,
     );
 
-    // 根节点 backup 初始价值
     tree.nodes[tree.root].visit_count = 1;
 
     // 2. 注入根节点 Dirichlet 噪声
@@ -65,7 +62,7 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
     policy.prepare_root(&mut root_child_stats, cfg, rng);
     apply_child_stats_to_tree(&mut tree, root_id, &root_child_stats);
 
-    // 3. 模拟循环（含根调度 hook：默认 PuctScheduler 不干预、零开销）
+    // 3. 模拟循环
     let mut min_max = MinMaxStats::new();
     let num_root_children = tree.nodes[tree.root].children.len();
     let mut scheduler = policy.make_root_scheduler(num_root_children, cfg);
@@ -80,12 +77,9 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
         );
     }
 
-    // selection 逐层子节点统计的 scratch buffer：跨层/跨 simulation 复用容量，
-    // 消除每层一次的 Vec 分配（每 sim 深度次 × sims 次的高频路径）
     let mut select_scratch: Vec<ChildStat> = Vec::new();
 
     for sim_idx in 0..cfg.num_simulations as usize {
-        // 根调度：Gumbel 等可强制本次模拟的根起步子节点；默认 None=走 PUCT
         let forced_root = if use_scheduler {
             let root_children = collect_child_stats(&tree, tree.root);
             scheduler.next_root_child(&root_children, sim_idx, cfg, min_max.range())
@@ -93,7 +87,6 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
             None
         };
 
-        // selection: 从根往下选择
         let leaf_id = {
             crate::prof_scope!("mcts.select");
             select(
@@ -106,14 +99,12 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
             )
         };
 
-        // 若叶子已终止，只做 backup
         if tree.nodes[leaf_id].terminal {
             crate::prof_scope!("mcts.backup");
             backup(&mut tree, leaf_id, 0.0, &mut min_max, cfg);
             continue;
         }
 
-        // expansion: 获取父状态 + 动作 → recurrent → 展开
         let parent_id = tree.nodes[leaf_id].parent.unwrap_or(tree.root);
         let edge_idx = tree.nodes[leaf_id].action_from_parent.unwrap_or(0);
         let edge = &tree.nodes[parent_id].children[edge_idx];
@@ -123,39 +114,44 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
         let parent_state = tree.states[parent_id]
             .as_ref()
             .expect("parent state should exist");
-        let rec_out = {
-            crate::prof_scope!("mcts.recurrent_fwd");
-            model.recurrent(parent_state, action_id, &action)
-        };
 
-        // 更新叶子节点信息
-        if let Some(parent_id) = tree.nodes[leaf_id].parent {
-            let edge_idx = tree.nodes[leaf_id].action_from_parent.unwrap_or(0);
-            if edge_idx < tree.nodes[parent_id].children.len() {
-                let edge = &mut tree.nodes[parent_id].children[edge_idx];
-                edge.reward = rec_out.reward;
-                edge.discount = rec_out.discount;
-            }
-        }
-        tree.nodes[leaf_id].terminal = rec_out.terminal;
-        tree.nodes[leaf_id].to_play = rec_out.to_play;
-        tree.states[leaf_id] = Some(rec_out.state.clone());
-
-        if !rec_out.terminal && !rec_out.candidates.is_empty() {
-            crate::prof_scope!("mcts.expand");
-            let candidates =
-                candidate_provider.expand_candidates(&rec_out.candidates, cfg, false, rng);
-
-            tree.expand(
+        if model.num_chance_outcomes() <= 1 {
+            // ── K=1 确定性快路径（与历史行为完全一致） ──
+            let rec_out = {
+                crate::prof_scope!("mcts.recurrent_fwd");
+                model.recurrent(parent_state, action_id, &action)
+            };
+            apply_recurrent_to_leaf(
+                &mut tree,
+                &candidate_provider,
                 leaf_id,
-                &candidates.candidates,
-                rec_out.to_play,
-                rec_out.discount,
+                &rec_out,
+                cfg,
+                rng,
             );
-        }
-
-        let backup_value = if rec_out.terminal { 0.0 } else { rec_out.value };
-        {
+            let backup_value = if rec_out.terminal { 0.0 } else { rec_out.value };
+            crate::prof_scope!("mcts.backup");
+            backup(&mut tree, leaf_id, backup_value, &mut min_max, cfg);
+        } else {
+            // ── K>1：afterstate → 按 chance_prior 采样 outcome → next_state ──
+            let dec_out = {
+                crate::prof_scope!("mcts.decision_recurrent_fwd");
+                model.decision_recurrent(parent_state, action_id, &action)
+            };
+            let chance_id = sample_chance_outcome(&dec_out.chance_prior, rng);
+            let rec_out = {
+                crate::prof_scope!("mcts.chance_recurrent_fwd");
+                model.chance_recurrent(&dec_out.afterstate, chance_id)
+            };
+            apply_recurrent_to_leaf(
+                &mut tree,
+                &candidate_provider,
+                leaf_id,
+                &rec_out,
+                cfg,
+                rng,
+            );
+            let backup_value = if rec_out.terminal { 0.0 } else { rec_out.value };
             crate::prof_scope!("mcts.backup");
             backup(&mut tree, leaf_id, backup_value, &mut min_max, cfg);
         }
@@ -164,7 +160,7 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
     // 4. 收集最终根子节点统计
     let final_children = collect_child_stats(&tree, tree.root);
 
-    // 5. 推荐动作 + 学习目标（scheduler 可覆盖推荐，如 Gumbel 用最终幸存者）
+    // 5. 推荐动作 + 学习目标
     let rec_idx = scheduler
         .final_recommendation(&final_children, min_max.range())
         .unwrap_or_else(|| policy.recommend(&final_children, cfg, rng));
@@ -206,9 +202,36 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
     }
 }
 
+/// 将确定性 `RecurrentOut` 应用到叶子节点（K=1 快路径提取共用逻辑）。
+fn apply_recurrent_to_leaf<S: Clone + 'static>(
+    tree: &mut Tree<S>,
+    candidate_provider: &ConfiguredCandidateProvider,
+    leaf_id: usize,
+    rec_out: &super::types::RecurrentOut<S>,
+    cfg: &MctsConfig,
+    rng: &mut dyn RngCore,
+) {
+    if let Some(parent_id) = tree.nodes[leaf_id].parent {
+        let edge_idx = tree.nodes[leaf_id].action_from_parent.unwrap_or(0);
+        if edge_idx < tree.nodes[parent_id].children.len() {
+            let edge = &mut tree.nodes[parent_id].children[edge_idx];
+            edge.reward = rec_out.reward;
+            edge.discount = rec_out.discount;
+        }
+    }
+    tree.nodes[leaf_id].terminal = rec_out.terminal;
+    tree.nodes[leaf_id].to_play = rec_out.to_play;
+    tree.states[leaf_id] = Some(rec_out.state.clone());
+
+    if !rec_out.terminal && !rec_out.candidates.is_empty() {
+        crate::prof_scope!("mcts.expand");
+        let candidates =
+            candidate_provider.expand_candidates(&rec_out.candidates, cfg, false, rng);
+        tree.expand(leaf_id, &candidates.candidates, rec_out.to_play, rec_out.discount);
+    }
+}
+
 /// 基于当前配置的候选展开策略。
-///
-/// 这是兼容层：后续 recipe 可直接装配不同 [`CandidateProvider`]。
 #[derive(Debug, Clone, Copy, Default)]
 struct ConfiguredCandidateProvider;
 
@@ -228,14 +251,13 @@ impl CandidateProvider for ConfiguredCandidateProvider {
     }
 }
 
-/// 展开根节点的子节点
-fn expand_root<M: MctsModel>(
-    tree: &mut Tree<M::State>,
-    _model: &M,
+/// 展开根节点的子节点，可指定子节点类型。
+fn expand_root_with_kind<S: Clone + 'static>(
+    tree: &mut Tree<S>,
     candidates: &[ActionCandidate],
-    _root_state: &M::State,
     to_play: u8,
     discount: f32,
+    child_kind: NodeKind,
 ) {
     let mut edges = Vec::with_capacity(candidates.len());
     for (i, candidate) in candidates.iter().enumerate() {
@@ -247,6 +269,7 @@ fn expand_root<M: MctsModel>(
             terminal: false,
             to_play,
             expanded: false,
+            kind: child_kind,
         };
         let child_id = tree.add_node(child, None);
         edges.push(super::node::Edge {
@@ -264,10 +287,7 @@ fn expand_root<M: MctsModel>(
     tree.nodes[tree.root].expanded = true;
 }
 
-/// Selection：从根沿 PUCT 策略向下选择到未展开叶子
-///
-/// `scratch` 为调用方持有的 `ChildStat` 复用缓冲：每层 `clear()` 后重填，
-/// 容量跨层/跨 simulation 保留，避免高频路径上每层一次 Vec 分配。
+/// Selection：从根向下选到未展开叶子（所有节点均为 Decision，统一 PUCT）。
 fn select<S: Clone + 'static, P: SearchPolicy>(
     tree: &Tree<S>,
     policy: &P,
@@ -277,7 +297,6 @@ fn select<S: Clone + 'static, P: SearchPolicy>(
     scratch: &mut Vec<ChildStat>,
 ) -> usize {
     let mut current = tree.root;
-    // 根调度 hook：若指定，强制第一步走该根子节点（其下仍走 PUCT 选择）
     if let Some(ci) = forced_root {
         let root = &tree.nodes[tree.root];
         if root.expanded && ci < root.children.len() {
@@ -305,11 +324,23 @@ fn select<S: Clone + 'static, P: SearchPolicy>(
                 discount: edge.discount,
             }
         }));
-
         let idx = policy.select_child(node.visit_count, parent_to_play, scratch, stats, cfg);
         let idx = idx.min(node.children.len().saturating_sub(1));
         current = node.children[idx].child;
     }
+}
+
+/// 按 chance prior 概率采样一个 outcome。
+fn sample_chance_outcome(priors: &[f32], rng: &mut dyn RngCore) -> usize {
+    let total: f32 = priors.iter().sum();
+    let mut r = rng.r#gen::<f32>() * total;
+    for (i, &p) in priors.iter().enumerate() {
+        r -= p;
+        if r <= 0.0 {
+            return i;
+        }
+    }
+    priors.len() - 1
 }
 
 /// Backup：从叶子向根回传价值

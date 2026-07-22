@@ -302,6 +302,23 @@ impl<'py> GymEnv<'py> {
             let _ = py.import("gym_platform");
         }
 
+        // StochasticCartPole：Stochastic MuZero 验证环境
+        if env_name == "StochasticCartPole-v0" {
+            let _ = py.run(
+                c"import sys, os
+p = os.path.join(os.getcwd(), 'examples', 'my_zero', 'cartpole_stochastic')
+if p not in sys.path: sys.path.insert(0, p)",
+                None,
+                None,
+            );
+            py.import("stochastic_cartpole").unwrap_or_else(|_| {
+                panic!(
+                    "无法导入 stochastic_cartpole 模块。请确认从项目根目录运行，\
+                     或将 examples/my_zero/cartpole_stochastic/ 加入 PYTHONPATH。"
+                )
+            });
+        }
+
         // Atari（ALE/*）：gymnasium ≥1.0 移除了插件自动注册，须显式 register_envs(ale_py)
         if env_name.starts_with("ALE/") {
             let ale = py.import("ale_py").unwrap_or_else(|_| {

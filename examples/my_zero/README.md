@@ -41,6 +41,8 @@
 | SVE          |                 ⏳                 |                 ⏳                 |  ⏳   |  ⏳   | 已入库，训练循环待接；🔲 改进：固定权重 → 自适应 mixed target |
 | completedQ   | ❌ 系统性慢于 visit（[issue](../../.issue/_archive/my_zero_gumbel_completedq_cartpole_negative.md)） |                 ⏳                 |  ⏳   | ❌ 中性（s100+s16 复裁） | `\|A\|≫sims` 复裁已完成（棋盘 s16），无灾难亦无增益 |
 | Gumbel-root  | ❌ 未收敛（同上 issue） |                 ⏳                 | ⏳ 少 sim acting 候选 | ❌ 中性（同左） | 前置双修复（greedy 去噪 + tree-level q_range）后棋盘复裁中性；少 sim acting 可用降档 |
+| recurrent posterior (POMDP-lite) | ❌ masked 未达标（ON ~45 vs OFF ~40，0/3；[issue](../../.issue/items/my_zero_pomdp_lite_posterior_negative.md)） | ⏳ | ⏳ | ⏸ 完全可观测 | GRU 状态估计 + burn-in；代码完整，归因容量/预算不足、架构未否定；复活条件见 issue §六 |
+| **Stochastic MuZero (always-on)** | ✅ 3/3 达标（K=8，26k，1.7x） | ⏳ | ⏳ | ⏳ | **默认 K=8**：afterstate + chance encoder + KL(q‖p) + chance-in-edge 搜索；确定性环境自动退化；StochasticCartPole K=8 3/3 vs K=1 2/3 |
 | KL 自适应 lr | ❌ **灾难级**（0/3，greedy 钉死 ~9.2；lr 死亡螺旋：小 batch 下探针 KL ≈ 噪声 → 乘子棘轮顶 10× 上限 → lr 0.2 发散，诊断轨迹 `.bench/cartpole_kl_lr_diag_20260705.log`） | ⏸ | ⏸ | ✅ 无害（⑨臂 batch 512 自动配平，护栏全绿） | 「去旋钮」组件，`kl_adaptive_lr` 开关默认关；域适配前提 = 每局训练样本量大且探针与训练分布相关（棋盘成立、CartPole batch 8×buffer 1000 脱钩）；重试条件 = 改「刚训 minibatch 上测 KL」（参照实现原口径）再过闸门 |
 
 > 论文全称与 arXiv：[算法纲领 §4.1 — 组件文献对照](../../.doc/design/my_zero_algorithm_vision.md#41-组件文献对照单一事实源)
@@ -64,7 +66,7 @@
 
 > 未列组件（value_prefix / target_net / SVE）：接线未完成或断链在修（[收口规划 §5](../../.doc/design/rl_closure_plan.md)），证据不足以开处方，不写推测行。课程 / 真规则树为**诊断脚手架**非常驻组件（哲学修正 2026-07-05），不进本表。
 
-**CartPole-v1 当前内置**：base + **consistency + reconstruction + Sampled**（PUCT · sims=20 · td=5 · continuation 二值门）。
+**CartPole-v1 当前内置**：base + **consistency + reconstruction + Sampled + Stochastic K=8**（PUCT · sims=20 · td=5 · continuation 二值门）。
 
 **Pendulum-v1 当前内置**：复用 CartPole 栈做**诊断**（B=7 · sims=20 · `reward_scale(0.1)`），仍在失败区间；不要据此给组件下 ✅/❌ 裁决。
 

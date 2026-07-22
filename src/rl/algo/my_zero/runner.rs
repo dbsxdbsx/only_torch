@@ -64,6 +64,9 @@ fn print_components(c: &Components) {
     if c.sampled {
         tags.push("Sampled");
     }
+    if c.num_chance_outcomes > 1 {
+        tags.push("Stochastic");
+    }
     if c.reanalyze {
         tags.push("reanalyze");
     }
@@ -194,6 +197,7 @@ pub(crate) fn my_zero_mcts_config(
         } else {
             None
         },
+        num_chance_outcomes: components.num_chance_outcomes,
     };
     MctsConfig::from_recipe(recipe)
 }
@@ -1082,7 +1086,8 @@ pub(crate) fn materialize(
     )?
     .with_value_encoding(cfg.components.hl_gauss)
     .with_obs_symlog(cfg.components.obs_symlog)
-    .with_recurrent_posterior(cfg.components.recurrent_posterior)?;
+    .with_recurrent_posterior(cfg.components.recurrent_posterior)?
+    .with_stochastic(cfg.components.num_chance_outcomes)?;
     env.close();
     Ok(MyZero::from_parts(cfg.clone(), model, adapter))
 }
@@ -1159,7 +1164,8 @@ fn train_one_seed(
         MyZeroModel::new_with_schemas(&graph, obs_spec, adapter.schema().clone(), latent_dim)?
             .with_value_encoding(cfg.components.hl_gauss)
             .with_obs_symlog(cfg.components.obs_symlog)
-            .with_recurrent_posterior(cfg.components.recurrent_posterior)?;
+            .with_recurrent_posterior(cfg.components.recurrent_posterior)?
+            .with_stochastic(cfg.components.num_chance_outcomes)?;
     let mut optimizer = Adam::new(&graph, &model.parameters(), t.lr);
     let mut buffer: ReplayBuffer<SelfPlayGame> = ReplayBuffer::new(t.buffer_capacity);
     let mut rng = StdRng::seed_from_u64(seed);

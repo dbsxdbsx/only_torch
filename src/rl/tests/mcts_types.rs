@@ -40,6 +40,7 @@ fn mcts_recipe_roundtrip_preserves_legacy_config() {
         temperature: 0.5,
         discount: 0.97,
         sampled_k: Some(5),
+        num_chance_outcomes: 1,
     };
     let roundtrip = MctsConfig::from_recipe(cfg.recipe());
     assert_eq!(roundtrip, cfg);

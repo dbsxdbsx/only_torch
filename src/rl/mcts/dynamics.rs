@@ -10,12 +10,19 @@ use rand::rngs::StdRng;
 use std::ops::Deref;
 
 use super::traits::{ActionSampleContext, ActionSampler, MctsModel};
-use super::types::{ActionId, ActionPayload, CandidateSet, RecurrentOut, RootOut};
+use super::types::{
+    ActionId, ActionPayload, CandidateSet, DecisionRecurrentOut, RecurrentOut, RootOut,
+};
 
 /// 搜索树内的 learned world model 接口。
 ///
+/// 核心方法（所有实现者必须提供）：
 /// - `initial_state`：representation h + prediction f
-/// - `recurrent`：dynamics g + prediction f
+/// - `recurrent`：dynamics g + prediction f（确定性快路径 K=1）
+///
+/// Stochastic MuZero 扩展（默认 panic，仅 `num_chance_outcomes > 1` 时被调用）：
+/// - `afterstate_dynamics`：decision node → afterstate + chance_prior
+/// - `stochastic_dynamics`：afterstate + chance outcome → next state
 pub trait WorldModel {
     /// 对 MCTS 不透明的 planner state；可包含 latent、recurrent hidden 或 chance code。
     type State: Clone + 'static;
@@ -23,19 +30,63 @@ pub trait WorldModel {
     /// obs → (planner state, policy_prior, value)
     fn initial_state(&self, obs: &[f32]) -> (Self::State, Vec<f32>, f32);
 
-    /// (planner state, action) → 下一 planner state 与预测头。
+    /// (planner state, action) → 下一 planner state 与预测头（确定性快路径）。
     fn recurrent(
         &self,
         state: &Self::State,
         action_id: ActionId,
         action: &ActionPayload,
     ) -> WorldModelOutput<Self::State>;
+
+    /// Stochastic MuZero chance outcome 数量。返回 `1` 时走确定性快路径。
+    fn num_chance_outcomes(&self) -> usize {
+        1
+    }
+
+    /// (state, action) → afterstate + chance_prior + afterstate_value（Stochastic MuZero）。
+    fn afterstate_dynamics(
+        &self,
+        _state: &Self::State,
+        _action_id: ActionId,
+        _action: &ActionPayload,
+    ) -> AfterstateDynamicsOutput<Self::State> {
+        unimplemented!("afterstate_dynamics requires stochastic world model implementation")
+    }
+
+    /// (afterstate, chance_id) → next_state + reward + value + prior + terminal（Stochastic MuZero）。
+    fn stochastic_dynamics(
+        &self,
+        _afterstate: &Self::State,
+        _chance_id: usize,
+    ) -> WorldModelOutput<Self::State> {
+        unimplemented!("stochastic_dynamics requires stochastic world model implementation")
+    }
+}
+
+/// [`WorldModel::afterstate_dynamics`] 的返回值。
+pub struct AfterstateDynamicsOutput<S> {
+    pub afterstate: S,
+    pub chance_prior: Vec<f32>,
+    pub afterstate_value: f32,
+    pub to_play: u8,
+}
+
+/// Dynamics-level afterstate 输出（`Vec<f32>` 状态，供 blanket impl 转换为 `LatentState`）。
+pub struct DynamicsAfterstateDynOut {
+    pub afterstate: Vec<f32>,
+    pub chance_prior: Vec<f32>,
+    pub afterstate_value: f32,
+    pub to_play: u8,
 }
 
 /// v0.23 起的历史 learned-latent 接口。
 ///
 /// 旧实现只需实现原有 `recurrent(state, payload)`；新结构化动作实现可覆盖
 /// [`recurrent_with_id`](Self::recurrent_with_id) 使用稳定 policy 槽位。
+///
+/// Stochastic MuZero 扩展（默认 panic，仅 `num_chance_outcomes > 1` 时被调用）：
+/// - [`afterstate_dynamics`](Self::afterstate_dynamics)
+/// - [`stochastic_dynamics`](Self::stochastic_dynamics)
 pub trait Dynamics {
     fn initial_state(&self, obs: &[f32]) -> (Vec<f32>, Vec<f32>, f32);
 
@@ -48,6 +99,26 @@ pub trait Dynamics {
         action: &ActionPayload,
     ) -> DynamicsOutput {
         self.recurrent(state, action)
+    }
+
+    /// Stochastic chance outcome 数量（1 = 确定性快路径）。
+    fn num_chance_outcomes(&self) -> usize {
+        1
+    }
+
+    /// (state, action) → afterstate + chance_prior + afterstate_value。
+    fn afterstate_dynamics(
+        &self,
+        _state: &[f32],
+        _action_id: ActionId,
+        _action: &ActionPayload,
+    ) -> DynamicsAfterstateDynOut {
+        unimplemented!("afterstate_dynamics requires stochastic implementation")
+    }
+
+    /// (afterstate, chance_id) → next_state + reward + prior + value + terminal + continuation。
+    fn stochastic_dynamics(&self, _afterstate: &[f32], _chance_id: usize) -> DynamicsOutput {
+        unimplemented!("stochastic_dynamics requires stochastic implementation")
     }
 }
 
@@ -66,6 +137,41 @@ impl<T: Dynamics> WorldModel for T {
         action: &ActionPayload,
     ) -> WorldModelOutput<Self::State> {
         let out = Dynamics::recurrent_with_id(self, state, action_id, action);
+        WorldModelOutput {
+            next_state: out.next_state.into(),
+            reward: out.reward,
+            prior: out.prior,
+            value: out.value,
+            terminal: out.terminal,
+            continuation: out.continuation,
+        }
+    }
+
+    fn num_chance_outcomes(&self) -> usize {
+        Dynamics::num_chance_outcomes(self)
+    }
+
+    fn afterstate_dynamics(
+        &self,
+        state: &Self::State,
+        action_id: ActionId,
+        action: &ActionPayload,
+    ) -> AfterstateDynamicsOutput<Self::State> {
+        let out = Dynamics::afterstate_dynamics(self, state, action_id, action);
+        AfterstateDynamicsOutput {
+            afterstate: out.afterstate.into(),
+            chance_prior: out.chance_prior,
+            afterstate_value: out.afterstate_value,
+            to_play: out.to_play,
+        }
+    }
+
+    fn stochastic_dynamics(
+        &self,
+        afterstate: &Self::State,
+        chance_id: usize,
+    ) -> WorldModelOutput<Self::State> {
+        let out = Dynamics::stochastic_dynamics(self, afterstate, chance_id);
         WorldModelOutput {
             next_state: out.next_state.into(),
             reward: out.reward,
@@ -232,9 +338,46 @@ impl<D: WorldModel> MctsModel for DynamicsModel<D> {
             },
             terminal: out.terminal,
             to_play: 0,
-            // per-edge discount = γ·(1−done)：终止边 0、其余 γ（canonical MuZero）。
-            // 与 n-step value target 的二值 continuation 口径一致；软 c_t 只经 out.terminal
-            // 阈值参与硬截断，不连续衰减健康边的 value（避免 head 未校准时系统性压低好状态）。
+            discount: if out.terminal { 0.0 } else { self.discount },
+        }
+    }
+
+    fn num_chance_outcomes(&self) -> usize {
+        self.inner.num_chance_outcomes()
+    }
+
+    fn decision_recurrent(
+        &self,
+        state: &Self::State,
+        action_id: ActionId,
+        action: &ActionPayload,
+    ) -> DecisionRecurrentOut<Self::State> {
+        let out = self.inner.afterstate_dynamics(state, action_id, action);
+        DecisionRecurrentOut {
+            afterstate: out.afterstate,
+            chance_prior: out.chance_prior,
+            afterstate_value: out.afterstate_value,
+            to_play: out.to_play,
+        }
+    }
+
+    fn chance_recurrent(
+        &self,
+        afterstate: &Self::State,
+        chance_id: usize,
+    ) -> RecurrentOut<Self::State> {
+        let out = self.inner.stochastic_dynamics(afterstate, chance_id);
+        RecurrentOut {
+            state: out.next_state,
+            reward: out.reward,
+            value: out.value,
+            candidates: if out.terminal {
+                CandidateSet::empty()
+            } else {
+                CandidateSet::from_actions_and_priors_strict(self.actions.clone(), out.prior)
+            },
+            terminal: out.terminal,
+            to_play: 0,
             discount: if out.terminal { 0.0 } else { self.discount },
         }
     }
