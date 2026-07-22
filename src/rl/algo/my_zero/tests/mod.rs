@@ -55,4 +55,5 @@ mod pomdp_cartpole_bench;
 mod pong_image_ablation_bench;
 mod rosmo_cartpole_bench;
 mod spike_cnn_mcts_bench;
+mod phase6_cross_axis_bench;
 mod spike_gomoku_mcts_bench;

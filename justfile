@@ -412,6 +412,11 @@ smoke-my-zero-cartpole:
     @echo "=== Running MyZero CartPole Smoke (no checkpoint) [{{_blas_name}}] ==="
     SMOKE=1 cargo run --example my_zero_cartpole {{_blas_flag}}
 
+# MyZero StochasticCartPole smoke（随机 MDP，K=8 chance 搜索验证）
+smoke-my-zero-cartpole-stochastic:
+    @echo "=== Running MyZero StochasticCartPole Smoke [{{_blas_name}}] ==="
+    SMOKE=1 cargo run --example my_zero_cartpole_stochastic {{_blas_flag}}
+
 # MyZero CartPole POMDP-lite smoke（velocity-masked + posterior；管线验证，不验收敛）
 smoke-my-zero-cartpole-pomdp:
     @echo "=== Running MyZero CartPole POMDP-lite Smoke [{{_blas_name}}] ==="
@@ -461,7 +466,7 @@ example-pendulum-my-zero:
 examples-rl: example-cartpole-sac example-pendulum-sac example-platform-sac example-lunarlander-sac example-cartpole-ppo example-cartpole-my-zero
 
 # 全部 RL smoke（管线验证聚合；发版固定关卡。需 Python + gymnasium + box2d + hybrid-platform）
-smoke-rl: smoke-my-zero-cartpole smoke-my-zero-pendulum smoke-my-zero-gomoku smoke-my-zero-schema smoke-my-zero-platform smoke-cartpole-ppo smoke-cartpole-sac smoke-pendulum-sac smoke-platform-sac smoke-lunarlander-sac
+smoke-rl: smoke-my-zero-cartpole smoke-my-zero-cartpole-stochastic smoke-my-zero-cartpole-pomdp smoke-my-zero-pendulum smoke-my-zero-gomoku smoke-my-zero-schema smoke-my-zero-platform smoke-cartpole-ppo smoke-cartpole-sac smoke-pendulum-sac smoke-platform-sac smoke-lunarlander-sac
     @echo "=== smoke-rl 全部通过 ==="
 
 # 验证 Platform-v0 Python 环境可用

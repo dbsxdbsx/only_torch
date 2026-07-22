@@ -18,7 +18,9 @@
 | 图像离散（Atari-100k 类） | 离散 | 任务指标 | 后台预算标定中（S2 基准 0/3 平直，[负结果 issue](../../.issue/items/my_zero_pong_image_flat_negative.md)） |
 | [**Gomoku 9×9**](gomoku/README.md)（→ 象棋） | 离散棋盘（81） | vs random ≥0.95 + gating ≥0.55 | ✅ 支柱已立（M2 双门槛 3/3 · recipe=base；naive0 战术墙留 [issue](../../.issue/items/gomoku_naive0_tactical_wall.md)） |
 | Schema toys | MultiDiscrete / 2D continuous / token / Image+Dense | loss 有限、管线通 | ✅ 接口纵切；只证明骨架，不作可学习性声明 |
-| Platform-v0 | 固定混合 Tuple | return 趋势上升 | ✅ MyZero smoke 接通；统计价值未裁决 |
+| Platform-v0 | 固定混合 Tuple | return 趋势上升 | 💨 smoke 通过 · 3-seed 0/3（中位 greedy=0.2；sims=20 vs 1029 联合动作，预算不足）；管线完整无 crash |
+| StochasticCartPole-v0 | 离散（2） | greedy eval ≥ 300 | ✅ K=8 3/3 vs K=1 2/3（Stochastic MuZero 验收环境） |
+| CartPole POMDP-lite | 离散（2） | greedy eval ≥ 400 | ❌ posterior ON 0/3（中位 ~45，代码保留 recipe 默认关） |
 
 ## 内部组件进展（团队 · promote 时改 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)）
 
@@ -42,7 +44,7 @@
 | completedQ   | ❌ 系统性慢于 visit（[issue](../../.issue/_archive/my_zero_gumbel_completedq_cartpole_negative.md)） |                 ⏳                 |  ⏳   | ❌ 中性（s100+s16 复裁） | `\|A\|≫sims` 复裁已完成（棋盘 s16），无灾难亦无增益 |
 | Gumbel-root  | ❌ 未收敛（同上 issue） |                 ⏳                 | ⏳ 少 sim acting 候选 | ❌ 中性（同左） | 前置双修复（greedy 去噪 + tree-level q_range）后棋盘复裁中性；少 sim acting 可用降档 |
 | recurrent posterior (POMDP-lite) | ❌ masked 未达标（ON ~45 vs OFF ~40，0/3；[issue](../../.issue/items/my_zero_pomdp_lite_posterior_negative.md)） | ⏳ | ⏳ | ⏸ 完全可观测 | GRU 状态估计 + burn-in；代码完整，归因容量/预算不足、架构未否定；复活条件见 issue §六 |
-| **Stochastic MuZero (always-on)** | ✅ 3/3 达标（K=8，26k，1.7x） | ⏳ | ⏳ | ⏳ | **默认 K=8**：afterstate + chance encoder + KL(q‖p) + chance-in-edge 搜索；确定性环境自动退化；StochasticCartPole K=8 3/3 vs K=1 2/3 |
+| **Stochastic MuZero (always-on)** | ✅ 3/3 达标（K=8，26k，1.7x） | ❌ 0/3（中位 -742，有学习趋势） | 💨 smoke 通过 | ✅ 2/3（中位 0.975，方差范围波动无系统回归） | **默认 K=8**：afterstate + chance encoder + KL(q‖p) + chance-in-edge 搜索；确定性环境自动退化；StochasticCartPole K=8 3/3 vs K=1 2/3。**Phase 6 跨轴验收（2026-07-22）**：11 环境 smoke 零失败，Gomoku 2/3（评测方差范围），Pendulum best -742 改善（旧 ~-942），Platform 管线完整 0/3（预算不足非回归） |
 | KL 自适应 lr | ❌ **灾难级**（0/3，greedy 钉死 ~9.2；lr 死亡螺旋：小 batch 下探针 KL ≈ 噪声 → 乘子棘轮顶 10× 上限 → lr 0.2 发散，诊断轨迹 `.bench/cartpole_kl_lr_diag_20260705.log`） | ⏸ | ⏸ | ✅ 无害（⑨臂 batch 512 自动配平，护栏全绿） | 「去旋钮」组件，`kl_adaptive_lr` 开关默认关；域适配前提 = 每局训练样本量大且探针与训练分布相关（棋盘成立、CartPole batch 8×buffer 1000 脱钩）；重试条件 = 改「刚训 minibatch 上测 KL」（参照实现原口径）再过闸门 |
 
 > 论文全称与 arXiv：[算法纲领 §4.1 — 组件文献对照](../../.doc/design/my_zero_algorithm_vision.md#41-组件文献对照单一事实源)
