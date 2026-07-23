@@ -141,6 +141,8 @@ pip install --upgrade pip
 | 7 | | Gomoku-naive1-v0 | Box(3,15,15) | Discrete(225) | 五子棋-Naive1 |
 | 7 | | Gomoku-naive2-v0 | Box(3,15,15) | Discrete(225) | 五子棋-Naive2 |
 | 7 | | Gomoku-naive3-v0 | Box(3,15,15) | Discrete(225) | 五子棋-Naive3 |
+| 8 | `pip install minatar` | MinAtar/Breakout-v1 | Box(10,10,4) bool | Discrete(3) | MinAtar 稠密 reward 图像 |
+| 8 | | MinAtar/Freeway-v1 | Box(10,10,7) bool | Discrete(3) | MinAtar 稀疏 reward 图像 |
 
 > **说明**：
 > - Box(n,) 表示 n 维连续向量；Discrete(n) 表示 n 选 1 离散动作
@@ -214,6 +216,7 @@ just py-gym-gomoku         # test_08: 五子棋自定义环境
 - [x] **批次 5**：Minari 离线数据集 ✅
 - [x] **批次 6**：混合动作空间（**Platform-v0 / hybrid-platform**）✅ 2026-06-07 实测通过：obs `Tuple(Box(9),Discrete(200))`、action `Tuple(Discrete(3),Box×3)`、step 5 元组
 - [x] **批次 7**：五子棋自定义环境 ✅
+- [x] **批次 8**：MinAtar 轻量图像环境 ✅（`pip install minatar`；`from minatar.gym import register_envs; register_envs()` 触发注册）
 
 ## 后续步骤
 

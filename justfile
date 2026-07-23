@@ -437,6 +437,11 @@ smoke-my-zero-pong:
     @echo "=== Running MyZero Pong Smoke [{{_blas_name}}] ==="
     SMOKE=1 cargo run --example my_zero_pong {{_blas_flag}}
 
+# MyZero MinAtar smoke（3 局 Board 管线验证，不验收敛）
+smoke-my-zero-minatar:
+    @echo "=== Running MyZero MinAtar Smoke [{{_blas_name}}] ==="
+    SMOKE=1 cargo run --example my_zero_minatar {{_blas_flag}}
+
 # MyZero Gomoku smoke（3 局 self-play 管线验证：训练/快照/gating/naive 梯队全路径，需 Python + gym_env/gomoku）
 smoke-my-zero-gomoku:
     @echo "=== Running MyZero Gomoku Smoke [{{_blas_name}}] ==="
@@ -465,8 +470,8 @@ example-pendulum-my-zero:
 # 运行所有 RL examples（需 Python + gymnasium + extras）
 examples-rl: example-cartpole-sac example-pendulum-sac example-platform-sac example-lunarlander-sac example-cartpole-ppo example-cartpole-my-zero
 
-# 全部 RL smoke（管线验证聚合；发版固定关卡。需 Python + gymnasium + box2d + hybrid-platform）
-smoke-rl: smoke-my-zero-cartpole smoke-my-zero-cartpole-stochastic smoke-my-zero-cartpole-pomdp smoke-my-zero-pendulum smoke-my-zero-gomoku smoke-my-zero-schema smoke-my-zero-platform smoke-cartpole-ppo smoke-cartpole-sac smoke-pendulum-sac smoke-platform-sac smoke-lunarlander-sac
+# 全部 RL smoke（管线验证聚合；发版固定关卡。需 Python + gymnasium + box2d + hybrid-platform + minatar）
+smoke-rl: smoke-my-zero-cartpole smoke-my-zero-cartpole-stochastic smoke-my-zero-cartpole-pomdp smoke-my-zero-pendulum smoke-my-zero-gomoku smoke-my-zero-minatar smoke-my-zero-schema smoke-my-zero-platform smoke-cartpole-ppo smoke-cartpole-sac smoke-pendulum-sac smoke-platform-sac smoke-lunarlander-sac
     @echo "=== smoke-rl 全部通过 ==="
 
 # 验证 Platform-v0 Python 环境可用

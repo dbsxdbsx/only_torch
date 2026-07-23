@@ -323,6 +323,15 @@ pub(crate) enum ObsAdapter {
         channel_first: bool,
         image_shape: (usize, usize, usize),
     },
+    /// 棋盘/网格式观测：HWC→CHW 纯转置，不做灰度/缩放/堆叠。
+    /// MinAtar (10,10,N) / Gomoku (3,15,15 已是 CHW) 等小规模空间观测适用。
+    Board {
+        schema: ObservationSchema,
+        channels: usize,
+        side: usize,
+        /// env 返回的是 HWC 还是 CHW（CHW 则直通）
+        channel_first: bool,
+    },
     Tokens {
         schema: ObservationSchema,
         vocab_size: usize,
@@ -336,6 +345,29 @@ impl ObsAdapter {
     /// `obs_mask` 仅对 `Flat` 模式生效：`reset`/`step` 返回 obs 前把指定维度置零。
     pub fn resolve(env: &GymEnv, plan: ObservationPlan, obs_mask: Vec<usize>) -> Self {
         match plan {
+            ObservationPlan::Board { channels, side } => {
+                let expected_dim = channels * side * side;
+                assert_eq!(
+                    env.get_flatten_observation_len(),
+                    expected_dim,
+                    "Board obs dim 与 env 不一致：期望 {}×{}×{}={}, 实际 {}",
+                    channels,
+                    side,
+                    side,
+                    expected_dim,
+                    env.get_flatten_observation_len()
+                );
+                let channel_first = matches!(
+                    env.get_obs_prop()[0].shape_vec.as_slice(),
+                    [c, _, _] if *c == channels as i64
+                );
+                Self::Board {
+                    schema: ObservationSchema::Board { channels, side },
+                    channels,
+                    side,
+                    channel_first,
+                }
+            }
             ObservationPlan::Tokens {
                 length,
                 vocab_size,
@@ -367,6 +399,19 @@ impl ObsAdapter {
                     .expect("MyZero: ObservationPlan::Image 只能用于单一图像 observation"),
             ),
             ObservationPlan::Auto => {
+                // 小方形网格（≤15×15）：MinAtar / Gomoku 类环境走 Board 路径，
+                // 不做灰度/缩放/帧堆叠，仅 HWC→CHW 转置。
+                if env.get_obs_prop().len() == 1 {
+                    let shape = &env.get_obs_prop()[0].shape_vec;
+                    if let Some((channels, side, ch_first)) = detect_small_board(shape) {
+                        return Self::Board {
+                            schema: ObservationSchema::Board { channels, side },
+                            channels,
+                            side,
+                            channel_first: ch_first,
+                        };
+                    }
+                }
                 if env.get_obs_prop().len() == 1
                     && let Some(pipe) = ImagePipe::from_env(env, ImageConfig::default())
                 {
@@ -402,7 +447,8 @@ impl ObsAdapter {
         match self {
             Self::Flat { schema, .. }
             | Self::ImageDense { schema, .. }
-            | Self::Tokens { schema, .. } => *schema,
+            | Self::Tokens { schema, .. }
+            | Self::Board { schema, .. } => *schema,
             Self::Image(pipe) => {
                 let config = pipe.config();
                 if config.height == config.width {
@@ -425,7 +471,8 @@ impl ObsAdapter {
     pub const fn image_stack(&self) -> Option<usize> {
         match self {
             Self::Image(pipe) => Some(pipe.config().history),
-            Self::Flat { .. } | Self::ImageDense { .. } | Self::Tokens { .. } => None,
+            Self::Flat { .. } | Self::ImageDense { .. } | Self::Tokens { .. }
+            | Self::Board { .. } => None,
         }
     }
 
@@ -453,6 +500,16 @@ impl ObsAdapter {
                 ..
             } => {
                 let o = compose_image_dense(&raw, *image_index, *channel_first, *image_shape);
+                (o.clone(), o.into())
+            }
+            Self::Board {
+                channels,
+                side,
+                channel_first,
+                ..
+            } => {
+                let flat = env.flatten_obs(&raw);
+                let o = board_transpose(&flat, *channels, *side, *channel_first);
                 (o.clone(), o.into())
             }
             Self::Tokens {
@@ -495,6 +552,16 @@ impl ObsAdapter {
                 let o = compose_image_dense(&raw, *image_index, *channel_first, *image_shape);
                 (o.clone(), o.into(), reward, terminated, truncated)
             }
+            Self::Board {
+                channels,
+                side,
+                channel_first,
+                ..
+            } => {
+                let flat = env.flatten_obs(&raw);
+                let o = board_transpose(&flat, *channels, *side, *channel_first);
+                (o.clone(), o.into(), reward, terminated, truncated)
+            }
             Self::Tokens {
                 vocab_size, pad_id, ..
             } => {
@@ -504,6 +571,42 @@ impl ObsAdapter {
                 (o.clone(), o.into(), reward, terminated, truncated)
             }
         }
+    }
+}
+
+/// HWC→CHW 转置或直通（已经是 CHW 时原样返回）。
+fn board_transpose(flat: &[f32], channels: usize, side: usize, channel_first: bool) -> Vec<f32> {
+    let dim = channels * side * side;
+    debug_assert_eq!(flat.len(), dim);
+    if channel_first {
+        return flat.to_vec();
+    }
+    // HWC (H=side, W=side, C=channels) → CHW
+    let mut out = vec![0.0f32; dim];
+    for y in 0..side {
+        for x in 0..side {
+            for c in 0..channels {
+                out[c * side * side + y * side + x] = flat[y * side * channels + x * channels + c];
+            }
+        }
+    }
+    out
+}
+
+/// 检测小方形网格观测（MinAtar 10×10×N / Gomoku 3×15×15 等）。
+/// 条件：3D shape、方形 (H==W)、边长 ≤ 20（排除真实图像如 Atari 84×84 / 210×160）。
+/// 返回 `(channels, side, channel_first)`。
+fn detect_small_board(shape: &[i64]) -> Option<(usize, usize, bool)> {
+    match shape {
+        // CHW：第一维较小
+        [c, h, w] if *h == *w && *h <= 20 && *c < *h => {
+            Some((*c as usize, *h as usize, true))
+        }
+        // HWC：最后一维较小
+        [h, w, c] if *h == *w && *h <= 20 && *c < *h => {
+            Some((*c as usize, *h as usize, false))
+        }
+        _ => None,
     }
 }
 

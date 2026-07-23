@@ -20,15 +20,15 @@ only_torch 是一个纯 Rust 的 PyTorch 风格玩具框架，当前重点是：
 | **版本** | `0.25.0`（2026-07-02；本地可能超前 `origin/master`，以 `git log` / `CHANGELOG.md` 为准） |
 | **Rust** | `1.97.0`（`rust-toolchain.toml` 固定；2026-07-12 双工具链 A/B、3421 主测试与 `just smoke-rl` 已通过，口径见[性能工作流](.doc/performance/benchmark_workflow.md#rust-工具链升级-ab)） |
 | **刚闭环** | **✅ Stochastic MuZero always-on 验收（2026-07-15）**：afterstate dynamics + chance encoder + KL(posterior‖prior) loss + chance-in-edge 搜索架构。确定性 CartPole 3/3（26k，慢 1.7x）；StochasticCartPole K=8 达标率 3/3 vs K=1 仅 2/3——随机环境鲁棒性验证通过。默认 K=8 always-on，确定性环境 chance distribution 自动退化为单峰。此前 POMDP-lite posterior 与主动数据 3A0 均已负裁（代码保留默认关）。 |
-| **当前主线** | **强化学习** v0.26：生产保持"一个入口 + 稳定 learned-world-model 契约 + 可退化模块族"。Stochastic MuZero always-on（默认 K=8）已验收为基础组件；主动数据 proxy 与 POMDP-lite posterior 均已独立负裁、代码保留默认关。当前路径 = stochastic chance search + 确定性完全可观测 MDP 自动退化特例，详见[路线图 §5](.doc/design/rl_roadmap.md#5-v026-方向2026-07-01-战略转向定稿)与[地基设计](.doc/design/my_zero_world_model_foundation.md)。 |
+| **当前主线** | **强化学习** v0.26 收口态：MyZero 一个入口 + learned-world-model 契约 + Stochastic K=8 always-on。MinAtar 第三支柱已接入（管线能学，pilot peak 4.1 / 门槛 8）。RL 暂缓，详见[RL 状态总览](.doc/design/rl_myzero_status.md)。 |
 | **刻意暂缓** | 演化 **阶段 D**（`CellAttention` ONNX、`Attention` Net2Net 函数保持、Conv2d Attention；3D batched MatMul 已于 2026-07-04 完成出表）——与 RL 零耦合，见 [记忆机制设计 — Phase D](.doc/design/memory_mechanism_design.md#-后续-phase-d刻意未做)（该表为「阶段 D」唯一权威定义） |
 | **一级风险** | CPU-only × 图像 CNN × MCTS × 实时结构性冲突：[.issue/items/cpu_only_mcts_image_realtime_risk.md](.issue/items/cpu_only_mcts_image_realtime_risk.md)（图像线推进前必读） |
 | **工具链提示** | `blas-mkl` 间接依赖 `proc-macro-error2 2.0.1` 在 Rust 1.97 报 future-incompat warning，当前不阻断；跟踪见 [.issue/items/proc_macro_error2_future_incompat.md](.issue/items/proc_macro_error2_future_incompat.md) |
-| **路线展望** | 真实目标 = **中国象棋** + **商业图像游戏**（[纲领 §2.3](.doc/design/my_zero_algorithm_vision.md#23-战略目标与优先轴2026-07-01-定稿)）；MyZero 消融驱动迭代，基准判据「变慢 ≠ 失败，新实测即新基线；仅不收敛才记 issue」 |
+| **路线展望** | 真实目标 = **中国象棋** + **商业图像游戏**；MyZero 消融驱动迭代，基准判据「变慢 ≠ 失败，新实测即新基线；仅不收敛才记 issue」。RL 暂缓中，待办见[状态总览 §5](.doc/design/rl_myzero_status.md#5-未完成事项收口时的-backlog) |
 
 **进度符号**（设计文档统一口径）：✅ Phase 验收范围内已完成 · ⏳ 已识别、留后续 Phase · 🔲 可选增强 · 📦 已归档历史路径。
 
-**接手 RL 时建议顺序**：读 `rl_roadmap.md`（薄版当前态）→ 读[通用 world model 地基](.doc/design/my_zero_world_model_foundation.md) → 看[棋盘账本 Phase 3A0](examples/my_zero/gomoku/README.md#phase-3a0--主动数据误差-proxy-审计2026-07-12)避免重启已否决 proxy → 配环境 [`.doc/rl_python_env_setup.md`](.doc/rl_python_env_setup.md)（**仅 Gymnasium**）→ `just test-filter rl` → `just smoke-rl` → recurrent posterior 另立预注册，不与 stochastic 混批。
+**接手 RL 时建议顺序**：读[RL 状态总览](.doc/design/rl_myzero_status.md) → 配环境 [`.doc/rl_python_env_setup.md`](.doc/rl_python_env_setup.md)（**仅 Gymnasium**）→ `just test-filter rl` → `just smoke-rl`。
 
 **接手 Attention 阶段 D 时**：先读 [记忆机制设计 — 实现状态速览](.doc/design/memory_mechanism_design.md#-实现状态速览)（含 105 个相关单元测试与 IT-* 示例表），勿假设「打勾 = ONNX 也做完」。
 
@@ -83,7 +83,7 @@ just smoke-rl                  # 全部 RL smoke 聚合（发版固定关卡，�
 - Node 与 Layer 的边界：[节点与层边界设计](.doc/design/node_vs_layer_design.md)
 - 演化系统：[神经架构演化设计](.doc/design/neural_architecture_evolution_design.md)
 - 记忆 / RNN / Attention（含 Phase 进度与留坑表）：[记忆机制设计](.doc/design/memory_mechanism_design.md)
-- 强化学习（当前主线）：[MyZero 算法纲领](.doc/design/my_zero_algorithm_vision.md)、[通用 world model 地基](.doc/design/my_zero_world_model_foundation.md)、[RL 路线图](.doc/design/rl_roadmap.md)、[MyZero 示例总览](examples/my_zero/README.md)、[Python 环境配置](.doc/rl_python_env_setup.md)
+- 强化学习：[RL 状态总览](.doc/design/rl_myzero_status.md)、[MyZero 示例总览](examples/my_zero/README.md)、[Python 环境配置](.doc/rl_python_env_setup.md)
 - 空间视觉任务路线：[空间视觉任务路线图](.doc/design/spatial_vision_tasks_roadmap.md)
 - 并行 / Rayon / 线程与分配画像：[线程模型](.doc/design/threading_model.md)
 - DataLoader / 变长序列：[数据加载设计](.doc/design/data_loader_design.md)
@@ -114,7 +114,7 @@ just smoke-rl                  # 全部 RL smoke 聚合（发版固定关卡，�
 3. 确保 `parameters()` 返回完整可训练参数。
 
 ### 修改 RL
-1. 改前读 [RL 路线图](.doc/design/rl_roadmap.md)（含验收协议与改动纪律）与 [`.github/instructions/rl.instructions.md`](.github/instructions/rl.instructions.md)。
+1. 改前读 [RL 状态总览](.doc/design/rl_myzero_status.md)（含验收协议与改动纪律）与 [`.github/instructions/rl.instructions.md`](.github/instructions/rl.instructions.md)。
 2. 环境铁律：`GymEnv` 仅 `gymnasium.make`，禁止 `import gym`；混合动作用 **`Platform-v0`**（`hybrid-platform`），不用 gym-hybrid / Moving。
 3. 基线数字按环境写入 owner 账本：[CartPole](examples/my_zero/cartpole/README.md) / [Gomoku](examples/my_zero/gomoku/README.md)（带口径列），其余文档只链入；「搬运 ≠ 改进」：改行为必须一次一项 + 多 seed 消融。
 4. 验证：`just test-filter rl` → `just smoke-rl`；改 MyZero 行为后跑 `SEEDS=3 cargo run --example my_zero_cartpole --release` 过哨兵。

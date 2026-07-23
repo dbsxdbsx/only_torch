@@ -319,6 +319,19 @@ if p not in sys.path: sys.path.insert(0, p)",
             });
         }
 
+        // MinAtar（MinAtar/*）：轻量 10×10 网格版 Atari，须显式调用 register_envs()
+        if env_name.starts_with("MinAtar/") {
+            let minatar_gym = py.import("minatar.gym").unwrap_or_else(|_| {
+                panic!(
+                    "无法导入 minatar.gym（MinAtar 环境依赖）。请安装：\n\
+                     pip install minatar"
+                )
+            });
+            minatar_gym
+                .call_method0("register_envs")
+                .expect("minatar.gym.register_envs() 失败");
+        }
+
         // Atari（ALE/*）：gymnasium ≥1.0 移除了插件自动注册，须显式 register_envs(ale_py)
         if env_name.starts_with("ALE/") {
             let ale = py.import("ale_py").unwrap_or_else(|_| {
@@ -727,8 +740,10 @@ if p not in sys.path: sys.path.insert(0, p)",
         let shape = &self.obs_prop_vec[0].shape_vec;
         self.obs_type = match shape[..] {
             [_, _] => ObsType::NoChannel,
-            [c, _, _] if c <= 4 => ObsType::ChannelFirst,
-            [_, _, c] if c <= 4 => ObsType::ChannelLast,
+            // 允许更多通道：MinAtar 有 4-10 个通道，Gomoku 有 3 通道
+            // 上限 16 足够覆盖所有已知环境（Seaquest=10 是当前最大）
+            [c, _, _] if c <= 16 => ObsType::ChannelFirst,
+            [_, _, c] if c <= 16 => ObsType::ChannelLast,
             _ => ObsType::Vector,
         };
     }

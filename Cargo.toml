@@ -347,6 +347,10 @@
     path="examples/my_zero/pong/main.rs"
 
 [[example]]
+    name="my_zero_minatar"
+    path="examples/my_zero/minatar/main.rs"
+
+[[example]]
     name="ppo_cartpole"
     path="examples/ppo/cartpole/main.rs"
 

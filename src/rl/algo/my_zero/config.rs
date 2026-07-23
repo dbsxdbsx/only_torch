@@ -56,6 +56,8 @@ pub enum ObservationPlan {
         width: usize,
         history: usize,
     },
+    /// 棋盘/网格式观测（MinAtar / Gomoku 等）：保留原生分辨率，仅做 HWC→CHW 转置。
+    Board { channels: usize, side: usize },
     /// 固定长度 token IDs；tokenizer 位于环境或上层 adapter。
     Tokens {
         length: usize,

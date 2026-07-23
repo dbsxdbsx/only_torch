@@ -1,13 +1,13 @@
 # MyZero — 统一 Model-Based RL 算法
 
 > only_torch 的终极强化学习算法：learned-model MCTS，按环境内置已验收组件组合，持续迭代。  
-> 战略层（做/不做、文献谱系、战略目标）：[MyZero 算法纲领](../../.doc/design/my_zero_algorithm_vision.md) · 当前状态与方向：[RL 路线图](../../.doc/design/rl_roadmap.md) · **实测数字按环境分账**：[CartPole](cartpole/README.md) / [Gomoku](gomoku/README.md)
+> 战略层与当前状态：[RL 状态总览](../../.doc/design/rl_myzero_status.md) · **实测数字按环境分账**：[CartPole](cartpole/README.md) / [Gomoku](gomoku/README.md) / [MinAtar](minatar/README.md)
 
 ## 设计理念
 
 - **一个算法，持续迭代**：维护不断进化的 MyZero，不再为每篇论文建独立实现
 - **用户零组件概念**：`MyZero::new(env_id)` 自动套用库内按环境配置的组件组合；团队 promote 组件时只改 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)
-- **优先轴（2026-07-10 修订）**：生产统一为 learned-world-model 模块族；先完成稳定 schema 地基，再分别验证主动数据、POMDP 与 stochastic。实现边界见[地基设计](../../.doc/design/my_zero_world_model_foundation.md)
+- **优先轴（2026-07-10 修订）**：生产统一为 learned-world-model 模块族；先完成稳定 schema 地基，再分别验证主动数据、POMDP 与 stochastic。
 
 ## 环境 × 状态
 
@@ -38,7 +38,7 @@
 | reanalyze    | ❌ 当前实现有害（[issue](../../.issue/items/my_zero_reanalyze_cartpole_regression.md)） | ⏳ | **v0.26 战略组件** | ⏸ | 「实时轻 acting + 离线重 reanalyze」解耦，图像线优先验证；棋盘 target = 终局事实不过期，非 native 场景 |
 | ROSMO 一步刷新 | ❌ 无增益（叠加中位 29.6k vs 哨兵 ~8.7k，慢 ~3.4×；「哨兵基础组件」提案否决 2026-07-05） | ⏳ | ⏳ 价值裁决待图像基线 | ❌ 有害（rr32×刷新护栏崩塌，vs random ~0.5；弱模型 adv 噪声自指反馈，[账本](gomoku/README.md)） | `.rosmo(true)` / 棋盘 `rosmo_refresh` 消融开关，recipe 默认关 |
 | PER 位置级优先回放 | — | — | — | ❌ 无增益（⑭ 单药 0.15；⑰ 与 recon1 复叠仍 0.15，且对 recon1 单药 5/5 回落） | `PerPriorities` 伴生采样器（buffer 层通用件）留库默认关；棋盘两裁均排除消费端——即使 recon 修复监督供给，`|ν−z|` 重排仍破坏 recon 的均匀稠密监督；不调 α/IS/刷新（[账本](gomoku/README.md)） |
-| value_prefix |                ❌※2               |                 ⏳                 |  ⏳   |  ⏸ 无中间 reward  | ※2 CartPole 有害，但 2026-07-05 审查发现**训练/搜索断链**（训 LSTM prefix 头、搜索仍读普通 reward head）——修复接线后该裁决需重跑，见[收口规划 §5](../../.doc/design/rl_closure_plan.md) |
+| value_prefix |                ❌※2               |                 ⏳                 |  ⏳   |  ⏸ 无中间 reward  | ※2 CartPole 有害，但 2026-07-05 审查发现**训练/搜索断链**（训 LSTM prefix 头、搜索仍读普通 reward head）——修复接线后该裁决需重跑 |
 | target_net   |                 ⏳                 |                 ⏳                 |  ⏳   |  ⏳   | 已入库，训练循环待接 |
 | SVE          |                 ⏳                 |                 ⏳                 |  ⏳   |  ⏳   | 已入库，训练循环待接；🔲 改进：固定权重 → 自适应 mixed target |
 | completedQ   | ❌ 系统性慢于 visit（[issue](../../.issue/_archive/my_zero_gumbel_completedq_cartpole_negative.md)） |                 ⏳                 |  ⏳   | ❌ 中性（s100+s16 复裁） | `\|A\|≫sims` 复裁已完成（棋盘 s16），无灾难亦无增益 |
@@ -47,7 +47,7 @@
 | **Stochastic MuZero (always-on)** | ✅ 3/3 达标（K=8，26k，1.7x） | ❌ 0/3（中位 -742，有学习趋势） | 💨 smoke 通过 | ✅ 2/3（中位 0.975，方差范围波动无系统回归） | **默认 K=8**：afterstate + chance encoder + KL(q‖p) + chance-in-edge 搜索；确定性环境自动退化；StochasticCartPole K=8 3/3 vs K=1 2/3。**Phase 6 跨轴验收（2026-07-22）**：11 环境 smoke 零失败，Gomoku 2/3（评测方差范围），Pendulum best -742 改善（旧 ~-942），Platform 管线完整 0/3（预算不足非回归） |
 | KL 自适应 lr | ❌ **灾难级**（0/3，greedy 钉死 ~9.2；lr 死亡螺旋：小 batch 下探针 KL ≈ 噪声 → 乘子棘轮顶 10× 上限 → lr 0.2 发散，诊断轨迹 `.bench/cartpole_kl_lr_diag_20260705.log`） | ⏸ | ⏸ | ✅ 无害（⑨臂 batch 512 自动配平，护栏全绿） | 「去旋钮」组件，`kl_adaptive_lr` 开关默认关；域适配前提 = 每局训练样本量大且探针与训练分布相关（棋盘成立、CartPole batch 8×buffer 1000 脱钩）；重试条件 = 改「刚训 minibatch 上测 KL」（参照实现原口径）再过闸门 |
 
-> 论文全称与 arXiv：[算法纲领 §4.1 — 组件文献对照](../../.doc/design/my_zero_algorithm_vision.md#41-组件文献对照单一事实源)
+> 论文全称与 arXiv 见各组件注释与 `.doc/paper/reading_log.md`
 
 ### 处方表（跨域路由规则，2026-07-07 立）
 
@@ -66,7 +66,7 @@
 | KL 自适应 lr | 每次更新测 policy KL 位移自动调 lr（「用户不调 lr」去旋钮件） | 每局训练样本量大 × 探针分布与训练分布同源（棋盘 batch 512 配平实测无害） | 小 batch × 大 buffer 脱钩形态（CartPole 灾难级：探针 KL ≈ 噪声 → 乘子棘轮 10× → lr 发散） | kl_targ=0.02（参照口径）；重试条件 = 改「刚训 minibatch 上测 KL」再过闸门 |
 | Sampled | 大 / 连续动作空间采 K 候选 + π̂_β 先验校正 | 连续 / 超大离散动作空间（K_eff < N 真实子采样） | 小离散空间 K=N 退化全枚举（仅 +~26% 簿记开销；自动短路裁决挂 Phase 4） | K 按 N、sims 公式自动解析（`sampled_params`） |
 
-> 未列组件（value_prefix / target_net / SVE）：接线未完成或断链在修（[收口规划 §5](../../.doc/design/rl_closure_plan.md)），证据不足以开处方，不写推测行。课程 / 真规则树为**诊断脚手架**非常驻组件（哲学修正 2026-07-05），不进本表。
+> 未列组件（value_prefix / target_net / SVE）：接线未完成或断链在修，证据不足以开处方，不写推测行。课程 / 真规则树为**诊断脚手架**非常驻组件，不进本表。
 
 **CartPole-v1 当前内置**：base + **consistency + reconstruction + Sampled + Stochastic K=8**（PUCT · sims=20 · td=5 · continuation 二值门）。
 
@@ -116,11 +116,11 @@ mz.eval(10)?;
 | **好** | greedy(temp=0) eval 达门槛（唯一成功判据） |
 | **快** | env-steps-to-solved 为主（官方口径 **3-seed 中位 + 达标率**），wall-clock 为辅 |
 
-CartPole 是 sanity/regression **哨兵**（叠组件不崩的证明），不是组件价值证明台；不拿 wall-clock 判生死（[纲领 §2.2/§2.3](../../.doc/design/my_zero_algorithm_vision.md#22-首要评价指标)）。
+CartPole 是 sanity/regression **哨兵**（叠组件不崩的证明），不是组件价值证明台；不拿 wall-clock 判生死。
 
 ## 算法核心
 
-MuZero 三网络（Representation / Dynamics / Prediction）+ latent MCTS + K 步 unroll + categorical value/reward。Replay / n-step 显式区分 `terminated / truncated / continuation`：真终止 `continuation=0`，普通步与 time-limit truncation `continuation=1`。Dynamics 同时学习 continuation；MCTS imagined edge 的 discount 用 **binary gate `gamma * (1 - done)`**（`done` 由 continuation 头阈值化），与 n-step value target 的二值 continuation 口径一致——**不**用 soft `gamma * predicted_continuation` 对每条健康边连续衰减（确定性/无终止环境下软折扣只注方差，见账本结论）。该基础语义不列入上方消融组件矩阵。母论文见 [算法纲领 §4.1 — base](../../.doc/design/my_zero_algorithm_vision.md#41-组件文献对照单一事实源)。
+MuZero 三网络（Representation / Dynamics / Prediction）+ latent MCTS + K 步 unroll + categorical value/reward。Replay / n-step 显式区分 `terminated / truncated / continuation`：真终止 `continuation=0`，普通步与 time-limit truncation `continuation=1`。Dynamics 同时学习 continuation；MCTS imagined edge 的 discount 用 **binary gate `gamma * (1 - done)`**（`done` 由 continuation 头阈值化），与 n-step value target 的二值 continuation 口径一致——**不**用 soft `gamma * predicted_continuation` 对每条健康边连续衰减（确定性/无终止环境下软折扣只注方差，见账本结论）。该基础语义不列入上方消融组件矩阵。
 
 ## 代码组织
 

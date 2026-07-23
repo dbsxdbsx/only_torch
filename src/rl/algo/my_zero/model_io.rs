@@ -38,6 +38,7 @@ fn observation_to_str(observation: ObservationPlan) -> String {
             width,
             history,
         } => format!("image:{height}x{width}x{history}"),
+        ObservationPlan::Board { channels, side } => format!("board:{channels}x{side}x{side}"),
         ObservationPlan::Tokens {
             length,
             vocab_size,
