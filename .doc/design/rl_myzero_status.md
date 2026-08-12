@@ -20,7 +20,7 @@
 
 已删除并并入本文的历史文件（勿再链接）：`rl_roadmap.md`、`rl_closure_plan.md`、`rl_phase1_image_plan.md`、`rl_phase1_report.md`、`my_zero_algorithm_vision.md`、`my_zero_world_model_foundation.md`、`my_zero_simulus_ablation_plan.md`、`_archive/rl_roadmap_v020_v024.md`。
 
-**当前主线状态**：RL **暂缓**。下次接手顺序：本文 → [环境配置](../rl_python_env_setup.md) → `just test-filter rl` → `just smoke-rl`。
+**当前主线状态**：RL **暂缓**（crate **v0.26.0**，2026-08-12）。下次接手顺序：本文 → [环境配置](../rl_python_env_setup.md) → `just test-filter rl` → `just smoke-rl`。
 
 ---
 

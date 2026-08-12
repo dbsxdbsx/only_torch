@@ -17,10 +17,10 @@ only_torch 是一个纯 Rust 的 PyTorch 风格玩具框架，当前重点是：
 
 | 项 | 内容 |
 |----|------|
-| **版本** | `0.25.0`（2026-07-02；本地可能超前 `origin/master`，以 `git log` / `CHANGELOG.md` 为准） |
-| **Rust** | `1.97.0`（`rust-toolchain.toml` 固定；2026-07-12 双工具链 A/B、3421 主测试与 `just smoke-rl` 已通过，口径见[性能工作流](.doc/performance/benchmark_workflow.md#rust-工具链升级-ab)） |
-| **刚闭环** | **✅ Stochastic MuZero always-on 验收（2026-07-15）**：afterstate dynamics + chance encoder + KL(posterior‖prior) loss + chance-in-edge 搜索架构。确定性 CartPole 3/3（26k，慢 1.7x）；StochasticCartPole K=8 达标率 3/3 vs K=1 仅 2/3——随机环境鲁棒性验证通过。默认 K=8 always-on，确定性环境 chance distribution 自动退化为单峰。此前 POMDP-lite posterior 与主动数据 3A0 均已负裁（代码保留默认关）。 |
-| **当前主线** | **强化学习暂缓**：MyZero 一个入口 + learned-world-model 契约 + Stochastic K=8 always-on。MinAtar 小网格环境已接入（管线能学，pilot peak 4.1 / 门槛 8）。详见[RL 状态总览](.doc/design/rl_myzero_status.md)。 |
+| **版本** | `0.26.0`（2026-08-12） |
+| **Rust** | `1.97.0`（`rust-toolchain.toml` 固定开发工具链，非 MSRV；A/B 口径见[性能工作流](.doc/performance/benchmark_workflow.md#rust-工具链升级-ab)） |
+| **刚闭环** | **✅ v0.26.0**：learned-world-model 契约 + Stochastic MuZero K=8 always-on + Gomoku recipe=base + MinAtar 管线接入 + 跨轴 smoke；RL 文档收敛为 [状态总览](.doc/design/rl_myzero_status.md) + 环境配置。POMDP-lite / 主动数据 3A0 负裁（代码默认关）。 |
+| **当前主线** | **强化学习暂缓**（待办见[状态总览 §5](.doc/design/rl_myzero_status.md#5-未完成事项收口时的-backlog)）。演化侧仍可推进阶段 D，见下。 |
 | **刻意暂缓** | 演化 **阶段 D**（`CellAttention` ONNX、`Attention` Net2Net 函数保持、Conv2d Attention；3D batched MatMul 已于 2026-07-04 完成出表）——与 RL 零耦合，见 [记忆机制设计 — Phase D](.doc/design/memory_mechanism_design.md#-后续-phase-d刻意未做)（该表为「阶段 D」唯一权威定义） |
 | **一级风险** | CPU-only × 图像 CNN × MCTS × 实时结构性冲突：[.issue/items/cpu_only_mcts_image_realtime_risk.md](.issue/items/cpu_only_mcts_image_realtime_risk.md)（图像线推进前必读） |
 | **工具链提示** | `blas-mkl` 间接依赖 `proc-macro-error2 2.0.1` 在 Rust 1.97 报 future-incompat warning，当前不阻断；跟踪见 [.issue/items/proc_macro_error2_future_incompat.md](.issue/items/proc_macro_error2_future_incompat.md) |

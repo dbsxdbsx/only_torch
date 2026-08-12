@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-08-12
+
+> **MyZero 能力扩张收口**：通用 learned-world-model 契约（观测/动作 schema）+ Stochastic MuZero K=8 always-on + Gomoku 棋盘闭环（recipe=base）+ MinAtar 小网格管线接入 + 跨轴 smoke；开发工具链固定 Rust 1.97.0（`rust-toolchain.toml`，非 MSRV）。RL 主线暂缓，未完成项见 [`.doc/design/rl_myzero_status.md`](.doc/design/rl_myzero_status.md)。已知限制：MinAtar Breakout 未达门槛 8；Pendulum 仍为诊断态；Pong 预算不足平直。
+
 ### Changed
 
 - **docs(rl): RL 文档 DevOps 收尾——权威收敛 + 断链清扫 + 过程黑话退场**（2026-08-12）
