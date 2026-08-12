@@ -1,0 +1,69 @@
+   Compiling getrandom v0.2.15
+   Compiling miniz_oxide v0.8.0
+   Compiling filetime v0.2.27
+   Compiling getrandom v0.3.4
+   Compiling chrono v0.4.43
+   Compiling serde_json v1.0.132
+   Compiling sha2 v0.10.8
+   Compiling directories v5.0.1
+   Compiling pyo3-ffi v0.29.0
+   Compiling ring v0.17.14
+   Compiling uuid v1.16.0
+   Compiling tar v0.4.44
+   Compiling intel-mkl-tool v0.8.1
+   Compiling cblas-sys v0.1.4
+   Compiling url v2.5.7
+   Compiling ndarray v0.17.2
+   Compiling flate2 v1.0.34
+   Compiling pyo3 v0.29.0
+   Compiling oci-spec v0.6.7
+   Compiling rustls-webpki v0.103.8
+   Compiling rustls v0.23.35
+   Compiling numpy v0.29.0
+   Compiling ureq v2.12.1
+   Compiling ocipkg v0.2.9
+   Compiling intel-mkl-src v0.8.1
+   Compiling only_torch v0.26.0 (D:\DATA\BaiduSyncdisk\project\personal\only_torch)
+warning: variant `Chance` is never constructed
+  --> src\rl\mcts\node.rs:24:5
+   |
+22 | pub(crate) enum NodeKind {
+   |                 -------- variant in this enum
+23 |     Decision,
+24 |     Chance,
+   |     ^^^^^^
+   |
+   = note: `NodeKind` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `kind` is never read
+  --> src\rl\mcts\node.rs:67:9
+   |
+51 | pub(crate) struct Node {
+   |                   ---- field in this struct
+...
+67 |     pub kind: NodeKind,
+   |         ^^^^
+   |
+   = note: `Node` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: method `expand_chance` is never used
+   --> src\rl\mcts\node.rs:170:12
+    |
+ 81 | impl<S: Clone + 'static> Tree<S> {
+    | -------------------------------- method in this implementation
+...
+170 |     pub fn expand_chance(
+    |            ^^^^^^^^^^^^^
+
+warning: `only_torch` (lib) generated 3 warnings
+    Finished `dev` profile [optimized + debuginfo] target(s) in 54.47s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running `target\debug\examples\my_zero_minatar.exe`
+[MyZero] consistency + Stochastic
+[MyZero MinAtar/Breakout-v1] obs=400 离散 3 档 γ=0.99 sims=25 r_scale=1
+Ep    1: R=     1.0 len= 16 avg_R=     1.0 loss=0.0000 temp=1.00 total_env_steps=16 t=0.04s
+Ep    2: R=     1.0 len= 16 avg_R=     1.0 loss=0.0000 temp=1.00 total_env_steps=32 t=0.04s
+Ep    3: R=     0.0 len=  6 avg_R=     0.7 loss=0.0000 temp=1.00 total_env_steps=38 t=0.01s
+[SMOKE] MinAtar/Breakout-v1 通过

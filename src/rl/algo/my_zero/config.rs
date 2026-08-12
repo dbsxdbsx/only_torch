@@ -239,6 +239,14 @@ pub struct EvalSettings {
     pub(crate) seed_runs: u64,
     /// 最大训练局数（smoke 时强制为 3）
     pub max_episodes: usize,
+    /// 可选：累计 env-steps 上限（与 `max_episodes` / `max_wall_secs` 取先到）
+    pub max_env_steps: Option<u64>,
+    /// 可选：wall-clock 秒上限（与 `max_episodes` / `max_env_steps` 取先到）
+    pub max_wall_secs: Option<f32>,
+    /// 可选：中间平直判停——达到该 env-steps 时若历史 best greedy 仍 `< flat_stop_min_greedy` 则停
+    pub flat_stop_env_steps: Option<u64>,
+    /// 与 [`Self::flat_stop_env_steps`] 配套的 greedy 下限（未配置 flat stop 时忽略）
+    pub flat_stop_min_greedy: Option<f32>,
     /// 每 N 局 greedy eval 一次
     pub eval_every: usize,
     /// 每次 greedy eval 的局数
@@ -258,6 +266,10 @@ impl Default for EvalSettings {
             seed: DEFAULT_SEED,
             seed_runs: 1,
             max_episodes: 2000,
+            max_env_steps: None,
+            max_wall_secs: None,
+            flat_stop_env_steps: None,
+            flat_stop_min_greedy: None,
             eval_every: 25,
             eval_episodes: 10,
             smoke: false,

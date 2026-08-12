@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **bench(rl): MinAtar/Breakout 正式 3-seed 预注册统计回填**（2026-08-12）
+  - 预算接线：`max_env_steps=200k` / `max_wall_secs=2h` / `flat_stop@100k`；本轮三 seed 均先触 2h
+  - 结果：best greedy 4.1 / 2.1 / 3.9（中位 **3.9**），final 中位 2.7，**0/3** 达门槛 8；账本与 [状态总览](.doc/design/rl_myzero_status.md) 已更新
+  - 日志：`.bench/minatar_breakout_3seed_20260812_085356.log`
+
 ## [0.26.0] - 2026-08-12
 
 > **MyZero 能力扩张收口**：通用 learned-world-model 契约（观测/动作 schema）+ Stochastic MuZero K=8 always-on + Gomoku 棋盘闭环（recipe=base）+ MinAtar 小网格管线接入 + 跨轴 smoke；开发工具链固定 Rust 1.97.0（`rust-toolchain.toml`，非 MSRV）。RL 主线暂缓，未完成项见 [`.doc/design/rl_myzero_status.md`](.doc/design/rl_myzero_status.md)。已知限制：MinAtar Breakout 未达门槛 8；Pendulum 仍为诊断态；Pong 预算不足平直。

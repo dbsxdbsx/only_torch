@@ -58,12 +58,12 @@ fn main() -> Result<(), GraphError> {
         ..TrainSettings::default()
     };
 
-    // 200k env-steps budget；MinAtar Breakout 平均 ~25 步/局 → ~8000 局
-    // 但 MCTS 搜索+训练开销让有效吞吐远低于此，实际约 500-2000 局
+    // 预注册预算：200k env-steps 或 wall-clock 2h 先到；局数仅作安全上限
+    // Breakout ~25 步/局 → 200k ≈ 8000 局；CPU+MCTS 下通常先触 wall-clock
     let max_ep: usize = std::env::var("MAX_EP")
         .ok()
         .map(|v| v.parse().expect("MAX_EP 必须是正整数"))
-        .unwrap_or(2000);
+        .unwrap_or(20_000);
 
     let mut builder = MyZero::new(env_id)
         .solved(if game == "Freeway" { 20.0 } else { 8.0 })
@@ -71,6 +71,14 @@ fn main() -> Result<(), GraphError> {
         .train_settings(train)
         .eval_every(50)
         .save_model_when_eval(best);
+
+    if !smoke {
+        builder = builder
+            .max_env_steps(200_000)
+            .max_wall_secs(2.0 * 3600.0)
+            // Breakout：100k steps 时 peak greedy 仍 < 3 → 平直判停；Freeway 用 1.0
+            .flat_stop(100_000, if game == "Freeway" { 1.0 } else { 3.0 });
+    }
 
     if let Ok(v) = std::env::var("SEEDS") {
         builder = builder.seeds(v.parse().expect("SEEDS 必须是正整数"));

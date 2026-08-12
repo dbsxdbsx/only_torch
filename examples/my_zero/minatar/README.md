@@ -28,8 +28,8 @@
 
 ### 预算
 
-- 每 seed: **200k env-steps** 或 **wall-clock 2h** 先到为准
-- 中间判停：100k env-steps 时若曲线仍完全平直（Breakout greedy < 3），记录并停止
+- 每 seed: **200k env-steps** 或 **wall-clock 2h** 先到为准（`main.rs` 已接线：`max_env_steps` / `max_wall_secs`；局数安全上限 20k）
+- 中间判停：100k env-steps 时若 peak greedy 仍 < 3（Breakout）/ < 1（Freeway），提前结束（`flat_stop`）
 
 ### 退出判据
 
@@ -86,24 +86,27 @@ MAX_EP=3000 cargo run --example my_zero_minatar --release --features blas-mkl
 
 ## 账本
 
-### Breakout-v1 Base Pilot
+### Breakout-v1 · 正式 3-seed（2026-08-12）
+
+> 口径：预注册预算 **2h / 200k 先到**（本轮三 seed 均先触 **wall-clock 2h**，未到 200k）；门槛 = 中位 **best** greedy ≥ 8。  
+> 日志：`.bench/minatar_breakout_3seed_20260812_085356.log`
+
+| seed | best greedy（训练期 peak） | final greedy（训末） | env-steps | wall-clock | 判定 |
+|------|---------------------------|----------------------|-----------|------------|------|
+| 42 | **4.1** | 3.6 | 65,686 | 7202s | ❌ < 8 |
+| 43 | **2.1** | 1.3 | 42,772 | 7202s | ❌ < 8 |
+| 44 | **3.9** | 2.7 | 73,778 | 7202s | ❌ < 8 |
+| **中位** | **3.9** | **2.7** | — | ~7202s | **0/3 达标** |
+
+**判读**：三 seed 均能脱离随机（~1–2），但 2h 预算内锁在约 **2–4** 分平台，**未绿灯**。吞吐瓶颈明显（2h 仅 ~43k–74k env-steps，远低于名义 200k）。不满足「双游戏皆平直」红灯；Freeway 仍按协议暂缓。
+
+**下一步（未跑，需立项）**：在同一预算纪律下一次一项调参（降 lr / 增 sims / 缩短 td_steps）或接受「CPU 墙」后评估 planning-free 退路；组件消融仍等绿灯。
+
+### Breakout-v1 Base Pilot（历史，2026-07-23）
 
 | seed | best greedy | env-steps | wall-clock | 判定 |
 |------|-------------|-----------|------------|------|
-| 1 | **4.1**（峰值 eval）/ final eval 4.1 | 63,656 | ~90 min | ⚠️ 学到了但未达门槛 8 |
-
-**学习曲线摘要**（单 seed，2000 局，2026-07-23）：
-- Ep 50-100: greedy 0.2（随机水平）
-- Ep 150: greedy 2.0（开始学习）
-- Ep 300: greedy 3.2
-- Ep 1050: greedy **4.1**（峰值）
-- Ep 1500-2000: greedy 波动 2.5-3.7（疑似收敛/轻微过拟合）
-- final best model eval(×10): **4.1**
-- avg_R(self-play): 2.8
-
-**诊断**：管线明确能学（脱离随机 ~1-2），但在 ~64k env-steps 内陷入 3-4 分平台。
-可能瓶颈：训练预算不足（仅用 64k / 200k）/ td_steps 过长 / sims 不够 / lr 偏高。
-下一步：调参（增大 max_episodes / 降 lr / 增 sims）后再试；或直接 3-seed 确认趋势。
+| 1 | **4.1** / final 4.1 | 63,656 | ~90 min（`MAX_EP=2000`，未接 2h 预算） | ⚠️ 单 seed 试探 |
 
 ### Freeway-v1（待 Breakout 绿灯后）
 

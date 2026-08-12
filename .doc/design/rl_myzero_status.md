@@ -64,7 +64,7 @@
 | **CartPole-v1** | greedy ≥ 475 | ✅ 哨兵冻结（中位 ~9.8k env-steps，3/3） | consistency + reconstruction(coef16) + Sampled + Stochastic K=8 |
 | **Gomoku** (vs random) | 胜率 ≥ 95% | ✅ 已闭环（recipe=base；历史里程碑见[棋盘账本](../../examples/my_zero/gomoku/README.md)） | base（全组件关） |
 | **StochasticCartPole** | K=8 3/3 | ✅ Stochastic MuZero 验收 | always-on K=8 |
-| **MinAtar/Breakout** | greedy ≥ 8 | ⚠️ 管线能学（peak 4.1）未达标 | consistency ON |
+| **MinAtar/Breakout** | greedy ≥ 8 | ⚠️ 正式 3-seed 0/3（中位 best **3.9**；2h 先触墙） | consistency ON |
 | **ALE/Pong-v5** | greedy ≥ −18 | ❌ 预算不足（0/3 平直） | consistency ON |
 | **Pendulum-v1** | — | ⏳ 诊断态（n-step target 方差坍缩） | 同 CartPole（诊断，不代表裁决） |
 | **Platform-v0** | — | ✅ 管线 smoke 通过，未做基准 | Sampled |
@@ -166,7 +166,7 @@ promote 时改 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)；论文全称
 
 | 项 | 说明 | 关联 |
 |----|------|------|
-| MinAtar pilot 调参 | peak 4.1 / 门槛 8；增大预算或调 lr/sims | [minatar 账本](../../examples/my_zero/minatar/README.md) |
+| MinAtar 调参 / 吞吐 | 正式 3-seed 中位 best 3.9 / 门槛 8；2h 仅 ~4–7 万 steps；一次一项调 lr/sims/td 或评估 CPU 墙 | [minatar 账本](../../examples/my_zero/minatar/README.md) |
 | target_net + SVE 终审 | 入库但零实测裁决（缺裁决场；待 MinAtar 绿灯） | — |
 | value_prefix 断链修复 | 训练用 LSTM head，搜索用普通 reward head → 静默错误 | — |
 | Pendulum 终审 | n-step target 方差坍缩；可能需 1-step + target_net | [pendulum issue](../../.issue/items/pendulum_failure_diagnosis.md) |

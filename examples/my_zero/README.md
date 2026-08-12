@@ -20,7 +20,7 @@
 | [**CartPole-v1**](cartpole/README.md) | 离散（2） | greedy ≥ 475 | ✅ 回归哨兵（数字见[账本](cartpole/README.md)） |
 | [**Pendulum-v1**](pendulum/README.md) | 连续（1） | return ≥ -200 | 诊断·已降级（[issue](../../.issue/items/pendulum_failure_diagnosis.md)） |
 | [**ALE/Pong-v5**](pong/README.md) | 离散图像 | greedy ≥ −18 | ❌ 预算不足平直（[issue](../../.issue/items/my_zero_pong_image_flat_negative.md)） |
-| [**MinAtar**](minatar/README.md) | 小网格图像 | Breakout ≥ 8 | ⚠️ 管线能学 peak 4.1（未达标） |
+| [**MinAtar**](minatar/README.md) | 小网格图像 | Breakout ≥ 8 | ⚠️ 正式 3-seed 0/3（中位 best 3.9） |
 | [**Gomoku 9×9**](gomoku/README.md) | 棋盘离散 | vs random ≥0.95 | ✅ 已闭环（recipe=base）；naive0 墙见 [issue](../../.issue/items/gomoku_naive0_tactical_wall.md) |
 | [**StochasticCartPole**](cartpole_stochastic/README.md) | 离散（2） | greedy ≥ 300 | ✅ K=8 3/3 vs K=1 2/3 |
 | Platform-v0 | 混合 Tuple | — | 💨 smoke 通过，未做基准 |

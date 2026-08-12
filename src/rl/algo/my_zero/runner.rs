@@ -1177,6 +1177,9 @@ fn train_one_seed(
     let mut last_ep = 0usize;
     // KL 自适应 lr 乘子（跨局持久；默认关时恒 1.0、零额外前向/RNG，路径逐 bit 不变）
     let mut lr_mult = 1.0f32;
+    // 训练期 peak greedy（含未落盘路径；供预算 / 平直判停）
+    let mut peak_greedy = f32::NEG_INFINITY;
+    let mut flat_stop_armed = cfg.eval.flat_stop_env_steps.is_some();
 
     for ep in 0..max_episodes {
         last_ep = ep + 1;
@@ -1343,11 +1346,54 @@ fn train_one_seed(
             println!(
                 "  greedy eval {eval_r:.1} / {solved}（近20局 self-play {recent:.1}，total_env_steps={total_steps}）",
             );
+            peak_greedy = peak_greedy.max(eval_r);
             ckpt.maybe_update(&model, cfg, eval_r, ep + 1, total_steps)?;
             if eval_r >= solved {
                 hit_solved = Some((ep + 1, total_steps));
                 println!("  ✅ 达标 ep={} total_env_steps={}", ep + 1, total_steps);
                 break;
+            }
+        }
+
+        // 预算：env-steps / wall-clock（与 max_episodes 取先到）
+        if let Some(cap) = cfg.eval.max_env_steps {
+            if total_steps >= cap {
+                println!(
+                    "  [budget] 达到 max_env_steps={cap}（ep={} total_env_steps={total_steps}）",
+                    ep + 1
+                );
+                break;
+            }
+        }
+        if let Some(cap) = cfg.eval.max_wall_secs {
+            let elapsed = wall_t0.elapsed().as_secs_f32();
+            if elapsed >= cap {
+                println!(
+                    "  [budget] 达到 max_wall_secs={cap}（ep={} wall={elapsed:.1}s total_env_steps={total_steps}）",
+                    ep + 1
+                );
+                break;
+            }
+        }
+        // 中间平直判停（预注册协议：过线 steps 后 peak 仍低于阈值）
+        if flat_stop_armed {
+            if let (Some(cap), Some(min_g)) =
+                (cfg.eval.flat_stop_env_steps, cfg.eval.flat_stop_min_greedy)
+            {
+                if total_steps >= cap {
+                    let peak = if peak_greedy.is_finite() {
+                        peak_greedy
+                    } else {
+                        f32::NEG_INFINITY
+                    };
+                    if peak < min_g {
+                        println!(
+                            "  [flat-stop] total_env_steps={total_steps}≥{cap} 且 peak_greedy={peak:.1}<{min_g}，提前结束"
+                        );
+                        break;
+                    }
+                    flat_stop_armed = false;
+                }
             }
         }
     }

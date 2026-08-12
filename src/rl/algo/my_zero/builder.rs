@@ -257,6 +257,25 @@ impl MyZeroBuilder {
         self
     }
 
+    /// 累计 env-steps 上限（与局数 / wall-clock 取先到）。
+    pub fn max_env_steps(mut self, n: u64) -> Self {
+        self.cfg.eval.max_env_steps = Some(n);
+        self
+    }
+
+    /// wall-clock 秒上限（与局数 / env-steps 取先到）。
+    pub fn max_wall_secs(mut self, secs: f32) -> Self {
+        self.cfg.eval.max_wall_secs = Some(secs);
+        self
+    }
+
+    /// 中间平直判停：达到 `env_steps` 时若 best greedy 仍 `< min_greedy` 则提前结束。
+    pub fn flat_stop(mut self, env_steps: u64, min_greedy: f32) -> Self {
+        self.cfg.eval.flat_stop_env_steps = Some(env_steps);
+        self.cfg.eval.flat_stop_min_greedy = Some(min_greedy);
+        self
+    }
+
     /// 随机种子（训练 + eval + run + 环境 reset 派生；默认 42）。
     pub fn seed(mut self, seed: u64) -> Self {
         self.cfg.eval.seed = seed;
