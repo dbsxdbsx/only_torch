@@ -1,6 +1,6 @@
-# MyZero · ALE/Pong-v5（图像离散支柱）
+# MyZero · ALE/Pong-v5（图像离散账本）
 
-> **定位**：v0.26 Phase 1 图像线立柱的**唯一账本**（[收口规划 §2](../../../.doc/design/rl_closure_plan.md)、[Phase 1 计划](../../../.doc/design/rl_phase1_image_plan.md)）。
+> **定位**：ALE/Pong 环境实测数字的**唯一账本**（战略见 [RL 状态总览](../../../.doc/design/rl_myzero_status.md)）。
 > 其余文档引用本页数字，不另抄。
 
 ## 预注册口径（2026-07-02 定稿，先于任何正式跑）
@@ -14,7 +14,7 @@
 | 训练 | γ=0.997 · K=5 · td=5 · sims=20 · lr=0.003 · batch=16 · 64 trains/ep · buffer 32 局 |
 | 预算 | 每 seed ≤150 局（≈120k env-steps）或 24h 先到为准；seeds {42,43,44} |
 | **门槛** | 3-seed 中位 **best greedy(10 局) ≥ −18**（随机 ≈ −20.7；非 SOTA 口径），且学习曲线呈上升趋势 |
-| 判读 | 达标 = 图像支柱成立；不达标但曲线上升 = 部分信号按曲线裁决；平直 = 负结果 issue |
+| 判读 | 达标 = 本环境可作图像域基线；不达标但曲线上升 = 部分信号按曲线裁决；平直 = 负结果 issue |
 
 ## 运行
 
@@ -28,7 +28,7 @@ SEEDS=3 cargo run --example my_zero_pong --release --features blas-mkl    # 官�
 
 | 日期 | 配置 | seeds | best greedy（各 seed） | 中位 | 裁决 |
 |------|------|-------|------------------------|------|------|
-| 2026-07-03 | image base（预注册栈）· **旧数值流 ⚠️** | 42/43/44 | −20.4 / −21.0 / −21.0 | **−21.0** | **未达标，曲线平直** → 按预注册判读记负结果，见 [issue](../../../.issue/items/my_zero_pong_image_flat_negative.md)；14 个 eval 点 greedy 恒 −21 级（仅偶发 −20.x），self-play avg 恒 −20~−21，loss 下降但不转化为策略改进；每 seed 满 150 局 ≈134k env-steps，wall ~26min/seed；450 局全程零 panic。**代码基线 `b697e95`，先于 `adfc02f` 框架修复批（per-seed reset 派生 / GroupNorm 梯度 / 温度调度显式化等）——数字仅作历史参考，图像支柱裁决以新数值流复跑为准** |
+| 2026-07-03 | image base（预注册栈）· **旧数值流 ⚠️** | 42/43/44 | −20.4 / −21.0 / −21.0 | **−21.0** | **未达标，曲线平直** → 按预注册判读记负结果，见 [issue](../../../.issue/items/my_zero_pong_image_flat_negative.md)；14 个 eval 点 greedy 恒 −21 级（仅偶发 −20.x），self-play avg 恒 −20~−21，loss 下降但不转化为策略改进；每 seed 满 150 局 ≈134k env-steps，wall ~26min/seed；450 局全程零 panic。**代码基线 `b697e95`，先于 `adfc02f` 框架修复批（per-seed reset 派生 / GroupNorm 梯度 / 温度调度显式化等）——数字仅作历史参考，图像域裁决以新数值流复跑为准** |
 | 2026-07-04 | image base（同栈）· **新数值流复跑**（哨兵复裁收口后 HEAD，per-seed env 流独立已生效） | 42/43/44 | −21.0 / −20.3 / −20.6 | **−21.0** | **0/3，曲线仍平直 → 负结果确认**（排除"旧数值流 / seed 共享 reset 序列"两个嫌疑）；self-play 偶见 −17~−18 但 greedy 恒 −20.3 以下、无上升趋势；每 seed 满 150 局 ≈134k env-steps，wall ~30min/seed。下一步按负结果 issue 预注册：S3 三臂兼当诊断（首查 recon ON 臂——CartPole 域最大杠杆组件在 base 臂恰好关闭）；ROSMO 阶梯一已进库（`.rosmo(true)`，2026-07-04）可作"训练量不足"嫌疑的后续单变量臂 |
 
 ### 工程基线（非学习指标）

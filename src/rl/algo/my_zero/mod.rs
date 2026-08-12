@@ -52,7 +52,7 @@
 //! 算法组件（**均为 MyZero 自身实现，自包含**；MyZero 是项目唯一的 `*Zero` 实现）：
 //! - [`value_encoding`] / [`value_transform`]：categorical value/reward 编解码（two-hot / HL-Gauss）+ h(x) 变换
 //! - [`obs_transform`]：obs symlog 无量纲化（模型入口单点，buffer/env 存 raw）
-//! - [`obs_pipeline`]：图像 obs 管线（灰度 84² 降采样 + 4 帧堆叠；buffer 只存单帧，v0.26 Phase 1）
+//! - [`obs_pipeline`]：图像 obs 管线（灰度 84² 降采样 + 4 帧堆叠；buffer 只存单帧）
 //! - [`n_step`]：n-step bootstrap value target（区分 terminated / truncated，并使用 transition continuation）
 //! - [`reanalyze`]：position 级 MCTS 重搜 + train 后写回（`Components.reanalyze`；CartPole 暂不 promote）
 //! - [`rosmo`]：ROSMO 式一步 target 刷新 + 优势过滤行为正则（reanalyze 复活阶梯一，不写回；arXiv:2210.05980）

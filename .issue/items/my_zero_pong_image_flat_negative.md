@@ -17,7 +17,7 @@
 - **结果**：seeds 42/43/44 = best greedy **−20.4 / −21.0 / −21.0**，中位 −21.0，0/3 达标（门槛 −18，随机 ≈ −20.7）
 - **曲线形态**：每 seed 14 个 eval 点 greedy 几乎恒 −21（仅偶发 −20.0/−20.4/−20.9），self-play avg_R 全程 −20~−21 无趋势；**loss 在下降（0.8 → −4.5 级）但完全不转化为策略改进**
 - 每 seed 满 150 局 ≈ 134k env-steps、wall ~26 min；450 局全程零 panic（Ep53 陷阱一并无事）
-- 按 [Phase 1 计划 §S2](../../.doc/design/rl_phase1_image_plan.md) 预注册判读：「平直 = 记负结果 issue」→ 本档案
+- 按 [RL 状态总览 · 环境与组件](../../.doc/design/rl_myzero_status.md#3-已验收环境与组件) 预注册判读：「平直 = 记负结果 issue」→ 本档案
 
 ## 数据位置
 
@@ -52,8 +52,8 @@ MCTS 内 root CNN 前向 867µs/call、recurrent 16µs/call——**性能不是�
    ① trains_per_episode 加倍 × ROSMO 现算刷新顶 staleness（`.rosmo(true)` 已进库，
    CartPole 回归闸门 3/3 绿）；② lr {0.001, 0.003, 0.01} 扫描；③ DIAG 诊断
    value/reward 预测是否坍缩（嫌疑 4 判据）；
-4. **战略调整（2026-07-04 规划修订）**：图像支柱裁决降级为**后台慢诊断**（吃机器时间不吃
-   注意力），Phase 2 Gomoku 提前为主线（详见收口规划 §2/§3 修订注记）。本 issue 保持 open，
+4. **战略调整（2026-07-04 规划修订）**：图像域裁决降级为**后台慢诊断**（吃机器时间不吃
+   注意力），棋盘线曾提前为主线（终态见 [RL 状态总览](../../.doc/design/rl_myzero_status.md)）。本 issue 保持 open，
    终局裁决等预算标定臂证据齐后再下。
 5. **协议修订：pilot-first + 判停（2026-07-05，外证 [EfficientZero Remastered](https://www.gigglebit.net/blog/efficientzero)）**：
    第三方复现实测 A100 + 20–32 核需 **1–2 天/模型**（论文口径 7h；训练管线为 CPU 大户）——
@@ -61,9 +61,9 @@ MCTS 内 root CNN 前向 867µs/call、recurrent 16µs/call——**性能不是�
    修订：标定臂改**轻量图像载体**（MinAtar 类 / 更狠降采样，先证明「管线能学」）+
    **单 seed pilot** + **判停协议**（中间检查点如 25k/50k updates 处 greedy 曲线仍平即停）；
    Pong 类 3-seed 支柱验收顺延到 pilot 出正信号后。预算锚定一律用第三方复现数据
-   （收口规划条款三）。
+   （第三方复现预算锚定，见状态总览改动纪律）。
 
 ## 关联
 
-- [Phase 1 计划](../../.doc/design/rl_phase1_image_plan.md) §S2/S3 · [收口规划 §2](../../.doc/design/rl_closure_plan.md)
+- [RL 状态总览 · 环境与组件](../../.doc/design/rl_myzero_status.md#3-已验收环境与组件) §S2/S3 · [RL 状态总览 · backlog](../../.doc/design/rl_myzero_status.md#5-未完成事项收口时的-backlog)
 - [Ep53 panic 调查](./pong_ep53_panic_investigation.md)（本轮 450 局零复现，佐证「转被动监视」裁决）

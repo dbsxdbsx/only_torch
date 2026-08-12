@@ -1,4 +1,4 @@
-//! MyZero · MinAtar/Breakout-v1（第三支柱裁决场，v0.26）。
+//! MyZero · MinAtar/Breakout-v1（小网格图像环境基准）。
 //!
 //! **预注册口径**（`examples/my_zero/minatar/README.md`）：
 //! - obs：10×10×4 bool → Board adapter（HWC→CHW 转置，不做灰度/缩放/堆叠）
@@ -31,7 +31,9 @@ fn main() -> Result<(), GraphError> {
         "Seaquest" => "MinAtar/Seaquest-v1",
         "SpaceInvaders" => "MinAtar/SpaceInvaders-v1",
         other => {
-            eprintln!("未知 MinAtar 游戏: {other}，支持: Breakout/Freeway/Asterix/Seaquest/SpaceInvaders");
+            eprintln!(
+                "未知 MinAtar 游戏: {other}，支持: Breakout/Freeway/Asterix/Seaquest/SpaceInvaders"
+            );
             std::process::exit(1);
         }
     };

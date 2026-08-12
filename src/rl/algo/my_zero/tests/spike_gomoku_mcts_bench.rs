@@ -1,6 +1,6 @@
 //! # Gomoku M0 风险 spike：棋盘形状 CNN × MCTS 单步 wall-clock 实测
 //!
-//! **目的**（收口规划 §3 提前启动口径，对照 CPU 风险 issue 第二格）：
+//! **目的**（对照 CPU 风险 issue 棋盘格；为训练闭环定 sims 预算）：
 //! 实测「CPU-only × 棋盘 CNN root × sims × MLP recurrent」的单步 acting 成本，
 //! 给 M1 训练闭环定 sims 预算。纯计时，不训练收敛、不接 env。
 //!

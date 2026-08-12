@@ -2,7 +2,7 @@
 
 > [← 返回 MyZero 总览](../README.md)
 >
-> **本文件是棋盘（self-play）支柱 benchmark 数字的唯一账本（owner）**：issue / roadmap / AGENTS 一律链到这里。每行实测带口径（profile / BLAS / seeds / 日期）。
+> **本文件是棋盘（self-play）benchmark 数字的唯一账本（owner）**：状态总览 / issue / AGENTS 一律链到这里取数字。每行实测带口径（profile / BLAS / seeds / 日期）。战略见 [RL 状态总览](../../../.doc/design/rl_myzero_status.md)。
 >
 > 无独立 example：入口为库内手动档 bench（`src/rl/algo/my_zero/tests/gomoku_m*_bench.rs`）
 > 与 `just smoke-my-zero-gomoku` 冒烟关卡；环境 `python/gym_env/gomoku/`。
@@ -35,7 +35,7 @@ cargo test --release --features blas-mkl gomoku_m3_<arm> -- --ignored --nocaptur
 历史原因：`gomoku_m3_bench.rs` 后来继续承载了 M4 后的裁决臂；文件名只表示
 它由 M3 手动 benchmark 载体演化而来，不代表其中所有实验仍属于 M3。
 
-## 当前 recipe（M4 定型，2026-07-05）
+## 当前 recipe（2026-07-05 定型）
 
 **base 组件全关** + Flat MLP + negamax MC target + sims=100 + D4 增广**关**
 （[`recipe.rs::board_stack`](../../../src/rl/algo/my_zero/recipe.rs)）。

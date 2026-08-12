@@ -221,11 +221,7 @@ fn self_play_one_episode(
     let (mut search_obs, mut store_obs) = obs_adapter.reset(env, Some(reset_seed));
     let mut steps = Vec::new();
     let use_posterior = components.recurrent_posterior && model.posterior.is_some();
-    let hidden_size = model
-        .posterior
-        .as_ref()
-        .map(|p| p.hidden_size)
-        .unwrap_or(0);
+    let hidden_size = model.posterior.as_ref().map(|p| p.hidden_size).unwrap_or(0);
     let mut posterior_hidden = vec![0.0f32; hidden_size];
     let mut prev_action_idx: Option<usize> = None;
 
@@ -695,11 +691,7 @@ pub(crate) fn greedy_one_episode(
     let mut rng = StdRng::seed_from_u64(reset_seed);
     let (mut obs, _) = obs_adapter.reset(env, Some(reset_seed));
     let use_posterior = components.recurrent_posterior && model.posterior.is_some();
-    let hidden_size = model
-        .posterior
-        .as_ref()
-        .map(|p| p.hidden_size)
-        .unwrap_or(0);
+    let hidden_size = model.posterior.as_ref().map(|p| p.hidden_size).unwrap_or(0);
     let mut posterior_hidden = vec![0.0f32; hidden_size];
     let mut prev_action_idx: Option<usize> = None;
     let mut total_reward = 0.0f32;
@@ -1075,8 +1067,8 @@ pub(crate) fn materialize(
 ) -> Result<MyZero, GraphError> {
     let env = GymEnv::new(py, cfg.env.env_id);
     let adapter = ActionAdapter::resolve(&env, cfg.env.action);
-    let obs_spec =
-        ObsAdapter::resolve(&env, cfg.env.observation, cfg.env.obs_mask.clone()).model_obs_spec(&env);
+    let obs_spec = ObsAdapter::resolve(&env, cfg.env.observation, cfg.env.obs_mask.clone())
+        .model_obs_spec(&env);
     let graph = Graph::new_with_seed(seed);
     let model = MyZeroModel::new_with_schemas(
         &graph,
@@ -1133,10 +1125,10 @@ fn train_one_seed(
     let action_dim = adapter.action_dim();
     let latent_dim = cfg.model.latent_dim;
 
-    // 图像模式暂不支持 reanalyze（重搜需堆叠组装，recipe 默认关；Phase 3 接回时一并支持）
+    // 图像模式暂不支持 reanalyze（重搜需堆叠组装，recipe 默认关；接回时一并支持）
     if obs_adapter.image_stack().is_some() && cfg.components.reanalyze {
         return Err(GraphError::InvalidOperation(
-            "MyZero: 图像 obs 暂不支持 reanalyze（Phase 3 接回）".into(),
+            "MyZero: 图像 obs 暂不支持 reanalyze（待堆叠组装接回）".into(),
         ));
     }
 

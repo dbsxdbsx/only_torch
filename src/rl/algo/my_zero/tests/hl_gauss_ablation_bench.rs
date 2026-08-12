@@ -1,7 +1,7 @@
 //! v0.26 Phase 0：value/reward 编码消融 two-hot → HL-Gauss（CartPole 哨兵；手动档）。
 //!
-//! = Simulus 采纳计划 **A1**（`.doc/design/my_zero_simulus_ablation_plan.md`）；
-//! 收口规划 Phase 0 第三项（`.doc/design/rl_closure_plan.md` §1）。
+//! = Simulus 采纳计划 **A1**（`.doc/design/rl_myzero_status.md`）；
+//! 历史编码消融臂（结论见 `.doc/design/rl_myzero_status.md` 与 CartPole 账本）。
 //!
 //! # 预注册协议（跑之前定死）
 //!

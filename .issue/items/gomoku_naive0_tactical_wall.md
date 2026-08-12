@@ -26,10 +26,10 @@ reviewers: []
 > - **下一出口**：主动数据当前 proxy 已清账；统一路线顺位进入 recurrent posterior，
 >   棋盘墙本体继续保留为规则学习税事实，不再自动加组件臂。
 >
-> **状态**：active——保留为战略复盘的决策入口与全量预注册档案。棋盘支柱本身
-> 已立（M2 双门槛 3/3），本 issue 不阻塞工程收口。
-> **关联**：收口规划 §4 终态快照 · [棋盘账本](../../examples/my_zero/gomoku/README.md)
-> （数字唯一 owner，含命名词典）· 载体 `tests/gomoku_m3_bench.rs` ·
+> **状态**：active——保留为战略复盘的决策入口与全量预注册档案。棋盘基线
+> 已达标（双门槛 3/3，recipe=base），本 issue 不阻塞工程。
+> **关联**：[RL 状态总览](../../.doc/design/rl_myzero_status.md) · [棋盘账本](../../examples/my_zero/gomoku/README.md)
+> （数字唯一 owner，含历史里程碑命名词典）· 载体 `tests/gomoku_m3_bench.rs` ·
 > 日志 `.bench/gomoku_{m3,naive0,pure_selfplay,g3}_*.log`
 
 ## 一、现象
@@ -81,7 +81,7 @@ M2 base（9×9 · Flat MLP · 组件全关 · sims=100 · 400 局）吊打 rando
 > `true_rules_tree` 均降级为**诊断脚手架**，不再是 promote 候选；真规则树仅作
 > ⑫/⑬ 对照尺子（量化规则学习税）。「数据质量」两成分的通用治法：分布覆盖不足
 > → PER 优先回放（⑭）；target 质量损耗 → 预算/容量摊税（⑫⑬ 裁决）。
-> 战役规划全文见[收口规划 §4 当前实际次序](../../.doc/design/rl_closure_plan.md#4-phase-3--样本效率纵深v027-下半)。
+> 战役规划全文见[RL 状态总览 · backlog](../../.doc/design/rl_myzero_status.md#5-未完成事项收口时的-backlog)。
 
 ## 四、后续裁决入口（不阻塞 M4；2026-07-05 与用户定稿为**前台主线**，按序执行）
 

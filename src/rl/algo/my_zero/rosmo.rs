@@ -1,6 +1,6 @@
 //! ROSMO 式一步 target 刷新（Xiao et al., ICLR 2023 · arXiv:2210.05980）。
 //!
-//! reanalyze 复活阶梯一（[收口规划 §2](../../../../.doc/design/rl_closure_plan.md)）：
+//! reanalyze 复活阶梯一（[RL 状态总览 · backlog](../../../../.doc/design/rl_myzero_status.md#5-未完成事项收口时的-backlog)）：
 //! 训练采样时用当前网络对旧数据**现算**改进 target，一步 look-ahead 替代全树 MCTS 重搜。
 //!
 //! # 与旧 [`reanalyze`](super::reanalyze)（全树重搜 + 写回）的三点差异
@@ -11,7 +11,7 @@
 //!   永远新鲜（与官方 MuZero Reanalyse 的流式设计同构，旧实现的写回属自创偏差）。
 //! - **value target 现算 bootstrap**：n-step 尾值用当前网络对 `s_{t+n}` 的评估，
 //!   替代 buffer 里 stale 的 self-play root value（论文 Eq.8；本实现用 online 网络，
-//!   target 网络接线留 Phase 3 条件项）。
+//!   target 网络接线留后续消融条件项）。
 //!
 //! 另含**优势过滤行为正则**（论文 Eq.11）：`w_j = 1[adv(s_j, a_j) > 0]`，
 //! 训练时对执行过的好动作做 BC（loss 侧见 `UnrollItem::bc_weights`）。

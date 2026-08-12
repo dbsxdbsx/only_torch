@@ -1,4 +1,4 @@
-//! obs 无量纲化变换（v0.26 Phase 0，收口规划 §1）。
+//! obs 无量纲化变换（symlog；默认关，见状态总览处方表）。
 //!
 //! `symlog(x) = sign(x)·ln(1+|x|)`（DreamerV3 口径）：无状态、可逆、原点附近 ≈ 恒等、
 //! 长尾对数压缩。用于把 obs（含 reconstruction 解码目标）压到统一量纲，使 recon MSE

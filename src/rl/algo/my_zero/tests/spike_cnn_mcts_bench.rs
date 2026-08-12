@@ -1,6 +1,6 @@
-//! # Phase 1 风险 spike:CNN 前向 × MCTS sims 单步 wall-clock 实测
+//! # 风险 spike：CNN 前向 × MCTS sims 单步 wall-clock 实测
 //!
-//! **目的**(预注册协议见 `.doc/design/rl_phase1_image_plan.md` §S0):
+//! **目的**(预注册协议见 `.doc/design/rl_myzero_status.md` §S0):
 //! 实测「CPU-only × 图像 CNN × MCTS」的单步 acting 成本,对照实时预算触发线
 //! (16–33ms/步,见 `.issue/items/cpu_only_mcts_image_realtime_risk.md`),
 //! 产出**去/留/改道**三态裁决。纯计时,不训练收敛、不接 env。
@@ -43,9 +43,9 @@ const SP_W: usize = 6;
 const SP_LEN: usize = SP_C * SP_H * SP_W;
 
 #[test]
-#[ignore = "manual: v0.26 Phase 1 风险 spike（CNN × MCTS 计时）"]
+#[ignore = "manual: CNN × MCTS 风险 spike（计时）"]
 fn spike_cnn_mcts() -> Result<(), GraphError> {
-    println!("=== Phase 1 spike:CNN × MCTS 单步 wall-clock(预注册协议 §S0)===");
+    println!("=== spike: CNN × MCTS 单步 wall-clock（预注册协议见本文件头）===");
     println!(
         "口径:{} build,warmup 后取中位数;触发线 16–33ms/步\n",
         if cfg!(debug_assertions) {

@@ -1,6 +1,6 @@
 //! v0.26 Phase 1 §S3：图像域（ALE/Pong-v5）native 复裁 A/B（手动档）。
 //!
-//! 预注册协议见 `.doc/design/rl_phase1_image_plan.md` §S3 与
+//! 预注册协议见 `.doc/design/rl_myzero_status.md` §S3 与
 //! `examples/my_zero/pong/README.md`（唯一账本）：
 //!
 //! - **base 臂**：image base 栈（consistency ON + recon OFF + two-hot + raw obs），

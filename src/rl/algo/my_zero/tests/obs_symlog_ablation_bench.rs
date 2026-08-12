@@ -1,6 +1,6 @@
 //! v0.26 Phase 0：obs 无量纲化（symlog）消融（CartPole 哨兵；手动档）。
 //!
-//! 收口规划 Phase 0 第四项（`.doc/design/rl_closure_plan.md` §1）：全家 loss 仅
+//! 历史 symlog 消融臂（结论见 `.doc/design/rl_myzero_status.md` 与 CartPole 账本）：全家 loss 仅
 //! reconstruction 直接暴露在环境单位下，symlog 统一量纲后 recon 系数才可跨环境迁移。
 //!
 //! # 预注册协议（跑之前定死）

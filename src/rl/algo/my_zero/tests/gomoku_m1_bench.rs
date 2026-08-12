@@ -1,6 +1,6 @@
 //! Gomoku M1 训练闭环（手动档）：9×9 最小基线，验收「vs random 胜率明确爬升」。
 //!
-//! **M1 口径**（收口规划 §3 提前启动；定性闸门，非预注册门槛）：
+//! **冒烟/闭环口径**（定性闸门，非预注册门槛；历史标签 M1）：
 //! - base 组件全关（canonical MuZero）+ Flat MLP 编码器 + negamax MC target；
 //! - 评测 vs `Gomoku-random-v0`（20 局 greedy），信号 = 胜率从 ~0.5 明确上升；
 //! - M2 才立预注册门槛（vs random ≥95% + vs 旧 checkpoint ≥55%）。

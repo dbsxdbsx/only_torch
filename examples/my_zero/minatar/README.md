@@ -1,7 +1,7 @@
-# MyZero · MinAtar 第三支柱
+# MyZero · MinAtar（小网格图像）
 
 > MinAtar（Young & Tian 2019）：10×10 二值通道网格版 Atari，保留策略难度、移除视觉感知难度。
-> 作为 MyZero 的第三支柱裁决场，用于批量终审积压的 offline/效率组件。
+> 用作图像域效率组件的裁决场（门槛未达标前不做组件 promote）；战略状态见 [RL 状态总览](../../../.doc/design/rl_myzero_status.md)。
 
 ## 环境特性
 
@@ -35,7 +35,7 @@
 
 | 结果 | 条件 | 后续 |
 |------|------|------|
-| 🟢 绿灯 | 任一游戏达标 | Phase 3 解封，进入组件消融 |
+| 🟢 绿灯 | 任一游戏达标 | 进入组件消融（见下方优先级） |
 | 🔴 红灯 | 双游戏皆平直 | planning-free 退路评估上桌 |
 | 🧊 冻结 | 组件消融完成后 | MinAtar 降级为回归哨兵（防元过拟合） |
 
@@ -61,7 +61,7 @@
 每臂 3-seed，半额预算（100k steps/seed），与 base 配对比较：
 
 1. **ROSMO reanalyze** — offline 效率第一张账单
-2. **target_net + SVE** — Phase 3 解封条件
+2. **target_net + SVE** — 门槛达标后解封
 3. **HL-Gauss** — 图像域复测
 4. **loss 优先回放** — 效率提升
 

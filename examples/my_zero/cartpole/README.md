@@ -2,11 +2,11 @@
 
 > [← 返回 MyZero 总览](../README.md)
 >
-> **本文件是全项目 RL benchmark 数字的唯一账本（owner）**：vision / roadmap / AGENTS / issue 一律链到这里，不各自维护数字。每行实测必须带口径（profile / BLAS / seeds / 日期）。
+> **本文件是 CartPole 环境 RL benchmark 数字的唯一账本（owner）**：状态总览 / AGENTS / issue 一律链到这里取数字，不各自维护副本。每行实测必须带口径（profile / BLAS / seeds / 日期）。战略与组件裁决见 [RL 状态总览](../../../.doc/design/rl_myzero_status.md)。
 
 离散 2 动作 · 门禁 **greedy eval ≥ 475** · **官方口径：3-seed（42/43/44）中位 env-steps-to-solved + 达标率**
 
-组件组合由库内 [`recipe.rs`](../../../src/rl/algo/my_zero/recipe.rs) 按 `CartPole-v1` 自动注入（当前：consistency(coef 2) + reconstruction(**coef 16**，v0.26 P0 重标定) + Sampled · PUCT · sims=20 · td=5）；示例只写训练契约。论文全称见 [算法纲领 §4.1](../../../.doc/design/my_zero_algorithm_vision.md#41-组件文献对照单一事实源)。
+组件组合由库内 [`recipe.rs`](../../../src/rl/algo/my_zero/recipe.rs) 按 `CartPole-v1` 自动注入（当前：consistency(coef 2) + reconstruction(**coef 16**，v0.26 P0 重标定) + Sampled · PUCT · sims=20 · td=5）；示例只写训练契约。论文全称见 [RL 状态总览](../../../.doc/design/rl_myzero_status.md)。
 
 ## 运行
 
@@ -156,7 +156,7 @@ baseline = 上节哨兵（12,519 / 8,643 / 9,826，中位 ~9.8k，range 8.6k–1
 | baseline（two-hot，= 哨兵） | 12,519 / 8,643 / 9,826 | 9,826 | 3/3 | 对照 |
 | HL-Gauss | 14,480 / 27,975 / 27,602 | 27,602 | 3/3 | **range 完全更差不重叠（14.5k–28.0k vs 8.6k–12.5k）→ 负结果，回退 two-hot** |
 
-**结论**：CartPole 上 HL-Gauss 显著劣化（中位 9.8k → 27.6k，~2.8×），非文献预期的「持平」。机制解释：CartPole value 目标经 h 变换后范围窄（≈0–17.6）且低噪声，two-hot 的"尖"标签在此是**信息优势**（目标可精确定位到相邻两原子）；HL-Gauss 把质量摊到 ~±3 原子等于主动注入标签模糊，其鲁棒性收益只在大 value 噪声场景（图像/大规模）才能兑现——正合 Farebrother et al. 的适用前提。**默认保持 two-hot；`hl_gauss` 开关与实现保留在库，Phase 1 图像域（native 场景）复测**（收口规划 §2 已有该复裁条目）。
+**结论**：CartPole 上 HL-Gauss 显著劣化（中位 9.8k → 27.6k，~2.8×），非文献预期的「持平」。机制解释：CartPole value 目标经 h 变换后范围窄（≈0–17.6）且低噪声，two-hot 的"尖"标签在此是**信息优势**（目标可精确定位到相邻两原子）；HL-Gauss 把质量摊到 ~±3 原子等于主动注入标签模糊，其鲁棒性收益只在大 value 噪声场景（图像/大规模）才能兑现——正合 Farebrother et al. 的适用前提。**默认保持 two-hot；`hl_gauss` 开关与实现保留在库，图像域（native 场景）复测**（见 [RL 状态总览 §5](../../../.doc/design/rl_myzero_status.md#5-未完成事项收口时的-backlog)）。
 
 ### obs symlog 无量纲化（symlog × recon_coef 三臂）
 
@@ -171,14 +171,14 @@ baseline = 上节哨兵（12,519 / 8,643 / 9,826，中位 ~9.8k，range 8.6k–1
 
 1. **「最优系数向 1 回移」完全没有发生**——symlog 下仍是 16 最优且单调恶化（16 → 4 → 1 = 12.9k → 19.7k → 39.4k）。预注册 promote 条件（小系数与 16 打平）不满足，且 symlog+16 相对哨兵无任何改善（中位 +31%、尾部方差放大）。
 2. **机制解释**：CartPole obs 本来就是 O(0.1–1) 小量纲（angle ±0.42、实际 pos/vel ±3 内），symlog 在 |x|<1 近恒等——**无量纲可撤**，只轻微非线性挤压了 obs 的可分辨结构。由此裁决 v0.25 复盘的悬案：**recon_coef=16 在 CartPole 上的本质是「自监督话语权」权衡旋钮，不是单位换算**（若是单位换算，撤走量纲后系数应回归 1）。
-3. **对 Phase 1 的指导**：低维小量纲环境不需要 obs 归一化；图像线走 [0,1] 像素归一 + 该域重标 recon 系数即可。`obs_symlog` 开关保留库内（未来大范围连续特征环境可按 [Simulus 计划 §3](../../../.doc/design/my_zero_simulus_ablation_plan.md) 原触发条件启用），recipe 默认恒关。
+3. **对图像域的指导**：低维小量纲环境不需要 obs 归一化；图像线走 [0,1] 像素归一 + 该域重标 recon 系数即可。`obs_symlog` 开关保留库内（未来大范围连续特征环境可按 [RL 状态总览 · 处方表](../../../.doc/design/rl_myzero_status.md#34-处方表跨域路由规则) 原触发条件启用），recipe 默认恒关。
 
 ### Phase 0 收口定格（2026-07-02 · CartPole 自此冻结为纯回归哨兵）
 
 两项消融均负结果 → **recipe 零变更**；两个开关（`hl_gauss` / `obs_symlog`）默认关落地后，
 `SEEDS=3` 官方哨兵**逐 bit 复现** promoted 数字：**12,519 / 8,643 / 9,826，中位 ~9.8k，3/3 达标**
 （行为零变化的实证）。v0.26 recipe 定稿 = cons(2) + recon(**16**) + two-hot + raw obs + canonical 梯度流
-（[收口规划 §1](../../../.doc/design/rl_closure_plan.md) 四者有据）；此后 CartPole 只回答「崩没崩」（条款二）。
+（[RL 状态总览 · backlog](../../../.doc/design/rl_myzero_status.md#5-未完成事项收口时的-backlog) 四者有据）；此后 CartPole 只回答「崩没崩」（条款二）。
 
 ---
 

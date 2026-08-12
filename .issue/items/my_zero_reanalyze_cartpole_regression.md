@@ -11,7 +11,7 @@ reviewers: []
 > **状态**：active —— 写回闭环已实现并单测覆盖；CartPole recipe **已关** `reanalyze`，当前 recipe 为 **consistency + reconstruction + Sampled**（基线数字见 [CartPole 基准账本](../../examples/my_zero/cartpole/README.md)）。
 > **⚠️ 口径提示（2026-07-02）**：下文实测数字为 pre-autograd-fix 旧口径，仅保留方向性结论（当前 reanalyze 实现在 CartPole 上有害而非单纯变慢）。
 > **战略升级（2026-07-01，纲领 §2.3）**：reanalyze 已定为 v0.26 **战略组件**（「实时轻 acting + 离线重 reanalyze」解耦是商业游戏路线核心）；本 issue 的负结果不构成否定——复活时先查 §三假设（早期弱网写回污染 / partial window 覆盖 / 缺 target net），并按新口径重测。
-> **关联**：[CartPole README](../../examples/my_zero/cartpole/README.md) · [MyZero 总览](../../examples/my_zero/README.md) · [RL 路线图](../../.doc/design/rl_roadmap.md)
+> **关联**：[CartPole README](../../examples/my_zero/cartpole/README.md) · [MyZero 总览](../../examples/my_zero/README.md) · [RL 状态总览](../../.doc/design/rl_myzero_status.md)
 > **代码**：`src/rl/algo/my_zero/reanalyze.rs` · `runner.rs`（`prepare_train_batch` / `writeback_reanalyzed_samples`）· `buffer/replay.rs`（`sample_indexed` / `update_at`）
 > **日志**：`.bench/my_zero_cartpole_cons_only.log` · `.bench/my_zero_cartpole_cons_reanalyze.log`
 
@@ -61,7 +61,7 @@ seed=42 · release · CartPole-v1 · recipe **consistency + reanalyze + 写回**
 
 ## 四、恢复条件（promote 前）
 
-> **复活路径重构（2026-07-03）：ROSMO-first 两级阶梯，裁决场 = Phase 1 图像线**（详见[收口规划 Phase 1](../../.doc/design/rl_closure_plan.md#2-phase-1--图像线立柱--一级风险压测v026-下半)）。
+> **复活路径重构（2026-07-03）：ROSMO-first 两级阶梯，裁决场 = Phase 1 图像线**（详见[RL 状态总览 · backlog](../../.doc/design/rl_myzero_status.md#5-未完成事项收口时的-backlog)）。
 > 关键洞察：本 issue §三假设 1（弱网全树重搜写回投毒）与 ROSMO（Xiao et al., ICLR 2023 ·
 > [arXiv:2210.05980](https://arxiv.org/abs/2210.05980)，开源 sail-sg/rosmo）诊断 MuZero Unplugged
 > 失效的病理**同源**——旧数据上搜得越深模型误差复合越狠。故复活第一臂改为 **ROSMO 式一步

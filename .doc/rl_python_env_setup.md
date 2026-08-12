@@ -1,6 +1,7 @@
 # Windows 下强化学习 Python 环境搭建指南
 
-> 本文档记录如何在 Windows 上搭建强化学习所需的 Python 环境，为后续 Rust 桥接做准备。
+> 本文档记录如何在 Windows 上搭建强化学习所需的 Python 环境，为后续 Rust 桥接做准备。  
+> **算法 / 组件 / backlog 不在本文**：见 [design/rl_myzero_status.md](design/rl_myzero_status.md)。
 
 ## 背景
 

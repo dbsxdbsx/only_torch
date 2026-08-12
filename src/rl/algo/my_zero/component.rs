@@ -23,7 +23,7 @@ pub(crate) struct Components {
     /// `true` = HL-Gauss 高斯软标签（Farebrother et al. 2024 / Simulus RaC；σ 见
     /// [`HL_GAUSS_SIGMA`](super::value_encoding::HL_GAUSS_SIGMA)）。解码端两者相同（期望 → h⁻¹）。
     /// **CartPole 消融负结果**（中位 9.8k→27.6k，2026-07-02，账本在案）→ 默认保持 two-hot；
-    /// Phase 1 图像域复测（大 value 噪声为其 native 场景）。
+    /// 图像域复测（大 value 噪声为其 native 场景）。
     pub hl_gauss: bool,
     /// obs symlog 无量纲化（DreamerV3 口径，`sign(x)·ln(1+|x|)`；模型 obs 入口单点，
     /// repr 输入 + recon 目标同源变换，buffer / env I/O 恒存 raw）。训练与推理必须

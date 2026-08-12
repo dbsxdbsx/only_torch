@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-07-02
-updated: 2026-07-02 (Phase 1 spike 实测回填，一级风险裁决 GO)
+updated: 2026-07-02 (CNN×MCTS spike 实测回填，一级风险裁决 GO)
 owners: []
 reviewers: []
 ---
@@ -9,7 +9,7 @@ reviewers: []
 # 一级风险：CPU-only × 图像 CNN × MCTS × 实时的结构性冲突
 
 > **性质**：这不是 bug，是**路线级结构性风险**——MyZero 路线上唯一可能真正致命的约束冲突，显式记录、持续重估，不许藏在「感觉慢」里。
-> **关联**：[算法纲领 §2.3](../../.doc/design/my_zero_algorithm_vision.md#23-战略目标与优先轴2026-07-01-定稿)（战略目标与 acting/reanalyze 解耦）· [RL 路线图 §5](../../.doc/design/rl_roadmap.md#5-v026-方向2026-07-01-战略转向定稿)（v0.26 P0：CNN 图像表征）
+> **关联**：[RL 状态总览](../../.doc/design/rl_myzero_status.md)（战略目标、图像线 backlog、acting/reanalyze 解耦）
 
 ---
 
@@ -42,11 +42,11 @@ reviewers: []
 
 ## 三b、有据可查的路线级退路：planning-free 世界模型（2026-07-02 补）
 
-若上述缓解逐项压测后「图像 + 实时 + MCTS」仍不可行，**免规划世界模型家族是实证退路**：Simulus（arXiv 2502.11537，[阅读日志](../../.doc/paper/reading_log.md)）证明 planning-free WM 在 Atari-100K 达人类水平 IQM（该口径首个），样本效率打平多数带规划方法；acting 期只跑 policy 网络、零 MCTS 开销，正对本 issue 的实时预算约束。且其可拆组件（RaC、loss 优先回放，见[消融计划](../../.doc/design/my_zero_simulus_ablation_plan.md)）在 MCTS / planning-free 两条路线上通用——现在做不白做，切换成本被压低。
+若上述缓解逐项压测后「图像 + 实时 + MCTS」仍不可行，**免规划世界模型家族是实证退路**：Simulus（arXiv 2502.11537，[阅读日志](../../.doc/paper/reading_log.md)）证明 planning-free WM 在 Atari-100K 达人类水平 IQM（该口径首个），样本效率打平多数带规划方法；acting 期只跑 policy 网络、零 MCTS 开销，正对本 issue 的实时预算约束。且其可拆组件（RaC、loss 优先回放，见[RL 状态总览 · 处方表](../../.doc/design/rl_myzero_status.md#34-处方表跨域路由规则)）在 MCTS / planning-free 两条路线上通用——现在做不白做，切换成本被压低。
 
 ## 四、触发重估的条件
 
-- [x] **v0.26 图像基准首个 spike（2026-07-02 已裁决：GO 绿）**：`src/rl/algo/my_zero/tests/spike_cnn_mcts_bench.rs`（手动档 bench，`just spike-cnn-mcts`；release+MKL，warmup 后中位数，协议见 [Phase 1 计划 §S0](../../.doc/design/rl_phase1_image_plan.md)）实测：
+- [x] **图像 acting spike（2026-07-02 已裁决：GO 绿）**：`src/rl/algo/my_zero/tests/spike_cnn_mcts_bench.rs`（手动档 bench，`just spike-cnn-mcts`；release+MKL，warmup 后中位数，协议见该文件头注释）实测：
   - 组件：CNN root（84²×4，EfficientZero-lite 栈，~255k 参数）**2.4ms**；42² 降档 **0.4ms**；MLP recurrent **0.03ms**；conv recurrent（悲观臂空间 latent 32×6×6）**0.10ms**
   - 完整 acting 单步（真实 `mcts_search` 含树簿记，flat-latent 臂）：sims=2 → **1.9ms** · sims=20 → **2.3ms** · sims=50 → **3.9ms**；悲观 conv-recurrent 臂 sims=20 → 3.5ms、sims=50 → 6.6ms——**两臂全部 sims 档位均远低于 16–33ms 实时预算线**
   - 训练吞吐：batch=8 CNN fwd+bwd+Adam step 84² **37.7ms** / 42² 6.8ms → 120k env-steps 单实验（1 train/step 悲观口径）≈ **1.3h**，离线吞吐无忧
@@ -56,4 +56,4 @@ reviewers: []
 
 ## 五、诚实结论（2026-07-02 spike 后更新）
 
-原判断「CPU-only 与图像 + 实时 + MCTS 同时全量成立的概率不高」经 spike 实测**证伪于本框架的具体形态**：flat-latent MyZero（CNN 仅在 h，g/f 为 MLP）下单步 acting 仅 ~2–4ms，距 16–33ms 预算余量 8–14×。该结论的适用边界：latent 64 / sims ≤ 50 / 84² 灰度输入 / 小卷积栈；若未来上大 CNN（残差塔）或空间 latent conv dynamics，需按本 issue §三缓解清单重新压测（悲观臂 6.6ms @ sims=50 仍留有余量）。学习效果（能否在此预算下学会 Pong）由 Phase 1 基准（[pong README](../../examples/my_zero/pong/README.md)）另行裁决——本 issue 只管 wall-clock 结构性风险。
+原判断「CPU-only 与图像 + 实时 + MCTS 同时全量成立的概率不高」经 spike 实测**证伪于本框架的具体形态**：flat-latent MyZero（CNN 仅在 h，g/f 为 MLP）下单步 acting 仅 ~2–4ms，距 16–33ms 预算余量 8–14×。该结论的适用边界：latent 64 / sims ≤ 50 / 84² 灰度输入 / 小卷积栈；若未来上大 CNN（残差塔）或空间 latent conv dynamics，需按本 issue §三缓解清单重新压测（悲观臂 6.6ms @ sims=50 仍留有余量）。学习效果（能否在此预算下学会 Pong）由 [pong 账本](../../examples/my_zero/pong/README.md) 另行裁决——本 issue 只管 wall-clock 结构性风险。

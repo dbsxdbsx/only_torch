@@ -1,4 +1,4 @@
-//! CNN representation 编码器单测（v0.26 Phase 1）：shape / 归一化 / batch 等价 / 反传 / 序列化往返。
+//! CNN representation 编码器单测：shape / 归一化 / batch 等价 / 反传 / 序列化往返。
 
 use crate::nn::{Adam, Graph, Module, Optimizer, VarLossOps};
 use crate::rl::algo::my_zero::network::{ConvRepresentationNet, MyZeroModel, ObsSpec};

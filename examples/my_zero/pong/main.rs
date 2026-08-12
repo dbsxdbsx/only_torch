@@ -1,6 +1,6 @@
-//! MyZero · ALE/Pong-v5（图像离散支柱基准，v0.26 Phase 1）。
+//! MyZero · ALE/Pong-v5（图像离散环境基准账本）。
 //!
-//! **预注册口径**（`.doc/design/rl_phase1_image_plan.md` §S2，跑前定稿）：
+//! **预注册口径**（见 `.doc/design/rl_myzero_status.md` §3 与本目录 README，跑前定稿）：
 //! - obs：210×160×3 → 灰度 84² × 4 帧堆叠（库内图像管线自动接管）
 //! - 门槛：3-seed 中位 best greedy(10 局) ≥ **−18**（随机 ≈ −20.7；非 SOTA 口径）
 //! - 预算：每 seed ≤ 150 局（≈ 120k env-steps）或 wall-clock 24h 先到为准
@@ -21,7 +21,7 @@ const BEST: &str = "models/my_zero/Pong-v5/best";
 fn main() -> Result<(), GraphError> {
     let smoke = std::env::var("SMOKE").is_ok();
 
-    // 预注册训练口径（Phase 1 计划 §S2；改动须走消融纪律）
+    // 预注册训练口径（见本目录 README；改动须走消融纪律）
     let train = TrainSettings {
         gamma: 0.997,
         k_unroll: 5,

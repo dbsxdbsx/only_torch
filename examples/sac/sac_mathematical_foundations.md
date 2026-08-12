@@ -365,5 +365,5 @@ NF 在 RL 中的数值稳定性不如在生成模型中（因为 RL 的梯度信
 - [SAC 示例总览与核心概念](README.md) — 熵、α、Target Entropy 的实践指南
 - [Beta 分布备选方案](beta_distribution_note.md) — 有界分布替代 Gaussian+tanh
 - [概率分布模块设计](../../.doc/design/distributions_design.md) — Categorical/Normal/TanhNormal 的 API 设计
-- [RL 路线图](../../../.doc/design/rl_roadmap.md) — RL 架构设计与版本规划
+- [RL 状态总览](../../.doc/design/rl_myzero_status.md) — RL 架构设计与版本规划
 - SAC+NF 论文原文：Ward et al., *Improving Exploration in Soft-Actor-Critic with Normalizing Flows Policies*（[arXiv:1906.02771](https://arxiv.org/abs/1906.02771)）

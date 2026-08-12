@@ -29,7 +29,7 @@ reviewers: []
 
 > **状态**：~~active~~ —— 已实测确认非孤例、非新逻辑 bug；数字与完整判读见
 > [cartpole 账本「哨兵红灯」节](../../examples/my_zero/cartpole/README.md)（唯一账本，此处不重复数字）。
-> **关联**：CHANGELOG deps 条目（ndarray 0.16/0.17 升级）· `.doc/design/rl_closure_plan.md`（CartPole 纯回归哨兵定位）
+> **关联**：CHANGELOG deps 条目（ndarray 0.16/0.17 升级）· [RL 状态总览](../../.doc/design/rl_myzero_status.md#5-未完成事项收口时的-backlog)（CartPole 纯回归哨兵定位）
 
 ## 一、现象（摘要）
 

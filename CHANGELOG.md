@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **docs(rl): RL 文档 DevOps 收尾——权威收敛 + 断链清扫 + 过程黑话退场**（2026-08-12）
+  - [`.doc/design/rl_myzero_status.md`](.doc/design/rl_myzero_status.md) 升为唯一战略权威：并入原示例总览中的组件矩阵与处方表，新增 §0 文档分工（含「本地 `*.plan.md` 非权威」）
+  - [`examples/my_zero/README.md`](examples/my_zero/README.md) 压成薄入口索引；各环境 README / `.issue` / 源码注释中指向已删 `rl_roadmap` / `rl_closure_plan` / `my_zero_algorithm_vision` 等的链接一律改指状态总览
+  - 补齐 [`.doc/README.md`](.doc/README.md) 与 [`.issue/README.md`](.issue/README.md) 公共契约；同步 `AGENTS.md` / `rl.instructions.md` / `architecture_roadmap.md`
+  - 活入口与库模块注释去掉「M0–M4 / Phase N / 第三支柱 / 收口规划」等路线图话术；账本实验编号与 `gomoku_m*_bench` 等历史载体文件名保留
+
 ### Added
 
 - **test(rl): MyZero 主动数据 Phase 3A0 负裁——当前协议未证明 error proxy 可稳定降低**（2026-07-12）
@@ -68,7 +76,7 @@
   - **M2 预注册正裁 3/3 达标**（400 局满预算 · sims=100 · seeds 42/43/44）：vs random 中位 **1.000**（门槛 ≥0.95）· vs 半程快照 gating 中位 **0.950**（门槛 ≥0.55）——棋盘支柱立柱；协议修订公开记录（gating 对弈随机开局 2 步 + 黑白镜像成对，修复纯贪心确定性对局的测量仪器缺陷）
   - **M3 九臂消融全程 3-seed 预注册**：Gumbel+completedQ（s100/s16）/ consistency / reconstruction / CNN 表征（新增 `ObsSpec::Board` + stride-1 棋盘卷积塔）/ 预算×5 / replay×8 / lr 3e-3 全中性或偏害，唯一弱阳性 = **D4 增广**（naive0 中位 0.10→0.15，未达 promote 线）；组合臂（增广+RR32+lr3e3）不超单臂——「配方合力」未兑现
   - **M4 收口**：棋盘 recipe 定型 **base 全关** 进 `recipe.rs`（`board_stack`，`BoardTrainConfig` 默认组件改走 recipe 唯一事实源）；`just smoke-my-zero-gomoku` 进 `smoke-rl` 发版关卡（8 目标）；[棋盘账本](examples/my_zero/gomoku/README.md) 落地为棋盘数字唯一 owner；组件矩阵拆分图像/Gomoku 双列
-  - **Gumbel/completedQ 负结果 issue 终局归档**（`.issue/_archive/my_zero_gumbel_completedq_cartpole_negative.md`）：关闭条件「|A|≫sims 复裁」达成——棋盘 s16 中性（无灾难亦无增益）→ 全域 recipe 关、代码保留、少 sim acting 降档留用；CartPole 灾难归因闭合（n≫|A| regime + 双 bug）；「三件套正交分层」文档债沉淀 [vision §5.4](.doc/design/my_zero_algorithm_vision.md)（Sampled=候选层 / Gumbel=根层 / completedQ=目标层 + 融合契约）
+  - **Gumbel/completedQ 负结果 issue 终局归档**（`.issue/_archive/my_zero_gumbel_completedq_cartpole_negative.md`）：关闭条件「|A|≫sims 复裁」达成——棋盘 s16 中性（无灾难亦无增益）→ 全域 recipe 关、代码保留、少 sim acting 降档留用；CartPole 灾难归因闭合（n≫|A| regime + 双 bug）；「三件套正交分层」文档债沉淀 [RL 状态总览](.doc/design/rl_myzero_status.md)（Sampled=候选层 / Gumbel=根层 / completedQ=目标层 + 融合契约）
   - **naive0 战术墙立 issue**（`.issue/items/gomoku_naive0_tactical_wall.md`）：九臂全平/弱阳收口档案，头号假设 = MuZero 规则学习税（参照 AlphaZero 实现树内真规则零学习负担）；后续裁决入口（sims 400 / 树内真规则诊断 / 增广大预算复核 / recon coef 重标）预注册留档，不阻塞支柱
 
 - **feat(rl): ROSMO 一步 target 刷新进库（reanalyze 复活阶梯一）+ Pong 图像线诊断收敛 + Gomoku 提前为主线**（2026-07-04）
@@ -214,7 +222,7 @@
   - **GymEnv**：`ALE/*` 自动 `register_envs(ale_py)`；图像 obs 快路径（numpy `astype+tobytes` 整块拷贝，免 10 万元素逐个 extract）
   - **训练路径零克隆修复**：非 reanalyze 采样改 `PreparedBatch::Borrowed`（`ReplayBuffer` 增 `sample_indices`/`get_ref`；RNG 序与旧 clone 路径逐 bit 一致）——图像单局数十 MB 时整局 clone 是实测主瓶颈（6 局 profile：batch_prepare 67.7s + writeback 32.9s → 归零，单局 wall 33s→16s）
   - **Pong 基准载体**：`examples/my_zero/pong`（预注册口径：150 局/seed，门槛 3-seed 中位 best greedy ≥ −18，账本 README 已建）+ `tests/pong_image_ablation_bench.rs` 三臂 A/B（recon pilot/3-seed、cons-off、hl-gauss 图像域复测）+ `smoke-my-zero-pong`
-  - 新增 11 个单元测试（灰度/双线性/堆叠组装 6 + conv 表征 shape/batch 等价/反传/图像模型训推 5）；`just test-filter rl` 全绿；CartPole 3-seed 哨兵 12,519/8,643/9,826 **逐 bit 复现**（图像线改动对哨兵零扰动）；战术计划 `.doc/design/rl_phase1_image_plan.md` + 进行中报告 `rl_phase1_report.md`
+  - 新增 11 个单元测试（灰度/双线性/堆叠组装 6 + conv 表征 shape/batch 等价/反传/图像模型训推 5）；`just test-filter rl` 全绿；CartPole 3-seed 哨兵 12,519/8,643/9,826 **逐 bit 复现**（图像线改动对哨兵零扰动）；战术计划 `rl_phase1_image_plan.md` / 报告 `rl_phase1_report.md`（均已并入 `.doc/design/rl_myzero_status.md`）
   - **已知问题（进行中）**：Pong 3-seed 首跑 seed42 于 Ep53 崩溃（`Tensor::new` 形状不匹配），确定性可复现，backtrace 复现跑进行中；`Tensor::new` panic 消息已增强（打印数据长度与形状）——修复与基准数字随后续提交
 
 ### Changed
@@ -239,13 +247,13 @@
   - **Phase 0 退出判据达成**：v0.26 recipe 定稿 = recon16 + two-hot + raw obs + canonical 梯度流（四者有据）；两开关默认关落地后官方哨兵 `SEEDS=3` **逐 bit 复现** 12,519 / 8,643 / 9,826（行为零变化实证）；**CartPole 自此冻结（条款二生效）**，下一步 Phase 1 CNN×MCTS 风险 spike
   - 新增 13 个单元测试（HL-Gauss 性质 7 + symlog 性质/接线 4 + 编码基线 2）+ 2 个预注册消融 bench（`hl_gauss_ablation_bench.rs` / `obs_symlog_ablation_bench.rs`）；账本 / 组件矩阵 / roadmap / 收口规划 / Simulus 计划 / AGENTS 全量同步
 - **docs(rl): RL 全面收口规划落盘（v0.26→v0.28 五阶段）**（2026-07-02）
-  - 新增 `.doc/design/rl_closure_plan.md`：终态验收四条（矩阵零 ⏳ / 四类环境支柱 / issue 全归档 / smoke-rl 扩容）+ 五阶段战役次序（训练信号收口 → 图像线+风险 spike → Gomoku self-play → 样本效率纵深 → 总收口）+ issue/版本裁决映射 + Simulus 与旧规划吸收对照（§6b/§6c，零散 plan 全部清账）+ 两条制度化条款（spike 唯一改道节点、CartPole 哨兵铁律）；`rl_roadmap.md` §5 链入
+  - 新增 `rl_closure_plan.md`（已并入 `.doc/design/rl_myzero_status.md`）：终态验收四条（矩阵零 ⏳ / 四类环境支柱 / issue 全归档 / smoke-rl 扩容）+ 五阶段战役次序（训练信号收口 → 图像线+风险 spike → Gomoku self-play → 样本效率纵深 → 总收口）+ issue/版本裁决映射 + Simulus 与旧规划吸收对照（§6b/§6c，零散 plan 全部清账）+ 两条制度化条款（spike 唯一改道节点、CartPole 哨兵铁律）；`rl_roadmap.md` §5 链入
   - Gumbel 负结果 issue 补 **§七 复裁前置修复清单**：① greedy eval 注入 Gumbel 噪声 bug（`final_recommendation` 无视 temperature=0，疑似"未收敛"真因，此前无仓库内记录）② `q_range` 局部归一化同源 bug——两项不修则 Phase 2 复裁无效
   - Phase 0 梯度流审计闭环（2026-07-02）：`train_unroll{,_batch}` 读码产出梯度流向图入 Simulus 计划 A2——现状完全 canonical（cons target 已 stop-grad、hidden ×0.5 与 loss ×1/K 缩放齐备、recon 回流 repr/dynamics 为设计本意）；**sg 解耦 (b)/(c) 两臂裁决不追加**（(b) 与 t1 5-seed 数据经验冗余、(c) 破坏 MuZero 价值等价且 Simulus 前提不成立），复活触发条件留 Phase 1 图像线干扰症状
   - 补遗（同日完整性二审）：Phase 0 增 **obs 无量纲化（symlog）消融**（全家 loss 仅 reconstruction 带环境量纲；模型边界单点变换 + 预注册三臂协议入档，此前方案仅存于对话记录；Phase 1 挂「recon 系数免重调」兑现判据，Simulus 计划 §3 symlog 行同步升级为主动项）；认领两条悬空项——Phase 4 **Sampled 小动作空间自动短路裁决**（账本 v0.25 结论 3「留 v0.26 评估」此前无人认领）、Phase 2 `predict_batch` 条件触发（草案有、落盘时遗失）
 - **docs: CPU 优化 + RL 样本效率论文批次清账（7 篇）**（2026-07-02）
   - 新增 `.doc/paper/reading_log.md` 累积论文阅读日志：Winograd / 手写 GEMM / Strassen 系内核级优化路线**整体否决盖棺**（含"未来图像线网络变大"场景，理由逐条留档），唯一采纳项 Simulus（arXiv 2502.11537）
-  - 新增 `.doc/design/my_zero_simulus_ablation_plan.md`：HL-Gauss value 编码（two-hot 升级，挂 P0）、辅助 loss stop-gradient 解耦实验（挂 P0）、loss 优先回放（挂 P1 reanalyze）三项消融候选的映射与执行顺序；`rl_roadmap.md` §5 链入
+  - 新增 `my_zero_simulus_ablation_plan.md`（已并入 `.doc/design/rl_myzero_status.md`）：HL-Gauss value 编码（two-hot 升级，挂 P0）、辅助 loss stop-gradient 解耦实验（挂 P0）、loss 优先回放（挂 P1 reanalyze）三项消融候选的映射与执行顺序；`rl_roadmap.md` §5 链入
   - `optimization_candidates.md`：已否决项补"内核级优化路线"；待优化项补 #3"推理模式中间节点 value 及早释放（liveness，YAGNI 暂缓）"（源自 arXiv 2308.13898 思想）
   - `cpu_only_mcts_image_realtime_risk.md` 补 §三b：planning-free 世界模型作为「图像 × 实时 × MCTS」不可行时的实证退路（Simulus 数据支撑）
 
@@ -629,7 +637,7 @@
 
 ## [0.19.0] - 2026-06-15
 
-> RL 主线首个版本：**规划与设计决策定稿**（纯文档 / 规划发版——bump 版本号 + 更新 `CHANGELOG.md`，**不** `cargo publish`）。运行时改造（Gymnasium-only `GymEnv`、buffer 落库、smoke 门禁）自 **v0.20.0** 起实施，详见 [RL 路线图](.doc/design/rl_roadmap.md) 与主线实施计划。
+> RL 主线首个版本：**规划与设计决策定稿**（纯文档 / 规划发版——bump 版本号 + 更新 `CHANGELOG.md`，**不** `cargo publish`）。运行时改造（Gymnasium-only `GymEnv`、buffer 落库、smoke 门禁）自 **v0.20.0** 起实施，详见 [RL 状态总览](.doc/design/rl_myzero_status.md) 与主线实施计划。
 
 ### Changed
 

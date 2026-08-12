@@ -23,7 +23,7 @@
 │   ├── memory_mechanism_design.md                  # 记忆/循环机制设计
 │   ├── node_vs_layer_design.md                     # Node vs Layer 架构设计
 │   ├── optimizer_architecture_design.md            # 优化器架构
-│   ├── rl_roadmap.md                               # RL 模块路线图
+│   ├── rl_myzero_status.md                         # RL / MyZero 状态总览（唯一战略权威）
 │   └── visualization_guide.md                      # 可视化使用指南
 ├── performance/                         # 性能优化专区
 │   ├── optimization_strategy.md         # 全局优化策略与架构约束
@@ -226,7 +226,7 @@ only_torch/
 |:------:|------|------|----------|
 | 🔴 高 | **NEAT 神经架构演化** | 待实现 | [neural_architecture_evolution_design.md](design/neural_architecture_evolution_design.md) |
 | 💤 暂缓 | **过程宏** `#[derive(Model)]` | 等待 RFC 3698 | 样板代码仅 `parameters()` 约 5 行，投入产出比低 |
-| 💤 暂缓 | **强化学习改良** | 基础完成 | [rl_roadmap.md](design/rl_roadmap.md) |
+| 💤 暂缓 | **强化学习改良** | 收口暂缓 | [rl_myzero_status.md](design/rl_myzero_status.md) |
 
 > 注：数据共享可视化（同源 Input 节点间的蓝色虚线标注）已通过 Tensor `source_id` 机制实现，
 > 详见 [input_node_semantics_design.md](design/input_node_semantics_design.md)。

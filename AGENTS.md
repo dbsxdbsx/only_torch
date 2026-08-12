@@ -20,7 +20,7 @@ only_torch 是一个纯 Rust 的 PyTorch 风格玩具框架，当前重点是：
 | **版本** | `0.25.0`（2026-07-02；本地可能超前 `origin/master`，以 `git log` / `CHANGELOG.md` 为准） |
 | **Rust** | `1.97.0`（`rust-toolchain.toml` 固定；2026-07-12 双工具链 A/B、3421 主测试与 `just smoke-rl` 已通过，口径见[性能工作流](.doc/performance/benchmark_workflow.md#rust-工具链升级-ab)） |
 | **刚闭环** | **✅ Stochastic MuZero always-on 验收（2026-07-15）**：afterstate dynamics + chance encoder + KL(posterior‖prior) loss + chance-in-edge 搜索架构。确定性 CartPole 3/3（26k，慢 1.7x）；StochasticCartPole K=8 达标率 3/3 vs K=1 仅 2/3——随机环境鲁棒性验证通过。默认 K=8 always-on，确定性环境 chance distribution 自动退化为单峰。此前 POMDP-lite posterior 与主动数据 3A0 均已负裁（代码保留默认关）。 |
-| **当前主线** | **强化学习** v0.26 收口态：MyZero 一个入口 + learned-world-model 契约 + Stochastic K=8 always-on。MinAtar 第三支柱已接入（管线能学，pilot peak 4.1 / 门槛 8）。RL 暂缓，详见[RL 状态总览](.doc/design/rl_myzero_status.md)。 |
+| **当前主线** | **强化学习暂缓**：MyZero 一个入口 + learned-world-model 契约 + Stochastic K=8 always-on。MinAtar 小网格环境已接入（管线能学，pilot peak 4.1 / 门槛 8）。详见[RL 状态总览](.doc/design/rl_myzero_status.md)。 |
 | **刻意暂缓** | 演化 **阶段 D**（`CellAttention` ONNX、`Attention` Net2Net 函数保持、Conv2d Attention；3D batched MatMul 已于 2026-07-04 完成出表）——与 RL 零耦合，见 [记忆机制设计 — Phase D](.doc/design/memory_mechanism_design.md#-后续-phase-d刻意未做)（该表为「阶段 D」唯一权威定义） |
 | **一级风险** | CPU-only × 图像 CNN × MCTS × 实时结构性冲突：[.issue/items/cpu_only_mcts_image_realtime_risk.md](.issue/items/cpu_only_mcts_image_realtime_risk.md)（图像线推进前必读） |
 | **工具链提示** | `blas-mkl` 间接依赖 `proc-macro-error2 2.0.1` 在 Rust 1.97 报 future-incompat warning，当前不阻断；跟踪见 [.issue/items/proc_macro_error2_future_incompat.md](.issue/items/proc_macro_error2_future_incompat.md) |
@@ -83,7 +83,7 @@ just smoke-rl                  # 全部 RL smoke 聚合（发版固定关卡，�
 - Node 与 Layer 的边界：[节点与层边界设计](.doc/design/node_vs_layer_design.md)
 - 演化系统：[神经架构演化设计](.doc/design/neural_architecture_evolution_design.md)
 - 记忆 / RNN / Attention（含 Phase 进度与留坑表）：[记忆机制设计](.doc/design/memory_mechanism_design.md)
-- 强化学习：[RL 状态总览](.doc/design/rl_myzero_status.md)、[MyZero 示例总览](examples/my_zero/README.md)、[Python 环境配置](.doc/rl_python_env_setup.md)
+- 强化学习（**只认两份权威 + 账本**）：[RL 状态总览](.doc/design/rl_myzero_status.md)（战略/组件/backlog）、[Python 环境配置](.doc/rl_python_env_setup.md)；示例入口 [MyZero README](examples/my_zero/README.md)（薄索引）；数字见各环境账本。文档索引见 [`.doc/README.md`](.doc/README.md)；未闭环现场见 [`.issue/README.md`](.issue/README.md)。编辑器本地 `*.plan.md` 非权威
 - 空间视觉任务路线：[空间视觉任务路线图](.doc/design/spatial_vision_tasks_roadmap.md)
 - 并行 / Rayon / 线程与分配画像：[线程模型](.doc/design/threading_model.md)
 - DataLoader / 变长序列：[数据加载设计](.doc/design/data_loader_design.md)

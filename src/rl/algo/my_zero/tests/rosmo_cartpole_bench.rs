@@ -2,7 +2,7 @@
 //!
 //! # 定位（条款二：CartPole 只答「崩没崩」，不答「好不好」）
 //!
-//! reanalyze 复活阶梯一（[收口规划 §2](../../../../../.doc/design/rl_closure_plan.md)）的
+//! reanalyze 复活阶梯一（[RL 状态总览 · backlog](../../../../../.doc/design/rl_myzero_status.md#5-未完成事项收口时的-backlog)）的
 //! **回归覆盖 + bug 探测**，不做价值裁决（价值裁决在图像域 Pong A/B，须先立无
 //! reanalyze 图像基线）。
 //!

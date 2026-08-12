@@ -32,13 +32,13 @@ fn image_base_stack() -> Components {
     c
 }
 
-/// 棋盘（Gomoku）栈 = **base 组件全关**（M4 收口定型，2026-07-05）。
+/// 棋盘（Gomoku）栈 = **base 组件全关**（2026-07-05 定型）。
 ///
-/// M3 消融九臂 3-seed 裁决（账本见 `examples/my_zero/gomoku/README.md`）：
+/// 九臂消融 3-seed 裁决（账本见 `examples/my_zero/gomoku/README.md`）：
 /// Gumbel+completedQ / consistency / reconstruction / CNN 表征 / 预算×5 /
 /// replay×8 / lr 3e-3 全部中性或偏害，唯一弱阳性 = D4 对称增广
 /// （naive0 中位 0.10 → 0.15，未达 promote 线，复核入口见
-/// `.issue/items/gomoku_naive0_tactical_wall.md`）。base 即 M2 双门槛 3/3 的达标配置。
+/// `.issue/items/gomoku_naive0_tactical_wall.md`）。base = 双门槛 3/3 达标配置。
 fn board_stack() -> Components {
     Components::base()
 }

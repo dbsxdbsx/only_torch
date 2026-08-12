@@ -4,7 +4,7 @@
 
 - **规格**：纯连续（1 维）· 门禁 greedy return ≥ -200 · 当前诊断栈 B=7 连续候选 · 默认 `gamma=0.997`，`sims=20`
 - **状态**：**诊断中**——best greedy 仍在失败区间（门禁 −200），属「还没学会」。先查可学习性，暂不对组件下裁决（[诊断 issue](../../../.issue/items/pendulum_failure_diagnosis.md)）
-- **优先级**：**已降级为非关键路径**（2026-07 战略转向：优先磨观测空间 + self-play，见[纲领 §2.3](../../../.doc/design/my_zero_algorithm_vision.md#23-战略目标与优先轴2026-07-01-定稿)）；保留诊断态，连续需求出现时再推进。届时它仍是连续动作组件（Gumbel-root / Sampled B=7）的判别环境
+- **优先级**：**已降级为非关键路径**（2026-07 战略转向：优先磨观测空间 + self-play，见[RL 状态总览](../../../.doc/design/rl_myzero_status.md)）；保留诊断态，连续需求出现时再推进。届时它仍是连续动作组件（Gumbel-root / Sampled B=7）的判别环境
 
 ## 运行
 

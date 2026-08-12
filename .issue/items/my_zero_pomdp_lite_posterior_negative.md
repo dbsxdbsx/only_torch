@@ -14,9 +14,9 @@ reviewers: []
 > `config.rs` / `builder.rs`（`recurrent_posterior` / `obs_mask`）·
 > `tests/posterior.rs`（5 单测全绿）·
 > `tests/pomdp_cartpole_bench.rs`（手动 `--ignored` bench）
-> **关联**：[RL 路线图 §5](../../.doc/design/rl_roadmap.md) ·
-> [world model 地基 §7.2](../../.doc/design/my_zero_world_model_foundation.md) ·
-> [大纲阶段 4](../../.doc/design/rl_closure_plan.md)
+> **关联**：[RL 状态总览](../../.doc/design/rl_myzero_status.md) ·
+> [RL 状态总览 · 架构](../../.doc/design/rl_myzero_status.md#2-架构概览) ·
+> [大纲阶段 4](../../.doc/design/rl_myzero_status.md#5-未完成事项收口时的-backlog)
 
 ---
 

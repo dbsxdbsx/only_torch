@@ -373,7 +373,7 @@ impl XorMLP {
 | 💤 暂缓 | **过程宏** | 暂不执行（等待 RFC 3698） |
 | ✅ 完成 | ~~API 便捷方法~~ | zeros_like / randn_like / 标量运算 / attach |
 | ✅ 完成 | ~~错误类型精细化~~ | ValueNotComputed / GradientNotComputed 等已添加 |
-| 💤 暂缓 | **强化学习改良** | 后续方向详见 [RL 路线图](./rl_roadmap.md) |
+| 💤 暂缓 | **强化学习改良** | 后续方向详见 [RL 状态总览](../design/rl_myzero_status.md) |
 | 💤 暂缓 | **演化 RLTask 对接** | 条件触发（见 §9.1），出现演化搜 RL 结构需求时再做 |
 | 💤 暂缓 | **演化接入 DataLoader** | 条件触发（见 §9.2），图像演化上大数据集时再做 |
 
@@ -384,7 +384,7 @@ impl XorMLP {
 - [神经架构演化设计](./neural_architecture_evolution_design.md) — **核心设计文档**，详细描述混合策略
 - [待扩展节点类型规划](./future_node_types.md) — Exp/Clamp/概率分布等节点的详细规划
 - [动态图生命周期设计](../_archive/dynamic_graph_lifecycle_design.md) — 已归档，已解决多输入/多输出和节点累积问题
-- [强化学习路线图](../design/rl_roadmap.md) — RL 模块的当前状态与方向（SAC 技巧等历史内容见 [v0.20–v0.24 归档](../design/_archive/rl_roadmap_v020_v024.md)）
+- [RL 状态总览](../design/rl_myzero_status.md) — RL / MyZero 当前状态与方向
 - [Hybrid SAC 论文](./../paper/RL/SAC复合actions.pdf) — Delalleau et al. 2019，离散+连续+混合动作框架
 - [NEAT 论文](./../paper/NEAT_2002/summary.md)
 - [EXAMM 论文](./../paper/EXAMM_2019/summary.md)

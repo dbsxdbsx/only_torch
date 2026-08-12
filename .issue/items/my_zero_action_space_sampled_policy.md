@@ -13,7 +13,7 @@ updated: 2026-07-10
 > 通用 schema 地基已接通 MultiDiscrete / 2D continuous / Platform Hybrid；本 issue
 > 继续保持 active，只剩 native 环境统计价值与高维无枚举 proposal，接口完成不等于 promote。
 > **论文本地副本**：`AI论文/Muzero复合action.pdf`（= Hubert et al. ICML 2021 · Sampled MuZero · arXiv:2104.06303）
-> **关联**：[MyZero 纲领 §5](../../.doc/design/my_zero_algorithm_vision.md) · [RL 路线图](../../.doc/design/rl_roadmap.md) · [Pendulum 诊断](./pendulum_failure_diagnosis.md) · [post_ez_v2 backlog §Sampled（已归档）](../_archive/post_ez_v2_research_backlog.md)
+> **关联**：[RL 状态总览](../../.doc/design/rl_myzero_status.md) · [Pendulum 诊断](./pendulum_failure_diagnosis.md) · [post_ez_v2 backlog §Sampled（已归档）](../_archive/post_ez_v2_research_backlog.md)
 
 ---
 

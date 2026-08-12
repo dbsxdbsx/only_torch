@@ -258,7 +258,7 @@ impl Module for RepresentationNet {
     }
 }
 
-/// CNN representation（图像 obs；EfficientZero-lite 卷积栈，Phase 1 spike 同款）。
+/// CNN representation（图像 obs；EfficientZero-lite 卷积栈，与 CNN×MCTS spike 同款）。
 ///
 /// 输入为**展平**图像 `[B, c·side²]`（与全库 flat obs 通路兼容），前向内部
 /// reshape 回 `[B, c, side, side]` → 若干 stride-2 3×3 conv（空间压到 ≤7）→
@@ -705,11 +705,7 @@ pub struct AfterstateDynNet {
 }
 
 impl AfterstateDynNet {
-    pub fn new(
-        graph: &Graph,
-        latent_dim: usize,
-        action_dim: usize,
-    ) -> Result<Self, GraphError> {
+    pub fn new(graph: &Graph, latent_dim: usize, action_dim: usize) -> Result<Self, GraphError> {
         let graph = graph.with_model_name("AsDyn");
         Ok(Self {
             fc: Linear::new(&graph, latent_dim + action_dim, latent_dim, true, "fc")?,
@@ -753,7 +749,13 @@ impl AfterstatePredNet {
                 true,
                 "chance_prior",
             )?,
-            afterstate_value_head: Linear::new(&graph, latent_dim, SUPPORT.size(), true, "as_value")?,
+            afterstate_value_head: Linear::new(
+                &graph,
+                latent_dim,
+                SUPPORT.size(),
+                true,
+                "as_value",
+            )?,
         })
     }
 
@@ -830,13 +832,7 @@ impl ChanceEncoder {
     ) -> Result<Self, GraphError> {
         let graph = graph.with_model_name("ChanceEnc");
         Ok(Self {
-            fc: Linear::new(
-                &graph,
-                latent_dim * 2,
-                num_chance_outcomes,
-                true,
-                "fc",
-            )?,
+            fc: Linear::new(&graph, latent_dim * 2, num_chance_outcomes, true, "fc")?,
         })
     }
 
@@ -1216,18 +1212,11 @@ impl MyZeroModel {
     pub(crate) fn with_recurrent_posterior(mut self, on: bool) -> Result<Self, GraphError> {
         if on {
             let hidden_size = self.latent_dim;
-            let posterior = PosteriorEncoder::new(
-                &self.graph,
-                self.latent_dim,
-                self.action_dim,
-                hidden_size,
-            )?;
-            let repr_latent_in =
-                self.graph.input(&Tensor::zeros(&[1, self.latent_dim]))?;
-            let prev_action_in =
-                self.graph.input(&Tensor::zeros(&[1, self.action_dim]))?;
-            let prev_hidden_in =
-                self.graph.input(&Tensor::zeros(&[1, hidden_size]))?;
+            let posterior =
+                PosteriorEncoder::new(&self.graph, self.latent_dim, self.action_dim, hidden_size)?;
+            let repr_latent_in = self.graph.input(&Tensor::zeros(&[1, self.latent_dim]))?;
+            let prev_action_in = self.graph.input(&Tensor::zeros(&[1, self.action_dim]))?;
+            let prev_hidden_in = self.graph.input(&Tensor::zeros(&[1, hidden_size]))?;
             let (posterior_latent, new_hidden) =
                 posterior.step(&repr_latent_in, &prev_action_in, &prev_hidden_in)?;
             let sink = Var::concat(&[&posterior_latent, &new_hidden], 1)?;
@@ -1257,14 +1246,26 @@ impl MyZeroModel {
     ) -> Result<Self, GraphError> {
         self.num_chance_outcomes = num_chance_outcomes;
         if num_chance_outcomes > 1 {
-            self.afterstate_dyn =
-                Some(AfterstateDynNet::new(&self.graph, self.latent_dim, self.action_dim)?);
-            self.afterstate_pred =
-                Some(AfterstatePredNet::new(&self.graph, self.latent_dim, num_chance_outcomes)?);
-            self.stochastic_dyn =
-                Some(StochasticDynNet::new(&self.graph, self.latent_dim, num_chance_outcomes)?);
-            self.chance_encoder =
-                Some(ChanceEncoder::new(&self.graph, self.latent_dim, num_chance_outcomes)?);
+            self.afterstate_dyn = Some(AfterstateDynNet::new(
+                &self.graph,
+                self.latent_dim,
+                self.action_dim,
+            )?);
+            self.afterstate_pred = Some(AfterstatePredNet::new(
+                &self.graph,
+                self.latent_dim,
+                num_chance_outcomes,
+            )?);
+            self.stochastic_dyn = Some(StochasticDynNet::new(
+                &self.graph,
+                self.latent_dim,
+                num_chance_outcomes,
+            )?);
+            self.chance_encoder = Some(ChanceEncoder::new(
+                &self.graph,
+                self.latent_dim,
+                num_chance_outcomes,
+            )?);
         } else {
             self.afterstate_dyn = None;
             self.afterstate_pred = None;
@@ -1717,37 +1718,35 @@ impl MyZeroModel {
         };
 
         // ---- POMDP-lite burn-in：逐样本暖 posterior hidden（无 autograd） ----
-        let posterior_hidden_batch: Option<Tensor> =
-            if let Some(ref posterior) = self.posterior {
-                let hs = posterior.hidden_size;
-                let mut all_hidden = Vec::with_capacity(g * hs);
-                for item in items {
-                    let mut h = vec![0.0f32; hs];
-                    for (j, burn_obs) in item.burn_in_obs.iter().enumerate() {
-                        let mut obs_data = Vec::with_capacity(obs_dim);
-                        burn_obs.append_into(&mut obs_data);
-                        let repr_lat = self.repr_inference(&obs_data);
-                        let mut prev_oh = vec![0.0f32; self.action_dim];
-                        let prev_a = if j == 0 {
-                            item.burn_in_leading_action
-                        } else {
-                            Some(item.burn_in_actions[j - 1])
-                        };
-                        if let Some(a) = prev_a {
-                            if a < self.action_dim {
-                                prev_oh[a] = 1.0;
-                            }
+        let posterior_hidden_batch: Option<Tensor> = if let Some(ref posterior) = self.posterior {
+            let hs = posterior.hidden_size;
+            let mut all_hidden = Vec::with_capacity(g * hs);
+            for item in items {
+                let mut h = vec![0.0f32; hs];
+                for (j, burn_obs) in item.burn_in_obs.iter().enumerate() {
+                    let mut obs_data = Vec::with_capacity(obs_dim);
+                    burn_obs.append_into(&mut obs_data);
+                    let repr_lat = self.repr_inference(&obs_data);
+                    let mut prev_oh = vec![0.0f32; self.action_dim];
+                    let prev_a = if j == 0 {
+                        item.burn_in_leading_action
+                    } else {
+                        Some(item.burn_in_actions[j - 1])
+                    };
+                    if let Some(a) = prev_a {
+                        if a < self.action_dim {
+                            prev_oh[a] = 1.0;
                         }
-                        let (_lat, new_h) =
-                            self.posterior_step_inference(&repr_lat, &prev_oh, &h);
-                        h = new_h;
                     }
-                    all_hidden.extend_from_slice(&h);
+                    let (_lat, new_h) = self.posterior_step_inference(&repr_lat, &prev_oh, &h);
+                    h = new_h;
                 }
-                Some(Tensor::new(all_hidden, &[g, hs]))
-            } else {
-                None
-            };
+                all_hidden.extend_from_slice(&h);
+            }
+            Some(Tensor::new(all_hidden, &[g, hs]))
+        } else {
+            None
+        };
 
         // ---- k=0：repr → (optional posterior) → pred（policy + value）+ reconstruction ----
         let (repr_in, recon_target0) = if reconstruction_coef > 0.0 {
@@ -1757,9 +1756,7 @@ impl MyZeroModel {
         };
         let mut latent = self.repr.forward(repr_in)?;
 
-        if let (Some(posterior), Some(hidden_t)) =
-            (&self.posterior, posterior_hidden_batch)
-        {
+        if let (Some(posterior), Some(hidden_t)) = (&self.posterior, posterior_hidden_batch) {
             let mut prev_oh_flat = vec![0.0f32; g * self.action_dim];
             for (row, item) in items.iter().enumerate() {
                 if let Some(a) = item.train_prev_action {
@@ -1772,8 +1769,7 @@ impl MyZeroModel {
                 .graph
                 .input(&Tensor::new(prev_oh_flat, &[g, self.action_dim]))?;
             let hidden_var = self.graph.input(&hidden_t)?;
-            let (posterior_latent, _) =
-                posterior.step(&latent, &prev_action_var, &hidden_var)?;
+            let (posterior_latent, _) = posterior.step(&latent, &prev_action_var, &hidden_var)?;
             latent = posterior_latent;
         }
 
@@ -1866,7 +1862,7 @@ impl MyZeroModel {
                     let as_value_loss = as_value_logits.cross_entropy(as_tv)?;
 
                     // KL(posterior || prior)：确定性环境中两者收敛到同一单峰 → KL 自然归零
-                    let q = chance_logits.softmax();   // posterior (encoder)
+                    let q = chance_logits.softmax(); // posterior (encoder)
                     let p = chance_prior_logits.softmax(); // prior (afterstate prediction)
                     let eps = 1e-8_f32;
                     let log_q = (q.clone() + eps).ln();
@@ -2132,13 +2128,22 @@ impl<'a> PrecomputedRootDynamics<'a> {
         root_policy: Vec<f32>,
         root_value: f32,
     ) -> Self {
-        Self { model, root_latent, root_policy, root_value }
+        Self {
+            model,
+            root_latent,
+            root_policy,
+            root_value,
+        }
     }
 }
 
 impl Dynamics for PrecomputedRootDynamics<'_> {
     fn initial_state(&self, _obs: &[f32]) -> (Vec<f32>, Vec<f32>, f32) {
-        (self.root_latent.clone(), self.root_policy.clone(), self.root_value)
+        (
+            self.root_latent.clone(),
+            self.root_policy.clone(),
+            self.root_value,
+        )
     }
 
     fn recurrent(&self, state: &[f32], action: &ActionPayload) -> DynamicsOutput {
@@ -2214,8 +2219,13 @@ impl MyZeroModel {
         pi.prev_hidden_in
             .set_value(&Tensor::new(prev_hidden.to_vec(), &[1, hs]))
             .expect("set prev_hidden 失败");
-        self.graph.forward(&pi.sink).expect("posterior forward 失败");
-        (read_value_vec(&pi.posterior_latent), read_value_vec(&pi.new_hidden))
+        self.graph
+            .forward(&pi.sink)
+            .expect("posterior forward 失败");
+        (
+            read_value_vec(&pi.posterior_latent),
+            read_value_vec(&pi.new_hidden),
+        )
     }
 
     /// pred-only 推理（给定 latent → policy + value）。
@@ -2378,8 +2388,7 @@ impl MyZeroModel {
             let afterstate_vec = read_value_vec(&afterstate);
             let chance_prior = softmax_row(&read_value_vec(&chance_logits));
             let as_value_logits_vec = read_value_vec(&as_value_logits_var);
-            let as_value =
-                Self::decode_categorical_slice(&softmax_row(&as_value_logits_vec));
+            let as_value = Self::decode_categorical_slice(&softmax_row(&as_value_logits_vec));
 
             (afterstate_vec, chance_prior, as_value)
         })
@@ -2439,8 +2448,7 @@ impl MyZeroModel {
             let prior = self.decode_policy_logits(&read_value_vec(&policy_logits));
             let value = Self::decode_categorical_slice(&read_value_vec(&value_logits));
             let cont_logit = read_value_vec(&cont_logit_var)[0];
-            let continuation =
-                sigmoid_scalar(cont_logit + CONTINUATION_LOGIT_BIAS).clamp(0.0, 1.0);
+            let continuation = sigmoid_scalar(cont_logit + CONTINUATION_LOGIT_BIAS).clamp(0.0, 1.0);
 
             (next_vec, reward, prior, value, continuation)
         })

@@ -7,7 +7,7 @@ archived: 2026-07-02
 
 # EZ-V2（v0.24）收口后：验收口径 + 后续研究方向 backlog
 
-> 📦 **已归档（2026-07-02，v0.25 收口）**：本文写于 v0.24「每版一个算法」时代，以 EZ-V2 为项目终极算法；其角色已被取代——研究方向沉淀入 [my_zero_algorithm_vision.md](../../.doc/design/my_zero_algorithm_vision.md)（§2.3 战略目标 / §5 决策表），实施优先级入 [rl_roadmap.md §5](../../.doc/design/rl_roadmap.md)。正文保留作历史参考：文中 `examples/efficientzero/*`、`examples/muzero/*` 等路径已不存在，EZ-V2 / MuZero 名字按论文溯源理解；**文中所有 benchmark 数字为 pre-autograd-fix 旧口径**（v0.25 已全量重测，见 [CartPole 基准账本](../../examples/my_zero/cartpole/README.md)）。
+> 📦 **已归档（2026-07-02，v0.25 收口）**：本文写于 v0.24「每版一个算法」时代，以 EZ-V2 为项目终极算法；其角色已被取代——研究方向与实施优先级见 [RL 状态总览](../../.doc/design/rl_myzero_status.md)。正文保留作历史参考：文中 `examples/efficientzero/*`、`examples/muzero/*` 等路径已不存在，EZ-V2 / MuZero 名字按论文溯源理解；**文中所有 benchmark 数字为 pre-autograd-fix 旧口径**（v0.25 已全量重测，见 [CartPole 基准账本](../../examples/my_zero/cartpole/README.md)）。
 >
 > **原用途**：v0.24 开工前/收口后的架构锚点——明确「EZ-V2 做完要验什么」、以及「做完还缺什么、以后往哪扩」。
 
@@ -110,7 +110,7 @@ archived: 2026-07-02
 | P2 | **Stochastic MuZero**（chance node） | **EZ 不包含**；真·结构随机环境 | **动树核心**（decision/chance 节点） | Antonoglou et al. 2022 |
 | P2 | **纯 offline SOTA**（Minari 主路径） | EZ reanalyze 是半离线；纯 offline 是另一档 | buffer 来源 + 无 env step | MuZero Unplugged / CQL 类 |
 | P3 | **Sampled MuZero** | 与 Gumbel 目标重叠，机制不同 | `ActionSampler` + 节点动作集 | Hubert et al. 2021 |
-| P3 | **MENTS / RegPolicy / ANT** | 搜索变体，非 EZ 必需 | `SearchPolicy` 插件 | §5.10 rl_roadmap |
+| P3 | **MENTS / RegPolicy / ANT** | 搜索变体，非 EZ 必需 | `SearchPolicy` 插件 | 见 [RL 状态总览](../../.doc/design/rl_myzero_status.md) backlog |
 | P3 | **PER** | 样本优先级 | buffer 包装层 | 长期 backlog |
 | P4 | **不完全信息**（扑克等） | **另一算法家族** | IS-MCTS / CFR，非 Zero 补丁 | 不在当前路线 |
 | P4 | **多智能体 N>2** | self-play 契约不成立 | PettingZoo 级框架 | v0.25+ backlog |

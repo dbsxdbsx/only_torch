@@ -34,7 +34,10 @@ let dot = graph.to_dot();
 
 ## 文档
 
-目前无人性化的文档。可直接看 Rust 自动生成的[Api Doc](https://docs.rs/only_torch)即可。
+- 长期知识索引：[`.doc/README.md`](.doc/README.md)
+- RL / MyZero 状态（战略权威）：[`.doc/design/rl_myzero_status.md`](.doc/design/rl_myzero_status.md) · 环境配置：[`.doc/rl_python_env_setup.md`](.doc/rl_python_env_setup.md)
+- 未闭环问题现场：[`.issue/README.md`](.issue/README.md)
+- API：[docs.rs/only_torch](https://docs.rs/only_torch)
 
 ### 使用示例
 
@@ -614,22 +617,11 @@ cargo build --features blas-openblas
 
 > 按优先级排序。Agent 接手任务时：**优先「当前主线」**，演化阶段 D 与低优先级项除非用户点名否则不默认展开。
 
-### 🟢 当前主线（v0.26）
+### 🟢 强化学习（暂缓）
 
-**强化学习** — 详见 [MyZero 算法纲领](.doc/design/my_zero_algorithm_vision.md)、[通用 world model 地基](.doc/design/my_zero_world_model_foundation.md)、[RL 路线图](.doc/design/rl_roadmap.md)、[MyZero 示例总览](examples/my_zero/README.md) 与 [AGENTS.md — 当前版本与焦点](AGENTS.md#当前版本与焦点)
+权威入口：[RL 状态总览](.doc/design/rl_myzero_status.md) · [MyZero 示例](examples/my_zero/README.md) · [AGENTS.md 焦点](AGENTS.md#当前版本与焦点) · [环境配置](.doc/rl_python_env_setup.md)
 
-已完成（v0.20–v0.25）：Gymnasium-only 环境层 + buffer 入库 → SAC 三动作类型示例 → MCTS 内核 → **MyZero 统一算法**（项目唯一 `*Zero` 实现，CartPole 哨兵达标，样本效率领先 model-free 基线）。
-
-v0.26 当前方向（[RL 路线图 §5](.doc/design/rl_roadmap.md#5-v026-方向2026-07-01-战略转向定稿)）：
-
-| 优先级 | 任务 | 入口 |
-|--------|------|------|
-| ✅ P0 | loss 系数重标定消融（已完成：recon_coef 16 promote，官方哨兵中位 ~9.8k env-steps） | [基准账本](examples/my_zero/cartpole/README.md) |
-| ✅ P0 | 通用 learned-world-model 前两阶段：稳定 schema / world model 契约 + 图像、token、MultiDiscrete、连续、Hybrid 纵切 | [地基设计](.doc/design/my_zero_world_model_foundation.md) |
-| ✅ P1 | Gomoku self-play M0–M4 + 战术纵深 ①–⑱ 收口 | [棋盘账本](examples/my_zero/gomoku/README.md) |
-| 下一步 | 新论文方向的 observable-grounded error 与主动数据生成（独立实验，尚未启动） | [RL 路线图](.doc/design/rl_roadmap.md) |
-
-环境配置： [`.doc/rl_python_env_setup.md`](.doc/rl_python_env_setup.md)
+已落地：Gymnasium-only + SAC/PPO 对照 + MyZero（CartPole 哨兵、Gomoku recipe=base、Stochastic K=8、schema 纵切）。未完成与 backlog 只认状态总览 §5，不在此另开路线图。
 
 ### 🔴 演化模块（阶段 D 暂缓，非当前主线）
 
@@ -685,9 +677,9 @@ v0.26 当前方向（[RL 路线图 §5](.doc/design/rl_roadmap.md#5-v026-方向2
 - [API 分层与种子管理设计](.doc/design/api_layering_and_seed_design.md) - Graph seed 传播机制、Layer seed 确定性保证、演化系统 seed 管理
 - [优化器架构设计](.doc/design/optimizer_architecture_design.md) - SGD / Adam 优化器的内部实现和 API 设计
 - [概率分布模块设计](.doc/design/distributions_design.md) - Categorical / Normal / TanhNormal 三种分布的 API 设计原则（Var vs Tensor、构造时缓存、梯度追踪策略）
-- [MyZero 算法纲领](.doc/design/my_zero_algorithm_vision.md) - MyZero 战略层：做/不做、文献谱系、双轨架构、首要评价指标
-- [MyZero 通用 learned world model 地基](.doc/design/my_zero_world_model_foundation.md) - 前两阶段已实现契约、输入/动作纵切、兼容边界与后续阶段接缝
-- [强化学习路线图](.doc/design/rl_roadmap.md) - RL 当前状态、验收协议与 v0.26 方向（v0.20–v0.24 历史决策见 [归档](.doc/design/_archive/rl_roadmap_v020_v024.md)）
+- [RL 状态总览](.doc/design/rl_myzero_status.md) - MyZero 战略层：做/不做、文献谱系、双轨架构、首要评价指标
+- [RL 状态总览 · 架构](.doc/design/rl_myzero_status.md#2-架构概览) - 前两阶段已实现契约、输入/动作纵切、兼容边界与后续阶段接缝
+- [RL 状态总览](.doc/design/rl_myzero_status.md) - RL 当前状态、验收协议与 v0.26 方向（v0.20–v0.24 历史决策见 [归档](.doc/design/rl_myzero_status.md)）
 - [MatrixSlow 项目识别文档](.doc/reference/python_MatrixSlow_pid.md) - 基于 MatrixSlow 的 Python 深度学习框架分析，包含计算图、自动求导、静态图执行等核心概念的详细说明
 
 ## 参考资料

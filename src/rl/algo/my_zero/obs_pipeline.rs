@@ -1,10 +1,10 @@
-//! 图像 obs 预处理管线（v0.26 Phase 1，收口规划 §2 / Phase 1 计划 §S1）。
+//! 图像 obs 预处理管线（Atari 标准口径；战略见 `.doc/design/rl_myzero_status.md`）。
 //!
 //! **管线**（Atari 标准口径）：HWC/CHW f32 原始帧（0–255）→ BT.601 灰度 →
 //! 双线性降采样至 [`OUT_SIDE`]² → **u8 量化存储**（[`StoredObs::U8`]，round，4× 省内存）
 //! → 读取时反量化 `[0,1]` → 最近 [`STACK`] 帧堆叠为 CHW。
 //!
-//! **内存纪律**（收口规划 §2 图像线）：replay buffer 只存**处理后量化单帧**
+//! **内存纪律**（图像线）：replay buffer 只存**处理后量化单帧**
 //! （[`frame_len`] 个 u8），堆叠在两处按需组装（两处吃**同一份量化语义**，数值自洽）：
 //! - acting 期：[`ImagePipe`] 维护 episode 内滑窗（[`ImagePipe::stacked`]）；
 //! - 训练期：[`assemble_stacked_obs`] 从 `SelfPlayGame.steps` 就地组装
@@ -471,7 +471,9 @@ impl ObsAdapter {
     pub const fn image_stack(&self) -> Option<usize> {
         match self {
             Self::Image(pipe) => Some(pipe.config().history),
-            Self::Flat { .. } | Self::ImageDense { .. } | Self::Tokens { .. }
+            Self::Flat { .. }
+            | Self::ImageDense { .. }
+            | Self::Tokens { .. }
             | Self::Board { .. } => None,
         }
     }
@@ -599,13 +601,9 @@ fn board_transpose(flat: &[f32], channels: usize, side: usize, channel_first: bo
 fn detect_small_board(shape: &[i64]) -> Option<(usize, usize, bool)> {
     match shape {
         // CHW：第一维较小
-        [c, h, w] if *h == *w && *h <= 20 && *c < *h => {
-            Some((*c as usize, *h as usize, true))
-        }
+        [c, h, w] if *h == *w && *h <= 20 && *c < *h => Some((*c as usize, *h as usize, true)),
         // HWC：最后一维较小
-        [h, w, c] if *h == *w && *h <= 20 && *c < *h => {
-            Some((*c as usize, *h as usize, false))
-        }
+        [h, w, c] if *h == *w && *h <= 20 && *c < *h => Some((*c as usize, *h as usize, false)),
         _ => None,
     }
 }

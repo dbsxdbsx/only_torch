@@ -1,4 +1,4 @@
-//! 棋盘双人 self-play 训练闭环（Gomoku M1，收口规划 §3）。
+//! 棋盘双人 self-play 训练闭环（Gomoku；数字与历史里程碑见 `examples/my_zero/gomoku/README.md`）。
 //!
 //! # 与单智能体 runner 的三点差异
 //! - **双人 negamax 搜索**：[`BoardMctsModel`] 把 `to_play` 藏进 `MctsModel::State`
@@ -16,11 +16,11 @@
 //! - `board_step` 返回的 reward 是**落子方**视角（+1 胜 / 0 其余）；
 //! - value 头学的语义是「当前待走方的局面价值」，与树内 negamax 翻转自洽。
 //!
-//! # 入口与配方（M4 收口，2026-07-05）
+//! # 入口与配方（2026-07-05 定型）
 //! 组件组合唯一事实源 = [`recipe::components_for`](super::recipe::components_for)
 //! （棋盘 = base 全关，裁决依据见该处注释与棋盘账本）。当前入口为手动档 bench
-//! （`tests/gomoku_m*_bench.rs`）与 `just smoke-my-zero-gomoku` 冒烟关卡；
-//! 公开 builder 接入随象棋支柱需求再定（`allow(dead_code)` 因入口均在 cfg(test) 保留）。
+//! （`tests/gomoku_m*_bench.rs`，文件名保留历史里程碑标签）与 `just smoke-my-zero-gomoku`；
+//! 公开 builder 接入随象棋需求再定（`allow(dead_code)` 因入口均在 cfg(test) 保留）。
 #![allow(dead_code)]
 
 use super::board_model_io::save_board_model;
@@ -165,7 +165,7 @@ impl MctsModel for BoardMctsModel<'_> {
 
 /// 棋盘搜索统一入口：按 `true_rules` 在两种树内转移间插拔（唯一分叉点）。
 ///
-/// `false` = learned dynamics（[`BoardMctsModel`]，M1–M4 基线路径，逐 bit 不变）；
+/// `false` = learned dynamics（[`BoardMctsModel`]，生产基线路径，逐 bit 不变）；
 /// `true` = 真规则树（[`TrueRulesBoardModel`]，②臂诊断）。
 #[allow(clippy::too_many_arguments)]
 fn board_search(
@@ -425,7 +425,7 @@ fn board_mcts_config(
         num_simulations,
         temperature,
         discount: 1.0,
-        // AlphaZero 系口径 alpha ≈ 10/|A|（9×9 → ~0.12）；M1 取 0.15 常数档
+        // AlphaZero 系口径 alpha ≈ 10/|A|（9×9 → ~0.12）；此处取 0.15 常数档
         root_dirichlet_alpha: 0.15,
         root_exploration_fraction,
         ..MctsConfig::default()
@@ -579,7 +579,7 @@ fn snapshot_model(
 /// 双模型对弈一局（黑白各自网络，greedy、无噪声）。返回胜方 player id（None = 平局）。
 ///
 /// `opening_plies` 步**随机合法开局**（由 `seed` 决定，双方各半）：纯贪心对弈整局
-/// 确定，无开局多样性时 n 局退化为同一盘棋重复（M2 首裁实测教训）；随机开局是
+/// 确定，无开局多样性时 n 局退化为同一盘棋重复（基线正裁实测教训）；随机开局是
 /// AlphaZero 系评测对局的标准做法，同一 `seed` 的开局可跨色镜像复用保证公平。
 #[allow(clippy::too_many_arguments)]
 fn board_duel_episode(
@@ -684,7 +684,7 @@ fn board_duel_score(
 // 训练入口
 // ============================================================================
 
-/// 棋盘训练配置（默认值 = M2 达标口径；组件默认走 recipe，消融臂按需覆盖）。
+/// 棋盘训练配置（默认值 = 当前达标口径；组件默认走 recipe，消融臂按需覆盖）。
 #[derive(Debug, Clone)]
 pub(crate) struct BoardTrainConfig {
     /// self-play 环境（双方外部落子）
@@ -708,9 +708,9 @@ pub(crate) struct BoardTrainConfig {
     /// vs 评测对手的达标胜率（如 0.95）
     pub solved_win_rate: f32,
     pub seed: u64,
-    /// 周期 eval 命中 `solved_win_rate` 即提前收工（M1 口径 true；M2 满预算跑完 false）
+    /// 周期 eval 命中 `solved_win_rate` 即提前收工（冒烟 true；满预算正裁 false）
     pub early_stop: bool,
-    /// 该局结束后拍权重快照（M2 gating 对弈的"旧 checkpoint"；None = 不拍）
+    /// 该局结束后拍权重快照（gating 对弈的"旧 checkpoint"；None = 不拍）
     pub snapshot_at_episode: Option<usize>,
     /// 训后终局闸门局数（vs random 正裁 + gating 对弈各用此数；0 = 跳过终局闸门）
     pub gate_games: usize,
@@ -723,16 +723,16 @@ pub(crate) struct BoardTrainConfig {
     pub terminal_eval_seed_offset: u64,
     /// 训练完成后保存 final 棋盘模型的 `.otm` 基名（不含扩展名）；默认不落盘。
     pub save_final_model_base: Option<PathBuf>,
-    /// 组件开关（M3 消融臂注入口；默认 base 全关）
+    /// 组件开关（消融臂注入口；默认 base 全关）
     pub components: Components,
-    /// representation 编码器用 CNN（`ObsSpec::Image{channels:3, side}`，复用 Phase 1
-    /// conv 栈）；false = Flat MLP（M1/M2 基线）。M3 表征臂开关。
+    /// representation 编码器用 CNN（`ObsSpec::Image{channels:3, side}`，复用图像
+    /// conv 栈）；false = Flat MLP（基线）。表征消融臂开关。
     pub cnn_repr: bool,
     /// 8 重对称增广（D4）：训练采样时每条样本随机套一个对称变换（整局同构）。
     pub augment: bool,
     /// 树内真规则（AlphaZero 式诊断，naive0 issue §四-②）：树内转移/终局/候选 mask 走
     /// [`RulesBoard`] 真规则，叶子先验/价值仍由网络在真实 obs 上给；训练侧不变。
-    /// false = learned dynamics 基线（M1–M4 路径，逐 bit 不变）。
+    /// false = learned dynamics 基线（生产路径，逐 bit 不变）。
     pub true_rules_tree: bool,
     /// ROSMO 式 policy target 刷新（naive0 issue §四-③）：训练采样时用当前网络对
     /// 存量 policy target 现算一步 look-ahead 改进分布（[`board_rosmo_policy`]，
@@ -759,7 +759,7 @@ pub(crate) struct BoardTrainConfig {
 }
 
 impl Default for BoardTrainConfig {
-    /// Gomoku 9×9 M1 口径。
+    /// Gomoku 9×9 默认口径。
     fn default() -> Self {
         Self {
             env_id: "Gomoku-selfplay-v0",
@@ -806,7 +806,7 @@ pub(crate) fn terminal_eval_seed(cfg: &BoardTrainConfig, lane: u64) -> u64 {
         .wrapping_add(lane)
 }
 
-/// 棋盘训练结果（M1 口径：胜率闸门）。
+/// 棋盘训练结果（胜率闸门）。
 #[derive(Debug, Clone)]
 pub(crate) struct BoardTrainReport {
     pub final_win_rate: f32,
@@ -825,7 +825,7 @@ pub(crate) struct BoardTrainReport {
 
 /// 在冻结 checkpoint 的副本上，用新增真实完整 game 做固定次数原 MuZero 更新。
 ///
-/// Phase 3A0 只用它回答“当前 proxy 是否可被新增真实数据降低”；不进入正式 recipe，
+/// 主动数据诊断只用它回答“当前 proxy 是否可被新增真实数据降低”；不进入正式 recipe，
 /// 不改变 replay 分布，也不引入新的监督 loss。
 pub(crate) fn train_board_on_games(
     model: &MyZeroModel,
@@ -912,7 +912,7 @@ pub(crate) fn train_board(cfg: &BoardTrainConfig) -> Result<BoardTrainReport, Gr
 
 /// 与 [`train_board`] 相同，但保留训练后的模型供 test-only 诊断/手动 benchmark 使用。
 ///
-/// 生产入口不暴露该函数；Phase 3A0 用它在训练完成后对未来真实 episode 做冻结
+/// 生产入口不暴露该函数；主动数据诊断用它在训练完成后对未来真实 episode 做冻结
 /// revision 审计，审计数据不写回 replay。
 pub(crate) fn train_board_with_model(
     cfg: &BoardTrainConfig,
@@ -920,7 +920,7 @@ pub(crate) fn train_board_with_model(
     train_board_with_checkpoints(cfg, &[]).map(|(report, model, _)| (report, model))
 }
 
-/// 单趟训练并在指定 episode 捕获只读模型快照（Phase 3A0 固定 future block 审计）。
+/// 单趟训练并在指定 episode 捕获只读模型快照（主动数据固定 future block 审计）。
 ///
 /// `checkpoint_episodes` 为空时没有额外模型、前向或 RNG 消耗；现有训练路径行为不变。
 pub(crate) fn train_board_with_checkpoints(
@@ -1225,7 +1225,7 @@ pub(crate) fn train_board_with_checkpoints(
             }
         }
 
-        // ---- 训后终局闸门（M2）----
+        // ---- 训后终局闸门 ----
         let mut gate_vs_random = None;
         let mut gate_vs_checkpoint = None;
         let mut naive_win_rates = Vec::new();

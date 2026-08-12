@@ -1,4 +1,4 @@
-//! 图像 obs 管线单测（v0.26 Phase 1）：灰度 / 双线性缩放 / 帧堆叠 / 训练期组装一致性。
+//! 图像 obs 管线单测：灰度 / 双线性缩放 / 帧堆叠 / 训练期组装一致性。
 
 use crate::rl::GymEnv;
 use crate::rl::StoredObs;
