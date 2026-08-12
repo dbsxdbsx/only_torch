@@ -167,12 +167,7 @@ impl<S: Clone + 'static> Tree<S> {
     /// 展开 chance 节点：为每个 chance outcome 创建 Decision 子节点。
     ///
     /// `chance_priors[i]` 是 outcome `i` 的 learned 概率。
-    pub fn expand_chance(
-        &mut self,
-        node_id: NodeId,
-        chance_priors: &[f32],
-        to_play: u8,
-    ) {
+    pub fn expand_chance(&mut self, node_id: NodeId, chance_priors: &[f32], to_play: u8) {
         let mut edges = Vec::with_capacity(chance_priors.len());
         for (i, &prior) in chance_priors.iter().enumerate() {
             let child = Node {

@@ -7,8 +7,7 @@ use crate::rl::algo::my_zero::network::{MyZeroModel, ObsSource, UnrollItem};
 #[test]
 fn posterior_off_no_behavior_change() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
-    let model = MyZeroModel::new(&graph, 4, 3, 32)?
-        .with_recurrent_posterior(false)?;
+    let model = MyZeroModel::new(&graph, 4, 3, 32)?.with_recurrent_posterior(false)?;
     assert!(model.posterior.is_none());
 
     let obs: Vec<f32> = vec![0.1, -0.2, 0.3, 0.4];
@@ -39,8 +38,7 @@ fn posterior_off_no_behavior_change() -> Result<(), GraphError> {
 #[test]
 fn posterior_on_trains_and_has_gradients() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
-    let model = MyZeroModel::new(&graph, 4, 3, 32)?
-        .with_recurrent_posterior(true)?;
+    let model = MyZeroModel::new(&graph, 4, 3, 32)?.with_recurrent_posterior(true)?;
     assert!(model.posterior.is_some());
     let posterior = model.posterior.as_ref().unwrap();
     let posterior_param_count = posterior.parameters().len();
@@ -77,7 +75,9 @@ fn posterior_on_trains_and_has_gradients() -> Result<(), GraphError> {
     assert!(lv.is_finite(), "posterior=true loss 应有限，got {lv}");
 
     for (i, p) in posterior.parameters().iter().enumerate() {
-        let grad = p.grad()?.unwrap_or_else(|| panic!("posterior 参数 {i} 应有梯度"));
+        let grad = p
+            .grad()?
+            .unwrap_or_else(|| panic!("posterior 参数 {i} 应有梯度"));
         assert!(
             grad.to_vec().iter().all(|v| v.is_finite()),
             "posterior 参数 {i} 梯度应全部有限"
@@ -91,8 +91,7 @@ fn posterior_on_trains_and_has_gradients() -> Result<(), GraphError> {
 #[test]
 fn posterior_inference_chain() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(99);
-    let model = MyZeroModel::new(&graph, 4, 3, 32)?
-        .with_recurrent_posterior(true)?;
+    let model = MyZeroModel::new(&graph, 4, 3, 32)?.with_recurrent_posterior(true)?;
     let hs = model.posterior.as_ref().unwrap().hidden_size;
 
     let obs = [0.1f32, -0.2, 0.3, 0.4];
@@ -144,8 +143,8 @@ fn precomputed_root_dynamics_consistent_with_direct() -> Result<(), GraphError> 
 /// ObsAdapter::Flat mask_indices 应正确置零指定维度
 #[test]
 fn obs_mask_zeros_velocity_dims() {
-    use crate::rl::algo::my_zero::obs_pipeline::ObsAdapter;
     use crate::rl::algo::my_zero::config::ObservationPlan;
+    use crate::rl::algo::my_zero::obs_pipeline::ObsAdapter;
 
     pyo3::Python::attach(|py| {
         let env = crate::rl::GymEnv::new(py, "CartPole-v1");
@@ -167,8 +166,7 @@ fn obs_mask_zeros_velocity_dims() {
 #[test]
 fn masked_obs_posterior_trains() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(77);
-    let model = MyZeroModel::new(&graph, 4, 2, 32)?
-        .with_recurrent_posterior(true)?;
+    let model = MyZeroModel::new(&graph, 4, 2, 32)?.with_recurrent_posterior(true)?;
     let mut opt = Adam::new(&graph, &model.parameters(), 0.01);
 
     let masked_obs = |seed: u32| -> Vec<f32> {

@@ -603,7 +603,9 @@ fn test_rnn_step_backward() -> Result<(), GraphError> {
     loss.backward()?;
 
     for (i, p) in rnn.parameters().iter().enumerate() {
-        let grad = p.grad()?.unwrap_or_else(|| panic!("RNN 参数 {i}/3 应有梯度"));
+        let grad = p
+            .grad()?
+            .unwrap_or_else(|| panic!("RNN 参数 {i}/3 应有梯度"));
         assert!(
             grad.to_vec().iter().all(|v| v.is_finite()),
             "RNN 参数 {i}/3 梯度应全部有限"

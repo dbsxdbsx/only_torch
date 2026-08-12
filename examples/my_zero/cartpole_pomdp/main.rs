@@ -23,9 +23,7 @@ use only_torch::rl::algo::my_zero::MyZero;
 
 fn main() -> Result<(), GraphError> {
     let smoke = std::env::var("SMOKE").is_ok();
-    let use_posterior = std::env::var("POSTERIOR")
-        .map(|v| v != "0")
-        .unwrap_or(true);
+    let use_posterior = std::env::var("POSTERIOR").map(|v| v != "0").unwrap_or(true);
 
     let mut builder = MyZero::new("CartPole-v1")
         .solved(if use_posterior { 400.0 } else { 200.0 })

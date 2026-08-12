@@ -121,14 +121,7 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
                 crate::prof_scope!("mcts.recurrent_fwd");
                 model.recurrent(parent_state, action_id, &action)
             };
-            apply_recurrent_to_leaf(
-                &mut tree,
-                &candidate_provider,
-                leaf_id,
-                &rec_out,
-                cfg,
-                rng,
-            );
+            apply_recurrent_to_leaf(&mut tree, &candidate_provider, leaf_id, &rec_out, cfg, rng);
             let backup_value = if rec_out.terminal { 0.0 } else { rec_out.value };
             crate::prof_scope!("mcts.backup");
             backup(&mut tree, leaf_id, backup_value, &mut min_max, cfg);
@@ -143,14 +136,7 @@ pub fn mcts_search<M: MctsModel, P: SearchPolicy>(
                 crate::prof_scope!("mcts.chance_recurrent_fwd");
                 model.chance_recurrent(&dec_out.afterstate, chance_id)
             };
-            apply_recurrent_to_leaf(
-                &mut tree,
-                &candidate_provider,
-                leaf_id,
-                &rec_out,
-                cfg,
-                rng,
-            );
+            apply_recurrent_to_leaf(&mut tree, &candidate_provider, leaf_id, &rec_out, cfg, rng);
             let backup_value = if rec_out.terminal { 0.0 } else { rec_out.value };
             crate::prof_scope!("mcts.backup");
             backup(&mut tree, leaf_id, backup_value, &mut min_max, cfg);
@@ -225,9 +211,13 @@ fn apply_recurrent_to_leaf<S: Clone + 'static>(
 
     if !rec_out.terminal && !rec_out.candidates.is_empty() {
         crate::prof_scope!("mcts.expand");
-        let candidates =
-            candidate_provider.expand_candidates(&rec_out.candidates, cfg, false, rng);
-        tree.expand(leaf_id, &candidates.candidates, rec_out.to_play, rec_out.discount);
+        let candidates = candidate_provider.expand_candidates(&rec_out.candidates, cfg, false, rng);
+        tree.expand(
+            leaf_id,
+            &candidates.candidates,
+            rec_out.to_play,
+            rec_out.discount,
+        );
     }
 }
 

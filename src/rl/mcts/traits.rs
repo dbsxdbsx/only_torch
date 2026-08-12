@@ -59,9 +59,7 @@ pub trait MctsModel {
         _action_id: ActionId,
         _action: &ActionPayload,
     ) -> DecisionRecurrentOut<Self::State> {
-        unimplemented!(
-            "decision_recurrent requires stochastic model (num_chance_outcomes > 1)"
-        )
+        unimplemented!("decision_recurrent requires stochastic model (num_chance_outcomes > 1)")
     }
 
     /// Afterstate + chance outcome → next state 转移（Stochastic MuZero，K>1 时调用）。
@@ -72,9 +70,7 @@ pub trait MctsModel {
         _afterstate: &Self::State,
         _chance_id: usize,
     ) -> RecurrentOut<Self::State> {
-        unimplemented!(
-            "chance_recurrent requires stochastic model (num_chance_outcomes > 1)"
-        )
+        unimplemented!("chance_recurrent requires stochastic model (num_chance_outcomes > 1)")
     }
 }
 

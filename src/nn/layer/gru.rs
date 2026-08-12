@@ -195,8 +195,7 @@ impl Gru {
     pub fn step(&self, x_t: &Var, h: &Var) -> Result<Var, GraphError> {
         let r_gate = (x_t.matmul(&self.w_ir)? + h.matmul(&self.w_hr)? + &self.b_r).sigmoid();
         let z_gate = (x_t.matmul(&self.w_iz)? + h.matmul(&self.w_hz)? + &self.b_z).sigmoid();
-        let n_gate =
-            (x_t.matmul(&self.w_in)? + &r_gate * h.matmul(&self.w_hn)? + &self.b_n).tanh();
+        let n_gate = (x_t.matmul(&self.w_in)? + &r_gate * h.matmul(&self.w_hn)? + &self.b_n).tanh();
         Ok(&n_gate + &z_gate * (h - &n_gate))
     }
 

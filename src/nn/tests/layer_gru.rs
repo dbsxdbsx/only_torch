@@ -453,7 +453,9 @@ fn test_gru_step_backward() -> Result<(), GraphError> {
     loss.backward()?;
 
     for (i, p) in gru.parameters().iter().enumerate() {
-        let grad = p.grad()?.unwrap_or_else(|| panic!("GRU 参数 {i}/9 应有梯度"));
+        let grad = p
+            .grad()?
+            .unwrap_or_else(|| panic!("GRU 参数 {i}/9 应有梯度"));
         assert!(
             grad.to_vec().iter().all(|v| v.is_finite()),
             "GRU 参数 {i}/9 梯度应全部有限"

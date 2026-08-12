@@ -108,10 +108,7 @@ fn stochastic_on_trains_and_has_gradients() -> Result<(), GraphError> {
             has_grad_count += 1;
         }
     }
-    assert!(
-        has_grad_count > 0,
-        "至少部分参数应有梯度"
-    );
+    assert!(has_grad_count > 0, "至少部分参数应有梯度");
     opt.step()?;
     Ok(())
 }
@@ -126,13 +123,16 @@ fn afterstate_inference_chain() -> Result<(), GraphError> {
     let model = MyZeroModel::new(&graph, 4, action_dim, latent_dim)?.with_stochastic(k)?;
 
     let obs = [0.1f32, -0.2, 0.3, 0.4];
-    let (latent, _policy, _value) =
-        crate::rl::mcts::Dynamics::initial_state(&&model, &obs);
+    let (latent, _policy, _value) = crate::rl::mcts::Dynamics::initial_state(&&model, &obs);
     assert_eq!(latent.len(), latent_dim, "latent 维度应为 {latent_dim}");
 
     // afterstate_dynamics_inference
     let (afterstate, chance_prior, as_value) = model.afterstate_dynamics_inference(&latent, 1);
-    assert_eq!(afterstate.len(), latent_dim, "afterstate 维度应为 {latent_dim}");
+    assert_eq!(
+        afterstate.len(),
+        latent_dim,
+        "afterstate 维度应为 {latent_dim}"
+    );
     assert_eq!(chance_prior.len(), k, "chance_prior 长度应为 K={k}");
     let prior_sum: f32 = chance_prior.iter().sum();
     approx::assert_abs_diff_eq!(prior_sum, 1.0, epsilon = 1e-4);
@@ -145,7 +145,11 @@ fn afterstate_inference_chain() -> Result<(), GraphError> {
     // stochastic_dynamics_inference
     let (next_latent, reward, policy, value, continuation) =
         model.stochastic_dynamics_inference(&afterstate, 3);
-    assert_eq!(next_latent.len(), latent_dim, "next_latent 维度应为 {latent_dim}");
+    assert_eq!(
+        next_latent.len(),
+        latent_dim,
+        "next_latent 维度应为 {latent_dim}"
+    );
     assert!(reward.is_finite(), "reward 应有限");
     assert_eq!(policy.len(), action_dim, "policy 维度应为 {action_dim}");
     assert!(value.is_finite(), "value 应有限");
@@ -257,7 +261,8 @@ fn mcts_chance_node_tree_structure() {
     let total_visits: u32 = result.children.iter().map(|c| c.visit_count).sum();
     assert!(
         total_visits >= cfg.num_simulations,
-        "总访问 {total_visits} 应 >= {}", cfg.num_simulations
+        "总访问 {total_visits} 应 >= {}",
+        cfg.num_simulations
     );
     assert!(
         matches!(result.recommended, ActionPayload::Discrete(_)),
@@ -265,8 +270,5 @@ fn mcts_chance_node_tree_structure() {
     );
     let policy_sum: f32 = result.learn_policy.iter().sum();
     approx::assert_abs_diff_eq!(policy_sum, 1.0, epsilon = 1e-4);
-    assert!(
-        result.network_value.is_finite(),
-        "network_value 应有限"
-    );
+    assert!(result.network_value.is_finite(), "network_value 应有限");
 }

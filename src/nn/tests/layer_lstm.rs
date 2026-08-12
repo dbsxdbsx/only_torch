@@ -466,7 +466,9 @@ fn test_lstm_step_backward() -> Result<(), GraphError> {
     loss.backward()?;
 
     for (i, p) in lstm.parameters().iter().enumerate() {
-        let grad = p.grad()?.unwrap_or_else(|| panic!("LSTM 参数 {i}/12 应有梯度"));
+        let grad = p
+            .grad()?
+            .unwrap_or_else(|| panic!("LSTM 参数 {i}/12 应有梯度"));
         assert!(
             grad.to_vec().iter().all(|v| v.is_finite()),
             "LSTM 参数 {i}/12 梯度应全部有限"

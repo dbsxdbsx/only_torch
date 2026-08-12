@@ -83,7 +83,9 @@ fn pendulum_continuous_3seed() -> Result<(), GraphError> {
 #[test]
 #[ignore = "manual: Phase 6 — CartPole POMDP 3-seed（约 15 分钟）"]
 fn pomdp_stochastic_3seed() -> Result<(), GraphError> {
-    println!("[Phase6] CartPole POMDP-lite · vector × discrete × POMDP · posterior+stochastic · SEEDS=3");
+    println!(
+        "[Phase6] CartPole POMDP-lite · vector × discrete × POMDP · posterior+stochastic · SEEDS=3"
+    );
     let cfg = MyZero::new("CartPole-v1")
         .solved(400.0)
         .max_episodes(3000)
