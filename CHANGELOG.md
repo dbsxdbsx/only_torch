@@ -9,7 +9,17 @@
   - 第一刀预注册：单 seed 1h、`SIMS=8`，只诊断 acting 是否绑死 2h 墙；FNC/COMBO 整包不进主线，ROSMO 默认关
   - 权威：[状态总览](.doc/design/rl_myzero_status.md) §5 / [minatar 账本](examples/my_zero/minatar/README.md)
 
+- **feat(rl): MyZero 独立接线 target_net（默认关）**（2026-08-13）
+  - n-step 尾值改用滞后网 V，hard update 每 400 训练步（EfficientZero 附录 C）；π 仍用 MCTS 标签
+  - **不**开 reanalyze / ROSMO；MinAtar 用 `TARGET_NET=1` 诊断，不写入 recipe
+
 ### Changed
+
+- **bench(rl): MinAtar 独立 target_net 1h 诊断收口**（2026-08-13）
+  - 单 seed=42、`TARGET_NET=1`、sims=25：best greedy **2.3** / final 1.9，26,096 env-steps；门槛 8 未达标
+  - 等步数低于对照 seed 42（~26k 时 3.3，全程 best 4.1）；未换成更稳的更高平台，**不**写入 recipe
+  - 日志 wall 9916s 含第 1118 局卡住 6839s（6 步短局）；有效训练仍约 1h 量级
+  - 账本：[minatar](examples/my_zero/minatar/README.md)
 
 - **bench(rl): MinAtar acting-sims=8 1h 诊断收口**（2026-08-13）
   - 单 seed=42、`WALL_SECS=3600`：best greedy **1.5** / final 1.3，27,980 env-steps，先触 1h；门槛 8 未达标

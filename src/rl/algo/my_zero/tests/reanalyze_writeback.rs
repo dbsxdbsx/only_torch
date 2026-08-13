@@ -146,6 +146,7 @@ fn prepare_reanalyze_then_writeback_updates_buffer() {
         &Default::default(),
         None,
         0,
+        None,
     )
     .unwrap();
 

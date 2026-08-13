@@ -900,6 +900,7 @@ pub(crate) fn train_board_on_games(
             &cfg.components,
             None,
             0, // board 环境无 burn-in
+            None,
         )?);
     }
     Ok(losses)
@@ -1151,6 +1152,7 @@ pub(crate) fn train_board_with_checkpoints(
                         &components,
                         None,
                         0, // board 环境无 burn-in
+                        None,
                     )?;
                 }
                 avg_loss = loss_sum / cfg.trains_per_episode as f32;

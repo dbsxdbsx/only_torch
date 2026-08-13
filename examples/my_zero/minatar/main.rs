@@ -13,9 +13,11 @@
 //! SEEDS=3 cargo run --example my_zero_minatar --release --features blas-mkl  # 官方 3-seed
 //! GAME=Freeway SEEDS=3 cargo run --example my_zero_minatar --release --features blas-mkl
 //! SIMS=8 WALL_SECS=3600 cargo run --example my_zero_minatar --release --features blas-mkl
+//! TARGET_NET=1 WALL_SECS=3600 cargo run --example my_zero_minatar --release --features blas-mkl
 //! ```
 //!
-//! 诊断覆盖（不改 recipe 默认）：`SIMS` = `num_simulations`，`WALL_SECS` = wall-clock 秒。
+//! 诊断覆盖（不改 recipe 默认）：`SIMS` = `num_simulations`，`WALL_SECS` = wall-clock 秒，
+//! `TARGET_NET=1` 打开独立 target net（只换 n-step 尾值，hard update 400）。
 
 use only_torch::nn::GraphError;
 use only_torch::rl::algo::my_zero::{MyZero, TrainSettings};
@@ -88,7 +90,10 @@ fn main() -> Result<(), GraphError> {
             .map(|v| v.parse().expect("WALL_SECS 必须是秒数（正浮点）"))
             .unwrap_or(2.0 * 3600.0);
         assert!(wall_secs > 0.0, "WALL_SECS 必须 > 0");
-        eprintln!("MinAtar {game} sims={num_simulations} wall_secs={wall_secs} max_ep={max_ep}");
+        eprintln!(
+            "MinAtar {game} sims={num_simulations} wall_secs={wall_secs} max_ep={max_ep} target_net={}",
+            std::env::var("TARGET_NET").is_ok()
+        );
         builder = builder
             .max_env_steps(200_000)
             .max_wall_secs(wall_secs)
@@ -96,6 +101,9 @@ fn main() -> Result<(), GraphError> {
             .flat_stop(100_000, if game == "Freeway" { 1.0 } else { 3.0 });
     }
 
+    if std::env::var("TARGET_NET").is_ok() {
+        builder = builder.target_net(true);
+    }
     if let Ok(v) = std::env::var("SEEDS") {
         builder = builder.seeds(v.parse().expect("SEEDS 必须是正整数"));
     }

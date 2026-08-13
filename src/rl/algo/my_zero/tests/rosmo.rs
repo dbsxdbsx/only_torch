@@ -368,6 +368,7 @@ fn rosmo_train_batch_end_to_end_finite() {
         &c,
         None,
         0,
+        None,
     )
     .unwrap();
     assert!(loss.is_finite(), "ROSMO 训练 loss 应有限，got {loss}");

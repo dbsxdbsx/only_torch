@@ -165,6 +165,15 @@ impl MyZeroBuilder {
         self
     }
 
+    /// 开启 target network（默认关；recipe 不写入）。
+    ///
+    /// 只替换 n-step 尾值为滞后网的 V，π 仍用存下来的 MCTS 标签。
+    /// 同步口径：[`super::target_net::TargetConfig::efficientzero_hard`]。
+    pub fn target_net(mut self, enabled: bool) -> Self {
+        self.cfg.components.target_net = enabled;
+        self
+    }
+
     /// 开启 KL 自适应 lr（「用户不调 lr」去旋钮机制；默认关，供 A/B 消融）。
     ///
     /// 每局训练块前后测探针局面 policy KL 位移，自动调 lr 乘子（[0.1,10]）。

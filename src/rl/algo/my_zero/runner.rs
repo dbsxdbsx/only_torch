@@ -5,7 +5,7 @@ use super::checkpoint::BestTracker;
 use super::component::Components;
 use super::config::{MyZeroConfig, greedy_episode_seed, self_play_episode_seed};
 use super::my_zero::MyZero;
-use super::n_step::compute_n_step_target;
+use super::n_step::{compute_n_step_target, n_step_targets_for_unroll};
 use super::network::{MyZeroModel, ObsSource, UnrollItem};
 use super::obs_pipeline::ObsAdapter;
 use super::reanalyze::reanalyze_unroll_window;
@@ -16,6 +16,7 @@ use super::sampled_params::{
 };
 use super::search_policy::MyZeroSearchPolicy;
 use super::target::mcts_policy_target;
+use super::target_net::{TargetConfig, hard_update, sync_target};
 use super::value_prefix::reward_prefix_targets;
 use crate::nn::{Adam, Graph, GraphError, Optimizer};
 use crate::rl::mcts::{
@@ -76,6 +77,28 @@ fn print_components(c: &Components) {
     if !tags.is_empty() {
         println!("[MyZero] {}", tags.join(" + "));
     }
+}
+
+/// target 网在 inference 下评估 `steps[pos]` 的 V，供 n-step 自举尾值。
+fn eval_target_bootstrap(
+    target: &MyZeroModel,
+    steps: &[SelfPlayStep],
+    pos: usize,
+    image_stack: Option<usize>,
+) -> f32 {
+    let src = match image_stack {
+        None => ObsSource::Single(&steps[pos].obs),
+        Some(k) => ObsSource::Stacked {
+            steps,
+            t: pos,
+            stack: k,
+        },
+    };
+    let mut obs = Vec::with_capacity(src.dim());
+    src.append_into(&mut obs);
+    target
+        .graph
+        .inference_scope(|_| target.initial_state(&obs).2)
 }
 
 /// self-play 温度调度：`[0, hold)` 恒 1.0 → `[hold, hold+decay)` 线性退火到 0.25 → 之后恒 0.25。
@@ -482,6 +505,7 @@ pub(crate) fn train_batch(
     components: &Components,
     image_stack: Option<usize>,
     burn_in_steps: usize,
+    target_model: Option<&MyZeroModel>,
 ) -> Result<f32, GraphError> {
     if samples.is_empty() {
         return Ok(0.0);
@@ -548,17 +572,13 @@ pub(crate) fn train_batch(
                 .collect(),
         };
 
-        let target_values: Vec<f32> = match rosmo_t {
-            Some(rt) => rt.values.clone(),
-            None => (0..=actual_k)
-                .map(|i| {
-                    if t + i < len {
-                        compute_n_step_target(steps, t + i, td_steps, gamma)
-                    } else {
-                        0.0
-                    }
-                })
-                .collect(),
+        let target_values: Vec<f32> = if let Some(rt) = rosmo_t {
+            rt.values.clone()
+        } else if let Some(tm) = target_model {
+            let bootstrap = |idx: usize| eval_target_bootstrap(tm, steps, idx, image_stack);
+            n_step_targets_for_unroll(steps, t, actual_k, td_steps, gamma, Some(&bootstrap))
+        } else {
+            n_step_targets_for_unroll(steps, t, actual_k, td_steps, gamma, None)
         };
 
         let target_rewards: Vec<f32> = (0..actual_k)
@@ -1158,6 +1178,26 @@ fn train_one_seed(
             .with_obs_symlog(cfg.components.obs_symlog)
             .with_recurrent_posterior(cfg.components.recurrent_posterior)?
             .with_stochastic(cfg.components.num_chance_outcomes)?;
+    // 必须用独立 Graph：同一张图上参数名（如 Repr/fc1_W）不可重复。
+    let target_model = if cfg.components.target_net {
+        let target_graph = Graph::new_with_seed(seed);
+        let tm = MyZeroModel::new_with_schemas(
+            &target_graph,
+            obs_spec,
+            adapter.schema().clone(),
+            latent_dim,
+        )?
+        .with_value_encoding(cfg.components.hl_gauss)
+        .with_obs_symlog(cfg.components.obs_symlog)
+        .with_recurrent_posterior(cfg.components.recurrent_posterior)?
+        .with_stochastic(cfg.components.num_chance_outcomes)?;
+        hard_update(&model.parameters(), &tm.parameters());
+        Some(tm)
+    } else {
+        None
+    };
+    let target_cfg = TargetConfig::efficientzero_hard();
+    let mut train_steps: u32 = 0;
     let mut optimizer = Adam::new(&graph, &model.parameters(), t.lr);
     let mut buffer: ReplayBuffer<SelfPlayGame> = ReplayBuffer::new(t.buffer_capacity);
     let mut rng = StdRng::seed_from_u64(seed);
@@ -1284,7 +1324,17 @@ fn train_one_seed(
                     &cfg.components,
                     obs_adapter.image_stack(),
                     t.burn_in_steps,
+                    target_model.as_ref(),
                 )?;
+                if let Some(tm) = target_model.as_ref() {
+                    train_steps = train_steps.saturating_add(1);
+                    sync_target(
+                        &model.parameters(),
+                        &tm.parameters(),
+                        &target_cfg,
+                        train_steps,
+                    );
+                }
                 prof_train_step += train_t0.elapsed().as_secs_f32();
                 drop(train_view);
                 if let PreparedBatch::Owned(items) = batch {

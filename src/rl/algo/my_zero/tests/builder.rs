@@ -29,6 +29,19 @@ fn cartpole_recipe_has_consistency_and_reconstruction() {
 }
 
 #[test]
+fn target_net_builder_overrides_recipe() {
+    let cfg = MyZero::new("MinAtar/Breakout-v1")
+        .solved(8.0)
+        .max_episodes(3)
+        .target_net(true)
+        .build()
+        .unwrap();
+    assert!(cfg.components.target_net);
+    assert!(!cfg.components.reanalyze);
+    assert!(!cfg.components.rosmo);
+}
+
+#[test]
 fn pendulum_recipe_matches_cartpole_stack() {
     let cfg = MyZero::new("Pendulum-v1")
         .reward_scale(0.1)

@@ -6,8 +6,11 @@
 //! 配置见 [`TargetConfig`]：`sync_interval > 0` 走 hard copy（每 interval 步），
 //! `== 0` 走 EMA（每步用 `tau`）。
 //!
-//! 注：目前作为可用组件入库（消融开关 `Components::target_net`），尚未接入训练循环——
-//! 接线属后续消融工作。
+//! 训练循环接线（`Components::target_net`）：**只替换 n-step 尾值**为 target 网在
+//! `s_{t+n}` 上的 V，π 仍用 self-play 存下的 MCTS 标签。不强制开 reanalyze / ROSMO。
+//! 默认 hard update，间隔对齐 EfficientZero 附录 C（400 训练步）；勿用每步 EMA
+//! （2026-06-16 CartPole 三件套上 greedy < self-play）。
+//! Target 网必须建在**独立 Graph** 上（同图参数名不可重复）。
 
 use crate::nn::Var;
 use crate::tensor::Tensor;
@@ -29,6 +32,17 @@ impl Default for TargetConfig {
             enabled: false,
             tau: 0.01,
             sync_interval: 0,
+        }
+    }
+}
+
+impl TargetConfig {
+    /// EfficientZero 附录 C：hard copy，每 400 次 optimizer step 同步一次。
+    pub fn efficientzero_hard() -> Self {
+        Self {
+            enabled: true,
+            tau: 0.01,
+            sync_interval: 400,
         }
     }
 }

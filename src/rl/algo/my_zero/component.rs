@@ -42,7 +42,8 @@ pub(crate) struct Components {
     pub rosmo: bool,
     /// ROSMO 行为正则系数 α（仅 `rosmo=true` 时生效；论文 Atari 口径 0.2）。
     pub rosmo_alpha: f32,
-    /// target network（EMA/hard 同步，配合 reanalyze）
+    /// target network：n-step 尾值用滞后网的 V，替代 buffer 里的 MCTS `root_value`。
+    /// 不强制开 reanalyze / ROSMO；与二者同时开时，刷新路径仍覆盖本开关（本臂只测独立接线）。
     pub target_net: bool,
     /// SVE 权重（0.0 = 关；> 0 = search value blend 进 n-step target）
     pub sve_weight: f32,

@@ -84,3 +84,12 @@ fn all_recipes_recurrent_posterior_off() {
         );
     }
 }
+
+#[test]
+fn minatar_keeps_target_net_off() {
+    let c = components_for("MinAtar/Breakout-v1");
+    assert!(c.consistency);
+    assert!(!c.target_net);
+    assert!(!c.reanalyze);
+    assert!(!c.rosmo);
+}

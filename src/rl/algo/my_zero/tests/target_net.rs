@@ -1,7 +1,9 @@
 //! `target_net.rs` 同步测试：EMA 混合 / hard copy / 同步节拍 / 非连续视图回归
 
-use super::super::target_net::{ema_update, hard_update, is_hard_sync_step};
+use super::super::target_net::{TargetConfig, ema_update, hard_update, is_hard_sync_step};
 use crate::nn::{Graph, Var};
+use crate::rl::algo::my_zero::network::MyZeroModel;
+use crate::rl::mcts::Dynamics;
 use crate::tensor::Tensor;
 
 fn vars(graph: &Graph, data: &[f32]) -> Vec<Var> {
@@ -64,4 +66,30 @@ fn ema_update_noncontiguous_online_no_panic() {
             "EMA 应按逻辑序混合：{out:?} vs {expected:?}"
         );
     }
+}
+
+#[test]
+fn efficientzero_hard_is_interval_400() {
+    let cfg = TargetConfig::efficientzero_hard();
+    assert!(cfg.enabled);
+    assert_eq!(cfg.sync_interval, 400);
+    assert!(is_hard_sync_step(400, cfg.sync_interval));
+    assert!(!is_hard_sync_step(399, cfg.sync_interval));
+}
+
+#[test]
+fn hard_update_aligns_myzero_model_values() {
+    let online_g = Graph::new_with_seed(0);
+    let target_g = Graph::new_with_seed(1);
+    let online = MyZeroModel::new(&online_g, 4, 2, 8).unwrap();
+    let target = MyZeroModel::new(&target_g, 4, 2, 8).unwrap();
+    let obs = [0.1, -0.2, 0.3, 0.4];
+    let before = (&target).initial_state(&obs).2;
+    hard_update(&online.parameters(), &target.parameters());
+    let v_on = (&online).initial_state(&obs).2;
+    let v_tg = (&target).initial_state(&obs).2;
+    assert!(
+        (v_on - v_tg).abs() < 1e-5,
+        "hard_update 后同一 obs 的 V 应对齐：online={v_on} target={v_tg}（更新前 target={before}）"
+    );
 }

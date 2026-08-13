@@ -73,3 +73,29 @@ where
 
     target
 }
+
+/// 为 unroll 窗口 `[start, start+actual_k]` 各槽位计算 n-step value target。
+///
+/// - `bootstrap_at = None`：尾值读 buffer 里的 `root_value`（canonical MuZero）
+/// - `Some(f)`：尾值由闭包现算（target net / ROSMO 等）
+pub(crate) fn n_step_targets_for_unroll(
+    steps: &[SelfPlayStep],
+    start: usize,
+    actual_k: usize,
+    td_steps: usize,
+    gamma: f32,
+    bootstrap_at: Option<&dyn Fn(usize) -> f32>,
+) -> Vec<f32> {
+    (0..=actual_k)
+        .map(|i| {
+            let t = start + i;
+            if t >= steps.len() {
+                return 0.0;
+            }
+            match bootstrap_at {
+                Some(f) => compute_n_step_target_indexed(steps, t, td_steps, gamma, f),
+                None => compute_n_step_target(steps, t, td_steps, gamma),
+            }
+        })
+        .collect()
+}

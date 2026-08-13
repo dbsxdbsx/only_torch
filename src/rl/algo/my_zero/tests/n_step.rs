@@ -1,6 +1,6 @@
 //! `n_step.rs` value target 测试：terminated/truncated 边界、continuation 折扣连乘
 
-use super::super::n_step::compute_n_step_target;
+use super::super::n_step::{compute_n_step_target, n_step_targets_for_unroll};
 use crate::rl::SelfPlayStep;
 
 fn step(reward: f32, root_value: Option<f32>) -> SelfPlayStep {
@@ -106,4 +106,34 @@ fn variable_continuation_discount_product() {
         (t - expected).abs() < 1e-5,
         "应按每步 transition discount 连乘: {t}"
     );
+}
+
+#[test]
+fn custom_bootstrap_overrides_stored_root_value() {
+    let steps = truncated(vec![
+        step(1.0, Some(10.0)),
+        step(1.0, Some(20.0)),
+        step(1.0, Some(30.0)),
+    ]);
+    let stored = n_step_targets_for_unroll(&steps, 0, 0, 1, 0.99, None);
+    let custom = n_step_targets_for_unroll(&steps, 0, 0, 1, 0.99, Some(&|_| 99.0));
+    assert_eq!(stored.len(), 1);
+    assert!(
+        (stored[0] - 20.8).abs() < 1e-5,
+        "n=1 默认用下一位置 root_value: {}",
+        stored[0]
+    );
+    assert!(
+        (custom[0] - (1.0 + 0.99 * 99.0)).abs() < 1e-4,
+        "自定义 bootstrap 应替换尾值: {}",
+        custom[0]
+    );
+}
+
+#[test]
+fn unroll_padding_slots_are_zero() {
+    let steps = terminated(vec![step(1.0, Some(0.0)), step(1.0, Some(0.0))]);
+    let v = n_step_targets_for_unroll(&steps, 0, 5, 1, 0.99, None);
+    assert_eq!(v.len(), 6);
+    assert!(v[2..].iter().all(|&x| x == 0.0));
 }
