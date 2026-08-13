@@ -20,7 +20,7 @@
 
 已删除并并入本文的历史文件（勿再链接）：`rl_roadmap.md`、`rl_closure_plan.md`、`rl_phase1_image_plan.md`、`rl_phase1_report.md`、`my_zero_algorithm_vision.md`、`my_zero_world_model_foundation.md`、`my_zero_simulus_ablation_plan.md`、`_archive/rl_roadmap_v020_v024.md`。
 
-**当前主线状态**：crate **v0.26.0**（2026-08-12）。RL 未恢复为开发主线。MinAtar 独立 target_net 诊断已收口（best 2.3 vs 对照 4.1，等步数更低，不 promote）。acting-sims=8 已收口负。FNC / COMBO 整包不进主线；ROSMO 默认关。下次接手顺序：本文 → [环境配置](../rl_python_env_setup.md) → `just test-filter rl` → `just smoke-rl`。
+**当前主线状态**：crate **v0.26.0**（2026-08-12）。RL 未恢复为开发主线。MinAtar 三刀便宜诊断均负：acting-sims=8（best 1.5）、独立 target_net（best 2.3）、td_steps 10→5（best 2.6 vs 对照 4.1）。FNC / COMBO 整包不进主线；ROSMO 默认关。下次接手顺序：本文 → [环境配置](../rl_python_env_setup.md) → `just test-filter rl` → `just smoke-rl`。
 
 ---
 
@@ -64,7 +64,7 @@
 | **CartPole-v1** | greedy ≥ 475 | ✅ 哨兵冻结（中位 ~9.8k env-steps，3/3） | consistency + reconstruction(coef16) + Sampled + Stochastic K=8 |
 | **Gomoku** (vs random) | 胜率 ≥ 95% | ✅ 已闭环（recipe=base；历史里程碑见[棋盘账本](../../examples/my_zero/gomoku/README.md)） | base（全组件关） |
 | **StochasticCartPole** | K=8 3/3 | ✅ Stochastic MuZero 验收 | always-on K=8 |
-| **MinAtar/Breakout** | greedy ≥ 8 | ⚠️ 正式 3-seed 0/3（中位 best **3.9**）；acting-sims=8 负（best 1.5）；独立 target_net 负（best 2.3，不 promote） | consistency ON |
+| **MinAtar/Breakout** | greedy ≥ 8 | ⚠️ 正式 3-seed 0/3（中位 best **3.9**）；acting-sims=8 负（best 1.5）；独立 target_net 负（best 2.3）；td_steps=5 负（best 2.6，不 promote） | consistency ON |
 | **ALE/Pong-v5** | greedy ≥ −18 | ❌ 预算不足（0/3 平直） | consistency ON |
 | **Pendulum-v1** | — | ⏳ 诊断态（n-step target 方差坍缩） | 同 CartPole（诊断，不代表裁决） |
 | **Platform-v0** | — | ✅ 管线 smoke 通过，未做基准 | Sampled |
@@ -166,7 +166,7 @@ promote 时改 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)；论文全称
 
 | 项 | 说明 | 关联 |
 |----|------|------|
-| MinAtar 图像效率下一刀 | acting-sims=8 与独立 target_net 均已收口负。wall-clock 主因仍是每局训练。勿砍 `trains_per_episode`；SVE/ROSMO 不要绑来救 target_net。td/lr 仍暂缓 | [minatar 账本](../../examples/my_zero/minatar/README.md) |
+| MinAtar 图像效率下一刀 | 三刀便宜诊断均负（sims=8 / target_net / td_steps=5）。默认仍 sims=25、td=10、无独立 target。勿砍 `trains_per_episode`；若继续只允许等步数加训，否则暂停 RL | [minatar 账本](../../examples/my_zero/minatar/README.md) |
 | target_net + SVE 终审 | 独立 target_net 已负；SVE 仍未接。禁止把 SVE 当补丁绑回去 | — |
 | value_prefix 断链修复 | 训练用 LSTM head，搜索用普通 reward head → 静默错误 | — |
 | Pendulum 终审 | n-step target 方差坍缩；可能需 1-step + target_net | [pendulum issue](../../.issue/items/pendulum_failure_diagnosis.md) |
@@ -211,3 +211,4 @@ promote 时改 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)；论文全称
 - **sims 是 wall-clock 预算不是「越大越好」**：MinAtar 默认仍 25。2026-08-13 单 seed 1h：`SIMS=8` **不买吞吐**（27,980 steps / 1h，约 7.8 step/s，低于对照 sims=25 的 ~9.1），greedy 锁 1.2–1.5（对照 seed 42 best 4.1）。无与游戏无关的路由规则则不 promote
 - **标签刷新要有裁判**：库存 MCTS vs 一步 look-ahead，用轨迹回报 / 少量新鲜搜索比较，不用环境类型（图像/稠密奖励）猜；ROSMO 默认关
 - **target_net 可独立接线，但 MinAtar 上不够**：只换 n-step 尾值（滞后 V 替换 buffer `root_value`），hard 400。2026-08-13 单 seed：best **2.3** vs 对照 seed 42 的 4.1，等步数更低，不 promote。每步 EMA 已否决
+- **td_steps 默认仍 10**：2026-08-13 单 seed 1h `TD_STEPS=5`：best **2.6** / 32,134 steps，等步数低于对照 seed 42（~32k 时 4.1）。缩短 n 不加税也不买吞吐（~8.9 vs ~9.1 step/s），不是 2–4 分天花板的原因，不 promote

@@ -83,9 +83,10 @@ GAME=Freeway SEEDS=3 cargo run --example my_zero_minatar --release --features bl
 # 自定义局数
 MAX_EP=3000 cargo run --example my_zero_minatar --release --features blas-mkl
 
-# 诊断覆盖（不改 recipe 默认）：搜索次数 / wall-clock 秒 / 独立 target net
+# 诊断覆盖（不改 recipe 默认）：搜索次数 / n-step 步数 / wall-clock 秒 / 独立 target net
 SIMS=8 WALL_SECS=3600 cargo run --example my_zero_minatar --release --features blas-mkl
 TARGET_NET=1 WALL_SECS=3600 cargo run --example my_zero_minatar --release --features blas-mkl
+TD_STEPS=5 WALL_SECS=3600 cargo run --example my_zero_minatar --release --features blas-mkl
 ```
 
 ## 账本
@@ -146,6 +147,25 @@ TARGET_NET=1 WALL_SECS=3600 cargo run --example my_zero_minatar --release --feat
 - **wall 9916s 不是多训了 2.75 小时。** 第 1118 局只有 6 步，却记了 `t=6839s`（邻局约 3.2s）。预算在**每局结束**才检查，这一局卡住后才触发 `[budget]`。卡住前约 1117 局 / 2.6 万步，有效训练仍是 1h 量级。
 
 日志：`.bench/minatar_breakout_targetnet_1h_20260813.log`
+
+### Breakout-v1 · td_steps 10→5 诊断（已收口，2026-08-13）
+
+> 唯一变量：`TD_STEPS=5`（n-step bootstrap 10→5，对齐 canonical MuZero / `k_unroll`）。  
+> `SIMS` / `TARGET_NET` 不设（sims=25，无独立 target net）。  
+> 对照：正式 3-seed seed 42（td_steps=10，best **4.1** @ ~32k）。  
+> **禁止**：不写入 recipe，默认仍 10。
+
+| seed | td_steps | best greedy | final greedy | env-steps | wall-clock | 判定 |
+|------|----------|-------------|--------------|-----------|------------|------|
+| 42 | 5 | **2.6**（~25.7k steps） | 2.4 | 32,134 | 3602s（先触 1h） | ❌ 未达标；训末 eval best=2.6 |
+
+**判读**：
+
+- **等步数低于对照**。~32k 时 greedy 2.3–2.4、全程 best 2.6；对照 seed 42 在 ~32k 到 **4.1**，且更早 ~4k 已 3.0、~20k 到 3.9。本臂 ~4k 仅 1.1、~20k 仅 2.1。
+- **几乎不加税，也没买吞吐**。约 8.9 step/s，与对照 sims=25 的 ~9.1 同量级。缩短 n 没有让训练变快，只是目标更短、学得更浅。
+- **不 promote** `td_steps=5`。2–4 分天花板不是「n=10 把目标搞噪了」。
+
+日志：`.bench/minatar_breakout_tdsteps5_1h_20260813.log`
 
 ### Breakout-v1 Base Pilot（历史，2026-07-23）
 

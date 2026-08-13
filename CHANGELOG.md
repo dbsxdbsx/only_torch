@@ -13,7 +13,15 @@
   - n-step 尾值改用滞后网 V，hard update 每 400 训练步（EfficientZero 附录 C）；π 仍用 MCTS 标签
   - **不**开 reanalyze / ROSMO；MinAtar 用 `TARGET_NET=1` 诊断，不写入 recipe
 
+- **feat(rl): MinAtar 诊断覆盖 `TD_STEPS`**（2026-08-13）
+  - example 可用环境变量覆盖 n-step bootstrap，**不改** recipe 默认（仍 td_steps=10）
+
 ### Changed
+
+- **bench(rl): MinAtar td_steps 10→5 1h 诊断收口**（2026-08-13）
+  - 单 seed=42、`TD_STEPS=5`、sims=25：best greedy **2.6** / final 2.4，32,134 env-steps，先触 1h；门槛 8 未达标
+  - 等步数低于对照 seed 42（~32k 时 4.1）；吞吐持平（~8.9 vs ~9.1 step/s），**不**写入 recipe
+  - 账本：[minatar](examples/my_zero/minatar/README.md)
 
 - **bench(rl): MinAtar 独立 target_net 1h 诊断收口**（2026-08-13）
   - 单 seed=42、`TARGET_NET=1`、sims=25：best greedy **2.3** / final 1.9，26,096 env-steps；门槛 8 未达标

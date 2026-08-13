@@ -14,9 +14,11 @@
 //! GAME=Freeway SEEDS=3 cargo run --example my_zero_minatar --release --features blas-mkl
 //! SIMS=8 WALL_SECS=3600 cargo run --example my_zero_minatar --release --features blas-mkl
 //! TARGET_NET=1 WALL_SECS=3600 cargo run --example my_zero_minatar --release --features blas-mkl
+//! TD_STEPS=5 WALL_SECS=3600 cargo run --example my_zero_minatar --release --features blas-mkl
 //! ```
 //!
 //! 诊断覆盖（不改 recipe 默认）：`SIMS` = `num_simulations`，`WALL_SECS` = wall-clock 秒，
+//! `TD_STEPS` = n-step bootstrap 步数（默认 10），
 //! `TARGET_NET=1` 打开独立 target net（只换 n-step 尾值，hard update 400）。
 
 use only_torch::nn::GraphError;
@@ -47,17 +49,23 @@ fn main() -> Result<(), GraphError> {
     let best: &'static str = Box::leak(best_path.into_boxed_str());
 
     // 预注册训练口径（MinAtar 计划；改默认须走消融纪律）。
-    // `SIMS` 只覆盖本次运行的搜索次数，不写入 recipe。
+    // `SIMS` / `TD_STEPS` 只覆盖本次运行，不写入 recipe。
     let num_simulations: u32 = std::env::var("SIMS")
         .ok()
         .map(|v| v.parse().expect("SIMS 必须是正整数"))
         .unwrap_or(25);
     assert!(num_simulations > 0, "SIMS 必须 > 0");
 
+    let td_steps: usize = std::env::var("TD_STEPS")
+        .ok()
+        .map(|v| v.parse().expect("TD_STEPS 必须是正整数"))
+        .unwrap_or(10);
+    assert!(td_steps > 0, "TD_STEPS 必须 > 0");
+
     let train = TrainSettings {
         gamma: 0.99,
         k_unroll: 5,
-        td_steps: 10,
+        td_steps,
         num_simulations,
         lr: 0.005,
         train_batch_size: 32,
@@ -91,7 +99,7 @@ fn main() -> Result<(), GraphError> {
             .unwrap_or(2.0 * 3600.0);
         assert!(wall_secs > 0.0, "WALL_SECS 必须 > 0");
         eprintln!(
-            "MinAtar {game} sims={num_simulations} wall_secs={wall_secs} max_ep={max_ep} target_net={}",
+            "MinAtar {game} sims={num_simulations} td_steps={td_steps} wall_secs={wall_secs} max_ep={max_ep} target_net={}",
             std::env::var("TARGET_NET").is_ok()
         );
         builder = builder
