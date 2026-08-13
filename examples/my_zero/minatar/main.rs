@@ -12,7 +12,10 @@
 //! SMOKE=1 cargo run --example my_zero_minatar         # 管线验证（3 局）
 //! SEEDS=3 cargo run --example my_zero_minatar --release --features blas-mkl  # 官方 3-seed
 //! GAME=Freeway SEEDS=3 cargo run --example my_zero_minatar --release --features blas-mkl
+//! SIMS=8 WALL_SECS=3600 cargo run --example my_zero_minatar --release --features blas-mkl
 //! ```
+//!
+//! 诊断覆盖（不改 recipe 默认）：`SIMS` = `num_simulations`，`WALL_SECS` = wall-clock 秒。
 
 use only_torch::nn::GraphError;
 use only_torch::rl::algo::my_zero::{MyZero, TrainSettings};
@@ -41,12 +44,19 @@ fn main() -> Result<(), GraphError> {
     let best_path = format!("{BEST_PREFIX}/{game}/best");
     let best: &'static str = Box::leak(best_path.into_boxed_str());
 
-    // 预注册训练口径（MinAtar 计划；改动须走消融纪律）
+    // 预注册训练口径（MinAtar 计划；改默认须走消融纪律）。
+    // `SIMS` 只覆盖本次运行的搜索次数，不写入 recipe。
+    let num_simulations: u32 = std::env::var("SIMS")
+        .ok()
+        .map(|v| v.parse().expect("SIMS 必须是正整数"))
+        .unwrap_or(25);
+    assert!(num_simulations > 0, "SIMS 必须 > 0");
+
     let train = TrainSettings {
         gamma: 0.99,
         k_unroll: 5,
         td_steps: 10,
-        num_simulations: 25,
+        num_simulations,
         lr: 0.005,
         train_batch_size: 32,
         trains_per_episode: 16,
@@ -73,9 +83,15 @@ fn main() -> Result<(), GraphError> {
         .save_model_when_eval(best);
 
     if !smoke {
+        let wall_secs: f32 = std::env::var("WALL_SECS")
+            .ok()
+            .map(|v| v.parse().expect("WALL_SECS 必须是秒数（正浮点）"))
+            .unwrap_or(2.0 * 3600.0);
+        assert!(wall_secs > 0.0, "WALL_SECS 必须 > 0");
+        eprintln!("MinAtar {game} sims={num_simulations} wall_secs={wall_secs} max_ep={max_ep}");
         builder = builder
             .max_env_steps(200_000)
-            .max_wall_secs(2.0 * 3600.0)
+            .max_wall_secs(wall_secs)
             // Breakout：100k steps 时 peak greedy 仍 < 3 → 平直判停；Freeway 用 1.0
             .flat_stop(100_000, if game == "Freeway" { 1.0 } else { 3.0 });
     }

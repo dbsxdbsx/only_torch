@@ -82,6 +82,9 @@ GAME=Freeway SEEDS=3 cargo run --example my_zero_minatar --release --features bl
 
 # 自定义局数
 MAX_EP=3000 cargo run --example my_zero_minatar --release --features blas-mkl
+
+# 诊断覆盖（不改 recipe 默认）：搜索次数 / wall-clock 秒
+SIMS=8 WALL_SECS=3600 cargo run --example my_zero_minatar --release --features blas-mkl
 ```
 
 ## 账本
@@ -100,7 +103,28 @@ MAX_EP=3000 cargo run --example my_zero_minatar --release --features blas-mkl
 
 **判读**：三 seed 均能脱离随机（~1–2），但 2h 预算内锁在约 **2–4** 分平台，**未绿灯**。吞吐瓶颈明显（2h 仅 ~43k–74k env-steps，远低于名义 200k）。不满足「双游戏皆平直」红灯；Freeway 仍按协议暂缓。
 
-**下一步（未跑，需立项）**：在同一预算纪律下一次一项调参（降 lr / 增 sims / 缩短 td_steps）或接受「CPU 墙」后评估 planning-free 退路；组件消融仍等绿灯。
+**主轴**：MinAtar 是图像效率裁决场（以点破面），不是给 Breakout 炼专属配方。只收已验证、可按环境结构路由的组件。FNC / COMBO 整包不进主线；ROSMO 默认关（无裁判探针不开）。
+
+### Breakout-v1 · acting-sims 诊断（已收口，2026-08-13）
+
+> 唯一变量：`num_simulations` 25→8（环境变量 `SIMS`，**不写入 recipe**）。  
+> 预算：单 seed=42，`WALL_SECS=3600`（1h），其余配方与正式 3-seed 相同。  
+> 问题：同一 wall-clock 内少搜后，best greedy 是仍锁 2–4、随 env-steps 上涨，还是变差？  
+> **禁止**：不把 8 写入默认；无与游戏无关的路由规则则不 promote。
+
+| seed | sims | best greedy | final greedy | env-steps | wall-clock | 判定 |
+|------|------|-------------|--------------|-----------|------------|------|
+| 42 | 8 | **1.5**（~6.4k steps） | 1.3 | 27,980 | 3601s（先触 1h） | ❌ 未达标；训末 eval best=1.5 |
+
+对照（正式 3-seed seed 42）：sims=25，best **4.1**，65,686 steps @ 2h。
+
+**判读**：
+
+- **少搜没有买到吞吐**。1h 仅 27,980 env-steps（约 7.8 step/s）；对照 seed 42 在 sims=25 下约 9.1 step/s。wall-clock 仍被每局 16 次 unroll 训练占满；策略更差 → 局更短 → 每小时更多「局末训练税」，steps 反而更少。
+- **学习更差，不是同平台更快涨**。greedy 在 ~6.4k steps 摸到 1.5 后锁在 1.2–1.3，1h 未随 steps 抬向对照的 2–4。
+- **不 promote** `sims=8`。下一刀不要砍 `trains_per_episode`；若动训练量只允许加，且须「相近 env-steps 下 greedy 是否抬升」对照。
+
+日志：`.bench/minatar_breakout_sims8_1h_20260813.log`
 
 ### Breakout-v1 Base Pilot（历史，2026-07-23）
 

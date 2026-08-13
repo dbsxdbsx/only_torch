@@ -2,7 +2,19 @@
 
 ## [Unreleased]
 
+### Added
+
+- **feat(rl): MinAtar 诊断覆盖 `SIMS` / `WALL_SECS` + acting-sims 预注册**（2026-08-13）
+  - example 可用环境变量覆盖搜索次数与 wall-clock，**不改** recipe 默认（仍 sims=25 / 2h）
+  - 第一刀预注册：单 seed 1h、`SIMS=8`，只诊断 acting 是否绑死 2h 墙；FNC/COMBO 整包不进主线，ROSMO 默认关
+  - 权威：[状态总览](.doc/design/rl_myzero_status.md) §5 / [minatar 账本](examples/my_zero/minatar/README.md)
+
 ### Changed
+
+- **bench(rl): MinAtar acting-sims=8 1h 诊断收口**（2026-08-13）
+  - 单 seed=42、`WALL_SECS=3600`：best greedy **1.5** / final 1.3，27,980 env-steps，先触 1h；门槛 8 未达标
+  - 少搜不买吞吐（约 7.8 step/s，低于对照 sims=25 的 ~9.1），greedy 锁 1.2–1.5；**不**写入 recipe
+  - 账本：[minatar](examples/my_zero/minatar/README.md)；裁决：[状态总览](.doc/design/rl_myzero_status.md) §5 / §7
 
 - **bench(rl): MinAtar/Breakout 正式 3-seed 预注册统计回填**（2026-08-12）
   - 预算接线：`max_env_steps=200k` / `max_wall_secs=2h` / `flat_stop@100k`；本轮三 seed 均先触 2h

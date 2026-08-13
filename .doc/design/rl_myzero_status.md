@@ -20,7 +20,7 @@
 
 已删除并并入本文的历史文件（勿再链接）：`rl_roadmap.md`、`rl_closure_plan.md`、`rl_phase1_image_plan.md`、`rl_phase1_report.md`、`my_zero_algorithm_vision.md`、`my_zero_world_model_foundation.md`、`my_zero_simulus_ablation_plan.md`、`_archive/rl_roadmap_v020_v024.md`。
 
-**当前主线状态**：RL **暂缓**（crate **v0.26.0**，2026-08-12）。下次接手顺序：本文 → [环境配置](../rl_python_env_setup.md) → `just test-filter rl` → `just smoke-rl`。
+**当前主线状态**：crate **v0.26.0**（2026-08-12）。RL 未恢复为开发主线。MinAtar acting-sims 诊断已收口（`SIMS=8` 单 seed 1h：**不买吞吐、学习更差**，不 promote）。FNC / COMBO 整包不进主线；ROSMO 默认关。下次接手顺序：本文 → [环境配置](../rl_python_env_setup.md) → `just test-filter rl` → `just smoke-rl`。
 
 ---
 
@@ -64,7 +64,7 @@
 | **CartPole-v1** | greedy ≥ 475 | ✅ 哨兵冻结（中位 ~9.8k env-steps，3/3） | consistency + reconstruction(coef16) + Sampled + Stochastic K=8 |
 | **Gomoku** (vs random) | 胜率 ≥ 95% | ✅ 已闭环（recipe=base；历史里程碑见[棋盘账本](../../examples/my_zero/gomoku/README.md)） | base（全组件关） |
 | **StochasticCartPole** | K=8 3/3 | ✅ Stochastic MuZero 验收 | always-on K=8 |
-| **MinAtar/Breakout** | greedy ≥ 8 | ⚠️ 正式 3-seed 0/3（中位 best **3.9**；2h 先触墙） | consistency ON |
+| **MinAtar/Breakout** | greedy ≥ 8 | ⚠️ 正式 3-seed 0/3（中位 best **3.9**；2h 先触墙）；acting-sims=8 1h 诊断负（best 1.5，不 promote） | consistency ON |
 | **ALE/Pong-v5** | greedy ≥ −18 | ❌ 预算不足（0/3 平直） | consistency ON |
 | **Pendulum-v1** | — | ⏳ 诊断态（n-step target 方差坍缩） | 同 CartPole（诊断，不代表裁决） |
 | **Platform-v0** | — | ✅ 管线 smoke 通过，未做基准 | Sampled |
@@ -166,8 +166,8 @@ promote 时改 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)；论文全称
 
 | 项 | 说明 | 关联 |
 |----|------|------|
-| MinAtar 调参 / 吞吐 | 正式 3-seed 中位 best 3.9 / 门槛 8；2h 仅 ~4–7 万 steps；一次一项调 lr/sims/td 或评估 CPU 墙 | [minatar 账本](../../examples/my_zero/minatar/README.md) |
-| target_net + SVE 终审 | 入库但零实测裁决（缺裁决场；待 MinAtar 绿灯） | — |
+| MinAtar 图像效率下一刀 | acting-sims=8 已收口：不买吞吐、best 1.5 vs 对照 4.1，不 promote。wall-clock 主因是每局 16 次训练。勿砍 `trains_per_episode`；若加训须等步数对照。td/lr 仍暂缓 | [minatar 账本](../../examples/my_zero/minatar/README.md) |
+| target_net + SVE 终审 | 入库但零实测裁决（缺裁决场；待 MinAtar 能学稳） | — |
 | value_prefix 断链修复 | 训练用 LSTM head，搜索用普通 reward head → 静默错误 | — |
 | Pendulum 终审 | n-step target 方差坍缩；可能需 1-step + target_net | [pendulum issue](../../.issue/items/pendulum_failure_diagnosis.md) |
 
@@ -184,8 +184,9 @@ promote 时改 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)；论文全称
 ### 5.3 明确不做
 
 - BetaZero（belief 规划）· CFR 族（不完全信息）· 多智能体 N>2 · SAC 升格母算法
-- DreamerV3 派（棋类非 SOTA）· Simulus tokenizer/RetNet
+- DreamerV3 派（棋类非 SOTA）· Simulus tokenizer/RetNet · **FNC / COMBO 整包**（问题设定与 MyZero 不同，禁止当主线组件）
 - 演化 + RL 联合搜索：仅长期 backlog，无实施计划；触发条件 = 需要演化 MyZero backbone
+- **ROSMO 当救命药 / 绿灯后默认开**：棋盘有害、CartPole 无增益；无裁判探针（轨迹回报 + 少量新鲜搜索）不开；弱模型阶段禁止
 
 ---
 
@@ -207,3 +208,5 @@ promote 时改 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)；论文全称
 - **Stochastic K=8 always-on**：确定性环境自动退化为单峰（自适应 K 为会话悬案，未落盘改契约前仍以此为准）
 - **Sampled MuZero 候选层正交**：K_eff=|A| 时与 PUCT 等价，仅余 ~26% wall-clock 簿记开销
 - **三件套正交分层**：Sampled=候选层 / Gumbel=根层 / completedQ=目标层（融合契约；全域默认关后两项）
+- **sims 是 wall-clock 预算不是「越大越好」**：MinAtar 默认仍 25。2026-08-13 单 seed 1h：`SIMS=8` **不买吞吐**（27,980 steps / 1h，约 7.8 step/s，低于对照 sims=25 的 ~9.1），greedy 锁 1.2–1.5（对照 seed 42 best 4.1）。无与游戏无关的路由规则则不 promote
+- **标签刷新要有裁判**：库存 MCTS vs 一步 look-ahead，用轨迹回报 / 少量新鲜搜索比较，不用环境类型（图像/稠密奖励）猜；ROSMO 默认关
