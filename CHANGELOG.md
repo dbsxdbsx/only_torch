@@ -24,6 +24,11 @@
 
 ### Changed
 
+- **feat(rl): Sampled 结构路由改为 `K_eff < N`，删除 joint≥128 门槛**（2026-08-14）
+  - 开/关与已定稿 K 公式同一句话；连续 / 混合先算 joint `N`，不是类型必开
+  - 结构路由与 runner 自动开共用 [`sampled_would_subsample`](src/rl/algo/my_zero/sampled_params.rs)；Gumbel 仍互斥
+  - 生产 recipe overlay 不变（CartPole 仍开、Gomoku board 仍关）
+
 - **feat(rl): 连续观测改为 always-on `symlog`，取消 Box 量纲探测**（2026-08-14）
   - 不读 `Box`、不设维间倍数门槛（10× 会沿链叠成 100×）；token ID 除外（查表前不能压）
   - runner 按 `ObservationSchema::uses_obs_symlog` 注入；buffer / env 仍存 raw

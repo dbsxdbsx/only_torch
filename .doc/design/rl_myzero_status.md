@@ -136,7 +136,7 @@ promote 时改 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)；论文全称
 | ROSMO | 一步 look-ahead 刷新 | 同上且自评质量足够 | 弱模型自指；新鲜低 replay | α=0.2 + prior top-16 |
 | completedQ / Gumbel-root | 少 sim 根决策 | 理论 sims≪\|A\|（实测未证实） | sims≫\|A\|（CartPole 劣化） | 全域关 |
 | KL 自适应 lr | 探针 KL 调 lr | 大 batch × 探针同源 | 小 batch × 大 buffer（CartPole 发散） | kl_targ=0.02，默认关 |
-| Sampled | 候选采样 + 先验校正 | 连续 / 超大离散 | 小离散 K=N 仅簿记开销 | `sampled_params` |
+| Sampled | 候选采样 + 先验校正 | `K_eff < N`（读已有 sims） | `K_eff = N` 时全展开；recipe 可 overlay 开 | `sampled_params` |
 
 未列组件（value_prefix / target_net / SVE）：接线未完成或断链在修，不写推测处方。课程 / 真规则树为诊断脚手架，不进本表。
 

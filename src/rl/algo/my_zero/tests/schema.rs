@@ -195,15 +195,18 @@ fn invalid_action_schemas_fail_before_model_construction() {
 }
 
 #[test]
-fn large_unknown_catalog_auto_enables_sampled_without_touching_small_path() {
+fn catalog_auto_enables_sampled_when_k_eff_lt_n() {
     let base = Components::base();
-    let small = my_zero_mcts_config(20, 1.0, 0.99, &base, 127, 0.25);
-    let large = my_zero_mcts_config(20, 1.0, 0.99, &base, 128, 0.25);
-    assert!(small.sampled_k.is_none());
-    assert!(large.sampled_k.is_some());
+    let full_enum = my_zero_mcts_config(20, 1.0, 0.99, &base, 5, 0.25);
+    let subsample = my_zero_mcts_config(20, 1.0, 0.99, &base, 6, 0.25);
+    assert!(full_enum.sampled_k.is_none(), "N=5，K_eff=5");
+    assert!(subsample.sampled_k.is_some(), "N=6，K_eff=5");
+
+    let tiny_sims = my_zero_mcts_config(3, 1.0, 0.99, &base, 5, 0.25);
+    assert!(tiny_sims.sampled_k.is_some(), "N=5，sims=3 → K_eff=2");
 
     let mut gumbel = base;
     gumbel.gumbel = true;
-    let large_gumbel = my_zero_mcts_config(20, 1.0, 0.99, &gumbel, 128, 0.25);
-    assert!(large_gumbel.sampled_k.is_none());
+    let large_gumbel = my_zero_mcts_config(20, 1.0, 0.99, &gumbel, 225, 0.25);
+    assert!(large_gumbel.sampled_k.is_none(), "Gumbel 与 Sampled 互斥");
 }

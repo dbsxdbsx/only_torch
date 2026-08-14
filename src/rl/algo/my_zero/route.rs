@@ -6,7 +6,7 @@
 //! [`super::recipe`] 仍按 `env_id` 注入已 promote 栈；观测量纲由 runner 按 schema 覆盖。
 
 use super::component::Components;
-use super::sampled_params::AUTO_SAMPLED_MIN_JOINT_ACTIONS;
+use super::sampled_params::sampled_would_subsample;
 use super::schema::{ActionSchema, ObservationSchema};
 
 /// 低维向量才开 reconstruction：obs 比特少、且通常任务相关。
@@ -43,14 +43,15 @@ impl EnvStructure {
 
 /// 由结构特征推出默认 [`Components`]。
 ///
+/// `num_simulations` 只给 Sampled 用：开/关 = `K_eff < N`，读已有搜索预算，不负责选定 sims。
 /// 不含 KL 自适应 lr / PER / 主动数据：那些是训练过程旋钮，不是环境结构。
 // 生产路径仍走 env_id recipe；函数目前只给结构路由单测用。
 #[cfg_attr(not(test), expect(dead_code))]
-pub(crate) fn route_components(env: &EnvStructure) -> Components {
+pub(crate) fn route_components(env: &EnvStructure, num_simulations: u32) -> Components {
     let mut c = Components::base();
     c.consistency = obs_is_spatial(env.observation);
     c.reconstruction = obs_is_low_dim_flat(env.observation);
-    c.sampled = action_needs_sampled(&env.action);
+    c.sampled = sampled_would_subsample(env.action.action_count(), num_simulations);
     // Gumbel 与 Sampled 根语义暂不兼容；连续动作走 Sampled 离散化，不在这里开 Gumbel。
     c.gumbel = false;
     c.recurrent_posterior = env.partially_observable;
@@ -71,13 +72,4 @@ fn obs_is_spatial(obs: ObservationSchema) -> bool {
 
 fn obs_is_low_dim_flat(obs: ObservationSchema) -> bool {
     matches!(obs, ObservationSchema::Flat(dim) if dim > 0 && dim <= FLAT_RECON_MAX_DIM)
-}
-
-fn action_needs_sampled(action: &ActionSchema) -> bool {
-    match action {
-        ActionSchema::ContinuousBins { .. } | ActionSchema::HybridBins { .. } => true,
-        ActionSchema::Discrete { .. } | ActionSchema::MultiDiscrete { .. } => {
-            action.action_count() >= AUTO_SAMPLED_MIN_JOINT_ACTIONS
-        }
-    }
 }

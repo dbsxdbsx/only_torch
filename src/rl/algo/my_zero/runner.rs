@@ -12,8 +12,8 @@ use super::reanalyze::reanalyze_unroll_window;
 use super::report::TrainReport;
 use super::rosmo::{RosmoTargets, rosmo_refresh_window_with_actions};
 use super::sampled_params::{
-    AUTO_SAMPLED_MIN_JOINT_ACTIONS, compute_sampled_k_cfg, format_sampled_log,
-    resolve_sampled_params, sampled_k_effective,
+    compute_sampled_k_cfg, format_sampled_log, resolve_sampled_params, sampled_k_effective,
+    sampled_would_subsample,
 };
 use super::search_policy::MyZeroSearchPolicy;
 use super::target::mcts_policy_target;
@@ -207,8 +207,8 @@ pub(crate) fn my_zero_mcts_config(
             alpha: MctsConfig::default().root_dirichlet_alpha,
             exploration_fraction: root_exploration_fraction,
         },
-        sampled: if components.sampled
-            || (!components.gumbel && joint_n >= AUTO_SAMPLED_MIN_JOINT_ACTIONS)
+        sampled: if !components.gumbel
+            && (components.sampled || sampled_would_subsample(joint_n, num_simulations))
         {
             Some(SampledConfig {
                 k: sampled_k_effective(compute_sampled_k_cfg(joint_n, num_simulations), joint_n),
@@ -1153,8 +1153,8 @@ fn train_one_seed(
             adapter.describe(),
             t.num_simulations,
         );
-        if cfg.components.sampled
-            || (!cfg.components.gumbel && action_dim >= AUTO_SAMPLED_MIN_JOINT_ACTIONS)
+        if !cfg.components.gumbel
+            && (cfg.components.sampled || sampled_would_subsample(action_dim, t.num_simulations))
         {
             let p = resolve_sampled_params(cfg.env.action, action_dim, t.num_simulations);
             println!("{}", format_sampled_log(&p, t.num_simulations));

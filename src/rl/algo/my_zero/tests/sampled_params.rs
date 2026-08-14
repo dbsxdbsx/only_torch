@@ -2,7 +2,7 @@
 
 use super::super::config::ActionPlan;
 use super::super::sampled_params::{
-    compute_sampled_k_cfg, resolve_sampled_params, sampled_k_effective,
+    compute_sampled_k_cfg, resolve_sampled_params, sampled_k_effective, sampled_would_subsample,
 };
 
 #[test]
@@ -63,4 +63,14 @@ fn small_n_clamps_k_eff() {
 #[test]
 fn sim_cap_for_large_n() {
     assert_eq!(compute_sampled_k_cfg(1000, 20), 13);
+}
+
+#[test]
+fn subsample_predicate_matches_k_eff_lt_n() {
+    assert!(!sampled_would_subsample(2, 20));
+    assert!(!sampled_would_subsample(5, 20));
+    assert!(sampled_would_subsample(5, 3));
+    assert!(sampled_would_subsample(6, 20));
+    assert!(sampled_would_subsample(7, 20));
+    assert!(sampled_would_subsample(81, 100));
 }

@@ -3,15 +3,13 @@
 //! ```text
 //! K_cfg = min( max(5, N / 2),  floor(sims × 2 / 3) )
 //! K_eff = min(K_cfg, N)   // 实现侧 `sampled.rs` 亦会 clamp
+//! Sampled 开  ⟺  K_eff < N
 //! ```
 
 use super::config::ActionPlan;
 
 /// Sampled MuZero 连续维默认档数 B（Hubert et al. 2021 · Appendix A）。
 pub const DEFAULT_CONTINUOUS_BUCKETS: usize = 7;
-
-/// 联合动作数达到该阈值时，结构路由 / 运行时自动打开 Sampled，避免每节点展开完整 catalog。
-pub const AUTO_SAMPLED_MIN_JOINT_ACTIONS: usize = 128;
 
 /// 设计期 joint 空间与运行时 Sampled K（日志 / 测试用）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,6 +37,13 @@ pub fn compute_sampled_k_cfg(n: usize, num_simulations: u32) -> usize {
 /// `K_eff = min(K_cfg, N)`。
 pub fn sampled_k_effective(k_cfg: usize, n: usize) -> usize {
     if n == 0 { 1 } else { k_cfg.max(1).min(n) }
+}
+
+/// 这次 search 会丢掉动作（`K_eff < N`）时才开 Sampled。
+///
+/// 与动作类型无关：连续 / 混合先算 joint `N`，再同一句话。
+pub fn sampled_would_subsample(n: usize, num_simulations: u32) -> bool {
+    sampled_k_effective(compute_sampled_k_cfg(n, num_simulations), n) < n
 }
 
 /// 从 env 动作方案 + 已解析的 joint 候选数构造 B/N/K。
