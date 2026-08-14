@@ -2,12 +2,12 @@
 //!
 //! 不直接回归标量 value/reward，而是把它们表示成**一组固定标量锚点上的概率分布**
 //! （distributional RL，同 C51）。这组锚点称 **support**（概率分布的支撑集），位于
-//! `value_transform` `h(x)` 之后的变换域，如 `{-20,…,0,…,20}` 共 41 个原子。
+//! `value_transform`（`symlog`）之后的变换域，如 `{-20,…,0,…,20}` 共 41 个原子。
 //!
 //! 层级：夹在「标量 target（`n_step` 算出）」与「网络的 categorical value/reward 头」之间，
 //! 是一个纯**编解码工具**（与 `value_transform` 配套）：
-//! - 编码 [`scalar_to_two_hot`]：`x → h(x) → clamp → 相邻两原子线性插值`（训练 soft target）。
-//! - 解码 [`two_hot_to_scalar`]：`Σ pᵢ·atomᵢ（变换域期望）→ h⁻¹`（搜索/推理还原标量）。
+//! - 编码 [`scalar_to_two_hot`]：`x → symlog → clamp → 相邻两原子线性插值`（训练 soft target）。
+//! - 解码 [`two_hot_to_scalar`]：`Σ pᵢ·atomᵢ（变换域期望）→ symexp`（搜索/推理还原标量）。
 //! - [`SupportConfig`]：配置 support（半宽 → 原子数）；value 与 reward 共用同一 support。
 //!
 //! 对齐 canonical MuZero（Schrittwieser et al., 2020，附录 F）：相比标量 MSE，交叉熵梯度更
@@ -51,7 +51,7 @@ impl SupportConfig {
 
 /// 标量 → two-hot 概率分布
 ///
-/// 流程：`x → h(x) → clamp 到 [-half, half] → 相邻两原子线性插值`。
+/// 流程：`x → symlog → clamp 到 [-half, half] → 相邻两原子线性插值`。
 /// 返回长度 = `cfg.size()` 的概率向量（至多两个相邻原子非零，和恒为 1）。
 pub fn scalar_to_two_hot(x: f32, cfg: &SupportConfig) -> Vec<f32> {
     let size = cfg.size();
@@ -72,9 +72,9 @@ pub fn scalar_to_two_hot(x: f32, cfg: &SupportConfig) -> Vec<f32> {
 
 /// two-hot 概率分布 → 标量
 ///
-/// 流程：`Σ pᵢ·atomᵢ（变换域期望）→ h⁻¹ → 标量`。
+/// 流程：`Σ pᵢ·atomᵢ（变换域期望）→ symexp → 标量`。
 /// `probs` 应为已归一化的概率（如 `softmax(logits)`），长度须等于 `cfg.size()`。
-/// 解码与编码方式无关（two-hot / HL-Gauss 共用：都取期望再 h⁻¹）。
+/// 解码与编码方式无关（two-hot / HL-Gauss 共用：都取期望再 `symexp`）。
 pub fn two_hot_to_scalar(probs: &[f32], cfg: &SupportConfig) -> f32 {
     let mut y = 0.0f32;
     for (i, &p) in probs.iter().enumerate() {
@@ -91,13 +91,13 @@ pub const HL_GAUSS_SIGMA: f32 = 0.75;
 
 /// 标量 → HL-Gauss 概率分布（histogram loss with Gaussian smoothing）
 ///
-/// 流程：`x → h(x) → clamp 到 [-half, half] → 高斯 CDF 按 bin 边界差分 → 截断归一化`。
+/// 流程：`x → symlog → clamp 到 [-half, half] → 高斯 CDF 按 bin 边界差分 → 截断归一化`。
 /// 每个原子 `zᵢ` 视为宽 1 的 bin（边界 `zᵢ ± 0.5`）：
 /// `pᵢ ∝ Φ((zᵢ+0.5−y)/σ) − Φ((zᵢ−0.5−y)/σ)`，再对 support 全域截断归一（Σpᵢ = 1）。
 ///
 /// 与 [`scalar_to_two_hot`] 的差异：质量摊到 ~±3 个原子（软标签更平滑，CE 梯度对
 /// target 邻域误差不敏感），期望仍 ≈ y（内点处离散化偏差 < 1e-3）。
-/// 解码端不变（[`two_hot_to_scalar`] 取期望 → h⁻¹）。
+/// 解码端不变（[`two_hot_to_scalar`] 取期望 → `symexp`）。
 pub fn scalar_to_hl_gauss(x: f32, cfg: &SupportConfig) -> Vec<f32> {
     let size = cfg.size();
     let half = cfg.half_size as f32;

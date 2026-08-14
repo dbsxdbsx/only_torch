@@ -678,7 +678,7 @@ cargo build --features blas-openblas
 - [优化器架构设计](.doc/design/optimizer_architecture_design.md) - SGD / Adam 优化器的内部实现和 API 设计
 - [概率分布模块设计](.doc/design/distributions_design.md) - Categorical / Normal / TanhNormal 三种分布的 API 设计原则（Var vs Tensor、构造时缓存、梯度追踪策略）
 - [RL 状态总览](.doc/design/rl_myzero_status.md) - MyZero 战略层：做/不做、文献谱系、双轨架构、首要评价指标
-- [MyZero 组件可测性](.doc/design/rl_myzero_component_detectability.md) - 各旋钮解决什么、环境侧能否测到（① init / ② 短探 / ③ 裁判）；不写 promote
+- [MyZero 组件可测性](.doc/design/rl_myzero_component_detectability.md) - 各旋钮解决什么、环境侧能否测到（① schema / `!` 裁判）；value 量纲 always-on `symlog`；不写 promote
 - [RL 状态总览 · 架构](.doc/design/rl_myzero_status.md#2-架构概览) - 前两阶段已实现契约、输入/动作纵切、兼容边界与后续阶段接缝
 - [RL 状态总览](.doc/design/rl_myzero_status.md) - RL 当前状态、验收协议与 v0.26 方向（v0.20–v0.24 历史决策见 [归档](.doc/design/rl_myzero_status.md)）
 - [MatrixSlow 项目识别文档](.doc/reference/python_MatrixSlow_pid.md) - 基于 MatrixSlow 的 Python 深度学习框架分析，包含计算图、自动求导、静态图执行等核心概念的详细说明

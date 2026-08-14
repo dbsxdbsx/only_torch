@@ -17,7 +17,6 @@ mod n_step;
 mod obs_pipeline;
 mod obs_transform;
 mod posterior;
-mod probe;
 mod reanalyze;
 mod recipe;
 mod rosmo;

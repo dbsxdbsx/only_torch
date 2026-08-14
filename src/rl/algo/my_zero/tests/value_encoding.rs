@@ -33,21 +33,21 @@ fn hl_gauss_sums_to_one() {
 
 #[test]
 fn hl_gauss_expectation_matches_transform_domain_interior() {
-    // 内点（远离 support 边界）：变换域期望应 ≈ h(x)（截断可忽略，离散化偏差 < 1e-3）
+    // 内点（远离 support 边界）：变换域期望应 ≈ symlog(x)
     for &x in &[0.0f32, 1.0, -3.0, 25.0, -25.0, 120.0] {
         let y = value_transform(x);
         let p = scalar_to_hl_gauss(x, &CFG);
         let mean: f32 = p.iter().enumerate().map(|(i, &pi)| pi * CFG.atom(i)).sum();
         assert!(
             (mean - y).abs() < 1e-2,
-            "x={x}（h(x)={y:.4}）HL-Gauss 变换域期望 {mean:.4} 偏差过大"
+            "x={x}（symlog={y:.4}）HL-Gauss 变换域期望 {mean:.4} 偏差过大"
         );
     }
 }
 
 #[test]
 fn hl_gauss_roundtrips_through_decoder() {
-    // 解码端与 two-hot 共用（期望 → h⁻¹）：编码后解码应还原原标量
+    // 解码端与 two-hot 共用（期望 → symexp）：编码后解码应还原原标量
     for &x in &[0.0f32, 1.0, -1.0, 10.0, -50.0, 200.0] {
         let p = scalar_to_hl_gauss(x, &CFG);
         let back = two_hot_to_scalar(&p, &CFG);
@@ -80,9 +80,23 @@ fn hl_gauss_mass_spreads_over_neighborhood() {
 }
 
 #[test]
+fn million_scale_stays_interior_of_support() {
+    // always-on symlog：1e6 不必 reward_scale，也不该被 clamp 到尺边
+    let y = value_transform(1e6);
+    assert!(
+        y < CFG.half_size() as f32 - 1.0,
+        "symlog(1e6)={y} 应在 [-20,20] 内部"
+    );
+    let p = scalar_to_two_hot(1e6, &CFG);
+    let last = *p.last().expect("support 非空");
+    assert!(last < 0.5, "1e6 不应把质量堆在最后一个原子，last={last}");
+}
+
+#[test]
 fn hl_gauss_clamps_out_of_support_values() {
     // 超出 support 的值：clamp 后质量堆在边界 bin 附近，和仍为 1，期望接近边界原子
-    let p = scalar_to_hl_gauss(1e6, &CFG);
+    // symlog(1e6)≈13.8 仍在尺内；要用 e^20 量级才贴边
+    let p = scalar_to_hl_gauss(1e12, &CFG);
     let sum: f32 = p.iter().sum();
     assert!((sum - 1.0).abs() < 1e-5);
     let mean: f32 = p.iter().enumerate().map(|(i, &pi)| pi * CFG.atom(i)).sum();

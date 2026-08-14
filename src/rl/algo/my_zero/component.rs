@@ -21,7 +21,7 @@ pub(crate) struct Components {
     pub continuation_coef: f32,
     /// value/reward 训练目标编码：`false` = two-hot（canonical MuZero 附录 F），
     /// `true` = HL-Gauss 高斯软标签（Farebrother et al. 2024 / Simulus RaC；σ 见
-    /// [`HL_GAUSS_SIGMA`](super::value_encoding::HL_GAUSS_SIGMA)）。解码端两者相同（期望 → h⁻¹）。
+    /// [`HL_GAUSS_SIGMA`](super::value_encoding::HL_GAUSS_SIGMA)）。解码端两者相同（期望 → `symexp`）。
     /// **CartPole 消融负结果**（中位 9.8k→27.6k，2026-07-02，账本在案）→ 默认保持 two-hot；
     /// 图像域复测（大 value 噪声为其 native 场景）。
     pub hl_gauss: bool,

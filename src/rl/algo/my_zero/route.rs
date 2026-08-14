@@ -1,6 +1,7 @@
 //! 按观测 / 动作结构推断默认组件（用户不可见）。
 //!
 //! 只编码能写成谓词的规则；写不出谓词的旋钮保持关。
+//! value/reward 量纲不在这里：永远 `symlog`（见 [`super::value_transform`]），不靠跑局去估。
 //! [`super::recipe`] 仍按 `env_id` 注入已 promote 栈，本模块尚未替换那条路径。
 
 use super::component::Components;
@@ -22,7 +23,7 @@ pub(crate) struct EnvStructure {
     pub action: ActionSchema,
     /// 当前观测不足以构成马尔可夫状态。
     pub partially_observable: bool,
-    /// 连续特征跨数量级（symlog 的适应症）。
+    /// 连续特征跨数量级（obs `symlog` 的适应症；须声明，不靠跑局）。
     pub obs_scale_spans_orders: bool,
     /// value / 回报支撑宽且噪（HL-Gauss 的适应症）。
     pub value_support_noisy: bool,

@@ -83,7 +83,7 @@ just smoke-rl                  # 全部 RL smoke 聚合（发版固定关卡，�
 - Node 与 Layer 的边界：[节点与层边界设计](.doc/design/node_vs_layer_design.md)
 - 演化系统：[神经架构演化设计](.doc/design/neural_architecture_evolution_design.md)
 - 记忆 / RNN / Attention（含 Phase 进度与留坑表）：[记忆机制设计](.doc/design/memory_mechanism_design.md)
-- 强化学习（**只认两份权威 + 账本**）：[RL 状态总览](.doc/design/rl_myzero_status.md)（战略/组件/backlog）、[Python 环境配置](.doc/rl_python_env_setup.md)；示例入口 [MyZero README](examples/my_zero/README.md)（薄索引）；数字见各环境账本。组件「能不能从环境测到」见 [可测性](.doc/design/rl_myzero_component_detectability.md)（卫星文档，不裁决）。文档索引见 [`.doc/README.md`](.doc/README.md)；未闭环现场见 [`.issue/README.md`](.issue/README.md)。编辑器本地 `*.plan.md` 非权威
+- 强化学习（**只认两份权威 + 账本**）：[RL 状态总览](.doc/design/rl_myzero_status.md)（战略/组件/backlog）、[Python 环境配置](.doc/rl_python_env_setup.md)；示例入口 [MyZero README](examples/my_zero/README.md)（薄索引）；数字见各环境账本。组件「能不能从环境测到」见 [可测性](.doc/design/rl_myzero_component_detectability.md)（卫星文档，不裁决；① schema / `!`，value 量纲 always-on `symlog`）。文档索引见 [`.doc/README.md`](.doc/README.md)；未闭环现场见 [`.issue/README.md`](.issue/README.md)。编辑器本地 `*.plan.md` 非权威
 - 空间视觉任务路线：[空间视觉任务路线图](.doc/design/spatial_vision_tasks_roadmap.md)
 - 并行 / Rayon / 线程与分配画像：[线程模型](.doc/design/threading_model.md)
 - DataLoader / 变长序列：[数据加载设计](.doc/design/data_loader_design.md)

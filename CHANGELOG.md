@@ -18,6 +18,11 @@
 
 ### Changed
 
+- **feat(rl): value/reward 改为 always-on `symlog`，取消量纲短探**（2026-08-14）
+  - 编码由 MuZero 附录 F 的 `h(x)` 换成 `symlog` / `symexp`；support `[-20,20]` 罩未知量纲，观测不进 41 原子
+  - 删除 `probe.rs` 轨迹算术路由；可测性只留 ① schema / `!`。CartPole 等示例本来就不写 `reward_scale`；Pendulum `0.1` 仍是历史 overlay
+  - 单测：`value_transform` / `value_encoding` / `obs_transform` / `route`
+
 - **bench(rl): MinAtar td_steps 10→5 1h 诊断收口**（2026-08-13）
   - 单 seed=42、`TD_STEPS=5`、sims=25：best greedy **2.6** / final 2.4，32,134 env-steps，先触 1h；门槛 8 未达标
   - 等步数低于对照 seed 42（~32k 时 4.1）；吞吐持平（~8.9 vs ~9.1 step/s），**不**写入 recipe

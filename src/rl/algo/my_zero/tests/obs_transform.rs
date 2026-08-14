@@ -2,9 +2,17 @@
 
 use super::super::network::MyZeroModel;
 use super::super::obs_transform::{maybe_symlog, symexp, symlog};
+use super::super::value_transform::value_transform;
 use crate::nn::Graph;
 use crate::rl::mcts::Dynamics;
 use std::borrow::Cow;
+
+#[test]
+fn obs_symlog_shares_value_formula() {
+    for &x in &[0.0f32, 0.1, -3.0, 200.0, 1e6] {
+        assert_eq!(symlog(x), value_transform(x));
+    }
+}
 
 #[test]
 fn symlog_basic_properties() {

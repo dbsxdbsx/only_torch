@@ -42,7 +42,7 @@
 | 文档 | 用途 |
 |------|------|
 | [rl_myzero_status.md](design/rl_myzero_status.md) | **RL / MyZero 唯一战略权威**（状态、组件裁决、处方表、backlog） |
-| [rl_myzero_component_detectability.md](design/rl_myzero_component_detectability.md) | 组件「解决什么 / 环境侧能否测到」（非裁决；不抄效果矩阵） |
+| [rl_myzero_component_detectability.md](design/rl_myzero_component_detectability.md) | 组件「解决什么 / 环境侧能否测到」（非裁决；① schema / `!`；不抄效果矩阵） |
 | [broadcast_mechanism_design.md](design/broadcast_mechanism_design.md) | 显式广播 |
 | [mode_design.md](design/mode_design.md) | Train / Inference 与 detach |
 | [gradient_clear_and_accumulation_design.md](design/gradient_clear_and_accumulation_design.md) | 梯度清零与累积 |

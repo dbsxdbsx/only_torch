@@ -12,7 +12,7 @@
 | 角色 | 路径 | 写什么 |
 |------|------|--------|
 | **战略 / 组件裁决 / backlog** | 本文 | 算法定位、环境状态、组件矩阵、处方表、验收协议、未完成事项 |
-| **组件可测性（非裁决）** | [rl_myzero_component_detectability.md](rl_myzero_component_detectability.md) | 每个旋钮解决什么、环境侧能否测到；当前只做 ①②，`!`（原训练中裁判）当 `—`；**不**写 promote |
+| **组件可测性（非裁决）** | [rl_myzero_component_detectability.md](rl_myzero_component_detectability.md) | 每个旋钮解决什么、环境侧能否测到；当前只做 ① schema，`!`（训练中裁判）当 `—`；value 量纲是 always-on `symlog`，不是路由；**不**写 promote |
 | **Python / Gymnasium 配置** | [rl_python_env_setup.md](../rl_python_env_setup.md) | 解释器、依赖、Platform / MinAtar / ALE 安装 |
 | **示例入口（薄）** | [examples/my_zero/README.md](../../examples/my_zero/README.md) | 理念摘要、环境索引、快速开始；**不**维护组件裁决副本 |
 | **环境数字账本** | `examples/my_zero/<env>/README.md` | 仅该环境的实测数字与口径列 |
@@ -207,6 +207,7 @@ promote 时改 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)；论文全称
 - **CartPole 只是哨兵**：不用它判组件价值，更不拿 wall-clock 判生死
 - **优先轴**：观测空间（CNN/图像）+ self-play；Pendulum/Platform 降级为诊断/smoke
 - **recon_coef=16 是话语权旋钮**：非单位换算，跨量纲需重标
+- **value/reward always-on `symlog`**：未知量纲进 41 原子前必须无墙压缩；不是环境旋钮，也不用轨迹去估 `reward_scale`。观测不进这把尺子
 - **Stochastic K=8 always-on**：确定性环境自动退化为单峰（自适应 K 为会话悬案，未落盘改契约前仍以此为准）
 - **Sampled MuZero 候选层正交**：K_eff=|A| 时与 PUCT 等价，仅余 ~26% wall-clock 簿记开销
 - **三件套正交分层**：Sampled=候选层 / Gumbel=根层 / completedQ=目标层（融合契约；全域默认关后两项）

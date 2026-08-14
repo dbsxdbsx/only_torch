@@ -7,7 +7,7 @@
 //! - Prediction f: latent → (`policy_logits`, `value_logits`)
 //!
 //! value/reward 采用 **categorical 表示**（canonical MuZero）：head 输出 support 上的
-//! logits，训练用 two-hot 目标 + 交叉熵，搜索期取 softmax 期望并 h⁻¹ 还原标量。
+//! logits，训练用 two-hot 目标 + 交叉熵，搜索期取 softmax 期望并 `symexp` 还原标量。
 
 use super::consistency::negative_cosine_similarity;
 use super::loss;
@@ -93,9 +93,8 @@ impl Module for ValuePrefixLstm {
 
 /// Categorical value/reward 的 support 半宽。
 ///
-/// support = `2*20+1 = 41` 个原子，覆盖变换域 `[-20,20]` → value 域约 `±420`，
-/// 足以容纳 CartPole（gamma=0.997，truncation bootstrap 后 value 趋近 `1/(1-γ)≈333`，
-/// `h(333)≈17.6`）的目标范围且留有余量。
+/// support = `2*20+1 = 41` 个原子，覆盖 `symlog` 域 `[-20,20]`
+/// （原始标量大约 `±(e²⁰−1)`，不必再按环境设 `reward_scale`）。
 pub const SUPPORT_HALF: usize = 20;
 
 /// 全局 support 配置（value 与 reward 共用，对齐 canonical `MuZero`）。
@@ -1049,7 +1048,7 @@ pub struct MyZeroModel {
     pub action_schema: ActionSchema,
     policy_layout: PolicyLayout,
     /// value/reward 训练目标编码开关（false = two-hot，true = HL-Gauss）。
-    /// 只影响训练目标构造，解码端（期望 → h⁻¹）与推理路径完全无关；
+    /// 只影响训练目标构造，解码端（期望 → `symexp`）与推理路径完全无关；
     /// 由 runner 按 `Components.hl_gauss` 注入（[`Self::with_value_encoding`]）。
     value_hl_gauss: bool,
     /// obs symlog 无量纲化开关（模型 obs 入口单点：repr 输入 + recon 目标同源变换；
@@ -1423,7 +1422,7 @@ impl MyZeroModel {
         Tensor::new(flat, &[xs.len(), size])
     }
 
-    /// value/reward logits 切片 → 标量（softmax 期望 + h⁻¹，无 Tensor 中间分配）
+    /// value/reward logits 切片 → 标量（softmax 期望 + `symexp`，无 Tensor 中间分配）
     pub(super) fn decode_categorical_slice(logits: &[f32]) -> f32 {
         two_hot_to_scalar(&softmax_row(logits), &SUPPORT)
     }
