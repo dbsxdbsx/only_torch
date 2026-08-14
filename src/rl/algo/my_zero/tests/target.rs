@@ -291,7 +291,7 @@ fn tree_range_target_monotonic_in_q_gap() {
 
 #[test]
 fn tree_range_invariant_to_global_scale() {
-    // Q 与全局范围同比例缩放（reward_scale 效应）→ 目标形状不变。
+    // Q 与全局范围同比例缩放 → 目标形状不变。
     let base = vec![child(0.5, 10, 800.0, 0.0), child(0.5, 10, 1200.0, 0.0)]; // Q 80 vs 120
     let scaled = vec![child(0.5, 10, 80.0, 0.0), child(0.5, 10, 120.0, 0.0)]; // Q 8 vs 12（×0.1）
     let a = completed_q_policy_target(&base, 100.0, Some((0.0, 200.0)), 50.0, 1.0, 0);

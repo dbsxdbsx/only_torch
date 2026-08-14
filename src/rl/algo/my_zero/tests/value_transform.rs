@@ -29,7 +29,7 @@ fn compresses_large_values_without_wall() {
     assert!(y200 > 5.0, "symlog(200)={y200} 不应退化");
     assert!(
         value_transform(1e6) < 20.0,
-        "1e6 应落在 [-20,20] 内，不必 reward_scale"
+        "1e6 应落在 [-20,20] 内，不必线性预缩放"
     );
 }
 

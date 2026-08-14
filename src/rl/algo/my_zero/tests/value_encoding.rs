@@ -81,7 +81,7 @@ fn hl_gauss_mass_spreads_over_neighborhood() {
 
 #[test]
 fn million_scale_stays_interior_of_support() {
-    // always-on symlog：1e6 不必 reward_scale，也不该被 clamp 到尺边
+    // always-on symlog：1e6 不必线性预缩放，也不该被 clamp 到尺边
     let y = value_transform(1e6);
     assert!(
         y < CFG.half_size() as f32 - 1.0,

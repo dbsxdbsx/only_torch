@@ -94,7 +94,7 @@ impl Module for ValuePrefixLstm {
 /// Categorical value/reward 的 support 半宽。
 ///
 /// support = `2*20+1 = 41` 个原子，覆盖 `symlog` 域 `[-20,20]`
-/// （原始标量大约 `±(e²⁰−1)`，不必再按环境设 `reward_scale`）。
+/// （原始标量大约 `±(e²⁰−1)`）。
 pub const SUPPORT_HALF: usize = 20;
 
 /// 全局 support 配置（value 与 reward 共用，对齐 canonical `MuZero`）。

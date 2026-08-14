@@ -18,8 +18,6 @@ fn main() -> Result<(), GraphError> {
     let diagnose = std::env::var("DIAG").is_ok();
 
     let mut builder = MyZero::new("Pendulum-v1")
-        // Pendulum 专属：reward 缩放到 categorical support 域（组件栈见 recipe.rs）
-        .reward_scale(0.1)
         .solved(-200.0)
         .max_episodes(if smoke { 3 } else { 600 })
         // 与旧「按 600 局预算前 50% 恒温」行为等价的显式常数（退火解耦预算后需自带）

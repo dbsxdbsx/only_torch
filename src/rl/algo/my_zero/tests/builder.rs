@@ -44,7 +44,6 @@ fn target_net_builder_overrides_recipe() {
 #[test]
 fn pendulum_recipe_matches_cartpole_stack() {
     let cfg = MyZero::new("Pendulum-v1")
-        .reward_scale(0.1)
         .solved(-200.0)
         .max_episodes(600)
         .build()
@@ -52,7 +51,6 @@ fn pendulum_recipe_matches_cartpole_stack() {
     assert!(cfg.components.consistency);
     assert!(cfg.components.reconstruction);
     assert!(cfg.components.sampled);
-    assert!((cfg.env.reward_scale - 0.1).abs() < 1e-6);
 }
 
 #[test]

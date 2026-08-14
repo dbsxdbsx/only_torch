@@ -1,7 +1,7 @@
 //! MyZero 统一配置（5 层，按关注点分组）
 //!
 //! 一个 config 适配所有环境。分层原则：
-//! - [`EnvSettings`]：env I/O 适配（env_id / reward_scale / 动作方案）——**事实**让库问 env，
+//! - [`EnvSettings`]：env I/O 适配（env_id / 动作方案）——**事实**让库问 env，
 //!   **选择**才让用户填（动作的离散/连续/范围是 env 事实，库自动推断，见 [`crate::rl::algo::my_zero::action`]）。
 //! - [`ModelSettings`]：网络容量（latent_dim ...）。
 //! - [`TrainSettings`]：训练超参（gamma/lr/k_unroll/sims/buffer ...），MyZero 自有。
@@ -72,8 +72,6 @@ pub enum ObservationPlan {
 pub struct EnvSettings {
     /// Gymnasium 环境 ID（如 `"CartPole-v1"` / `"Pendulum-v1"`）
     pub env_id: &'static str,
-    /// reward 缩放（1.0 = 原样；Pendulum 用 0.1 使累计 value 落入 categorical support 域）
-    pub reward_scale: f32,
     /// 动作方案（默认 `Auto`：离散 env 自动；连续/混合 env 需指定）
     pub action: ActionPlan,
     /// observation schema / 预处理方案。
@@ -91,7 +89,6 @@ impl Default for EnvSettings {
     fn default() -> Self {
         Self {
             env_id: "CartPole-v1",
-            reward_scale: 1.0,
             action: ActionPlan::Auto,
             observation: ObservationPlan::Auto,
             obs_mask: Vec::new(),

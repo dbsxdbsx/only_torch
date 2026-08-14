@@ -19,11 +19,11 @@
 
 | 进网的实数 | 逻辑默认（开训前锁死） | 不要做的 |
 |------------|------------------------|----------|
-| 加总后的 return / value | 永远 `symlog`，再进 `[-20,20]` | 按环境猜 `reward_scale`；`tanh`；中途改尺度 |
+| 加总后的 return / value | 永远 `symlog`，再进 `[-20,20]` | 线性预缩放；`tanh`；中途改尺度 |
 | 连续观测（向量 / 图像 / 棋盘 / aux） | 永远 `symlog`（模型入口；buffer 仍存 raw）。观测**不进** 41 原子 | 读 `Box` 比维间倍数；设 10× / 100× 门槛 |
 | token ID | 不变换（查表前必须是整数） | 对 ID 做 `symlog` |
 
-`reward_scale` 在这套逻辑里不是路由项。buffer 只存 raw。观测也不读 Box：维间「差 10 倍」会沿链叠成 100 倍，门槛本身站不住。Pendulum 示例里的 `0.1` 是历史 overlay，另案再议。
+buffer 只存 raw。观测也不读 Box：维间「差 10 倍」会沿链叠成 100 倍，门槛本身站不住。线性 `reward_scale` 已删除，量纲交给 always-on `symlog`。
 
 还需要「学」的只剩：
 
@@ -111,7 +111,7 @@
 | **KL 自适应 lr** | 用探针 KL 自动升降学习率，少手调 lr | `!` | 现阶段当 `—`。CartPole 灾难级。 |
 | **PER** | 按 \|ν−z\| 重排消费，补覆盖 | `!` | 现阶段当 `—`。棋盘负。 |
 | **主动数据** | 按 world-model 误差去要新数据 | `!` | 现阶段当 `—`。3A0 负裁。 |
-| **reward_scale** | 线性预缩放逐步 reward | — | **不是路由。** 默认 1。量纲由 always-on `symlog` 吸收。Pendulum 示例 `0.1` 是历史 overlay。禁止同一 buffer 混两种 scale；若改则整次训练重来、空 buffer。 |
+| **（已删）reward_scale** | 曾线性预缩放逐步 reward | — | 已删除。量纲由 always-on `symlog` + `[-20,20]` 吸收。旧 `.otm` 里的字段加载时忽略。 |
 
 `sims` / `td_steps` / `lr` / `trains_per_episode` 是训练预算与超参，不是「环境测出来的组件」。MinAtar 上改 sims / td 已有负诊断，不按探测自动改。
 

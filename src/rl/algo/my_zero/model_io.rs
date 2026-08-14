@@ -17,7 +17,6 @@ pub(crate) struct MyZeroOtmContract {
     pub action: String,
     #[serde(default)]
     pub observation: Option<String>,
-    pub reward_scale: f32,
     pub latent_dim: usize,
 }
 
@@ -54,7 +53,6 @@ pub(crate) fn contract_from_cfg(cfg: &MyZeroConfig) -> MyZeroOtmContract {
         env_id: cfg.env.env_id.to_string(),
         action: action_to_str(cfg.env.action),
         observation: Some(observation_to_str(cfg.env.observation)),
-        reward_scale: cfg.env.reward_scale,
         latent_dim: cfg.model.latent_dim,
     }
 }
@@ -89,12 +87,6 @@ pub(crate) fn verify_contract(
                 "模型 observation 方案 {file_observation} 与声明 {expected_observation} 不一致"
             )));
         }
-    }
-    if (file.reward_scale - cfg.env.reward_scale).abs() > 1e-5 {
-        return Err(GraphError::InvalidOperation(format!(
-            "模型 reward_scale={} 与声明 {} 不一致",
-            file.reward_scale, cfg.env.reward_scale
-        )));
     }
     if file.latent_dim != cfg.model.latent_dim {
         return Err(GraphError::InvalidOperation(format!(

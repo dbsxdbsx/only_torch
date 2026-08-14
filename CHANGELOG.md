@@ -16,6 +16,12 @@
 - **feat(rl): MinAtar 诊断覆盖 `TD_STEPS`**（2026-08-13）
   - example 可用环境变量覆盖 n-step bootstrap，**不改** recipe 默认（仍 td_steps=10）
 
+### Removed
+
+- **feat(rl): 删除线性 `reward_scale`**（2026-08-14）
+  - value/reward 量纲只走 always-on `symlog` + `[-20,20]`；Pendulum 不再写 `0.1`
+  - builder / config / runner / `.otm` 契约去掉该字段；旧文件里的 `reward_scale` 加载时忽略
+
 ### Changed
 
 - **feat(rl): 连续观测改为 always-on `symlog`，取消 Box 量纲探测**（2026-08-14）

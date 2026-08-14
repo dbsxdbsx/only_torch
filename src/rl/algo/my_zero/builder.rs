@@ -8,7 +8,6 @@
 //! | **必填（仅 train）** | [`.solved`](MyZeroBuilder::solved) | greedy eval 达标线 |
 //! | **必填（仅 train）** | [`.max_episodes`](MyZeroBuilder::max_episodes) | 训练局数上限 |
 //! | **特殊动作时才写** | [`.discretize`](MyZeroBuilder::discretize) 等 | 默认 [`ActionPlan::Auto`] |
-//! | **非默认时常写** | [`.reward_scale`](MyZeroBuilder::reward_scale) | 如 Pendulum 的 `0.1` |
 //! | **eval 创新高时落盘** | [`.save_model_when_eval(path)`](MyZeroBuilder::save_model_when_eval) | 默认**不写**；path 为 `.otm` 基名（不含后缀） |
 //! | **推理** | [`.load_model_if_exists`](MyZeroBuilder::load_model_if_exists) | 必填 path（不含 `.otm` 后缀） |
 //!
@@ -64,11 +63,6 @@ impl MyZeroBuilder {
     }
 
     // ---- env ----
-
-    pub fn reward_scale(mut self, v: f32) -> Self {
-        self.cfg.env.reward_scale = v;
-        self
-    }
 
     /// 覆盖默认动作方案（默认 [`ActionPlan::Auto`]，一般不必调用）。
     pub fn action(mut self, plan: ActionPlan) -> Self {

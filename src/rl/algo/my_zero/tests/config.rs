@@ -11,7 +11,6 @@ fn default_is_base() {
     assert_eq!(cfg.components, Components::base(), "默认组件全关 = base");
     assert_eq!(cfg.train, TrainSettings::default());
     assert_eq!(cfg.env.env_id, "CartPole-v1");
-    assert!((cfg.env.reward_scale - 1.0).abs() < 1e-6);
     assert_eq!(cfg.env.action, ActionPlan::Auto);
     assert_eq!(cfg.model.latent_dim, 64);
     assert!(!cfg.eval.checkpoint.enabled, "默认不落盘");

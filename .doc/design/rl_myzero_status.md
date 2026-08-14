@@ -143,7 +143,7 @@ promote 时改 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)；论文全称
 **当前内置 recipe 摘要**：
 
 - CartPole：base + consistency + reconstruction + Sampled + Stochastic K=8（PUCT · sims=20 · td=5）
-- Pendulum：复用 CartPole 栈做诊断（B=7 · sims=20 · `reward_scale(0.1)`）——勿据此裁决组件
+- Pendulum：复用 CartPole 栈做诊断（B=7 · sims=20）——勿据此裁决组件
 - Gomoku：base 全关（Flat MLP · negamax MC · sims=100）
 - MinAtar：consistency ON（见 [minatar 账本](../../examples/my_zero/minatar/README.md)）
 
@@ -207,7 +207,7 @@ promote 时改 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)；论文全称
 - **CartPole 只是哨兵**：不用它判组件价值，更不拿 wall-clock 判生死
 - **优先轴**：观测空间（CNN/图像）+ self-play；Pendulum/Platform 降级为诊断/smoke
 - **recon_coef=16 是话语权旋钮**：非单位换算，跨量纲需重标
-- **value/reward always-on `symlog`**：未知量纲进 41 原子前必须无墙压缩；不是环境旋钮，也不用轨迹去估 `reward_scale`。观测不进这把尺子
+- **value/reward always-on `symlog`**：未知量纲进 41 原子前必须无墙压缩；与连续观测入口公式相同，但观测不进 41 原子。线性 `reward_scale` 已删除
 - **Stochastic K=8 always-on**：确定性环境自动退化为单峰（自适应 K 为会话悬案，未落盘改契约前仍以此为准）
 - **Sampled MuZero 候选层正交**：K_eff=|A| 时与 PUCT 等价，仅余 ~26% wall-clock 簿记开销
 - **三件套正交分层**：Sampled=候选层 / Gumbel=根层 / completedQ=目标层（融合契约；全域默认关后两项）

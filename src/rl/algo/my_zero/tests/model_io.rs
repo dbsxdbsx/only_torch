@@ -56,6 +56,11 @@ fn contract_roundtrip() {
     let cfg = MyZeroConfig::default();
     let c = contract_from_cfg(&cfg);
     verify_contract(&c, &cfg).unwrap();
+    let v = serde_json::to_value(&c).unwrap();
+    assert!(
+        v.get("reward_scale").is_none(),
+        "新契约不再写入线性 reward_scale"
+    );
 }
 
 #[test]
@@ -67,6 +72,7 @@ fn legacy_contract_without_observation_field_remains_readable() {
         "reward_scale": 1.0,
         "latent_dim": 64
     });
+    // 旧契约里的 reward_scale 被忽略；量纲改由 always-on symlog 吸收。
     let contract: MyZeroOtmContract = serde_json::from_value(legacy).unwrap();
     assert_eq!(contract.observation, None);
     verify_contract(&contract, &MyZeroConfig::default()).unwrap();

@@ -231,7 +231,6 @@ fn self_play_one_episode(
     components: &Components,
     gamma: f32,
     cq: Option<(f32, f32)>,
-    reward_scale: f32,
     reset_seed: u64,
     rng: &mut StdRng,
 ) -> Vec<SelfPlayStep> {
@@ -292,7 +291,7 @@ fn self_play_one_episode(
         let (next_search, next_store, reward, terminated, truncated) =
             obs_adapter.step(env, &env_action);
         let last = steps.last_mut().unwrap();
-        last.reward = reward * reward_scale;
+        last.reward = reward;
         last.terminated = terminated;
         last.truncated = truncated;
         last.continuation = if terminated { 0.0 } else { 1.0 };
@@ -816,7 +815,7 @@ fn eval_episodes(
 /// Dynamics 诊断：对比 learned model 的「想象」reward/value 与真实环境。
 ///
 /// 用 greedy 策略跑一个 episode，逐步比较模型预测、搜索 root value、n-step target
-/// （均反 scale 回原始空间）与真实值。
+/// 与真实环境量纲。
 /// 若 reward/value 预测**坍缩成常数**或与真实严重不符，说明 learned model 没学准，
 /// 瓶颈在训练/表示/目标，而非搜索分辨率。仅诊断、不改训练。
 #[allow(clippy::too_many_arguments)]
@@ -827,7 +826,6 @@ fn dynamics_diagnostic(
     obs_adapter: &mut ObsAdapter,
     components: &Components,
     gamma: f32,
-    reward_scale: f32,
     num_simulations: u32,
     td_steps: usize,
 ) {
@@ -885,18 +883,13 @@ fn dynamics_diagnostic(
         mc_return[t] = acc;
     }
 
-    let inv_scale = if reward_scale.abs() > 1e-8 {
-        1.0 / reward_scale
-    } else {
-        1.0
-    };
     let target_steps: Vec<SelfPlayStep> = (0..n)
         .map(|t| SelfPlayStep {
             obs: obses[t].clone().into(),
             action: vec![act_idxs[t] as f32],
             policy_target: Vec::new(),
             player: 0,
-            reward: true_rewards[t] * reward_scale,
+            reward: true_rewards[t],
             root_value: Some(search_roots_scaled[t]),
             terminated: terminated_flags[t],
             truncated: truncated_flags[t],
@@ -913,19 +906,19 @@ fn dynamics_diagnostic(
         })
         .collect();
     let n_step_targets: Vec<f32> = (0..n)
-        .map(|t| compute_n_step_target(&target_steps, t, td_steps, gamma) * inv_scale)
+        .map(|t| compute_n_step_target(&target_steps, t, td_steps, gamma))
         .collect();
     let n_step_5: Vec<f32> = (0..n)
-        .map(|t| compute_n_step_target(&target_steps, t, 5, gamma) * inv_scale)
+        .map(|t| compute_n_step_target(&target_steps, t, 5, gamma))
         .collect();
     let n_step_10: Vec<f32> = (0..n)
-        .map(|t| compute_n_step_target(&target_steps, t, 10, gamma) * inv_scale)
+        .map(|t| compute_n_step_target(&target_steps, t, 10, gamma))
         .collect();
     let n_step_50_no_bootstrap: Vec<f32> = (0..n)
-        .map(|t| compute_n_step_target(&no_bootstrap_steps, t, 50, gamma) * inv_scale)
+        .map(|t| compute_n_step_target(&no_bootstrap_steps, t, 50, gamma))
         .collect();
-    let search_roots: Vec<f32> = search_roots_scaled.iter().map(|v| v * inv_scale).collect();
-    let network_roots: Vec<f32> = network_roots_scaled.iter().map(|v| v * inv_scale).collect();
+    let search_roots: Vec<f32> = search_roots_scaled;
+    let network_roots: Vec<f32> = network_roots_scaled;
 
     let mut r_preds = Vec::with_capacity(n);
     let mut v_roots = Vec::with_capacity(n);
@@ -936,8 +929,8 @@ fn dynamics_diagnostic(
         let action_id = crate::rl::mcts::ActionId(act_idxs[t]);
         let payload = adapter.candidates()[act_idxs[t]].clone();
         let out = Dynamics::recurrent_with_id(&model, &latent, action_id, &payload);
-        let r_pred = out.reward * inv_scale;
-        let v_root = rv_scaled * inv_scale;
+        let r_pred = out.reward;
+        let v_root = rv_scaled;
         reward_mae += (r_pred - true_rewards[t]).abs();
         value_mae += (v_root - mc_return[t]).abs();
         r_preds.push(r_pred);
@@ -1118,7 +1111,6 @@ fn train_one_seed(
     let gamma = t.gamma;
     let smoke = cfg.eval.smoke;
     let solved = cfg.eval.solved;
-    let reward_scale = cfg.env.reward_scale;
     let profile = std::env::var("PROFILE").is_ok();
     crate::rl::profiling::reset();
     let mut prof_self_play = 0.0f32;
@@ -1156,7 +1148,7 @@ fn train_one_seed(
             None => format!("obs={obs_dim}"),
         };
         println!(
-            "[MyZero {}] {obs_desc} {} γ={gamma} sims={} r_scale={reward_scale}",
+            "[MyZero {}] {obs_desc} {} γ={gamma} sims={}",
             cfg.env.env_id,
             adapter.describe(),
             t.num_simulations,
@@ -1246,14 +1238,12 @@ fn train_one_seed(
             &cfg.components,
             gamma,
             cq,
-            reward_scale,
             // per-seed 派生：多 seed 时各 seed 拥有独立 env 初始状态流（统计独立性）
             self_play_episode_seed(seed, ep),
             &mut rng,
         );
         prof_self_play += sp_t0.elapsed().as_secs_f32();
-        // 原始 return（反缩放回报告）
-        let ep_reward: f32 = steps.iter().map(|s| s.reward).sum::<f32>() / reward_scale;
+        let ep_reward: f32 = steps.iter().map(|s| s.reward).sum();
         let ep_len = steps.len();
         total_steps += ep_len as u64;
 
@@ -1505,7 +1495,6 @@ fn train_one_seed(
             &mut obs_adapter,
             &cfg.components,
             gamma,
-            reward_scale,
             t.num_simulations,
             t.td_steps,
         );
