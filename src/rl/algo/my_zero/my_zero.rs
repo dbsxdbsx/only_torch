@@ -139,7 +139,7 @@ impl MyZero {
             ));
         }
         let gamma = self.cfg.train.gamma;
-        let num_simulations = self.cfg.train.num_simulations;
+        let acting_simulations = self.cfg.train.acting_simulations;
         let base_seed = self.cfg.eval.seed;
         let env_id = self.cfg.env.env_id;
         Python::attach(|py| {
@@ -166,7 +166,7 @@ impl MyZero {
                     &mut obs_adapter,
                     &self.cfg.components,
                     gamma,
-                    num_simulations,
+                    acting_simulations,
                     greedy_episode_seed(base_seed, i),
                 );
                 let ep_no = i as usize + 1;

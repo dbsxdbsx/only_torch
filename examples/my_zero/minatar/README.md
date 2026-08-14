@@ -46,7 +46,8 @@
 | gamma | 0.99 | 短局无需长折扣 |
 | k_unroll | 5 | 标准 |
 | td_steps | 10 | n-step return |
-| num_simulations | 25 | CPU 单 worker |
+| num_simulations | 25 | 思考 / greedy eval / reanalyze；`SIMS` 仍覆盖此项 |
+| acting_simulations | 1 | self-play / `run` 只出 π；要动手前搜索用 `.acting_simulations(n)` |
 | lr | 0.005 | |
 | train_batch_size | 32 | |
 | trains_per_episode | 16 | |

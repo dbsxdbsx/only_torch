@@ -134,7 +134,13 @@ impl MyZeroBuilder {
     }
 
     pub fn num_simulations(mut self, n: u32) -> Self {
-        self.cfg.train.num_simulations = n;
+        self.cfg.train.num_simulations = n.max(1);
+        self
+    }
+
+    /// 交互（self-play / `run`）搜索次数。默认 1 = 只出 π；`>1` 恢复动手前 MCTS。
+    pub fn acting_simulations(mut self, n: u32) -> Self {
+        self.cfg.train.acting_simulations = n.max(1);
         self
     }
 

@@ -3,6 +3,7 @@
 //! 单元测试（自源码文件内嵌迁入，一文件对应一个源模块）+ 手动档 bench（`--ignored`）。
 
 // ---- 单元测试（按源模块分文件）----
+mod acting;
 mod action;
 mod board;
 mod builder;

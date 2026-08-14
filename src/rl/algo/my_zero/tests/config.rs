@@ -20,6 +20,7 @@ fn default_is_base() {
 fn train_default_is_cartpole_friendly() {
     let t = TrainSettings::default();
     assert_eq!(t.num_simulations, 20);
+    assert_eq!(t.acting_simulations, 1, "交互默认一次 π，思考预算另算");
     assert_eq!(t.k_unroll, 5);
     assert!((t.gamma - 0.997).abs() < 1e-6);
     assert_eq!(t.train_batch_size, 8);

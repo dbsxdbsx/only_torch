@@ -24,6 +24,11 @@
 
 ### Changed
 
+- **feat(rl): 交互默认 `acting_simulations=1`（只出 π），思考预算仍是 `num_simulations`**（2026-08-14）
+  - self-play / `run` 走根上一次 policy 映射；greedy eval / reanalyze / 诊断仍用原来的 MCTS 次数
+  - `.acting_simulations(n)` 且 `n>1` 恢复动手前搜索；同一套权重不必重训结构
+  - 单测：`acting` / `config` / `builder`
+
 - **feat(rl): Sampled 结构路由改为 `K_eff < N`，删除 joint≥128 门槛**（2026-08-14）
   - 开/关与已定稿 K 公式同一句话；连续 / 混合先算 joint `N`，不是类型必开
   - 结构路由与 runner 自动开共用 [`sampled_would_subsample`](src/rl/algo/my_zero/sampled_params.rs)；Gumbel 仍互斥

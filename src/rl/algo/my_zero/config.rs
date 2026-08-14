@@ -124,8 +124,12 @@ pub struct TrainSettings {
     /// 早期曾设 50 以压「no-terminal 价值膨胀」，该终止处理现已由 continuation/absorbing 正确接管，
     /// 大 n 的历史理由消失（CartPole 确定性 reward 下 50 仍可用，但不是稳健的通用默认）。
     pub td_steps: usize,
-    /// 每步 MCTS 模拟数（默认 20：CPU 友好；学不动时再按环境调大）
+    /// 思考预算：greedy eval / reanalyze / 诊断搜索的 MCTS 次数（默认 20）。
+    /// 与 [`Self::acting_simulations`] 分开；加回去交互搜索只改 acting，不必重训结构。
     pub num_simulations: u32,
+    /// 跟环境交互（self-play / `run`）的 MCTS 次数。默认 1：根上一次 π 映射，不搜树。
+    /// `> 1` 恢复动手前 MCTS。不是写死「永远不能搜」。
+    pub acting_simulations: u32,
     /// 学习率
     pub lr: f32,
     /// 每次 optimizer step 采样的训练 position 数（从 buffer 抽局 + 局内随机起点，对齐 MuZero minibatch）
@@ -170,6 +174,7 @@ impl Default for TrainSettings {
             k_unroll: 5,
             td_steps: 5,
             num_simulations: 20,
+            acting_simulations: 1,
             lr: 0.02,
             train_batch_size: 8,
             trains_per_episode: 8,

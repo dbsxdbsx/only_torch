@@ -6,7 +6,7 @@
 
 离散 2 动作 · 门禁 **greedy eval ≥ 475** · **官方口径：3-seed（42/43/44）中位 env-steps-to-solved + 达标率**
 
-组件组合由库内 [`recipe.rs`](../../../src/rl/algo/my_zero/recipe.rs) 按 `CartPole-v1` 自动注入（当前：consistency(coef 2) + reconstruction(**coef 16**，v0.26 P0 重标定) + Sampled · PUCT · sims=20 · td=5）；示例只写训练契约。论文全称见 [RL 状态总览](../../../.doc/design/rl_myzero_status.md)。
+组件组合由库内 [`recipe.rs`](../../../src/rl/algo/my_zero/recipe.rs) 按 `CartPole-v1` 自动注入（当前：consistency(coef 2) + reconstruction(**coef 16**，v0.26 P0 重标定) + Sampled · PUCT · **acting_sims=1** · think/eval sims=20 · td=5）；示例只写训练契约。论文全称见 [RL 状态总览](../../../.doc/design/rl_myzero_status.md)。交互要恢复动手前搜索：`.acting_simulations(n)`（`n>1`）。
 
 ## 运行
 

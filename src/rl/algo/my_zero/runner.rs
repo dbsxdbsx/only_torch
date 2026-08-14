@@ -113,6 +113,33 @@ pub(crate) fn self_play_temperature(ep: usize, hold: usize, decay: usize) -> f32
     1.0 - progress * 0.75
 }
 
+/// 按温度从概率向量采样动作下标（`T→0` 取 argmax）。
+pub(crate) fn sample_from_probs(probs: &[f32], temperature: f32, rng: &mut impl Rng) -> usize {
+    assert!(!probs.is_empty(), "sample_from_probs: 空分布");
+    if temperature < 1e-6 {
+        return probs
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+    }
+    let inv_t = 1.0 / temperature;
+    let weights: Vec<f32> = probs.iter().map(|p| p.max(0.0).powf(inv_t)).collect();
+    let sum: f32 = weights.iter().sum();
+    if !sum.is_finite() || sum <= 0.0 {
+        return rng.gen_range(0..probs.len());
+    }
+    let mut u = rng.r#gen::<f32>() * sum;
+    for (i, w) in weights.iter().enumerate() {
+        u -= w;
+        if u <= 0.0 {
+            return i;
+        }
+    }
+    probs.len() - 1
+}
+
 // ============================================================================
 // KL 自适应 lr（「用户不调 lr」去旋钮机制；可插拔，默认关）
 // ============================================================================
@@ -244,35 +271,56 @@ fn self_play_one_episode(
     let mut prev_action_idx: Option<usize> = None;
 
     loop {
-        let candidates = adapter.candidates().to_vec();
-        let policy = MyZeroSearchPolicy::from_components(components);
-
-        let result = if use_posterior {
-            let repr_latent = model.repr_inference(&search_obs);
-            let mut prev_oh = vec![0.0f32; model.action_dim];
-            if let Some(a) = prev_action_idx {
-                if a < model.action_dim {
-                    prev_oh[a] = 1.0;
+        let (action_idx, policy_target, root_value) = if mcts_cfg.num_simulations <= 1 {
+            // 交互默认：一次前向出 π，不搜树。`acting_simulations > 1` 走下面 MCTS。
+            let (policy, value) = if use_posterior {
+                let repr_latent = model.repr_inference(&search_obs);
+                let mut prev_oh = vec![0.0f32; model.action_dim];
+                if let Some(a) = prev_action_idx {
+                    if a < model.action_dim {
+                        prev_oh[a] = 1.0;
+                    }
                 }
-            }
-            let (posterior_latent, new_hidden) =
-                model.posterior_step_inference(&repr_latent, &prev_oh, &posterior_hidden);
-            posterior_hidden = new_hidden;
-            let (root_policy, root_value) = model.pred_inference(&posterior_latent);
-            let root_dyn =
-                PrecomputedRootDynamics::new(model, posterior_latent, root_policy, root_value);
-            let dyn_model = DynamicsModel::new(root_dyn, candidates, gamma);
-            mcts_search(&dyn_model, &policy, &search_obs, mcts_cfg, rng)
+                let (posterior_latent, new_hidden) =
+                    model.posterior_step_inference(&repr_latent, &prev_oh, &posterior_hidden);
+                posterior_hidden = new_hidden;
+                model.pred_inference(&posterior_latent)
+            } else {
+                let (_z, p, v) = Dynamics::initial_state(&model, &search_obs);
+                (p, v)
+            };
+            let idx = sample_from_probs(&policy, mcts_cfg.temperature, rng);
+            (idx, policy, value)
         } else {
-            let dyn_model = DynamicsModel::new(model, candidates, gamma);
-            mcts_search(&dyn_model, &policy, &search_obs, mcts_cfg, rng)
+            let candidates = adapter.candidates().to_vec();
+            let policy = MyZeroSearchPolicy::from_components(components);
+
+            let result = if use_posterior {
+                let repr_latent = model.repr_inference(&search_obs);
+                let mut prev_oh = vec![0.0f32; model.action_dim];
+                if let Some(a) = prev_action_idx {
+                    if a < model.action_dim {
+                        prev_oh[a] = 1.0;
+                    }
+                }
+                let (posterior_latent, new_hidden) =
+                    model.posterior_step_inference(&repr_latent, &prev_oh, &posterior_hidden);
+                posterior_hidden = new_hidden;
+                let (root_policy, root_value) = model.pred_inference(&posterior_latent);
+                let root_dyn =
+                    PrecomputedRootDynamics::new(model, posterior_latent, root_policy, root_value);
+                let dyn_model = DynamicsModel::new(root_dyn, candidates, gamma);
+                mcts_search(&dyn_model, &policy, &search_obs, mcts_cfg, rng)
+            } else {
+                let dyn_model = DynamicsModel::new(model, candidates, gamma);
+                mcts_search(&dyn_model, &policy, &search_obs, mcts_cfg, rng)
+            };
+            let idx = result.recommended_id.index();
+            let root_value = result.root_value();
+            let policy_target = mcts_policy_target(&result, cq, adapter.action_dim(), 0);
+            (idx, policy_target, root_value)
         };
-
-        let action_idx = result.recommended_id.index();
         prev_action_idx = Some(action_idx);
-
-        let root_value = result.root_value();
-        let policy_target = mcts_policy_target(&result, cq, adapter.action_dim(), 0);
 
         steps.push(SelfPlayStep {
             obs: store_obs.clone(),
@@ -712,31 +760,49 @@ pub(crate) fn greedy_one_episode(
     let mut total_reward = 0.0f32;
     let mut length = 0usize;
     loop {
-        let candidates = adapter.candidates().to_vec();
-        let policy = MyZeroSearchPolicy::from_components(components);
-
-        let result = if use_posterior {
-            let repr_latent = model.repr_inference(&obs);
-            let mut prev_oh = vec![0.0f32; model.action_dim];
-            if let Some(a) = prev_action_idx {
-                if a < model.action_dim {
-                    prev_oh[a] = 1.0;
+        let action_idx = if eval_cfg.num_simulations <= 1 {
+            let policy = if use_posterior {
+                let repr_latent = model.repr_inference(&obs);
+                let mut prev_oh = vec![0.0f32; model.action_dim];
+                if let Some(a) = prev_action_idx {
+                    if a < model.action_dim {
+                        prev_oh[a] = 1.0;
+                    }
                 }
-            }
-            let (posterior_latent, new_hidden) =
-                model.posterior_step_inference(&repr_latent, &prev_oh, &posterior_hidden);
-            posterior_hidden = new_hidden;
-            let (root_policy, root_value) = model.pred_inference(&posterior_latent);
-            let root_dyn =
-                PrecomputedRootDynamics::new(model, posterior_latent, root_policy, root_value);
-            let dyn_model = DynamicsModel::new(root_dyn, candidates, gamma);
-            mcts_search(&dyn_model, &policy, &obs, &eval_cfg, &mut rng)
+                let (posterior_latent, new_hidden) =
+                    model.posterior_step_inference(&repr_latent, &prev_oh, &posterior_hidden);
+                posterior_hidden = new_hidden;
+                model.pred_inference(&posterior_latent).0
+            } else {
+                Dynamics::initial_state(&model, &obs).1
+            };
+            sample_from_probs(&policy, eval_cfg.temperature, &mut rng)
         } else {
-            let dyn_model = DynamicsModel::new(model, candidates, gamma);
-            mcts_search(&dyn_model, &policy, &obs, &eval_cfg, &mut rng)
-        };
+            let candidates = adapter.candidates().to_vec();
+            let policy = MyZeroSearchPolicy::from_components(components);
 
-        let action_idx = result.recommended_id.index();
+            let result = if use_posterior {
+                let repr_latent = model.repr_inference(&obs);
+                let mut prev_oh = vec![0.0f32; model.action_dim];
+                if let Some(a) = prev_action_idx {
+                    if a < model.action_dim {
+                        prev_oh[a] = 1.0;
+                    }
+                }
+                let (posterior_latent, new_hidden) =
+                    model.posterior_step_inference(&repr_latent, &prev_oh, &posterior_hidden);
+                posterior_hidden = new_hidden;
+                let (root_policy, root_value) = model.pred_inference(&posterior_latent);
+                let root_dyn =
+                    PrecomputedRootDynamics::new(model, posterior_latent, root_policy, root_value);
+                let dyn_model = DynamicsModel::new(root_dyn, candidates, gamma);
+                mcts_search(&dyn_model, &policy, &obs, &eval_cfg, &mut rng)
+            } else {
+                let dyn_model = DynamicsModel::new(model, candidates, gamma);
+                mcts_search(&dyn_model, &policy, &obs, &eval_cfg, &mut rng)
+            };
+            result.recommended_id.index()
+        };
         prev_action_idx = Some(action_idx);
         let env_action = adapter.to_env(action_idx);
         let (next_obs, _, reward, terminated, truncated) = obs_adapter.step(env, &env_action);
@@ -1148,9 +1214,10 @@ fn train_one_seed(
             None => format!("obs={obs_dim}"),
         };
         println!(
-            "[MyZero {}] {obs_desc} {} γ={gamma} sims={}",
+            "[MyZero {}] {obs_desc} {} γ={gamma} acting_sims={} think_sims={}",
             cfg.env.env_id,
             adapter.describe(),
+            t.acting_simulations,
             t.num_simulations,
         );
         if !cfg.components.gumbel
@@ -1220,7 +1287,7 @@ fn train_one_seed(
         let temperature = self_play_temperature(ep, t.temp_hold_episodes, t.temp_decay_episodes);
 
         let mcts_cfg = my_zero_mcts_config(
-            t.num_simulations,
+            t.acting_simulations,
             temperature,
             gamma,
             &cfg.components,

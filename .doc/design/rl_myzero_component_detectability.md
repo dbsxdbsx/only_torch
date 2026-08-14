@@ -113,7 +113,7 @@ buffer 只存 raw。观测也不读 Box：维间「差 10 倍」会沿链叠成 
 | **主动数据** | 按 world-model 误差去要新数据 | `!` | 现阶段当 `—`。3A0 负裁。 |
 | **（已删）reward_scale** | 曾线性预缩放逐步 reward | — | 已删除。量纲由 always-on `symlog` + `[-20,20]` 吸收。旧 `.otm` 里的字段加载时忽略。 |
 
-`sims` / `td_steps` / `lr` / `trains_per_episode` 是训练预算与超参，不是「环境测出来的组件」。Sampled 只**读取**已有 `sims` 来算 `K_eff`，不按探测去改 sims。MinAtar 上改 sims / td 已有负诊断，不按探测自动改。
+`sims` / `td_steps` / `lr` / `trains_per_episode` 是训练预算与超参，不是「环境测出来的组件」。Sampled 只**读取**思考预算 `num_simulations` 来算 `K_eff`，不按探测去改 sims。交互另有 `acting_simulations`（默认 1 = 只出 π）；eval / reanalyze 仍用思考预算。MinAtar 上改 sims / td 已有负诊断，不按探测自动改。
 
 ---
 

@@ -142,8 +142,8 @@ promote 时改 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)；论文全称
 
 **当前内置 recipe 摘要**：
 
-- CartPole：base + consistency + reconstruction + Sampled + Stochastic K=8（PUCT · sims=20 · td=5）
-- Pendulum：复用 CartPole 栈做诊断（B=7 · sims=20）——勿据此裁决组件
+- CartPole：base + consistency + reconstruction + Sampled + Stochastic K=8（PUCT · acting_sims=1 · think/eval sims=20 · td=5）
+- Pendulum：复用 CartPole 栈做诊断（B=7 · acting_sims=1 · think/eval sims=20）——勿据此裁决组件
 - Gomoku：base 全关（Flat MLP · negamax MC · sims=100）
 - MinAtar：consistency ON（见 [minatar 账本](../../examples/my_zero/minatar/README.md)）
 

@@ -54,6 +54,29 @@ fn pendulum_recipe_matches_cartpole_stack() {
 }
 
 #[test]
+fn acting_simulations_can_restore_interact_search() {
+    let cfg = MyZero::new("CartPole-v1")
+        .acting_simulations(20)
+        .solved(475.0)
+        .max_episodes(2000)
+        .build()
+        .unwrap();
+    assert_eq!(cfg.train.acting_simulations, 20);
+    assert_eq!(cfg.train.num_simulations, 20, "思考预算不被 acting 改掉");
+}
+
+#[test]
+fn acting_simulations_zero_clamps_to_one() {
+    let cfg = MyZero::new("CartPole-v1")
+        .acting_simulations(0)
+        .solved(475.0)
+        .max_episodes(1)
+        .build()
+        .unwrap();
+    assert_eq!(cfg.train.acting_simulations, 1);
+}
+
+#[test]
 fn td_steps_override_clamps_to_at_least_one() {
     let cfg = MyZero::new("CartPole-v1")
         .td_steps(0)
