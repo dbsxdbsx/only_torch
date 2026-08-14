@@ -48,5 +48,5 @@ SEEDS=3 cargo run --example my_zero_pong --release --features blas-mkl    # 官�
 
 **S3 诊断裁决（2026-07-04）**：三臂 + base 全平 → 组件层排除，**嫌疑 1（训练量不足：9.6k updates/batch16 vs EfficientZero 参考 ~120k/batch256，差两个数量级）与嫌疑 4（稀疏 reward + γ=0.997）上位**。
 按 2026-07-04 规划修订：**Gomoku（Phase 2）提前为主线**，图像线降级为后台预算标定
-（replay ratio ↑ × ROSMO 现算刷新 / lr 扫描 / DIAG，见负结果 issue「下一步」）。
+（replay ratio ↑ × ROSMO 现算刷新 / lr 扫描，见负结果 issue「下一步」）。
 日志：`.bench/pong_s3_*.log`。

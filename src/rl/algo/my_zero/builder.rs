@@ -308,12 +308,6 @@ impl MyZeroBuilder {
         self
     }
 
-    /// dynamics 诊断（对比 model 想象 vs 真实 reward/value）。
-    pub fn diagnose(mut self) -> Self {
-        self.cfg.eval.diagnose = true;
-        self
-    }
-
     /// periodic greedy eval 分数创新高时写入 `{path}.otm`。
     ///
     /// `path` 为完整基名（含目录与文件名，**不含** `.otm` 后缀），无默认路径。

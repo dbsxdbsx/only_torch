@@ -17,7 +17,7 @@ reviewers: []
 > **代码位置更新（2026-06-18，v0.25 Phase 0/1 重构）**：MyZero 已统一进库 `src/rl/algo/my_zero/`——模型在 `network.rs`（原 `examples/my_zero/cartpole/model.rs`，consistency 块在其 `train_unroll`），训练循环 / dynamics 诊断在 `runner.rs`，旋钮在 `config.rs::apply_env_overrides`（原 `pendulum/main.rs` 的 `Hyperparams` / env 解析），动作离散化在 `action.rs`。组件（consistency / value_prefix / n_step / support 等）已从 muzero/ez **吸收进 my_zero**。本 issue 下文旧的 `model.rs:NNN` / `main.rs:NNN` 行号据此失效，对应逻辑见上述新文件。
 > **value-head 容量诊断（2026-06-18，决定性新结果）**：库内单测 `my_zero::tests::value_head_capacity` 喂高方差、obs 可分的 value 目标，只训 repr+pred 的 value head——高/低价值组预测间隔从 1.77 训练到 **14.00**（真实间隔 14.0，**精确拟合**）→ §一 的分叉 **(b)「head 学不动」证伪**。坍缩来自**上游**（n-step target 构造 / 搜索），非 head 表达力。下一步探针：在 Pendulum 跑里实测 n-step target 的 std，与全程 MC std(≈175)、模型预测 std(≈26) 三者对比，定位是 target 截断（td_steps/gamma）还是搜索。
 > **压测更新（2026-06-21）**：已接入与 CartPole 相同的 **consistency + reconstruction + Sampled** 栈（B=7 · K_eff=5 · sims=20 · γ=0.997 · r_scale=0.1）；修复 Sampled `policy_target` 投射 full action_dim（ep10 训练崩溃）。600ep / 120k env-steps：**best greedy −942.2**（门禁 −200 未达标）。详见 §十。
-> **事实源锁定（2026-06-24）**：`recipe.rs` 中 Pendulum 仍复用 `consistency + reconstruction + Sampled`，但代码命名与文档口径统一为**诊断栈**，不是已验收 promote；`DIAG=1` 诊断将输出 MC return / n-step target / search root / predicted value 的分布，作为下一步 P0 证据。
+> **事实源锁定（2026-06-24）**：`recipe.rs` 中 Pendulum 仍复用 `consistency + reconstruction + Sampled`，但代码命名与文档口径统一为**诊断栈**，不是已验收 promote。当时用 `DIAG=1` 训后探针对照 MC / n-step / 搜索 root / 网络 root；该开关已于 2026-08-14 从库内拆除，数字见下条。
 > **量纲（2026-08-14）**：线性 `reward_scale(0.1)` 已删除；value/reward 只走 always-on `symlog`。下文历史压测仍按当时的 `r_scale=0.1` 读。
 > **论文口径审计（2026-06-25）**：修复 Sampled MuZero `π̂_β` 公式错误：应为 `(β̂/β)·π`，不是 `β̂/(β·π)`。复核 consistency 后确认 `negative_cosine_similarity()` 内部已对 target branch `detach()`，原实现已有 stop-gradient；剩余差距是没有独立 EMA target encoder / target projector。旧 §十 压测结果基于修复前 Sampled 公式，后续需重跑。
 > **transition discount 语义重构（2026-06-25）**：MyZero 将 `terminated / truncated / continuation` 作为基础 backbone 语义接入：真终止 `continuation=0`，time-limit truncation 仍 `continuation=1` 并 bootstrap；Dynamics 学习 continuation，MCTS imagined edge 使用 `gamma * predicted_continuation` backup。该改动修正 terminal/truncation 闭环，但不宣称 Pendulum 已解决，仍需以 TD=5 诊断和 greedy eval 判读。
@@ -247,6 +247,6 @@ greedy eval 里程碑：ep25 **−1338** → ep50 **−1041** → ep100 **−103
 
 ### 下一步（P0→P2）
 
-1. **P0**：n-step target std 探针（`.diagnose()` 或 runner 日志），区分 target 截断 vs 搜索。
+1. **P0（已做，2026-06-25）**：n-step target std 探针已跑完（MC std 232.1 vs n-step(td=5) 28.1 vs 搜索/网络 root ~22）；常驻 `DIAG` / `.diagnose()` 已拆除，勿再当入口。
 2. **P1**：`main.rs` 只改 `sims=50`、`gamma=0.99`，MAX_EP=300 看 greedy 能否过 −800。
 3. **P2**：仍失败 → 评估 Gumbel-root 或加大 B；勿在失败区间叠 completedQ 等 CartPole ❌ 组件。

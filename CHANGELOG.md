@@ -22,6 +22,10 @@
 
 ### Removed
 
+- **feat(rl): 删除 DIAG / `.diagnose()` 训后探针**（2026-08-14）
+  - Pendulum 时期一次性 dump（MC / n-step / 搜索 root / 网络 root）；数字已入账本，不再常驻开关
+  - 去掉 `EvalSettings.diagnose`、`MyZeroBuilder::diagnose`、`dynamics_diagnostic`，以及 CartPole / Pendulum 的 `DIAG=1`
+
 - **feat(rl): 删除线性 `reward_scale`**（2026-08-14）
   - value/reward 量纲只走 always-on `symlog` + `[-20,20]`；Pendulum 不再写 `0.1`
   - builder / config / runner / `.otm` 契约去掉该字段；旧文件里的 `reward_scale` 加载时忽略
@@ -39,7 +43,7 @@
   - 单测：`temperature`；CartPole 哨兵数字会变，旧账本行先保留
 
 - **feat(rl): 交互默认 `acting_simulations=1`（只出 π），思考预算仍是 `num_simulations`**（2026-08-14）
-  - self-play / `run` 走根上一次 policy 映射；greedy eval / reanalyze / 诊断仍用原来的 MCTS 次数
+  - self-play / `run` 走根上一次 policy 映射；greedy eval / reanalyze 仍用原来的 MCTS 次数
   - `.acting_simulations(n)` 且 `n>1` 恢复动手前搜索；同一套权重不必重训结构
   - 单测：`acting` / `config` / `builder`
 

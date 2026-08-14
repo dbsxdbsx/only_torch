@@ -243,8 +243,6 @@ pub struct EvalSettings {
     pub eval_episodes: usize,
     /// 管线自检（3 局 self-play + 1 次训练，不验收敛）
     pub smoke: bool,
-    /// dynamics 诊断（对比 model 想象 vs 真实 reward/value）
-    pub diagnose: bool,
     /// best-only 模型落盘
     pub checkpoint: CheckpointSettings,
 }
@@ -263,7 +261,6 @@ impl Default for EvalSettings {
             eval_every: 25,
             eval_episodes: 10,
             smoke: false,
-            diagnose: false,
             checkpoint: CheckpointSettings::default(),
         }
     }

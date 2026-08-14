@@ -50,8 +50,8 @@ MCTS 内 root CNN 前向 867µs/call、recurrent 16µs/call——**性能不是�
    口径 ~120k updates × batch256——优化量差 2 个数量级以上；且 buffer 内 replay ratio
    实测 ≈ 1.1 次/position（保守端）。对症臂（预注册待跑，后台机器时间即可）：
    ① trains_per_episode 加倍 × ROSMO 现算刷新顶 staleness（`.rosmo(true)` 已进库，
-   CartPole 回归闸门 3/3 绿）；② lr {0.001, 0.003, 0.01} 扫描；③ DIAG 诊断
-   value/reward 预测是否坍缩（嫌疑 4 判据）；
+   CartPole 回归闸门 3/3 绿）；② lr {0.001, 0.003, 0.01} 扫描；
+   ③ 若再查 value/reward 是否坍缩（嫌疑 4），写一次性现场探针，勿恢复常驻 `DIAG`；
 4. **战略调整（2026-07-04 规划修订）**：图像域裁决降级为**后台慢诊断**（吃机器时间不吃
    注意力），棋盘线曾提前为主线（终态见 [RL 状态总览](../../.doc/design/rl_myzero_status.md)）。本 issue 保持 open，
    终局裁决等预算标定臂证据齐后再下。

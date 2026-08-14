@@ -14,9 +14,6 @@ cargo run --example my_zero_pendulum --release
 # SMOKE 管线验证
 SMOKE=1 cargo run --example my_zero_pendulum
 
-# P0 value / target / search 诊断（训练结束后追加诊断输出）
-DIAG=1 cargo run --example my_zero_pendulum --release
-
 # 阶段耗时汇总（self-play / batch prepare / train step / eval）
 PROFILE=1 cargo run --example my_zero_pendulum --release
 

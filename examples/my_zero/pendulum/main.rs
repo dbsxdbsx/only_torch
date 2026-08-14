@@ -15,7 +15,6 @@ const BEST: &str = "models/my_zero/Pendulum-v1/best";
 
 fn main() -> Result<(), GraphError> {
     let smoke = std::env::var("SMOKE").is_ok();
-    let diagnose = std::env::var("DIAG").is_ok();
 
     let mut builder = MyZero::new("Pendulum-v1")
         .solved(-200.0)
@@ -26,9 +25,6 @@ fn main() -> Result<(), GraphError> {
     }
     if smoke {
         builder = builder.smoke();
-    }
-    if diagnose {
-        builder = builder.diagnose();
     }
 
     let mz = builder.train()?;
