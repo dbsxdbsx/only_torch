@@ -84,6 +84,7 @@ updated: YYYY-MM-DD
 |------|------|
 | [cpu_only_mcts_image_realtime_risk.md](items/cpu_only_mcts_image_realtime_risk.md) | CPU × 图像 × MCTS × 实时一级风险 |
 | [commercial_realtime_game_target_profile.md](items/commercial_realtime_game_target_profile.md) | 商业图像游戏目标画像 |
+| [2026-08-14_gomoku_bench_milestone_rename.md](items/2026-08-14_gomoku_bench_milestone_rename.md) | Gomoku bench 里程碑文件名（M1/M3/P3A0）待按职责改名 |
 | [gomoku_naive0_tactical_wall.md](items/gomoku_naive0_tactical_wall.md) | Gomoku naive0 战术墙 |
 | [pendulum_failure_diagnosis.md](items/pendulum_failure_diagnosis.md) | Pendulum 失败诊断 |
 | [my_zero_reanalyze_cartpole_regression.md](items/my_zero_reanalyze_cartpole_regression.md) | reanalyze CartPole 回归 |
