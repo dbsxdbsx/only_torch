@@ -44,3 +44,20 @@
 2. **共享表示 → 跨任务迁移**：同一张词嵌入表服务多任务，小规模证明了"积累性学习"可行。
 3. **局限性反面教训**：模板化语言（无容错）、无路径规划、单次指令（无修正）、agent 不能主动提问——恰好是 myAGI 需要解决的四个核心问题。
 4. **与 only_torch MyZero 的切点**：双 loss 联合训练架构类似、课程学习可参考、latent state 的可解释性是未来差异化方向。
+
+---
+
+## 2026-08-14 · 最大熵树搜 vs 官方 Zero 搜索（温度收口）
+
+背景：温度收成评测开关（非评测 \(\tau=1\) / 评测 \(\tau=0\)）后，核对 MENTS 家族与官方 Gumbel 线是否还能并进 MyZero。核心结论：**走 PUCT / Sampled / Gumbel，不走最大熵树搜；玻尔兹曼选边无运行时零件可拆。** 论证见 [搜索派系与温度](../design/rl_myzero_search_lineage.md)。
+
+| 出处 | 论文（缩写） | 判定 | 一句话理由 | 结论落点 |
+|---|---|---|---|---|
+| NeurIPS 2019 | MENTS（Shannon MaxEnt + 软 Bellman） | ❌ 否决（路径） | 软最优可以和回报最优不是同一条边；温度是正确性参数 | [search_lineage](../design/rl_myzero_search_lineage.md) |
+| ICML 2021 | RENTS / TENTS（凸正则化 MCTS） | ❌ 否决（路径） | 换 KL / Tsallis，仍是树内 backup，不是出手 \(\tau\) | 同上 |
+| JAIR 2024 / 2202.07071 | Dam 统一 backup / 探索 | ❌ 否决（路径） | 上篇期刊版；作者写明不和 MuZero 比 | 同上 |
+| 2102.06808 | ANTS（目标熵反解树内 \(\tau\)） | ❌ 否决（路径） | 仍是 MaxEnt 目标；接 learned \(g\) 要改软 Bellman；引用少 | 同上 |
+| NeurIPS 2023 / 2404.07732 | BTS / DENTS（玻尔兹曼选边） | ❌ 否决（纳入）· 证据归档 | 钉死软目标会推错；围棋实装退回平均回报 + \(\alpha(N)\to 0\)，赢的是吞吐 | 同上 |
+| ICML 2020 / 2007.12509 | Grill（MCTS = 正则化政策优化） | ✅ 证据归档 | 官方线理论前身；不单独换实现 | 同上 |
+| ICLR 2022 | Gumbel（少 sim 政策改进） | ✅ 采纳（组件在库，recipe 默认关） | 访不完所有边时的 correctness；promote 只认状态总览 | 状态总览 §3 + 同上 |
+| ICML 2021 / 2104.06303 | Sampled MuZero | ✅ 采纳 | 大 \(\|A\|\) 抽 K；与 MaxEnt 无对打 | 状态总览 §3 + 同上 |

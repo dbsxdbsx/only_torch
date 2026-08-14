@@ -4,6 +4,10 @@
 
 ### Added
 
+- **docs(rl): 搜索派系与温度卫星文档**（2026-08-14）
+  - 为何走 PUCT / Sampled / Gumbel、不走 MENTS / ANTS / BTS；现行 \(\tau\) 为评测开关
+  - 权威：[搜索派系与温度](.doc/design/rl_myzero_search_lineage.md)（不裁决组件开闭）
+
 - **feat(rl): MinAtar 诊断覆盖 `SIMS` / `WALL_SECS` + acting-sims 预注册**（2026-08-13）
   - example 可用环境变量覆盖搜索次数与 wall-clock，**不改** recipe 默认（仍 sims=25 / 2h）
   - 第一刀预注册：单 seed 1h、`SIMS=8`，只诊断 acting 是否绑死 2h 墙；FNC/COMBO 整包不进主线，ROSMO 默认关

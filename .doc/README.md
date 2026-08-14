@@ -43,6 +43,7 @@
 |------|------|
 | [rl_myzero_status.md](design/rl_myzero_status.md) | **RL / MyZero 唯一战略权威**（状态、组件裁决、处方表、backlog） |
 | [rl_myzero_component_detectability.md](design/rl_myzero_component_detectability.md) | 组件「解决什么 / 环境侧能否测到」（非裁决；① schema / `!`；不抄效果矩阵） |
+| [rl_myzero_search_lineage.md](design/rl_myzero_search_lineage.md) | 搜索派系与温度（非裁决：官方 Zero 线 vs 最大熵树搜；\(\tau\) 契约） |
 | [broadcast_mechanism_design.md](design/broadcast_mechanism_design.md) | 显式广播 |
 | [mode_design.md](design/mode_design.md) | Train / Inference 与 detach |
 | [gradient_clear_and_accumulation_design.md](design/gradient_clear_and_accumulation_design.md) | 梯度清零与累积 |
@@ -76,6 +77,7 @@
 |------|------|
 | 战略 / 裁决 / backlog | [design/rl_myzero_status.md](design/rl_myzero_status.md) |
 | 组件可测性（非裁决） | [design/rl_myzero_component_detectability.md](design/rl_myzero_component_detectability.md) |
+| 搜索派系与温度（非裁决） | [design/rl_myzero_search_lineage.md](design/rl_myzero_search_lineage.md) |
 | Python 环境 | [rl_python_env_setup.md](rl_python_env_setup.md) |
 | 示例入口（薄） | [examples/my_zero/README.md](../examples/my_zero/README.md) |
 | 环境数字账本 | `examples/my_zero/<env>/README.md` |

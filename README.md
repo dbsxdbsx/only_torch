@@ -35,7 +35,7 @@ let dot = graph.to_dot();
 ## 文档
 
 - 长期知识索引：[`.doc/README.md`](.doc/README.md)
-- RL / MyZero 状态（战略权威）：[`.doc/design/rl_myzero_status.md`](.doc/design/rl_myzero_status.md) · 组件可测性（非裁决）：[`.doc/design/rl_myzero_component_detectability.md`](.doc/design/rl_myzero_component_detectability.md) · 环境配置：[`.doc/rl_python_env_setup.md`](.doc/rl_python_env_setup.md)
+- RL / MyZero 状态（战略权威）：[`.doc/design/rl_myzero_status.md`](.doc/design/rl_myzero_status.md) · 组件可测性（非裁决）：[`.doc/design/rl_myzero_component_detectability.md`](.doc/design/rl_myzero_component_detectability.md) · 搜索派系与温度（非裁决）：[`.doc/design/rl_myzero_search_lineage.md`](.doc/design/rl_myzero_search_lineage.md) · 环境配置：[`.doc/rl_python_env_setup.md`](.doc/rl_python_env_setup.md)
 - 未闭环问题现场：[`.issue/README.md`](.issue/README.md)
 - API：[docs.rs/only_torch](https://docs.rs/only_torch)
 
@@ -679,6 +679,7 @@ cargo build --features blas-openblas
 - [概率分布模块设计](.doc/design/distributions_design.md) - Categorical / Normal / TanhNormal 三种分布的 API 设计原则（Var vs Tensor、构造时缓存、梯度追踪策略）
 - [RL 状态总览](.doc/design/rl_myzero_status.md) - MyZero 战略层：做/不做、文献谱系、双轨架构、首要评价指标
 - [MyZero 组件可测性](.doc/design/rl_myzero_component_detectability.md) - 各旋钮解决什么、环境侧能否测到（① schema / `!` 裁判）；value 量纲 always-on `symlog`；不写 promote
+- [MyZero 搜索派系与温度](.doc/design/rl_myzero_search_lineage.md) - 为何走 PUCT / Sampled / Gumbel、不走最大熵树搜；现行温度契约；文献表（不裁决开闭）
 - [RL 状态总览 · 架构](.doc/design/rl_myzero_status.md#2-架构概览) - 前两阶段已实现契约、输入/动作纵切、兼容边界与后续阶段接缝
 - [RL 状态总览](.doc/design/rl_myzero_status.md) - RL 当前状态、验收协议与 v0.26 方向（v0.20–v0.24 历史决策见 [归档](.doc/design/rl_myzero_status.md)）
 - [MatrixSlow 项目识别文档](.doc/reference/python_MatrixSlow_pid.md) - 基于 MatrixSlow 的 Python 深度学习框架分析，包含计算图、自动求导、静态图执行等核心概念的详细说明

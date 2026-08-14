@@ -13,6 +13,7 @@
 |------|------|--------|
 | **战略 / 组件裁决 / backlog** | 本文 | 算法定位、环境状态、组件矩阵、处方表、验收协议、未完成事项 |
 | **组件可测性（非裁决）** | [rl_myzero_component_detectability.md](rl_myzero_component_detectability.md) | 每个旋钮解决什么、环境侧能否测到；当前只做 ① schema，`!`（训练中裁判）当 `—`；value 与连续观测量纲是 always-on `symlog`，不是路由；**不**写 promote |
+| **搜索派系与温度（非裁决）** | [rl_myzero_search_lineage.md](rl_myzero_search_lineage.md) | 为何走 PUCT / Sampled / Gumbel、不走最大熵树搜；现行 \(\tau\) 契约；文献表 |
 | **Python / Gymnasium 配置** | [rl_python_env_setup.md](../rl_python_env_setup.md) | 解释器、依赖、Platform / MinAtar / ALE 安装 |
 | **示例入口（薄）** | [examples/my_zero/README.md](../../examples/my_zero/README.md) | 理念摘要、环境索引、快速开始；**不**维护组件裁决副本 |
 | **环境数字账本** | `examples/my_zero/<env>/README.md` | 仅该环境的实测数字与口径列 |
@@ -211,7 +212,7 @@ promote 时改 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)；论文全称
 - **Stochastic K=8 always-on**：确定性环境自动退化为单峰（自适应 K 为会话悬案，未落盘改契约前仍以此为准）
 - **Sampled MuZero 候选层正交**：K_eff=|A| 时与 PUCT 等价，仅余 ~26% wall-clock 簿记开销
 - **三件套正交分层**：Sampled=候选层 / Gumbel=根层 / completedQ=目标层（融合契约；全域默认关后两项）
-- **温度是评测开关**：非评测恒 `τ=1`（原样 π / visit，政策目标不拧尖）；评测 / `run` 恒 `τ=0`（Gumbel 噪声关）。无 hold/decay 课程表，与观测/动作类型无关
+- **温度是评测开关**：非评测恒 `τ=1`（原样 π / visit，政策目标不拧尖）；评测 / `run` 恒 `τ=0`（Gumbel 噪声关）。无 hold/decay 课程表，与观测/动作类型无关。文献取舍与「为何不走最大熵树搜」见 [搜索派系与温度](rl_myzero_search_lineage.md)
 - **sims 是 wall-clock 预算不是「越大越好」**：MinAtar 默认仍 25。2026-08-13 单 seed 1h：`SIMS=8` **不买吞吐**（27,980 steps / 1h，约 7.8 step/s，低于对照 sims=25 的 ~9.1），greedy 锁 1.2–1.5（对照 seed 42 best 4.1）。无与游戏无关的路由规则则不 promote
 - **标签刷新要有裁判**：库存 MCTS vs 一步 look-ahead，用轨迹回报 / 少量新鲜搜索比较，不用环境类型（图像/稠密奖励）猜；ROSMO 默认关
 - **target_net 可独立接线，但 MinAtar 上不够**：只换 n-step 尾值（滞后 V 替换 buffer `root_value`），hard 400。2026-08-13 单 seed：best **2.3** vs 对照 seed 42 的 4.1，等步数更低，不 promote。每步 EMA 已否决

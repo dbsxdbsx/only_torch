@@ -28,7 +28,8 @@
 | CartPole POMDP-lite | 离散（2） | greedy ≥ 400 | ❌ posterior 默认关（[issue](../../.issue/items/my_zero_pomdp_lite_posterior_negative.md)） |
 
 组件裁决与处方表 → [状态总览 §3](../../.doc/design/rl_myzero_status.md#3-已验收环境与组件)。  
-「每个组件解决什么、环境侧能不能测到」→ [组件可测性](../../.doc/design/rl_myzero_component_detectability.md)（非裁决）。
+「每个组件解决什么、环境侧能不能测到」→ [组件可测性](../../.doc/design/rl_myzero_component_detectability.md)（非裁决）。  
+搜索走官方线、不走最大熵树搜，以及温度契约 → [搜索派系与温度](../../.doc/design/rl_myzero_search_lineage.md)（非裁决）。
 
 ## 快速开始
 
