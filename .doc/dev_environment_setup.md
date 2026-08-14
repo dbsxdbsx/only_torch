@@ -1,6 +1,6 @@
 # 开发环境配置指南
 
-> 最后更新: 2026-07-12
+> 最后更新: 2026-08-14
 > 状态: **已验证**
 > 适用范围: Only Torch 开发者
 
@@ -15,6 +15,19 @@
 rustup show active-toolchain
 rustc -Vv
 ```
+
+`profile = "default"` 只带 `rustc` / `cargo` / `clippy` / `rustfmt` 等，**不含** `rust-analyzer`。
+本仓库在 `rust-toolchain.toml` 里额外声明了 `components = ["rust-analyzer"]`，进入目录时 rustup 会自动补齐。
+若 Cursor 设置了 `rust-analyzer.server.path = "rust-analyzer"`（走 rustup 代理），而当前 pin 的工具链缺该组件，Language Server 会在 1 秒内退出 5 次，弹出 *crashed 5 times* / *Server initialization failed*。这不是过时提示，也不是 `rustc` 没升上去。
+
+本机补装（通常不必手跑，`rust-toolchain.toml` 会触发）：
+
+```bash
+rustup component add rust-analyzer --toolchain 1.97.0
+rust-analyzer --version   # 须在仓库根目录执行，确认不是 Unknown binary
+```
+
+注意：`stable` 与同版本号的具名工具链（`1.97.0`）是两套安装。本仓 pin 的是后者；只在 `stable` 上装过 `rust-analyzer` 时，一进本仓库仍会崩。
 
 工具链升级后，终端命令都会启动新进程，**无需关闭 Cursor / IDE 才能生效**。
 编辑器中的 rust-analyzer 可能仍保留旧分析进程，此时执行 Restart rust-analyzer 或

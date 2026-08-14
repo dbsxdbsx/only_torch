@@ -1,3 +1,6 @@
 [toolchain]
 channel = "1.97.0"
 profile = "default"
+# default profile 不含 rust-analyzer；Cursor 若走 rustup 代理（server.path = rust-analyzer），
+# 缺组件会立刻退出，表现为 Language Server crashed / Server initialization failed。
+components = ["rust-analyzer"]
