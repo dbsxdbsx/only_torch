@@ -12,7 +12,8 @@ use super::reanalyze::reanalyze_unroll_window;
 use super::report::TrainReport;
 use super::rosmo::{RosmoTargets, rosmo_refresh_window_with_actions};
 use super::sampled_params::{
-    compute_sampled_k_cfg, format_sampled_log, resolve_sampled_params, sampled_k_effective,
+    AUTO_SAMPLED_MIN_JOINT_ACTIONS, compute_sampled_k_cfg, format_sampled_log,
+    resolve_sampled_params, sampled_k_effective,
 };
 use super::search_policy::MyZeroSearchPolicy;
 use super::target::mcts_policy_target;
@@ -28,9 +29,6 @@ use pyo3::Python;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::collections::{BTreeMap, HashMap, VecDeque};
-
-/// 未显式 recipe 时，大联合 catalog 自动启用 Sampled，避免每节点全展开。
-const AUTO_SAMPLED_MIN_JOINT_ACTIONS: usize = 128;
 
 /// 打印已启用的消融组件（全关时不输出）。
 fn print_components(c: &Components) {

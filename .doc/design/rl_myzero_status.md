@@ -12,6 +12,7 @@
 | 角色 | 路径 | 写什么 |
 |------|------|--------|
 | **战略 / 组件裁决 / backlog** | 本文 | 算法定位、环境状态、组件矩阵、处方表、验收协议、未完成事项 |
+| **组件可测性（非裁决）** | [rl_myzero_component_detectability.md](rl_myzero_component_detectability.md) | 每个旋钮解决什么、环境侧能否测到；当前只做 ①②，`!`（原训练中裁判）当 `—`；**不**写 promote |
 | **Python / Gymnasium 配置** | [rl_python_env_setup.md](../rl_python_env_setup.md) | 解释器、依赖、Platform / MinAtar / ALE 安装 |
 | **示例入口（薄）** | [examples/my_zero/README.md](../../examples/my_zero/README.md) | 理念摘要、环境索引、快速开始；**不**维护组件裁决副本 |
 | **环境数字账本** | `examples/my_zero/<env>/README.md` | 仅该环境的实测数字与口径列 |
@@ -121,7 +122,8 @@ promote 时改 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)；论文全称
 
 ### 3.4 处方表（跨域路由规则）
 
-> 矩阵记**结果**；本表记**规则**（机制 / 适应症 / 禁忌 / 剂量）。新环境先查表路由，再一次预注册 A/B，禁止网格搜索。剂量判据：宽平台 = 真机制；刀锋最优点 = 过拟合签名。
+> 矩阵记**结果**；本表记**规则**（机制 / 适应症 / 禁忌 / 剂量）。新环境先查表路由，再一次预注册 A/B，禁止网格搜索。剂量判据：宽平台 = 真机制；刀锋最优点 = 过拟合签名。  
+> 「适应症能不能从环境测到、何时测」见 [组件可测性](rl_myzero_component_detectability.md)，不在本表展开。
 
 | 组件 | 机制 | 适应症 | 禁忌症 | 剂量 |
 |------|------|--------|--------|------|

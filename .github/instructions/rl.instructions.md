@@ -7,7 +7,7 @@ description: "Use when editing reinforcement learning code, Gym/Gymnasium integr
 
 - 在线 RL 环境 **仅 Gymnasium**（`gymnasium.make`）；禁止 `GymEnv` 回退 OpenAI Gym。混合动作 benchmark：**`Platform-v0`**（`pip install hybrid-platform`，`import gym_platform`），**不用** gym-hybrid / Moving-v0。离线数据用 Minari。
 - 优先保持环境交互层与训练逻辑解耦，避免把 Python 侧细节散落到算法代码。
-- 改动前先看 [RL 状态总览](../../.doc/design/rl_myzero_status.md)（**唯一**战略 / 组件裁决 / 待办权威）与 [Python 环境配置](../../.doc/rl_python_env_setup.md)。[MyZero 示例 README](../../examples/my_zero/README.md) 仅为薄入口，勿在此维护组件矩阵副本。
+- 改动前先看 [RL 状态总览](../../.doc/design/rl_myzero_status.md)（**唯一**战略 / 组件裁决 / 待办权威）与 [Python 环境配置](../../.doc/rl_python_env_setup.md)。[MyZero 示例 README](../../examples/my_zero/README.md) 仅为薄入口，勿在此维护组件矩阵副本。组件「能不能从环境测到」见 [可测性](../../.doc/design/rl_myzero_component_detectability.md)，不在示例目录维护。
 - **验收分层**：SAC / MyZero / PPO 架构跑通用 **`CartPole-v1` 且 greedy(temp=0) eval 均值 ≥ 475**（Gymnasium 官方 solved；全项目 CartPole 统一 v1）；**MyZero**（项目**唯一**的 `*Zero` 实现，学术上承接 [EfficientZero V2](https://arxiv.org/abs/2403.00564) 谱系）为终极调优算法，侧重样本效率——官方口径 **3-seed 中位 env-steps + 达标率**。
 - **benchmark 数字按环境分账**：[CartPole](../../examples/my_zero/cartpole/README.md) / [Gomoku](../../examples/my_zero/gomoku/README.md) / [MinAtar](../../examples/my_zero/minatar/README.md)——改数字只改对应 owner（带口径列），其余文档一律链入不复制；「变慢 ≠ 失败」，只有不收敛/不达标才记 known-fail issue。
 - **MyZero 改动纪律（搬运 ≠ 改进）**：

@@ -10,6 +10,9 @@ use super::config::ActionPlan;
 /// Sampled MuZero 连续维默认档数 B（Hubert et al. 2021 · Appendix A）。
 pub const DEFAULT_CONTINUOUS_BUCKETS: usize = 7;
 
+/// 联合动作数达到该阈值时，结构路由 / 运行时自动打开 Sampled，避免每节点展开完整 catalog。
+pub const AUTO_SAMPLED_MIN_JOINT_ACTIONS: usize = 128;
+
 /// 设计期 joint 空间与运行时 Sampled K（日志 / 测试用）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SampledParams {

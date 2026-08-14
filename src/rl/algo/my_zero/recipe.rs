@@ -6,7 +6,7 @@ use super::component::Components;
 use super::config::ActionPlan;
 use super::sampled_params::DEFAULT_CONTINUOUS_BUCKETS;
 
-/// CartPole 已验收的 MyZero 组件栈（consistency + reconstruction + Sampled）。
+/// CartPole 已验收栈：consistency + reconstruction + Sampled；K=8 随 `Components::base()` always-on。
 fn cartpole_stack() -> Components {
     let mut c = Components::base();
     c.consistency = true;
