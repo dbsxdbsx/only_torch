@@ -82,6 +82,11 @@ impl ObservationSchema {
             Self::Flat(_) | Self::Tokens { .. } => None,
         }
     }
+
+    /// 连续观测进网前做 `symlog`。token ID 是查表索引，不能压。
+    pub const fn uses_obs_symlog(self) -> bool {
+        !matches!(self, Self::Tokens { .. })
+    }
 }
 
 /// 历史名称兼容层；新代码优先使用 [`ObservationSchema`]。

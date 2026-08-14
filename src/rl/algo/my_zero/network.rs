@@ -1051,9 +1051,8 @@ pub struct MyZeroModel {
     /// 只影响训练目标构造，解码端（期望 → `symexp`）与推理路径完全无关；
     /// 由 runner 按 `Components.hl_gauss` 注入（[`Self::with_value_encoding`]）。
     value_hl_gauss: bool,
-    /// obs symlog 无量纲化开关（模型 obs 入口单点：repr 输入 + recon 目标同源变换；
-    /// buffer / env I/O 恒存 raw obs）。由 runner 按 `Components.obs_symlog` 注入
-    /// （[`Self::with_obs_symlog`]）。**开关必须与训练时一致**，否则权重语义失配。
+    /// 模型 obs 入口是否做 `symlog`（repr 输入 + recon 目标同源；buffer 仍存 raw）。
+    /// 生产路径按 schema 注入（连续观测开、token 关）。训练与推理必须同口径。
     obs_symlog: bool,
     // 搜索期持久化推理子图（不参与训练/序列化；训练走各网络自己的 forward 建图）
     root_infer: RootInfer,

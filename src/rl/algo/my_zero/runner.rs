@@ -42,9 +42,7 @@ fn print_components(c: &Components) {
     if c.hl_gauss {
         tags.push("HL-Gauss");
     }
-    if c.obs_symlog {
-        tags.push("obs-symlog");
-    }
+    // obs_symlog 是连续观测的 always-on 入口变换，不是消融组件。
     if c.value_prefix {
         tags.push("value_prefix");
     }
@@ -1087,6 +1085,7 @@ pub(crate) fn materialize(
     let adapter = ActionAdapter::resolve(&env, cfg.env.action);
     let obs_spec = ObsAdapter::resolve(&env, cfg.env.observation, cfg.env.obs_mask.clone())
         .model_obs_spec(&env);
+    let obs_symlog = obs_spec.uses_obs_symlog();
     let graph = Graph::new_with_seed(seed);
     let model = MyZeroModel::new_with_schemas(
         &graph,
@@ -1095,7 +1094,7 @@ pub(crate) fn materialize(
         cfg.model.latent_dim,
     )?
     .with_value_encoding(cfg.components.hl_gauss)
-    .with_obs_symlog(cfg.components.obs_symlog)
+    .with_obs_symlog(obs_symlog)
     .with_recurrent_posterior(cfg.components.recurrent_posterior)?
     .with_stochastic(cfg.components.num_chance_outcomes)?;
     env.close();
@@ -1139,6 +1138,7 @@ fn train_one_seed(
     let adapter = ActionAdapter::resolve(&env, cfg.env.action);
     let mut obs_adapter = ObsAdapter::resolve(&env, cfg.env.observation, cfg.env.obs_mask.clone());
     let obs_spec = obs_adapter.model_obs_spec(&env);
+    let obs_symlog = obs_spec.uses_obs_symlog();
     let obs_dim = obs_spec.dim();
     let action_dim = adapter.action_dim();
     let latent_dim = cfg.model.latent_dim;
@@ -1173,7 +1173,7 @@ fn train_one_seed(
     let model =
         MyZeroModel::new_with_schemas(&graph, obs_spec, adapter.schema().clone(), latent_dim)?
             .with_value_encoding(cfg.components.hl_gauss)
-            .with_obs_symlog(cfg.components.obs_symlog)
+            .with_obs_symlog(obs_symlog)
             .with_recurrent_posterior(cfg.components.recurrent_posterior)?
             .with_stochastic(cfg.components.num_chance_outcomes)?;
     // 必须用独立 Graph：同一张图上参数名（如 Repr/fc1_W）不可重复。
@@ -1186,7 +1186,7 @@ fn train_one_seed(
             latent_dim,
         )?
         .with_value_encoding(cfg.components.hl_gauss)
-        .with_obs_symlog(cfg.components.obs_symlog)
+        .with_obs_symlog(obs_symlog)
         .with_recurrent_posterior(cfg.components.recurrent_posterior)?
         .with_stochastic(cfg.components.num_chance_outcomes)?;
         hard_update(&model.parameters(), &tm.parameters());

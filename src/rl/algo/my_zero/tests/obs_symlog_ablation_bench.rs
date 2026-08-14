@@ -6,7 +6,7 @@
 //! # 预注册协议（跑之前定死）
 //!
 //! - **落点**：`MyZeroModel` obs 入口单点 `symlog(x)=sign(x)·ln(1+|x|)`（repr 输入 +
-//!   recon 目标同源；无状态；buffer/env 恒存 raw）。开关 `Components.obs_symlog`（默认关）。
+//!   recon 目标同源；无状态；buffer/env 恒存 raw）。历史消融臂；生产已是连续观测 always-on。
 //! - **三臂**：symlog × recon_coef {16, 4, 1}，各 3-seed（42/43/44）；
 //!   其余 recipe 不动（cons=2 · Sampled · sims=20 · td=5）。
 //! - **口径**：release + MKL，3-seed 中位 env-steps-to-solved + 达标率。

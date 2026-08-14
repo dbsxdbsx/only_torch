@@ -25,9 +25,8 @@ pub(crate) struct Components {
     /// **CartPole 消融负结果**（中位 9.8k→27.6k，2026-07-02，账本在案）→ 默认保持 two-hot；
     /// 图像域复测（大 value 噪声为其 native 场景）。
     pub hl_gauss: bool,
-    /// obs symlog 无量纲化（DreamerV3 口径，`sign(x)·ln(1+|x|)`；模型 obs 入口单点，
-    /// repr 输入 + recon 目标同源变换，buffer / env I/O 恒存 raw）。训练与推理必须
-    /// 同口径（随 config 持久化）。见 [`obs_transform`](super::obs_transform)。
+    /// 历史消融位。生产路径不读它：连续观测 always-on `symlog`，token ID 除外
+    ///（见 [`ObservationSchema::uses_obs_symlog`](super::schema::ObservationSchema::uses_obs_symlog)）。
     pub obs_symlog: bool,
     /// value prefix（LSTM 累计 reward 前缀，hidden 穿 MCTS 树）
     pub value_prefix: bool,

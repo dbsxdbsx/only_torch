@@ -41,6 +41,43 @@ fn observation_schema_dims_cover_rect_composite_and_tokens() {
 }
 
 #[test]
+fn obs_symlog_skips_only_token_ids() {
+    assert!(ObservationSchema::Flat(4).uses_obs_symlog());
+    assert!(
+        ObservationSchema::Image {
+            channels: 4,
+            side: 84
+        }
+        .uses_obs_symlog()
+    );
+    assert!(
+        ObservationSchema::Board {
+            channels: 3,
+            side: 9
+        }
+        .uses_obs_symlog()
+    );
+    assert!(
+        ObservationSchema::ImageDense {
+            channels: 3,
+            height: 16,
+            width: 16,
+            aux_dim: 4,
+        }
+        .uses_obs_symlog()
+    );
+    assert!(
+        !ObservationSchema::Tokens {
+            length: 6,
+            vocab_size: 32,
+            embed_dim: 8,
+            pad_id: 0,
+        }
+        .uses_obs_symlog()
+    );
+}
+
+#[test]
 fn multidiscrete_joint_id_roundtrip_and_payload() {
     let schema = ActionSchema::MultiDiscrete {
         factors: vec![4, 4, 16],

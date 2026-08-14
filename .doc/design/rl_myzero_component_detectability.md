@@ -20,9 +20,10 @@
 | 进网的实数 | 逻辑默认（开训前锁死） | 不要做的 |
 |------------|------------------------|----------|
 | 加总后的 return / value | 永远 `symlog`，再进 `[-20,20]` | 按环境猜 `reward_scale`；`tanh`；中途改尺度 |
-| 观测 | **不进这 41 个原子**，没有同一套量纲问题；第一层权重就能缩放到 | 把 obs `symlog` 和 value 编码绑成一件事 |
+| 连续观测（向量 / 图像 / 棋盘 / aux） | 永远 `symlog`（模型入口；buffer 仍存 raw）。观测**不进** 41 原子 | 读 `Box` 比维间倍数；设 10× / 100× 门槛 |
+| token ID | 不变换（查表前必须是整数） | 对 ID 做 `symlog` |
 
-`reward_scale` 在这套逻辑里不是路由项。buffer 只存 raw。观测尺度也不是 value 那把尺子。Pendulum 示例里的 `0.1` 是历史 overlay，另案再议。
+`reward_scale` 在这套逻辑里不是路由项。buffer 只存 raw。观测也不读 Box：维间「差 10 倍」会沿链叠成 100 倍，门槛本身站不住。Pendulum 示例里的 `0.1` 是历史 overlay，另案再议。
 
 还需要「学」的只剩：
 
@@ -52,7 +53,7 @@
 | `!` | 有网之后才可能用数字裁判决定开（reanalyze / ROSMO 等）。**逻辑口号清楚，自动开关未写。** 现阶段路由当作 `—`，环境测试先不管。 |
 | `—` | 测不到：没有环境谓词，路由上不靠探测去开 |
 
-量纲见 §0：always-on `symlog`，不是路由。中途热切仍然不合适。
+量纲见 §0：value 与连续观测都是 always-on `symlog`，不是路由。中途热切仍然不合适。
 
 `!` 的过程才是训练本身，尺子是当前网算出来的标签 / KL / 预测误差。
 
@@ -88,7 +89,7 @@
 | **Stochastic K** | 同一 `(s,a)` 对应多种下一状态；chance 变量吸收随机性 | — | **任何环境**：几局随机几乎撞不到同一 `(s,a)` 两次；商业游戏也没有 snapshot。故 **K=8 always-on**，确定性退化为单峰。自适应 K 仍是悬案，不要用随机轨迹去关。StochasticCartPole 的随机性是适配层事实。 |
 | **Gumbel-root** | 少 sim 时根节点用 Gumbel 替代 PUCT，决策更稳 | ① | 谓词看得到（连续动作或 `sims ≪ \|A\|`），默认关：与 Sampled 暂不兼容，连续动作走 Sampled。 |
 | **completedQ** | 少 sim 时用 completed Q 当策略目标，替代 visit-count | ① | 谓词看得到（`sims / \|A\|`），默认关：本仓库未证实该适应症。 |
-| **obs symlog** | 连续特征跨数量级时压到可训尺度 | ① | 默认关。须适配层声明 hint；图像 / 棋盘 ① 即可排除。与 value 编码公式相同，但观测**不进**原子。**禁止中途热开**（须重开一趟）。 |
+| **obs symlog** | 把进网的连续观测压到可训尺度 | — | 与 value 同类：算法入口性质，不靠环境探测。连续观测 always-on；**token ID 除外**。不读 `Box`，不设维间倍数门槛。**禁止中途热开**。 |
 | **HL-Gauss** | value/reward 宽 support、高噪声时，用高斯软标签代替 two-hot | — | 随机策略回报看不出像样策略下的 value 噪声。CartPole 已劣化；图像未复测。路由关。 |
 | **recurrent posterior** | 单帧观测不 Markov，用历史推断隐状态 | — | Gym shape 看不出缺了哪一维。缺速度的 CartPole 只是 `Flat(3)`。须适配层声明（或 `obs_mask`）。POMDP-lite 已负裁；默认关。 |
 | **reanalyze** | replay 标签陈旧时，全树重搜并写回 | `!` | 现阶段当 `—`。CartPole 已学崩。先不做自动开。 |
@@ -120,8 +121,8 @@
 
 | 原型 | ① init 已够 | 仍然看不见 |
 |------|-------------|------------|
-| **CartPole 式** `Flat(4)` + 离散 2 | 低维 → recon 默认；N=2 → Sampled 非必须；非空间 → consistency 非结构必开 | 确定性、要不要 overlay 开 consistency/Sampled |
-| **Pendulum 式** 连续动作 | 连续 → Sampled 必须；低维 → recon 默认 | n-step 方差会不会塌（诊断项，不是组件探测） |
+| **CartPole 式** `Flat(4)` + 离散 2 | 低维 → recon 默认；N=2 → Sampled 非必须；非空间 → consistency 非结构必开；连续观测 → obs_symlog | 确定性、要不要 overlay 开 consistency/Sampled |
+| **Pendulum 式** 连续动作 | 连续 → Sampled 必须；低维 → recon 默认；连续观测 → obs_symlog | n-step 方差会不会塌（诊断项，不是组件探测） |
 | **Platform 混合** | 混合 → Sampled；Flat(10) → recon | — |
 | **MinAtar / Atari 式** 网格 + 小离散 | 空间 → consistency 默认；非低维向量 → recon 关；N 小 → Sampled 关 | 该不该 HL-Gauss / target_net / 加 sims |
 | **五子棋式** 大棋盘 | 空间 → consistency 默认；225≥128 → Sampled 结构默认 | 生产 recipe=base（Sampled 关）是 overlay，不是探测失败 |
@@ -133,6 +134,6 @@
 
 ## 4. 和现有代码的关系
 
-- [`route_components`](../../src/rl/algo/my_zero/route.rs) = 阶段 ①。单测 [`tests/route.rs`](../../src/rl/algo/my_zero/tests/route.rs)。hint 字段（`obs_scale_spans_orders` / `value_support_noisy` / `partially_observable`）须声明，不靠跑局填。
+- [`route_components`](../../src/rl/algo/my_zero/route.rs) = 阶段 ①。单测 [`tests/route.rs`](../../src/rl/algo/my_zero/tests/route.rs)。`value_support_noisy` / `partially_observable` 仍须声明。
 - value/reward 编码 = always-on `symlog`。单测 [`tests/value_transform.rs`](../../src/rl/algo/my_zero/tests/value_transform.rs) / [`tests/value_encoding.rs`](../../src/rl/algo/my_zero/tests/value_encoding.rs)。
-- ① 未接到 `MyZero::new`；`!` 不实现。接到生产是改行为：一次一项 + 3-seed，并处理 CartPole overlay。
+- 连续观测 `symlog` = always-on（[`ObservationSchema::uses_obs_symlog`](../../src/rl/algo/my_zero/schema.rs)）；token 关。runner 物化 / 训练时按 schema 注入，不读 Box。其余 ① 未接到 `MyZero::new`；`!` 不实现。

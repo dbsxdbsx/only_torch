@@ -103,7 +103,7 @@ fn cartpole_like_opens_recon_not_spatial_or_sampled() {
         "N=2 < {AUTO_SAMPLED_MIN_JOINT_ACTIONS}，Sampled 只是簿记"
     );
     assert!(!c.recurrent_posterior);
-    assert!(!c.obs_symlog);
+    assert!(c.obs_symlog, "连续观测 always-on");
     assert!(!c.hl_gauss);
 }
 
@@ -131,7 +131,7 @@ fn atari_like_matches_minatar_spatial_rules() {
     assert!(c.consistency);
     assert!(!c.reconstruction);
     assert!(!c.sampled);
-    assert!(!c.obs_symlog, "像素 [0,1] 不用 symlog");
+    assert!(c.obs_symlog, "连续观测 always-on，含像素");
 }
 
 #[test]
@@ -191,17 +191,20 @@ fn posterior_follows_partial_observability_flag() {
 }
 
 #[test]
-fn symlog_only_when_flat_and_scale_hint_set() {
-    let mut flat = cartpole_like();
-    flat.obs_scale_spans_orders = true;
-    assert!(route_components(&flat).obs_symlog);
-
-    let mut image = atari_like();
-    image.obs_scale_spans_orders = true;
-    assert!(
-        !route_components(&image).obs_symlog,
-        "图像即使声明跨数量级也不走 symlog"
-    );
+fn obs_symlog_on_for_all_continuous_schemas() {
+    for env in [
+        cartpole_like(),
+        pendulum_like(),
+        minatar_like(),
+        atari_like(),
+        gomoku_like(),
+        platform_like(),
+    ] {
+        assert!(
+            route_components(&env).obs_symlog,
+            "连续观测不读 Box、一律 symlog"
+        );
+    }
 }
 
 #[test]
@@ -234,7 +237,7 @@ fn image_rect_counts_as_spatial() {
     let c = route_components(&env);
     assert!(c.consistency);
     assert!(!c.reconstruction);
-    assert!(!c.obs_symlog);
+    assert!(c.obs_symlog);
 }
 
 #[test]
@@ -257,6 +260,7 @@ fn tokens_are_neither_spatial_nor_flat_recon() {
     let c = route_components(&env);
     assert!(!c.consistency);
     assert!(!c.reconstruction);
+    assert!(!c.obs_symlog, "token ID 查表前不能 symlog");
 }
 
 #[test]

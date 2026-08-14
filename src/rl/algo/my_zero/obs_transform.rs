@@ -1,11 +1,13 @@
-//! obs 无量纲化变换（symlog；默认关，见状态总览处方表）。
+//! obs 无量纲化变换（symlog；连续观测 always-on）。
 //!
 //! `symlog(x) = sign(x)·ln(1+|x|)`（DreamerV3 口径）：无状态、可逆、原点附近 ≈ 恒等、
-//! 长尾对数压缩。用于把 obs（含 reconstruction 解码目标）压到统一量纲，使 recon MSE
-//! 与其系数跨环境可迁移。与 value/reward 侧共用同一公式，但观测**不进** 41 原子 support。
+//! 长尾对数压缩。与 value/reward 侧共用同一公式，但观测**不进** 41 原子 support。
 //!
-//! **边界铁律**：变换属于模型（[`MyZeroModel`](super::network::MyZeroModel) obs 入口单点，
-//! 按 `Components.obs_symlog` 注入）；replay buffer / env I/O / 账本一律存 **raw obs**。
+//! 不读 Box、不比维间倍数：门槛会因「A 比 B 十倍、B 比 C 十倍」叠成百倍而站不住。
+//! token ID 除外（查表前必须是整数）。
+//!
+//! **边界铁律**：变换属于模型（[`MyZeroModel`](super::network::MyZeroModel) obs 入口单点）；
+//! replay buffer / env I/O / 账本一律存 **raw obs**。
 
 use super::value_transform::value_transform;
 #[cfg(test)]
@@ -23,7 +25,8 @@ pub(crate) fn symexp(y: f32) -> f32 {
     value_transform_inv(y)
 }
 
-/// 按开关对 obs 切片做 symlog：关 → 原样借用（零拷贝零行为变化），开 → 逐元素变换。
+/// 运行时门闩：关 → 原样借用（零拷贝），开 → 逐元素 `symlog`。
+/// 生产路径对连续观测恒开；token 与单测关路径走零拷贝。
 pub(crate) fn maybe_symlog(on: bool, obs: &[f32]) -> Cow<'_, [f32]> {
     if on {
         Cow::Owned(obs.iter().copied().map(symlog).collect())

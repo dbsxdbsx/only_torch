@@ -12,7 +12,7 @@
 | 角色 | 路径 | 写什么 |
 |------|------|--------|
 | **战略 / 组件裁决 / backlog** | 本文 | 算法定位、环境状态、组件矩阵、处方表、验收协议、未完成事项 |
-| **组件可测性（非裁决）** | [rl_myzero_component_detectability.md](rl_myzero_component_detectability.md) | 每个旋钮解决什么、环境侧能否测到；当前只做 ① schema，`!`（训练中裁判）当 `—`；value 量纲是 always-on `symlog`，不是路由；**不**写 promote |
+| **组件可测性（非裁决）** | [rl_myzero_component_detectability.md](rl_myzero_component_detectability.md) | 每个旋钮解决什么、环境侧能否测到；当前只做 ① schema，`!`（训练中裁判）当 `—`；value 与连续观测量纲是 always-on `symlog`，不是路由；**不**写 promote |
 | **Python / Gymnasium 配置** | [rl_python_env_setup.md](../rl_python_env_setup.md) | 解释器、依赖、Platform / MinAtar / ALE 安装 |
 | **示例入口（薄）** | [examples/my_zero/README.md](../../examples/my_zero/README.md) | 理念摘要、环境索引、快速开始；**不**维护组件裁决副本 |
 | **环境数字账本** | `examples/my_zero/<env>/README.md` | 仅该环境的实测数字与口径列 |
@@ -85,7 +85,7 @@
 | reanalyze (旧全树版) | ❌ | ❌ | 战略待图像 | OFF |
 | ROSMO reanalyze | 中性 / 无增益 | ❌ | 待图像基线 | OFF |
 | HL-Gauss | ❌ | — | 待测 native | OFF |
-| obs symlog | ❌ | — | ⏸ | OFF |
+| obs symlog | 逻辑 always-on | — | always-on | always-on（token 除外） |
 | PER | — | ❌ | — | OFF |
 | value_prefix | ❌（有断链 bug） | — | — | OFF |
 | target_net / SVE | 入库待测 | — | — | OFF |
@@ -107,7 +107,7 @@ promote 时改 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)；论文全称
 | reconstruction | ✅※ | ⏳ | ⏳ | ❌ 未见 seed 未复现 | ※ CartPole coef=16；Gomoku coef=1 仅发现集 |
 | Sampled | ✅ 接入不回归 | ⏳ | ⏸ | ⏸ | 小离散 K=N 退化全枚举 |
 | HL-Gauss | ❌ 显著劣化 | ⏸ | ⏳ native | ⏸ | 开关留库，图像域复测 |
-| obs symlog | ❌ | ⏳ | ⏸ | ⏸ | 连续特征失控时再启；默认关 |
+| obs symlog | 逻辑 always-on | 逻辑 always-on | 逻辑 always-on | ⏸ token | 不读 Box；token ID 除外 |
 | reanalyze | ❌ [issue](../../.issue/items/my_zero_reanalyze_cartpole_regression.md) | ⏳ | 战略组件 | ⏸ | acting/reanalyze 解耦待做 |
 | ROSMO | ❌ 无增益 | ⏳ | ⏳ | ❌ 有害 | recipe 默认关 |
 | PER | — | — | — | ❌ | buffer 伴生件，默认关 |
@@ -131,7 +131,7 @@ promote 时改 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)；论文全称
 | reconstruction | decoder 对齐真实 obs | 稀疏信号 × obs 比特任务相关 | 高维无关比特；跨 seed 不迁移 | CartPole 16；Gomoku 不 promote |
 | PER | `p=\|ν−z\|^α` 重排消费 | 覆盖不足 × 冻结事实 target | 与 recon 均匀监督冲突；弱网自评刷新 | α=0.6，默认关 |
 | HL-Gauss | value/reward 高斯软标签 | 图像高噪声宽 support | 窄 support 低噪声（CartPole 劣化） | σ 见 `value_encoding` |
-| obs symlog | 连续特征无量纲化 | 特征跨数量级 | 小量纲向量 / 图像[0,1] / 棋盘 0/1 | 无参数 |
+| obs symlog | 连续观测无量纲化 | 所有进网的连续观测 | token ID（查表前不能压） | 无参数 |
 | reanalyze | 全树重搜刷新 target | 陈旧数据 × 高 replay × 离线算力 | CartPole 有害；棋盘终局事实非 native | 待图像域 |
 | ROSMO | 一步 look-ahead 刷新 | 同上且自评质量足够 | 弱模型自指；新鲜低 replay | α=0.2 + prior top-16 |
 | completedQ / Gumbel-root | 少 sim 根决策 | 理论 sims≪\|A\|（实测未证实） | sims≫\|A\|（CartPole 劣化） | 全域关 |

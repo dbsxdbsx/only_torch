@@ -1,8 +1,9 @@
 //! 按观测 / 动作结构推断默认组件（用户不可见）。
 //!
 //! 只编码能写成谓词的规则；写不出谓词的旋钮保持关。
-//! value/reward 量纲不在这里：永远 `symlog`（见 [`super::value_transform`]），不靠跑局去估。
-//! [`super::recipe`] 仍按 `env_id` 注入已 promote 栈，本模块尚未替换那条路径。
+//! 量纲不在这里估：value/reward 永远 `symlog`（见 [`super::value_transform`]）；
+//! 连续观测永远 `symlog`（见 [`ObservationSchema::uses_obs_symlog`]），token ID 除外。
+//! [`super::recipe`] 仍按 `env_id` 注入已 promote 栈；观测量纲由 runner 按 schema 覆盖。
 
 use super::component::Components;
 use super::sampled_params::AUTO_SAMPLED_MIN_JOINT_ACTIONS;
@@ -14,7 +15,7 @@ use super::schema::{ActionSchema, ObservationSchema};
 #[cfg_attr(not(test), expect(dead_code))]
 pub(crate) const FLAT_RECON_MAX_DIM: usize = 16;
 
-/// 结构路由能看见的环境特征。后三个不能从 Gym shape 读出，须由适配层声明。
+/// 结构路由能看见的环境特征。后两个不能从 Gym shape 读出，须由适配层声明。
 // 生产路径仍走 env_id recipe；本类型目前只给结构路由与其单测用。
 #[cfg_attr(not(test), expect(dead_code))]
 #[derive(Debug, Clone, PartialEq)]
@@ -23,8 +24,6 @@ pub(crate) struct EnvStructure {
     pub action: ActionSchema,
     /// 当前观测不足以构成马尔可夫状态。
     pub partially_observable: bool,
-    /// 连续特征跨数量级（obs `symlog` 的适应症；须声明，不靠跑局）。
-    pub obs_scale_spans_orders: bool,
     /// value / 回报支撑宽且噪（HL-Gauss 的适应症）。
     pub value_support_noisy: bool,
 }
@@ -37,7 +36,6 @@ impl EnvStructure {
             observation,
             action,
             partially_observable: false,
-            obs_scale_spans_orders: false,
             value_support_noisy: false,
         }
     }
@@ -56,8 +54,7 @@ pub(crate) fn route_components(env: &EnvStructure) -> Components {
     // Gumbel 与 Sampled 根语义暂不兼容；连续动作走 Sampled 离散化，不在这里开 Gumbel。
     c.gumbel = false;
     c.recurrent_posterior = env.partially_observable;
-    c.obs_symlog =
-        env.obs_scale_spans_orders && matches!(env.observation, ObservationSchema::Flat(_));
+    c.obs_symlog = env.observation.uses_obs_symlog();
     c.hl_gauss = env.value_support_noisy;
     c
 }

@@ -18,6 +18,11 @@
 
 ### Changed
 
+- **feat(rl): 连续观测改为 always-on `symlog`，取消 Box 量纲探测**（2026-08-14）
+  - 不读 `Box`、不设维间倍数门槛（10× 会沿链叠成 100×）；token ID 除外（查表前不能压）
+  - runner 按 `ObservationSchema::uses_obs_symlog` 注入；buffer / env 仍存 raw
+  - 单测：`schema` / `route` / `obs_transform`
+
 - **feat(rl): value/reward 改为 always-on `symlog`，取消量纲短探**（2026-08-14）
   - 编码由 MuZero 附录 F 的 `h(x)` 换成 `symlog` / `symexp`；support `[-20,20]` 罩未知量纲，观测不进 41 原子
   - 删除 `probe.rs` 轨迹算术路由；可测性只留 ① schema / `!`。CartPole 等示例本来就不写 `reward_scale`；Pendulum `0.1` 仍是历史 overlay
