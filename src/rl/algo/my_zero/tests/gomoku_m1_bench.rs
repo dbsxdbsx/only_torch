@@ -26,8 +26,6 @@ fn gomoku_m1_smoke() -> Result<(), GraphError> {
         max_episodes: 3,
         eval_every: 3,
         eval_episodes: 2,
-        temp_hold_episodes: 3,
-        temp_decay_episodes: 0,
         early_stop: false,
         snapshot_at_episode: Some(2),
         gate_games: 2,

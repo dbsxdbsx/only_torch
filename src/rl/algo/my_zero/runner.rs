@@ -97,21 +97,10 @@ fn eval_target_bootstrap(
         .inference_scope(|_| target.initial_state(&obs).2)
 }
 
-/// self-play 温度调度：`[0, hold)` 恒 1.0 → `[hold, hold+decay)` 线性退火到 0.25 → 之后恒 0.25。
-///
-/// 显式常数（[`TrainSettings::temp_hold_episodes`](super::config::TrainSettings::temp_hold_episodes) /
-/// [`temp_decay_episodes`](super::config::TrainSettings::temp_decay_episodes)），
-/// 与 `max_episodes` 预算解耦。`decay=0` 时 hold 结束直接跳 0.25。
-pub(crate) fn self_play_temperature(ep: usize, hold: usize, decay: usize) -> f32 {
-    if ep < hold {
-        return 1.0;
-    }
-    if decay == 0 || ep >= hold + decay {
-        return 0.25;
-    }
-    let progress = (ep - hold) as f32 / decay as f32; // [0, 1)
-    1.0 - progress * 0.75
-}
+/// 非评测（self-play / 训练收集）：原样按 π 或 visit 抽；政策目标不再 `^{1/τ}` 拧尖。
+pub(crate) const SELF_PLAY_TEMPERATURE: f32 = 1.0;
+/// 评测 / 报分 / `run`：贪心；Gumbel 噪声同步关闭（`temperature < 1e-6`）。
+pub(crate) const EVAL_TEMPERATURE: f32 = 0.0;
 
 /// 按温度从概率向量采样动作下标（`T→0` 取 argmax）。
 pub(crate) fn sample_from_probs(probs: &[f32], temperature: f32, rng: &mut impl Rng) -> usize {
@@ -424,7 +413,7 @@ pub(crate) fn prepare_train_batch(
     if reanalyze {
         let re_cfg = my_zero_mcts_config(
             num_simulations,
-            1.0,
+            SELF_PLAY_TEMPERATURE,
             gamma,
             components,
             adapter.action_dim(),
@@ -745,7 +734,7 @@ pub(crate) fn greedy_one_episode(
 
     let eval_cfg = my_zero_mcts_config(
         num_simulations,
-        0.0,
+        EVAL_TEMPERATURE,
         gamma,
         components,
         adapter.action_dim(),
@@ -897,7 +886,7 @@ fn dynamics_diagnostic(
 ) {
     let eval_cfg = my_zero_mcts_config(
         num_simulations,
-        0.0,
+        EVAL_TEMPERATURE,
         gamma,
         components,
         adapter.action_dim(),
@@ -1282,9 +1271,7 @@ fn train_one_seed(
         last_ep = ep + 1;
         let t0 = std::time::Instant::now();
 
-        // 温度退火：显式常数调度（hold 段恒 1.0 → 线性退火到 0.25 → 恒 0.25），
-        // 与 max_episodes 预算解耦（改预算不再静默改变探索行为）。
-        let temperature = self_play_temperature(ep, t.temp_hold_episodes, t.temp_decay_episodes);
+        let temperature = SELF_PLAY_TEMPERATURE;
 
         let mcts_cfg = my_zero_mcts_config(
             t.acting_simulations,

@@ -8,7 +8,7 @@
 //! 运行命令、诊断与 benchmark 见同目录 [`README.md`](README.md)。
 
 use only_torch::nn::GraphError;
-use only_torch::rl::algo::my_zero::{MyZero, TrainSettings};
+use only_torch::rl::algo::my_zero::MyZero;
 
 // best 基名；多 seed 时库内自动插入 `seed_{seed}/` 子目录（见 checkpoint.rs）
 const BEST: &str = "models/my_zero/Pendulum-v1/best";
@@ -20,12 +20,6 @@ fn main() -> Result<(), GraphError> {
     let mut builder = MyZero::new("Pendulum-v1")
         .solved(-200.0)
         .max_episodes(if smoke { 3 } else { 600 })
-        // 与旧「按 600 局预算前 50% 恒温」行为等价的显式常数（退火解耦预算后需自带）
-        .train_settings(TrainSettings {
-            temp_hold_episodes: 300,
-            temp_decay_episodes: 300,
-            ..TrainSettings::default()
-        })
         .save_model_when_eval(BEST);
     if let Ok(v) = std::env::var("TD_STEPS") {
         builder = builder.td_steps(v.parse().expect("TD_STEPS 必须是正整数"));

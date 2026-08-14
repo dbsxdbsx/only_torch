@@ -140,16 +140,6 @@ pub struct TrainSettings {
     pub buffer_capacity: usize,
     /// 开始训练前需累积的局数
     pub start_training_after: usize,
-    /// self-play 温度调度：前 `temp_hold_episodes` 局恒 1.0（探索期）
-    ///
-    /// **显式常数，与 `max_episodes` 预算解耦**——旧实现按 `ep / max_episodes` 比例
-    /// 退火，改预算（如 `MAX_EP` 环境变量）会静默改变行为、使不同预算的跑不可比。
-    /// 默认 1000（与历史 CartPole 口径 `max_episodes=2000` 的前 50% 逐步等价）。
-    pub temp_hold_episodes: usize,
-    /// 探索期结束后，温度经 `temp_decay_episodes` 局线性退火 1.0 → 0.25，之后恒 0.25。
-    ///
-    /// 默认 1000（与历史 CartPole 口径的后 50% 线性段逐步等价）。
-    pub temp_decay_episodes: usize,
     /// KL 自适应 lr（「用户不调 lr」的去旋钮机制，参照 AlphaZero_Gomoku `kl_targ`）：
     /// 每局训练块前后测探针局面的 policy KL 位移，超标降 lr / 不足升
     /// （[`kl_lr_multiplier`](super::runner::kl_lr_multiplier)，乘子 [0.1,10]）。
@@ -180,8 +170,6 @@ impl Default for TrainSettings {
             trains_per_episode: 8,
             buffer_capacity: 1000,
             start_training_after: 10,
-            temp_hold_episodes: 1000,
-            temp_decay_episodes: 1000,
             kl_adaptive_lr: false,
             burn_in_steps: 10,
             sequence_length: 20,

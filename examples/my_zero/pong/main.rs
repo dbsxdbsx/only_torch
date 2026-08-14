@@ -32,9 +32,6 @@ fn main() -> Result<(), GraphError> {
         trains_per_episode: 64, // Pong 单局 ~900 步，按局训练需更高 replay ratio
         buffer_capacity: 32,    // 按局计;图像帧内存纪律（单帧存储 ≈ 28KB/步）
         start_training_after: 2,
-        // 与旧「按 150 局预算前 50% 恒温」行为等价的显式常数（退火解耦预算后需自带）
-        temp_hold_episodes: 75,
-        temp_decay_episodes: 75,
         kl_adaptive_lr: false,
         ..TrainSettings::default()
     };

@@ -210,8 +210,7 @@ fn gomoku_m3_cnn() -> Result<(), GraphError> {
 ///
 /// 触发条件（已满足，2026-07-04）：Gumbel/cons/recon/CNN 四臂 naive0 全平 ≈ 0，
 /// 组件与表征嫌疑排除 → 按预注册分岔转向预算嫌疑（400 局 ≈ 1.8 万 env-steps）。
-/// 温度调度维持 hold=100/decay=100 绝对局数不变（严格单变量；代价是长跑段
-/// 恒 0.25 低温，若本臂有效、调度缩放另立一臂）。快照/闸门等比后移。
+/// 温度已改为全程 τ=1（评测仍 0）；本臂只改局数。快照/闸门等比后移。
 #[test]
 #[ignore = "manual: Gomoku M3 预算标定臂（3 seeds × 2000 局，约 30 分钟）"]
 fn gomoku_m3_budget() -> Result<(), GraphError> {
@@ -382,7 +381,6 @@ fn gomoku_naive0_combo_ceiling() -> Result<(), GraphError> {
         cfg.true_rules_tree = true;
         cfg.augment = true;
         cfg.max_episodes = 2000;
-        cfg.temp_hold_episodes = 2000; // 全程温度 1.0（参照实现口径）
         cfg.buffer_capacity = 300;
         cfg.snapshot_at_episode = Some(1000);
         cfg.eval_every = 200;
@@ -426,7 +424,6 @@ fn gomoku_naive0_final_recipe() -> Result<(), GraphError> {
         cfg.true_rules_tree = true;
         cfg.augment = true;
         cfg.max_episodes = 2000;
-        cfg.temp_hold_episodes = 2000;
         cfg.buffer_capacity = 300;
         cfg.snapshot_at_episode = Some(1000);
         cfg.eval_every = 200;
@@ -452,7 +449,6 @@ fn gomoku_naive0_open_three_course() -> Result<(), GraphError> {
         cfg.true_rules_tree = true;
         cfg.augment = true;
         cfg.max_episodes = 2000;
-        cfg.temp_hold_episodes = 2000;
         cfg.buffer_capacity = 300;
         cfg.snapshot_at_episode = Some(1000);
         cfg.eval_every = 200;
@@ -477,7 +473,6 @@ fn gomoku_naive0_open_three_additive() -> Result<(), GraphError> {
         cfg.true_rules_tree = true;
         cfg.augment = true;
         cfg.max_episodes = 2000;
-        cfg.temp_hold_episodes = 2000;
         cfg.buffer_capacity = 300;
         cfg.snapshot_at_episode = Some(1000);
         cfg.eval_every = 200;
@@ -506,7 +501,6 @@ fn gomoku_naive0_g2_intensity() -> Result<(), GraphError> {
         cfg.true_rules_tree = true;
         cfg.augment = true;
         cfg.max_episodes = 2000;
-        cfg.temp_hold_episodes = 2000;
         cfg.buffer_capacity = 300;
         cfg.snapshot_at_episode = Some(1000);
         cfg.eval_every = 200;
@@ -536,7 +530,6 @@ fn gomoku_naive0_g3_acceptance() -> Result<(), GraphError> {
         cfg.true_rules_tree = true;
         cfg.augment = true;
         cfg.max_episodes = 2000;
-        cfg.temp_hold_episodes = 2000;
         cfg.buffer_capacity = 300;
         cfg.snapshot_at_episode = Some(1000);
         cfg.eval_every = 200;
@@ -563,7 +556,6 @@ fn gomoku_naive0_cnn_recipe() -> Result<(), GraphError> {
         cfg.true_rules_tree = true;
         cfg.augment = true;
         cfg.max_episodes = 2000;
-        cfg.temp_hold_episodes = 2000;
         cfg.buffer_capacity = 300;
         cfg.snapshot_at_episode = Some(1000);
         cfg.eval_every = 200;
@@ -598,7 +590,6 @@ fn gomoku_pure_selfplay_truerules() -> Result<(), GraphError> {
             cfg.cnn_repr = true;
             cfg.augment = true;
             cfg.max_episodes = 5000;
-            cfg.temp_hold_episodes = 5000;
             cfg.buffer_capacity = 500;
             cfg.snapshot_at_episode = Some(2500);
             cfg.eval_every = 500;
@@ -627,7 +618,6 @@ fn gomoku_pure_selfplay_learned() -> Result<(), GraphError> {
             cfg.cnn_repr = true;
             cfg.augment = true;
             cfg.max_episodes = 5000;
-            cfg.temp_hold_episodes = 5000;
             cfg.buffer_capacity = 500;
             cfg.snapshot_at_episode = Some(2500);
             cfg.eval_every = 500;
@@ -665,7 +655,6 @@ fn gomoku_pure_selfplay_per() -> Result<(), GraphError> {
         cfg.cnn_repr = true;
         cfg.augment = true;
         cfg.max_episodes = 5000;
-        cfg.temp_hold_episodes = 5000;
         cfg.buffer_capacity = 500;
         cfg.snapshot_at_episode = Some(2500);
         cfg.eval_every = 500;
@@ -683,7 +672,6 @@ fn pure_selfplay_learned_cfg(mut cfg: BoardTrainConfig) -> BoardTrainConfig {
     cfg.cnn_repr = true;
     cfg.augment = true;
     cfg.max_episodes = 5000;
-    cfg.temp_hold_episodes = 5000;
     cfg.buffer_capacity = 500;
     cfg.snapshot_at_episode = Some(2500);
     cfg.eval_every = 500;
@@ -930,8 +918,6 @@ fn gomoku_supervised_smoke() -> Result<(), GraphError> {
         cfg.max_episodes = 3;
         cfg.start_training_after = 2;
         cfg.trains_per_episode = 1;
-        cfg.temp_hold_episodes = 3;
-        cfg.temp_decay_episodes = 0;
         cfg.eval_every = 3;
         cfg.eval_episodes = 2;
         cfg.snapshot_at_episode = Some(2);
@@ -980,8 +966,6 @@ fn gomoku_m3_seedpar_smoke() -> Result<(), GraphError> {
         cfg.max_episodes = 3;
         cfg.start_training_after = 2;
         cfg.trains_per_episode = 1;
-        cfg.temp_hold_episodes = 3;
-        cfg.temp_decay_episodes = 0;
         cfg.eval_every = 3;
         cfg.eval_episodes = 2;
         cfg.snapshot_at_episode = Some(2);

@@ -211,6 +211,7 @@ promote 时改 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)；论文全称
 - **Stochastic K=8 always-on**：确定性环境自动退化为单峰（自适应 K 为会话悬案，未落盘改契约前仍以此为准）
 - **Sampled MuZero 候选层正交**：K_eff=|A| 时与 PUCT 等价，仅余 ~26% wall-clock 簿记开销
 - **三件套正交分层**：Sampled=候选层 / Gumbel=根层 / completedQ=目标层（融合契约；全域默认关后两项）
+- **温度是评测开关**：非评测恒 `τ=1`（原样 π / visit，政策目标不拧尖）；评测 / `run` 恒 `τ=0`（Gumbel 噪声关）。无 hold/decay 课程表，与观测/动作类型无关
 - **sims 是 wall-clock 预算不是「越大越好」**：MinAtar 默认仍 25。2026-08-13 单 seed 1h：`SIMS=8` **不买吞吐**（27,980 steps / 1h，约 7.8 step/s，低于对照 sims=25 的 ~9.1），greedy 锁 1.2–1.5（对照 seed 42 best 4.1）。无与游戏无关的路由规则则不 promote
 - **标签刷新要有裁判**：库存 MCTS vs 一步 look-ahead，用轨迹回报 / 少量新鲜搜索比较，不用环境类型（图像/稠密奖励）猜；ROSMO 默认关
 - **target_net 可独立接线，但 MinAtar 上不够**：只换 n-step 尾值（滞后 V 替换 buffer `root_value`），hard 400。2026-08-13 单 seed：best **2.3** vs 对照 seed 42 的 4.1，等步数更低，不 promote。每步 EMA 已否决

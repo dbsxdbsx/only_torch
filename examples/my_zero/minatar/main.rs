@@ -72,8 +72,6 @@ fn main() -> Result<(), GraphError> {
         trains_per_episode: 16,
         buffer_capacity: 128,
         start_training_after: 4,
-        temp_hold_episodes: 100,
-        temp_decay_episodes: 100,
         kl_adaptive_lr: false,
         ..TrainSettings::default()
     };

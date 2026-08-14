@@ -24,6 +24,11 @@
 
 ### Changed
 
+- **feat(rl): 温度收成评测开关（非评测 1 / 评测 0），删除 hold/decay 课程表**（2026-08-14）
+  - 训练收集、reanalyze、政策目标恒 `τ=1`（原样 π / visit）；greedy eval / `run` 恒 `τ=0`（Gumbel 噪声同步关）
+  - 删除 `TrainSettings` / `BoardTrainConfig` 的 `temp_hold_episodes` / `temp_decay_episodes` 与 `1→0.25` 退火
+  - 单测：`temperature`；CartPole 哨兵数字会变，旧账本行先保留
+
 - **feat(rl): 交互默认 `acting_simulations=1`（只出 π），思考预算仍是 `num_simulations`**（2026-08-14）
   - self-play / `run` 走根上一次 policy 映射；greedy eval / reanalyze / 诊断仍用原来的 MCTS 次数
   - `.acting_simulations(n)` 且 `n>1` 恢复动手前搜索；同一套权重不必重训结构

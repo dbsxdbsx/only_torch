@@ -29,8 +29,8 @@ use super::gomoku::{TacticalCourse, TrueRulesBoardModel, tactical_opening};
 use super::network::{MyZeroModel, ObsSpec};
 use super::rosmo::RosmoTargets;
 use super::runner::{
-    KL_TARGET, kl_lr_multiplier, probe_obs_of, probe_policy_kl, self_play_temperature, train_batch,
-    unroll_len_at,
+    EVAL_TEMPERATURE, KL_TARGET, SELF_PLAY_TEMPERATURE, kl_lr_multiplier, probe_obs_of,
+    probe_policy_kl, train_batch, unroll_len_at,
 };
 use super::search_policy::MyZeroSearchPolicy;
 use super::target::mcts_policy_target;
@@ -509,7 +509,7 @@ fn board_eval_vs(
     eval_seed: u64,
     true_rules: bool,
 ) -> (f32, f32) {
-    let eval_cfg = board_mcts_config(num_simulations, 0.0, 0.0);
+    let eval_cfg = board_mcts_config(num_simulations, EVAL_TEMPERATURE, 0.0);
     let mut wins = 0usize;
     let mut total_return = 0.0f32;
 
@@ -593,7 +593,7 @@ fn board_duel_episode(
     seed: u64,
     true_rules: bool,
 ) -> Option<u8> {
-    let eval_cfg = board_mcts_config(num_simulations, 0.0, 0.0);
+    let eval_cfg = board_mcts_config(num_simulations, EVAL_TEMPERATURE, 0.0);
     let mut rng = StdRng::seed_from_u64(seed);
     env.reset(Some(seed));
 
@@ -700,8 +700,6 @@ pub(crate) struct BoardTrainConfig {
     /// buffer 容量（整局计）
     pub buffer_capacity: usize,
     pub start_training_after: usize,
-    pub temp_hold_episodes: usize,
-    pub temp_decay_episodes: usize,
     pub max_episodes: usize,
     pub eval_every: usize,
     pub eval_episodes: usize,
@@ -772,8 +770,6 @@ impl Default for BoardTrainConfig {
             trains_per_episode: 4,
             buffer_capacity: 200,
             start_training_after: 10,
-            temp_hold_episodes: 100,
-            temp_decay_episodes: 100,
             max_episodes: 400,
             eval_every: 25,
             eval_episodes: 20,
@@ -1004,8 +1000,7 @@ pub(crate) fn train_board_with_checkpoints(
 
         for ep in 0..cfg.max_episodes {
             let t0 = std::time::Instant::now();
-            let temperature =
-                self_play_temperature(ep, cfg.temp_hold_episodes, cfg.temp_decay_episodes);
+            let temperature = SELF_PLAY_TEMPERATURE;
             let mcts_cfg = board_mcts_config(
                 cfg.num_simulations,
                 temperature,

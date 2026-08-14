@@ -53,8 +53,6 @@ fn p3a0_cfg(seed: u64, max_episodes: usize) -> BoardTrainConfig {
         cnn_repr: true,
         augment: true,
         max_episodes,
-        temp_hold_episodes: 5000,
-        temp_decay_episodes: 0,
         buffer_capacity: 500,
         snapshot_at_episode: None,
         eval_every: usize::MAX,
