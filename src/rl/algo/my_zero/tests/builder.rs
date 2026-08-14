@@ -15,17 +15,30 @@ fn discrete_env_defaults_to_auto_action() {
 }
 
 #[test]
-fn cartpole_recipe_has_consistency_and_reconstruction() {
+fn cartpole_new_follows_structure_route() {
     let cfg = MyZero::new("CartPole-v1")
         .solved(475.0)
         .max_episodes(2000)
         .build()
         .unwrap();
-    assert!(cfg.components.consistency);
     assert!(cfg.components.reconstruction);
-    assert!(cfg.components.sampled);
+    assert!(!cfg.components.consistency);
+    assert!(!cfg.components.sampled);
     assert!(!cfg.components.reanalyze);
     assert!(!cfg.components.completed_q_target);
+}
+
+#[test]
+fn cartpole_builder_can_overlay_sampled() {
+    let cfg = MyZero::new("CartPole-v1")
+        .sampled(true)
+        .solved(475.0)
+        .max_episodes(2000)
+        .build()
+        .unwrap();
+    assert!(cfg.components.sampled);
+    assert!(cfg.components.reconstruction);
+    assert!(!cfg.components.consistency);
 }
 
 #[test]
@@ -42,7 +55,7 @@ fn target_net_builder_overrides_recipe() {
 }
 
 #[test]
-fn pendulum_recipe_matches_cartpole_stack() {
+fn pendulum_keeps_vector_overlay() {
     let cfg = MyZero::new("Pendulum-v1")
         .solved(-200.0)
         .max_episodes(600)

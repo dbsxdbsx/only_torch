@@ -1,7 +1,7 @@
 //! 结构路由：不同观测 / 动作特征应自动开或关哪些组件。
 //!
-//! 测的是 [`route_components`](super::super::route::route_components)，不是 `env_id` recipe。
-//! CartPole 等已 promote 栈可以比这里更「满」（例如小离散也开 Sampled），那是 overlay，不在本文件断言。
+//! 测的是 [`route_components`](super::super::route::route_components)。
+//! CartPole 生产路径已与本函数对齐；Pendulum 等仍可有更「满」的 recipe overlay。
 
 use super::super::component::Components;
 use super::super::route::{EnvStructure, FLAT_RECON_MAX_DIM, route_components};
@@ -15,7 +15,7 @@ fn route(env: &EnvStructure) -> Components {
 }
 
 fn cartpole_like() -> EnvStructure {
-    EnvStructure::new(ObservationSchema::Flat(4), ActionSchema::discrete(2))
+    super::super::route::cartpole_structure()
 }
 
 fn pendulum_like() -> EnvStructure {

@@ -3,7 +3,8 @@
 //! 只编码能写成谓词的规则；写不出谓词的旋钮保持关。
 //! 量纲不在这里估：value/reward 永远 `symlog`（见 [`super::value_transform`]）；
 //! 连续观测永远 `symlog`（见 [`ObservationSchema::uses_obs_symlog`]），token ID 除外。
-//! [`super::recipe`] 仍按 `env_id` 注入已 promote 栈；观测量纲由 runner 按 schema 覆盖。
+//! CartPole 生产路径已走本模块；其余 `env_id` 仍由 [`super::recipe`] 注入。
+//! 观测量纲由 runner 按 schema 覆盖。
 
 use super::component::Components;
 use super::sampled_params::sampled_would_subsample;
@@ -11,13 +12,9 @@ use super::schema::{ActionSchema, ObservationSchema};
 
 /// 低维向量才开 reconstruction：obs 比特少、且通常任务相关。
 /// 超过此维数视为「可能含大量无关坐标」，保持关。
-// 生产路径仍走 env_id recipe；本常量目前只给结构路由与其单测用。
-#[cfg_attr(not(test), expect(dead_code))]
 pub(crate) const FLAT_RECON_MAX_DIM: usize = 16;
 
 /// 结构路由能看见的环境特征。后两个不能从 Gym shape 读出，须由适配层声明。
-// 生产路径仍走 env_id recipe；本类型目前只给结构路由与其单测用。
-#[cfg_attr(not(test), expect(dead_code))]
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct EnvStructure {
     pub observation: ObservationSchema,
@@ -29,8 +26,6 @@ pub(crate) struct EnvStructure {
 }
 
 impl EnvStructure {
-    // 生产路径仍走 env_id recipe；构造器目前只给结构路由单测用。
-    #[cfg_attr(not(test), expect(dead_code))]
     pub(crate) fn new(observation: ObservationSchema, action: ActionSchema) -> Self {
         Self {
             observation,
@@ -41,12 +36,15 @@ impl EnvStructure {
     }
 }
 
+/// CartPole-v1 的 Gym 结构（`Box(4,)` + 离散 2）。`new("CartPole-v1")` 用它走路由。
+pub(crate) fn cartpole_structure() -> EnvStructure {
+    EnvStructure::new(ObservationSchema::Flat(4), ActionSchema::discrete(2))
+}
+
 /// 由结构特征推出默认 [`Components`]。
 ///
 /// `num_simulations` 只给 Sampled 用：开/关 = `K_eff < N`，读已有搜索预算，不负责选定 sims。
 /// 不含 KL 自适应 lr / PER / 主动数据：那些是训练过程旋钮，不是环境结构。
-// 生产路径仍走 env_id recipe；函数目前只给结构路由单测用。
-#[cfg_attr(not(test), expect(dead_code))]
 pub(crate) fn route_components(env: &EnvStructure, num_simulations: u32) -> Components {
     let mut c = Components::base();
     c.consistency = obs_is_spatial(env.observation);

@@ -3,24 +3,27 @@
 //! 团队 promote 组件时只改此模块；公开入口 [`MyZero::new`](super::my_zero::MyZero::new) 自动套用。
 
 use super::component::Components;
-use super::config::ActionPlan;
+use super::config::{ActionPlan, TrainSettings};
+use super::route::{cartpole_structure, route_components};
 use super::sampled_params::DEFAULT_CONTINUOUS_BUCKETS;
 
-/// CartPole 已验收栈：consistency + reconstruction + Sampled；K=8 随 `Components::base()` always-on。
+/// CartPole 走结构路由：低维向量开 recon，非空间不开 consistency，`N=2` 不开 Sampled。
+/// K=8 随 `Components::base()` always-on。
 fn cartpole_stack() -> Components {
+    route_components(
+        &cartpole_structure(),
+        TrainSettings::default().num_simulations,
+    )
+}
+
+/// Pendulum 诊断栈：仍用旧向量 overlay（cons + recon + Sampled），不跟 CartPole 路由变薄。
+/// 不把 Pendulum 裁决标记为已通过。
+fn pendulum_diagnostic_stack() -> Components {
     let mut c = Components::base();
     c.consistency = true;
     c.reconstruction = true;
     c.sampled = true;
-    // K 由 sampled_params 按 N、sims 自动算
-    // reanalyze / completedQ / Gumbel：CartPole promote 暂缓 → .issue/items/
-    c.reanalyze = false;
     c
-}
-
-/// Pendulum 当前诊断栈：先复用 CartPole 已验收组件，但不把 Pendulum 裁决标记为已通过。
-fn pendulum_diagnostic_stack() -> Components {
-    cartpole_stack()
 }
 
 /// 图像（ALE/Atari）base 栈：consistency ON + reconstruction OFF。

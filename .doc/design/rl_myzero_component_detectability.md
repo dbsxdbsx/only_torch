@@ -3,9 +3,7 @@
 > **定位**：只回答两件事——每个旋钮在解决什么、环境侧能不能测到（以及何时能测）。  
 > **不是**战略 / 裁决权威。开不开、promote 与否只认 [状态总览](rl_myzero_status.md) §3。  
 > **不是**第三份路线图。不抄组件×环境效果矩阵，不写剂量。  
-> 代码对照：[`route.rs`](../../src/rl/algo/my_zero/route.rs) 目前只实现阶段 ① 的一部分；生产路径仍是 `env_id` recipe。
-
-写本文是为了先把「结构 → 锁栈」的思路钉死，再决定要不要把结构路由接到 `MyZero::new`。
+> 代码对照：[`route.rs`](../../src/rl/algo/my_zero/route.rs) 实现阶段 ① 的一部分。**CartPole-v1** 的 `MyZero::new` 已走结构路由；其余 `env_id` 仍是 recipe。
 
 ---
 
@@ -136,4 +134,4 @@ buffer 只存 raw。观测也不读 Box：维间「差 10 倍」会沿链叠成 
 
 - [`route_components`](../../src/rl/algo/my_zero/route.rs) = 阶段 ①。单测 [`tests/route.rs`](../../src/rl/algo/my_zero/tests/route.rs)。`value_support_noisy` / `partially_observable` 仍须声明。
 - value/reward 编码 = always-on `symlog`。单测 [`tests/value_transform.rs`](../../src/rl/algo/my_zero/tests/value_transform.rs) / [`tests/value_encoding.rs`](../../src/rl/algo/my_zero/tests/value_encoding.rs)。
-- 连续观测 `symlog` = always-on（[`ObservationSchema::uses_obs_symlog`](../../src/rl/algo/my_zero/schema.rs)）；token 关。runner 物化 / 训练时按 schema 注入，不读 Box。其余 ① 未接到 `MyZero::new`；`!` 不实现。
+- 连续观测 `symlog` = always-on（[`ObservationSchema::uses_obs_symlog`](../../src/rl/algo/my_zero/schema.rs)）；token 关。runner 物化 / 训练时按 schema 注入，不读 Box。**CartPole-v1** 的 ① 已接到 `MyZero::new`（`route_components`）；其余 env 仍 recipe。`!` 不实现。

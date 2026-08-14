@@ -1,16 +1,24 @@
-//! `recipe.rs` 环境配方测试：CartPole promoted 栈、Pendulum 诊断栈、未知 env 退回 base
+//! `recipe.rs` 环境配方测试：CartPole 结构路由、Pendulum 诊断 overlay、未知 env 退回 base
 
 use super::super::component::Components;
-use super::super::config::ActionPlan;
+use super::super::config::{ActionPlan, TrainSettings};
 use super::super::recipe::{action_plan_for, components_for};
+use super::super::route::{cartpole_structure, route_components};
 use super::super::sampled_params::DEFAULT_CONTINUOUS_BUCKETS;
 
 #[test]
-fn cartpole_has_consistency_and_reconstruction() {
+fn cartpole_follows_structure_route() {
+    let routed = route_components(
+        &cartpole_structure(),
+        TrainSettings::default().num_simulations,
+    );
     let c = components_for("CartPole-v1");
-    assert!(c.consistency);
+    assert_eq!(c, routed);
     assert!(c.reconstruction);
-    assert!(c.sampled);
+    assert!(c.obs_symlog);
+    assert_eq!(c.num_chance_outcomes, 8);
+    assert!(!c.consistency);
+    assert!(!c.sampled);
     assert!(!c.reanalyze);
     assert!(!c.value_prefix);
     assert!(!c.target_net);
@@ -20,10 +28,9 @@ fn cartpole_has_consistency_and_reconstruction() {
 }
 
 #[test]
-fn pendulum_has_same_stack_as_cartpole() {
-    let cp = components_for("CartPole-v1");
+fn pendulum_keeps_vector_overlay_not_cartpole_route() {
     let pe = components_for("Pendulum-v1");
-    assert_eq!(cp, pe);
+    assert_ne!(pe, components_for("CartPole-v1"));
     assert!(pe.consistency);
     assert!(pe.reconstruction);
     assert!(pe.sampled);

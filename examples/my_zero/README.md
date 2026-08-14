@@ -10,7 +10,7 @@
 ## 设计理念
 
 - **一个算法，持续迭代**：维护不断进化的 MyZero，不再为每篇论文建独立实现
-- **用户零组件概念**：`MyZero::new(env_id)` 自动套用库内 recipe；promote 时只改 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)
+- **用户零组件概念**：`MyZero::new(env_id)` 自动套用库内配方；CartPole 走结构路由，其余仍 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)
 - **生产路径**：learned-world-model；真规则仅 `cfg(test)` diagnostic
 
 ## 环境 × 状态
@@ -78,5 +78,5 @@ CartPole 是 sanity/regression **哨兵**，不是组件价值证明台。
 ## 代码组织
 
 - `src/rl/algo/my_zero/`：自包含 MyZero 库（**唯一** `*Zero` 实现）
-- `recipe.rs`：按 `env_id` 内置组件开关
+- `recipe.rs` / `route.rs`：按 `env_id` 或结构注入组件（CartPole 走路由）
 - `examples/my_zero/*/main.rs`：薄示例（env + 训练契约 + opt-in 落盘）

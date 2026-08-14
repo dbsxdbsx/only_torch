@@ -63,7 +63,7 @@
 
 | 环境 | 门槛 | 状态 | recipe |
 |------|------|------|--------|
-| **CartPole-v1** | greedy ≥ 475 | ✅ 哨兵冻结（中位 ~9.8k env-steps，3/3） | consistency + reconstruction(coef16) + Sampled + Stochastic K=8 |
+| **CartPole-v1** | greedy ≥ 475 | ✅ 哨兵冻结（旧账本中位 ~9.8k，3/3；**2026-08-14 改走结构路由，数字待重跑**） | 结构路由：reconstruction + obs `symlog` + Stochastic K=8 |
 | **Gomoku** (vs random) | 胜率 ≥ 95% | ✅ 已闭环（recipe=base；历史里程碑见[棋盘账本](../../examples/my_zero/gomoku/README.md)） | base（全组件关） |
 | **StochasticCartPole** | K=8 3/3 | ✅ Stochastic MuZero 验收 | always-on K=8 |
 | **MinAtar/Breakout** | greedy ≥ 8 | ⚠️ 正式 3-seed 0/3（中位 best **3.9**）；acting-sims=8 负（best 1.5）；独立 target_net 负（best 2.3）；td_steps=5 负（best 2.6，不 promote） | consistency ON |
@@ -143,8 +143,8 @@ promote 时改 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)；论文全称
 
 **当前内置 recipe 摘要**：
 
-- CartPole：base + consistency + reconstruction + Sampled + Stochastic K=8（PUCT · acting_sims=1 · think/eval sims=20 · td=5）
-- Pendulum：复用 CartPole 栈做诊断（B=7 · acting_sims=1 · think/eval sims=20）——勿据此裁决组件
+- CartPole：结构路由（recon + obs `symlog` + K=8；consistency / Sampled 谓词为关。PUCT · acting_sims=1 · think/eval sims=20 · td=5）
+- Pendulum：诊断 overlay 仍是 cons + recon + Sampled（B=7 · acting_sims=1 · think/eval sims=20）——勿据此裁决组件，也不跟 CartPole 路由变薄
 - Gomoku：base 全关（Flat MLP · negamax MC · sims=100）
 - MinAtar：consistency ON（见 [minatar 账本](../../examples/my_zero/minatar/README.md)）
 

@@ -28,7 +28,7 @@ fn run_cartpole_bench(
 ) -> Result<(), GraphError> {
     let tag = if completed_q { "completedQ" } else { "visit" };
     let gtag = if gumbel { "Gumbel" } else { "PUCT" };
-    println!("[bench] CartPole cons+recon sims={sims} search={gtag} target={tag}");
+    println!("[bench] CartPole route+recon sims={sims} search={gtag} target={tag}");
     let mut builder = MyZero::new("CartPole-v1")
         .solved(475.0)
         .max_episodes(2000)
@@ -44,8 +44,8 @@ fn run_cartpole_bench(
         builder = builder.completed_q_target(true);
     }
     let cfg = builder.build()?;
-    assert!(cfg.components.consistency);
     assert!(cfg.components.reconstruction);
+    assert!(!cfg.components.consistency);
     assert_eq!(cfg.components.gumbel, gumbel);
     assert_eq!(cfg.components.completed_q_target, completed_q);
     assert_eq!(cfg.train.num_simulations, sims);

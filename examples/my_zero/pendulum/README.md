@@ -24,7 +24,7 @@ PROFILE=1 cargo run --example my_zero_pendulum --release
 TD_STEPS=5 cargo run --example my_zero_pendulum --release
 ```
 
-算法配方由库内 `recipe.rs` 注入。Pendulum 当前复用 CartPole 的 `consistency + reconstruction + Sampled` 作为**诊断栈**（不是已验收裁决）；示例只写训练契约，连续动作 B=7 由库内默认动作方案注入。量纲由 always-on `symlog` 吸收，不再线性预缩放 reward。
+算法配方由库内 `recipe.rs` 注入。Pendulum 当前仍用 `consistency + reconstruction + Sampled` 作为**诊断 overlay**（不是已验收裁决；也不跟 CartPole 结构路由变薄）；示例只写训练契约，连续动作 B=7 由库内默认动作方案注入。量纲由 always-on `symlog` 吸收，不再线性预缩放 reward。
 
 基础 transition 语义：Pendulum-v1 通常以 time-limit truncation 结束，当前不会把 200 步截断误当 terminal；truncation 仍 `continuation=1` 并 bootstrap，只有 MDP 真终止才 `continuation=0`。
 

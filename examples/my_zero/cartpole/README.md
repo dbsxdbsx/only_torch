@@ -6,7 +6,9 @@
 
 离散 2 动作 · 门禁 **greedy eval ≥ 475** · **官方口径：3-seed（42/43/44）中位 env-steps-to-solved + 达标率**
 
-组件组合由库内 [`recipe.rs`](../../../src/rl/algo/my_zero/recipe.rs) 按 `CartPole-v1` 自动注入（当前：consistency(coef 2) + reconstruction(**coef 16**，v0.26 P0 重标定) + Sampled · PUCT · **acting_sims=1** · think/eval sims=20 · td=5）；示例只写训练契约。论文全称见 [RL 状态总览](../../../.doc/design/rl_myzero_status.md)。交互要恢复动手前搜索：`.acting_simulations(n)`（`n>1`）。
+组件组合由 [`route.rs`](../../../src/rl/algo/my_zero/route.rs) 按结构注入（`Flat(4)` + 离散 \(N=2\)）：reconstruction（coef 16）+ 观测 `symlog` + Stochastic \(K=8\) · PUCT · **acting_sims=1** · think/eval sims=20 · td=5。consistency / Sampled 无结构谓词，默认关。示例只写训练契约。论文全称见 [RL 状态总览](../../../.doc/design/rl_myzero_status.md)。交互要恢复动手前搜索：`.acting_simulations(n)`（`n>1`）。
+
+> **口径变更（2026-08-14）**：`MyZero::new("CartPole-v1")` 不再套旧 promote overlay（cons + Sampled）。下方哨兵数字是旧栈，先保留；新栈 3-seed 未重跑。
 
 ## 运行
 

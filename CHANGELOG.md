@@ -28,6 +28,11 @@
 
 ### Changed
 
+- **feat(rl): CartPole 生产路径改走结构路由**（2026-08-14）
+  - `MyZero::new("CartPole-v1")` 调用 `route_components`：recon + obs `symlog` + \(K=8\)；consistency / Sampled 按谓词关
+  - Pendulum 诊断 overlay 不跟变薄；其余 env 仍 recipe
+  - 旧 CartPole 哨兵数字先保留，新栈未重跑 3-seed
+
 - **feat(rl): 温度收成评测开关（非评测 1 / 评测 0），删除 hold/decay 课程表**（2026-08-14）
   - 训练收集、reanalyze、政策目标恒 `τ=1`（原样 π / visit）；greedy eval / `run` 恒 `τ=0`（Gumbel 噪声同步关）
   - 删除 `TrainSettings` / `BoardTrainConfig` 的 `temp_hold_episodes` / `temp_decay_episodes` 与 `1→0.25` 退火

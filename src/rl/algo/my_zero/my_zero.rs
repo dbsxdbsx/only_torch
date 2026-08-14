@@ -23,7 +23,8 @@ pub struct MyZero {
 impl MyZero {
     /// 唯一入口：声明 Gymnasium 环境 ID（如 `"CartPole-v1"`）。
     ///
-    /// 刻意返回 Builder 而非 Self：强制所有构造走同一条 recipe 校验链。
+    /// 刻意返回 Builder 而非 Self：强制所有构造走同一条校验链。
+    /// CartPole 的组件来自结构路由，其余 `env_id` 仍走 recipe。
     #[allow(clippy::new_ret_no_self)]
     pub fn new(env_id: &'static str) -> super::builder::MyZeroBuilder {
         assert!(!env_id.is_empty(), "MyZero: env_id 不能为空");

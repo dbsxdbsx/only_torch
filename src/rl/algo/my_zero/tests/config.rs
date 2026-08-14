@@ -1,4 +1,4 @@
-//! `config.rs` 默认配置测试：base 全关默认、CartPole 友好训练参数、recipe 注入
+//! `config.rs` 默认配置测试：base 全关默认、CartPole 友好训练参数、结构路由注入
 
 use super::super::component::Components;
 use super::super::config::{ActionPlan, DEFAULT_SEED, EvalSettings, MyZeroConfig, TrainSettings};
@@ -47,15 +47,16 @@ fn component_toggle() {
 }
 
 #[test]
-fn new_cartpole_applies_recipe() {
+fn new_cartpole_applies_structure_route() {
     let cfg = MyZero::new("CartPole-v1")
         .solved(475.0)
         .max_episodes(100)
         .build()
         .unwrap();
-    assert!(cfg.components.consistency);
     assert!(cfg.components.reconstruction);
-    assert!(cfg.components.sampled);
+    assert!(cfg.components.obs_symlog);
+    assert!(!cfg.components.consistency);
+    assert!(!cfg.components.sampled);
     assert!(!cfg.components.reanalyze);
     assert!(!cfg.components.completed_q_target);
     assert_eq!(cfg.env.action, ActionPlan::Auto);
