@@ -61,3 +61,20 @@
 | ICML 2020 / 2007.12509 | Grill（MCTS = 正则化政策优化） | ✅ 证据归档 | 官方线理论前身；不单独换实现 | 同上 |
 | ICLR 2022 | Gumbel（少 sim 政策改进） | ✅ 采纳（组件在库，recipe 默认关） | 访不完所有边时的 correctness；promote 只认状态总览 | 状态总览 §3 + 同上 |
 | ICML 2021 / 2104.06303 | Sampled MuZero | ✅ 采纳 | 大 \(\|A\|\) 抽 K；与 MaxEnt 无对打 | 状态总览 §3 + 同上 |
+
+---
+
+## 2026-08-19 · 主动推理两篇（Deep AI + pymdp）
+
+背景：桌面清账对照 MyZero。表面像「学世界模型的前沿智能体」，疑问是能不能治「学得太慢」、能不能塞进 MuZero。核心结论先行：
+
+1. **不是 MuZero 组件论文**，是另一条母算法：用变分自由能同时做感知、学习和行动，目标不是最大化回报。
+2. **整包不接入 MyZero**。Deep Active Inference 用 Evolution Strategies 估不可微梯度，不走 autograd；pymdp 是离散 POMDP 的 Python 工具箱，对标 MATLAB DEM，不是树搜索增量。
+3. **治不了「学得慢」**。Deep AI 只在 Mountain Car 上演示，优化器更吃样本；pymdp 面向小离散符号模型。MinAtar 便宜旋钮已三刀皆负，下一刀仍是等步数加训或继续暂缓，不是换范式。
+4. **同族想法项目里已经试过并停掉**：主动数据 3A0 负裁、recurrent posterior 负裁、BetaZero / DreamerV3 整包明确不做。reconstruction 已是最近的可用亲戚（学着预测观察），不必再开一条自由能损失。
+5. PDF 本机放到 `AI论文/Post-AI/`，按 arXiv / JOSS 号可重下。
+
+| 出处 | 论文（缩写） | 判定 | 一句话理由 | 结论落点 |
+|---|---|---|---|---|
+| 1709.02341 / *Biol. Cybern.* 2018 | Deep Active Inference（深度网络 + ES 的主动推理） | ❌ 否决（路径）· 证据归档 | 换目标函数和优化器；Mountain Car 玩具实验，不提高 MyZero 样本效率 | 状态总览 §5.3 + 本日志 |
+| JOSS 2022 / 10.21105/joss.04098 | pymdp（离散状态主动推理 Python 库） | ❌ 否决（路径）· 证据归档 | 软件短文，不是算法增量； discrete POMDP API，接不进 latent MCTS | 同上 |

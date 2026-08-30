@@ -188,6 +188,7 @@ promote 时改 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)；论文全称
 
 - BetaZero（belief 规划）· CFR 族（不完全信息）· 多智能体 N>2 · SAC 升格母算法
 - DreamerV3 派（棋类非 SOTA）· Simulus tokenizer/RetNet · **FNC / COMBO 整包**（问题设定与 MyZero 不同，禁止当主线组件）
+- **主动推理 / pymdp 整包**（换自由能目标，不是 MuZero 组件；Deep AI 用 ES 不接 autograd。判定见 [reading_log · 2026-08-19](../paper/reading_log.md)）
 - 演化 + RL 联合搜索：仅长期 backlog，无实施计划；触发条件 = 需要演化 MyZero backbone
 - **ROSMO 当救命药 / 绿灯后默认开**：棋盘有害、CartPole 无增益；无裁判探针（轨迹回报 + 少量新鲜搜索）不开；弱模型阶段禁止
 
