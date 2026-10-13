@@ -1,3 +1,4 @@
+* text=auto eol=lf
 # 将 MatrixSlow 数据目录下的 .ts 文件标记为数据文件，不参与语言统计
 # 这些是时间序列数据文件（Time Series），不是 TypeScript
 MatrixSlow/data/**/*.ts linguist-detectable=false
@@ -9,3 +10,79 @@ MatrixSlow/data/**/*.ts linguist-language=Text
 # bash 脚本强制 LF（Windows 上 CRLF 会让 bash 报 '\r' 错）
 *.sh text eol=lf
 
+
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.pdf -text
+*.png -text
+*.jpg -text
+*.jpeg -text
+*.gif -text
+*.ico -text
+*.webp -text
+*.bmp -text
+*.zip -text
+*.7z -text
+*.rar -text
+*.gz -text
+*.tar -text
+*.exe -text
+*.msi -text
+*.dll -text
+*.so -text
+*.dylib -text
+*.apk -text
+*.ipa -text
+*.aab -text
+*.jar -text
+*.woff -text
+*.woff2 -text
+*.ttf -text
+*.otf -text
+*.mp3 -text
+*.mp4 -text
+*.mkv -text
+*.sqlite -text
+*.db -text
+*.xlsx -text
+*.xls -text
+*.docx -text
+*.pptx -text
+*.parquet -text
+*.pkl -text
+*.npy -text
+*.PDF -text
+*.PNG -text
+*.JPG -text
+*.JPEG -text
+*.GIF -text
+*.ICO -text
+*.WEBP -text
+*.BMP -text
+*.ZIP -text
+*.RAR -text
+*.GZ -text
+*.TAR -text
+*.EXE -text
+*.MSI -text
+*.DLL -text
+*.SO -text
+*.DYLIB -text
+*.APK -text
+*.IPA -text
+*.AAB -text
+*.JAR -text
+*.WOFF -text
+*.TTF -text
+*.OTF -text
+*.MKV -text
+*.SQLITE -text
+*.DB -text
+*.XLSX -text
+*.XLS -text
+*.DOCX -text
+*.PPTX -text
+*.PARQUET -text
+*.PKL -text
+*.NPY -text
