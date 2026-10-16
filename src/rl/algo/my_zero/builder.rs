@@ -45,6 +45,7 @@ impl MyZeroBuilder {
 
     fn ensure_component_compatibility(&self) -> Result<(), GraphError> {
         let c = &self.cfg.components;
+        c.ensure_supported()?;
         if c.gumbel && c.sampled {
             return Err(GraphError::InvalidOperation(
                 "MyZero: Gumbel root 与 Sampled root Dirichlet 语义暂不兼容；\

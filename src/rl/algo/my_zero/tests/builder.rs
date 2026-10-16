@@ -160,6 +160,26 @@ fn gumbel_and_sampled_conflict_is_error() {
 }
 
 #[test]
+fn value_prefix_enabled_is_error() {
+    // 默认关：正常构建
+    assert!(
+        MyZero::new("CartPole-v1")
+            .solved(475.0)
+            .max_episodes(2000)
+            .build()
+            .is_ok()
+    );
+    // 开启即报错（搜索侧未接线，修复 B 前守卫）
+    let mut b = MyZero::new("CartPole-v1").solved(475.0).max_episodes(2000);
+    b.cfg.components.value_prefix = true;
+    let r = b.build();
+    assert!(
+        matches!(r, Err(GraphError::InvalidOperation(ref msg)) if msg.contains("value_prefix 搜索侧未接线")),
+        "{r:?}"
+    );
+}
+
+#[test]
 fn observation_builders_record_schema_choices() {
     let image = MyZero::new("CartPole-v1")
         .image_observation(144, 256, 3)

@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **fix(rl): `value_prefix` 开启即报错，防止搜索侧断链静默出错**（2026-10-17）
+  - 训练用 LSTM prefix head 算 reward loss，搜索仍用普通 reward head（无梯度）→ 搜索 reward 静默错误
+  - `Components::ensure_supported` 在 builder（`build` / `train` / `load_model_if_exists`）与 `train_all_seeds` 拦截；默认关，现有 recipe / 对照不受影响
+  - LSTM / prefix 目标代码保留，待修复 B（搜索侧接线）后放开；单测：`builder::value_prefix_enabled_is_error`
+
 ### Added
 
 - **docs(rl): 搜索派系与温度卫星文档**（2026-08-14）

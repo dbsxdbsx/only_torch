@@ -29,6 +29,11 @@ pub(crate) struct Components {
     ///（见 [`ObservationSchema::uses_obs_symlog`](super::schema::ObservationSchema::uses_obs_symlog)）。
     pub obs_symlog: bool,
     /// value prefix（LSTM 累计 reward 前缀，hidden 穿 MCTS 树）
+    ///
+    /// **当前被守卫拦截**：训练侧用 LSTM prefix head 算 reward loss，搜索侧
+    ///（`recurrent_values_impl`）仍用普通 DynamicsNet reward head，后者得不到梯度 →
+    /// 搜索 reward 静默错误。开启即在构建 / 训练入口报错（见 [`Components::ensure_supported`]），
+    /// 待搜索侧接线（修复 B）后再放开。
     pub value_prefix: bool,
     /// 训练前对 sample 的 unroll 窗口重跑 MCTS 刷新标签（MuZero Reanalyze）
     /// reanalyze：position 级 MCTS 重搜 + buffer 写回（`Components.reanalyze`）。
@@ -105,5 +110,21 @@ impl Components {
     /// 是否启用了 SVE
     pub fn sve_enabled(&self) -> bool {
         self.sve_weight > 0.0
+    }
+}
+
+/// `value_prefix=true` 时的守卫报错信息（修复 B 前暂不可开启）。
+pub(crate) const VALUE_PREFIX_UNWIRED_MSG: &str = "MyZero: value_prefix 搜索侧未接线（训练用 LSTM prefix head、\
+     搜索用普通 reward head），暂不可开启";
+
+impl Components {
+    /// 拦截已知会静默出错的组件组合；构建（builder）与训练入口（`train_all_seeds`）共用。
+    pub(crate) fn ensure_supported(&self) -> Result<(), crate::nn::GraphError> {
+        if self.value_prefix {
+            return Err(crate::nn::GraphError::InvalidOperation(
+                VALUE_PREFIX_UNWIRED_MSG.into(),
+            ));
+        }
+        Ok(())
     }
 }

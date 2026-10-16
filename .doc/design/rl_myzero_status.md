@@ -88,7 +88,7 @@
 | HL-Gauss | ❌ | — | 待测 native | OFF |
 | obs symlog | 逻辑 always-on | — | always-on | always-on（token 除外） |
 | PER | — | ❌ | — | OFF |
-| value_prefix | ❌（有断链 bug） | — | — | OFF |
+| value_prefix | ❌（断链；已守卫，开启即构建报错） | — | — | OFF（守卫） |
 | target_net / SVE | 入库待测 | — | — | OFF |
 | recurrent posterior | ❌ | — | — | OFF |
 | KL 自适应 lr | ❌ 灾难级 | ✅ 无害 | — | OFF |
@@ -112,7 +112,7 @@ promote 时改 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)；论文全称
 | reanalyze | ❌ [issue](../../.issue/items/my_zero_reanalyze_cartpole_regression.md) | ⏳ | 战略组件 | ⏸ | acting/reanalyze 解耦待做 |
 | ROSMO | ❌ 无增益 | ⏳ | ⏳ | ❌ 有害 | recipe 默认关 |
 | PER | — | — | — | ❌ | buffer 伴生件，默认关 |
-| value_prefix | ❌※断链 | ⏳ | ⏳ | ⏸ | 训 LSTM / 搜普通 reward head |
+| value_prefix | ❌※断链（已守卫） | ⏳ | ⏳ | ⏸ | 训 LSTM / 搜普通 reward head；开启即在 builder / `train_all_seeds` 报错，待修复 B（搜索侧接 LSTM） |
 | target_net | ⏳ | ⏳ | ❌ 独立接线负（best 2.3 vs 对照 4.1） | ⏳ | 默认关；只换 n-step 尾值不够 |
 | SVE | ⏳ | ⏳ | ⏳ | ⏳ | 同上 |
 | completedQ | ❌ | ⏳ | ⏳ | ❌ 中性 | 全域关 |
@@ -171,7 +171,7 @@ promote 时改 [`recipe.rs`](../../src/rl/algo/my_zero/recipe.rs)；论文全称
 |----|------|------|
 | MinAtar 图像效率下一刀 | 三刀便宜诊断均负（sims=8 / target_net / td_steps=5）。默认仍 sims=25、td=10、无独立 target。勿砍 `trains_per_episode`；若继续只允许等步数加训，否则暂停 RL | [minatar 账本](../../examples/my_zero/minatar/README.md) |
 | target_net + SVE 终审 | 独立 target_net 已负；SVE 仍未接。禁止把 SVE 当补丁绑回去 | — |
-| value_prefix 断链修复 | 训练用 LSTM head，搜索用普通 reward head → 静默错误 | — |
+| value_prefix 断链修复（B） | 训练用 LSTM head，搜索用普通 reward head → 静默错误。**已守卫**（2026-10-17）：`Components::ensure_supported` 在构建 / 训练入口拦截，开启即报错；真修复 B = 搜索侧接 LSTM prefix head 并补训练/搜索 reward 一致性测试 | `component.rs` |
 | Pendulum 终审 | n-step target 方差坍缩；可能需 1-step + target_net | [pendulum issue](../../.issue/items/pendulum_failure_diagnosis.md) |
 
 ### 5.2 中优先级
