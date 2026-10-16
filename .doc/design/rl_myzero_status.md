@@ -22,7 +22,7 @@
 
 已删除并并入本文的历史文件（勿再链接）：`rl_roadmap.md`、`rl_closure_plan.md`、`rl_phase1_image_plan.md`、`rl_phase1_report.md`、`my_zero_algorithm_vision.md`、`my_zero_world_model_foundation.md`、`my_zero_simulus_ablation_plan.md`、`_archive/rl_roadmap_v020_v024.md`。
 
-**当前主线状态**：crate **v0.26.0**（2026-08-12）。RL 未恢复为开发主线。MinAtar 三刀便宜诊断均负：acting-sims=8（best 1.5）、独立 target_net（best 2.3）、td_steps 10→5（best 2.6 vs 对照 4.1）。FNC / COMBO 整包不进主线；ROSMO 默认关。下次接手顺序：本文 → [环境配置](../rl_python_env_setup.md) → `just test-filter rl` → `just smoke-rl`。
+**当前主线状态**：crate **v0.27.0**（2026-10-17）。RL 未恢复为开发主线。MinAtar 三刀便宜诊断均负：acting-sims=8（best 1.5）、独立 target_net（best 2.3）、td_steps 10→5（best 2.6 vs 对照 4.1）。FNC / COMBO 整包不进主线；ROSMO 默认关。下次接手顺序：本文 → [环境配置](../rl_python_env_setup.md) → `just test-filter rl` → `just smoke-rl`。
 
 ---
 

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-10-17
+
+> **MyZero 量纲与路由收口**：value/reward 与连续观测改为 always-on `symlog`（删除量纲探测与线性 `reward_scale`）；温度收成评测开关；交互默认 `acting_simulations=1`；CartPole 改走结构路由（组件可测性 + 路由谓词）；独立 `target_net` 接线（默认关）；删除 DIAG；MinAtar 预注册预算 + 3-seed 账本与三刀负结果收口；`value_prefix` 断链改为开启即报错。**基线提示**：CartPole（~9.8k）与 MinAtar（best 4.1 / 中位 3.9）数字均出自本版改动之前的代码，需在 v0.27.0 上重跑后才能作对照。
+
 ### Fixed
 
 - **fix(rl): `value_prefix` 开启即报错，防止搜索侧断链静默出错**（2026-10-17）
@@ -38,6 +42,18 @@
   - builder / config / runner / `.otm` 契约去掉该字段；旧文件里的 `reward_scale` 加载时忽略
 
 ### Changed
+
+- **chore: 新增 `.gitattributes` 统一行尾**（2026-10-13）
+  - 文本默认 LF；`.sh` 强制 LF，`.ps1` / `.bat` / `.cmd` 为 CRLF；常见二进制标 `-text`
+
+- **chore: `rust-toolchain.toml` 增加 `rust-analyzer` 组件**（2026-08-14）
+  - 工具链仍固定 Rust 1.97.0；说明见 `dev_environment_setup.md`
+
+- **feat(rl): MyZero 组件可测性与结构路由**（2026-08-14）
+  - 组件开关由可测的 schema 谓词决定（`route_components`），不再靠经验 recipe 堆叠；`value_prefix` 等断链组件路由不得开
+
+- **docs(rl): Gomoku bench 里程碑与 MyZero 推理洞察**（2026-08-14 / 2026-08-31）
+  - 更新状态总览与读论文记录；不改代码行为
 
 - **feat(rl): CartPole 生产路径改走结构路由**（2026-08-14）
   - `MyZero::new("CartPole-v1")` 调用 `route_components`：recon + obs `symlog` + \(K=8\)；consistency / Sampled 按谓词关

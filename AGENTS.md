@@ -17,9 +17,9 @@ only_torch 是一个纯 Rust 的 PyTorch 风格玩具框架，当前重点是：
 
 | 项 | 内容 |
 |----|------|
-| **版本** | `0.26.0`（2026-08-12） |
+| **版本** | `0.27.0`（2026-10-17） |
 | **Rust** | `1.97.0`（`rust-toolchain.toml` 固定开发工具链，非 MSRV；A/B 口径见[性能工作流](.doc/performance/benchmark_workflow.md#rust-工具链升级-ab)） |
-| **刚闭环** | **✅ v0.26.0**：learned-world-model 契约 + Stochastic MuZero K=8 always-on + Gomoku recipe=base + MinAtar 管线接入 + 跨轴 smoke；RL 文档收敛为 [状态总览](.doc/design/rl_myzero_status.md) + 环境配置。POMDP-lite / 主动数据 3A0 负裁（代码默认关）。**MinAtar/Breakout 正式 3-seed**：中位 best 3.9、0/3 达门槛 8。**acting-sims=8 负**（best 1.5）。**独立 target_net 负**（best 2.3）。**td_steps=5 负**（best 2.6，不 promote；见[账本](examples/my_zero/minatar/README.md)）。 |
+| **刚闭环** | **✅ v0.27.0**：value/reward 与连续观测 always-on `symlog`（删线性 `reward_scale`）+ 温度收成评测开关 + acting sims + CartPole 结构路由 + `value_prefix` 开启即报错守卫；CartPole / MinAtar 哨兵数字均出自旧代码，待在 v0.27.0 上重跑。**v0.26.0**：learned-world-model 契约 + Stochastic MuZero K=8 always-on + Gomoku recipe=base + MinAtar 管线接入 + 跨轴 smoke；RL 文档收敛为 [状态总览](.doc/design/rl_myzero_status.md) + 环境配置。POMDP-lite / 主动数据 3A0 负裁（代码默认关）。**MinAtar/Breakout 正式 3-seed**：中位 best 3.9、0/3 达门槛 8。**acting-sims=8 负**（best 1.5）。**独立 target_net 负**（best 2.3）。**td_steps=5 负**（best 2.6，不 promote；见[账本](examples/my_zero/minatar/README.md)）。 |
 | **当前主线** | **强化学习暂缓**（待办见[状态总览 §5](.doc/design/rl_myzero_status.md#5-未完成事项收口时的-backlog)）。演化侧仍可推进阶段 D，见下。 |
 | **刻意暂缓** | 演化 **阶段 D**（`CellAttention` ONNX、`Attention` Net2Net 函数保持、Conv2d Attention；3D batched MatMul 已于 2026-07-04 完成出表）——与 RL 零耦合，见 [记忆机制设计 — Phase D](.doc/design/memory_mechanism_design.md#-后续-phase-d刻意未做)（该表为「阶段 D」唯一权威定义） |
 | **一级风险** | CPU-only × 图像 CNN × MCTS × 实时结构性冲突：[.issue/items/cpu_only_mcts_image_realtime_risk.md](.issue/items/cpu_only_mcts_image_realtime_risk.md)（图像线推进前必读） |
