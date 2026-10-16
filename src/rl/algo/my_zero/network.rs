@@ -1731,10 +1731,10 @@ impl MyZeroModel {
                     } else {
                         Some(item.burn_in_actions[j - 1])
                     };
-                    if let Some(a) = prev_a {
-                        if a < self.action_dim {
-                            prev_oh[a] = 1.0;
-                        }
+                    if let Some(a) = prev_a
+                        && a < self.action_dim
+                    {
+                        prev_oh[a] = 1.0;
                     }
                     let (_lat, new_h) = self.posterior_step_inference(&repr_lat, &prev_oh, &h);
                     h = new_h;
@@ -1757,10 +1757,10 @@ impl MyZeroModel {
         if let (Some(posterior), Some(hidden_t)) = (&self.posterior, posterior_hidden_batch) {
             let mut prev_oh_flat = vec![0.0f32; g * self.action_dim];
             for (row, item) in items.iter().enumerate() {
-                if let Some(a) = item.train_prev_action {
-                    if a < self.action_dim {
-                        prev_oh_flat[row * self.action_dim + a] = 1.0;
-                    }
+                if let Some(a) = item.train_prev_action
+                    && a < self.action_dim
+                {
+                    prev_oh_flat[row * self.action_dim + a] = 1.0;
                 }
             }
             let prev_action_var = self
@@ -2074,7 +2074,7 @@ impl Dynamics for &MyZeroModel {
     }
 
     fn num_chance_outcomes(&self) -> usize {
-        (**self).num_chance_outcomes
+        self.num_chance_outcomes
     }
 
     fn afterstate_dynamics(

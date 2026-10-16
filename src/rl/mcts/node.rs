@@ -21,6 +21,10 @@ pub(crate) type NodeId = usize;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NodeKind {
     Decision,
+    #[expect(
+        dead_code,
+        reason = "chance-in-edge 搜索暂不建独立 Chance 节点；显式 chance 树接回时使用"
+    )]
     Chance,
 }
 
@@ -64,6 +68,10 @@ pub(crate) struct Node {
     /// 是否已展开
     pub expanded: bool,
     /// 节点类型：Decision（agent 选 action）或 Chance（环境选 outcome）
+    #[expect(
+        dead_code,
+        reason = "chance-in-edge 搜索暂不读节点类型；显式 chance 树接回时使用"
+    )]
     pub kind: NodeKind,
 }
 
@@ -167,6 +175,10 @@ impl<S: Clone + 'static> Tree<S> {
     /// 展开 chance 节点：为每个 chance outcome 创建 Decision 子节点。
     ///
     /// `chance_priors[i]` 是 outcome `i` 的 learned 概率。
+    #[expect(
+        dead_code,
+        reason = "chance-in-edge 搜索暂不展开独立 Chance 节点；显式 chance 树接回时使用"
+    )]
     pub fn expand_chance(&mut self, node_id: NodeId, chance_priors: &[f32], to_play: u8) {
         let mut edges = Vec::with_capacity(chance_priors.len());
         for (i, &prior) in chance_priors.iter().enumerate() {

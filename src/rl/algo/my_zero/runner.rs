@@ -265,10 +265,10 @@ fn self_play_one_episode(
             let (policy, value) = if use_posterior {
                 let repr_latent = model.repr_inference(&search_obs);
                 let mut prev_oh = vec![0.0f32; model.action_dim];
-                if let Some(a) = prev_action_idx {
-                    if a < model.action_dim {
-                        prev_oh[a] = 1.0;
-                    }
+                if let Some(a) = prev_action_idx
+                    && a < model.action_dim
+                {
+                    prev_oh[a] = 1.0;
                 }
                 let (posterior_latent, new_hidden) =
                     model.posterior_step_inference(&repr_latent, &prev_oh, &posterior_hidden);
@@ -287,10 +287,10 @@ fn self_play_one_episode(
             let result = if use_posterior {
                 let repr_latent = model.repr_inference(&search_obs);
                 let mut prev_oh = vec![0.0f32; model.action_dim];
-                if let Some(a) = prev_action_idx {
-                    if a < model.action_dim {
-                        prev_oh[a] = 1.0;
-                    }
+                if let Some(a) = prev_action_idx
+                    && a < model.action_dim
+                {
+                    prev_oh[a] = 1.0;
                 }
                 let (posterior_latent, new_hidden) =
                     model.posterior_step_inference(&repr_latent, &prev_oh, &posterior_hidden);
@@ -662,7 +662,7 @@ pub(crate) fn train_batch(
         // POMDP-lite burn-in 上下文
         let (bi_obs, bi_actions, bi_leading, train_prev) = if components.recurrent_posterior {
             let burn_start = t.saturating_sub(burn_in_steps);
-            let bi_obs: Vec<ObsSource<'_>> = (burn_start..t).map(|p| obs_at(p)).collect();
+            let bi_obs: Vec<ObsSource<'_>> = (burn_start..t).map(&obs_at).collect();
             let bi_actions: Vec<usize> = (burn_start..t)
                 .map(|p| steps[p].action[0] as usize)
                 .collect();
@@ -753,10 +753,10 @@ pub(crate) fn greedy_one_episode(
             let policy = if use_posterior {
                 let repr_latent = model.repr_inference(&obs);
                 let mut prev_oh = vec![0.0f32; model.action_dim];
-                if let Some(a) = prev_action_idx {
-                    if a < model.action_dim {
-                        prev_oh[a] = 1.0;
-                    }
+                if let Some(a) = prev_action_idx
+                    && a < model.action_dim
+                {
+                    prev_oh[a] = 1.0;
                 }
                 let (posterior_latent, new_hidden) =
                     model.posterior_step_inference(&repr_latent, &prev_oh, &posterior_hidden);
@@ -773,10 +773,10 @@ pub(crate) fn greedy_one_episode(
             let result = if use_posterior {
                 let repr_latent = model.repr_inference(&obs);
                 let mut prev_oh = vec![0.0f32; model.action_dim];
-                if let Some(a) = prev_action_idx {
-                    if a < model.action_dim {
-                        prev_oh[a] = 1.0;
-                    }
+                if let Some(a) = prev_action_idx
+                    && a < model.action_dim
+                {
+                    prev_oh[a] = 1.0;
                 }
                 let (posterior_latent, new_hidden) =
                     model.posterior_step_inference(&repr_latent, &prev_oh, &posterior_hidden);
@@ -1252,14 +1252,14 @@ fn train_one_seed(
         }
 
         // 预算：env-steps / wall-clock（与 max_episodes 取先到）
-        if let Some(cap) = cfg.eval.max_env_steps {
-            if total_steps >= cap {
-                println!(
-                    "  [budget] 达到 max_env_steps={cap}（ep={} total_env_steps={total_steps}）",
-                    ep + 1
-                );
-                break;
-            }
+        if let Some(cap) = cfg.eval.max_env_steps
+            && total_steps >= cap
+        {
+            println!(
+                "  [budget] 达到 max_env_steps={cap}（ep={} total_env_steps={total_steps}）",
+                ep + 1
+            );
+            break;
         }
         if let Some(cap) = cfg.eval.max_wall_secs {
             let elapsed = wall_t0.elapsed().as_secs_f32();
@@ -1272,25 +1272,23 @@ fn train_one_seed(
             }
         }
         // 中间平直判停（预注册协议：过线 steps 后 peak 仍低于阈值）
-        if flat_stop_armed {
-            if let (Some(cap), Some(min_g)) =
+        if flat_stop_armed
+            && let (Some(cap), Some(min_g)) =
                 (cfg.eval.flat_stop_env_steps, cfg.eval.flat_stop_min_greedy)
-            {
-                if total_steps >= cap {
-                    let peak = if peak_greedy.is_finite() {
-                        peak_greedy
-                    } else {
-                        f32::NEG_INFINITY
-                    };
-                    if peak < min_g {
-                        println!(
-                            "  [flat-stop] total_env_steps={total_steps}≥{cap} 且 peak_greedy={peak:.1}<{min_g}，提前结束"
-                        );
-                        break;
-                    }
-                    flat_stop_armed = false;
-                }
+            && total_steps >= cap
+        {
+            let peak = if peak_greedy.is_finite() {
+                peak_greedy
+            } else {
+                f32::NEG_INFINITY
+            };
+            if peak < min_g {
+                println!(
+                    "  [flat-stop] total_env_steps={total_steps}≥{cap} 且 peak_greedy={peak:.1}<{min_g}，提前结束"
+                );
+                break;
             }
+            flat_stop_armed = false;
         }
     }
 
